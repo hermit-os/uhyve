@@ -1,7 +1,3 @@
-#[cfg(target_os = "linux")]
-use std::fs::File;
-#[cfg(target_os = "linux")]
-use std::io::Read;
 use error::*;
 
 pub fn parse_mem(mem: &str) -> Result<usize> {
