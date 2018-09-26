@@ -3,7 +3,7 @@
 OS_NAME=$1
 OS_VERSION=$2
 
-cd /rwth-os/eduOS-rs/
+cd /rwth-os/ehyve/
 
 if [ "$OS_NAME" = "centos" ]; then
 
