@@ -3,6 +3,8 @@ use std::env;
 use std::fs::File;
 use std::io::Cursor;
 use std::mem;
+use std::io::prelude::*;
+use std::io;
 use libc;
 use memmap::Mmap;
 use elf;
@@ -58,6 +60,7 @@ pub trait VirtualCPU {
 		match port {
 			COM_PORT => {
 				print!("{}", message);
+				io::stdout().flush().ok().expect("Could not flush stdout");
 				Ok(())
 			},
 			SHUTDOWN_PORT => {
