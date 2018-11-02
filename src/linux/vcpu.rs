@@ -143,7 +143,11 @@ impl VirtualCPU for EhyveCPU {
 			let kvm_run = self.vcpu.kvm_run();
 			match kvm_run.exit_reason {
 				KVM_EXIT_HLT => {
-					debug!("Halt Exit");
+					info!("Halt Exit");
+					break;
+				},
+				KVM_EXIT_SHUTDOWN => {
+					info!("Shutdown Exit");
 					break;
 				},
 				KVM_EXIT_IO => {

@@ -60,7 +60,7 @@ pub trait VirtualCPU {
 		match port {
 			COM_PORT => {
 				print!("{}", message);
-				io::stdout().flush().ok().expect("Could not flush stdout");
+				//io::stdout().flush().ok().expect("Could not flush stdout");
 				Ok(())
 			},
 			SHUTDOWN_PORT => {
