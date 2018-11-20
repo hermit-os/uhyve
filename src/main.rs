@@ -62,11 +62,8 @@ fn main() {
 				let result = cpu.run();
 				match result {
 					Ok(()) => {},
-					Err(Error::Shutdown) => {
-						info!("Receive shutdown command!");
-					},
-					_ => {
-						error!("CPU {} crashes!", tid);
+					Err(x) => {
+						error!("CPU {} crashes! {}", tid, x);
 					}
 				}
 			})

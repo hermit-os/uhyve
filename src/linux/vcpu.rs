@@ -27,9 +27,9 @@ impl EhyveCPU {
 		let mut kvm_cpuid_entries = KVM.get_supported_cpuid().unwrap();
 
 		let i = kvm_cpuid_entries
-		.iter()
-		.position(|&r| r.function == 0x40000000)
-		.unwrap();
+			.iter()
+			.position(|&r| r.function == 0x40000000)
+			.unwrap();
 
 		let mut id_reg_values: [u32; 3] = [0; 3];
 		let id = "libkvm\0";
