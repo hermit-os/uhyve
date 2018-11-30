@@ -15,8 +15,8 @@ extern crate hypervisor;
 extern crate libwhp;
 #[cfg(target_os = "linux")]
 extern crate libkvm;
-#[cfg(target_os = "windows")]
-extern crate kernel32;
+//#[cfg(target_os = "windows")]
+//extern crate kernel32;
 
 #[macro_use]
 extern crate log;
