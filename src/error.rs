@@ -17,6 +17,8 @@ pub enum Error {
 	UnknownIOPort(u16),
 	KVMInitFailed,
 	KVMUnableToCreateVM,
+	KVMUnableToCreateIrqChip,
+	KVMUnableToCreatePit2,
 	Shutdown,
 	ParseMemory,
 	UnhandledExitReason
@@ -42,10 +44,12 @@ impl fmt::Display for Error {
 			#[cfg(target_os = "macos")]
 			Error::Hypervisor(ref err) => write!(f, "The hypervisor has failed: {:?}", err),
 			Error::UnknownExitReason(ref exit_reason) => write!(f, "Unknown exit reason {:?}.", exit_reason),
-			Error::UnknownIOPort(ref port) => write!(f, "Unknown io port 0x{}.", port),
+			Error::UnknownIOPort(ref port) => write!(f, "Unknown io port 0x{:x}.", port),
 			Error::Shutdown => write!(f, "Receives shutdown command"),
 			Error::KVMInitFailed => write!(f, "Unable to initialize KVM"),
 			Error::KVMUnableToCreateVM => write!(f, "Unable to create VM"),
+			Error::KVMUnableToCreateIrqChip => write!(f, "Unable to create irqchip"),
+			Error::KVMUnableToCreatePit2 => write!(f, "Unable to create pit2"),
 			Error::ParseMemory => write!(f, "Couldn't parse the guest memory size from the environment"),
 			Error::UnhandledExitReason => write!(f, "Unhandled exit reason")
 		}

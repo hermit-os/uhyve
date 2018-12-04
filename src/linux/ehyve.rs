@@ -49,6 +49,18 @@ impl Ehyve {
 	fn init(&mut self) -> Result<()> {
 		self.init_guest_mem();
 
+		debug!("Initialize interrupt controller");
+
+		match self.vm.create_irqchip() {
+			Err(_) => return Err(Error::KVMUnableToCreateIrqChip),
+			_ => {}
+		};
+
+		match self.vm.create_pit2() {
+			Err(_) => return Err(Error::KVMUnableToCreatePit2),
+			_ => {}
+		};
+
 		Ok(())
 	}
 }
