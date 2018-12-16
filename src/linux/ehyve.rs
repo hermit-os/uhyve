@@ -122,7 +122,7 @@ impl MmapMemorySlot {
         };
 
         if host_address == libc::MAP_FAILED {
-            panic!("mmapp failed with: {}", unsafe {
+            panic!("mmap failed with: {}", unsafe {
                 *libc::__errno_location()
             });
         }
