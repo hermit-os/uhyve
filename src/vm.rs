@@ -119,12 +119,12 @@ pub trait Vm {
 			libc::memset(pdpte as *mut _, 0x00, PAGE_SIZE);
 			libc::memset(pde as *mut _, 0x00, PAGE_SIZE);
 
-			*(pml4 as *mut u64) = BOOT_PDPTE | (X86_PDPT_P | X86_PDPT_RW);
-			*(pdpte as *mut u64) = BOOT_PDE | (X86_PDPT_P | X86_PDPT_RW);
+			*(pml4 as *mut u64) = BOOT_PDPTE | (X86_PDPT_P | X86_PDPT_RW | X86_PDPT_US);
+			*(pdpte as *mut u64) = BOOT_PDE | (X86_PDPT_P | X86_PDPT_RW | X86_PDPT_US);
 
 			let mut paddr = 0;
 			loop {
-				*(pde as *mut u64) = paddr | (X86_PDPT_P | X86_PDPT_RW | X86_PDPT_PS);
+				*(pde as *mut u64) = paddr | (X86_PDPT_P | X86_PDPT_RW | X86_PDPT_PS | X86_PDPT_US);
 
 				paddr += GUEST_PAGE_SIZE;
 				pde +=  mem::size_of::<*mut u64>() as u64;

@@ -22,7 +22,8 @@ pub const SHUTDOWN_PORT: u16	= 0xf4;
  * Intel long mode page directory/table entries
  */
 pub const X86_PDPT_P: u64       = (1u64 << 0);  /* Present */
-pub const X86_PDPT_RW: u64      = (1u64 << 1);  /* writeable */
+pub const X86_PDPT_RW: u64      = (1u64 << 1);  /* Writeable */
+pub const X86_PDPT_US: u64      = (1u64 << 2);  /* User/supervisor */
 pub const X86_PDPT_PS: u64      = (1u64 << 7);  /* Page size */
 
 pub const GUEST_PAGE_SIZE: u64  = 0x200000;     /* 2 MB pages in guest */
