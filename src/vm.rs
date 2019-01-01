@@ -5,6 +5,7 @@ use std::io::Cursor;
 use std::mem;
 use std::io::prelude::*;
 use std::io;
+use std::intrinsics::volatile_store;
 use libc;
 use memmap::Mmap;
 use elf;
@@ -21,11 +22,11 @@ use utils;
 use consts::*;
 
 #[repr(C)]
-pub struct KernelHeader {
-	pub num_cpus: u32,
-	pub cpus_online: u32,
-	pub cpu_freq: u32,
-	pub mem_limit: usize
+struct KernelHeader {
+	magic_number: u32,
+	version: u32,
+	mem_limit: u64,
+	num_cpus: u32
 }
 
 #[derive(Debug, Clone)]
@@ -160,6 +161,8 @@ pub trait Vm {
 		let (vm_mem, vm_mem_length) = self.guest_mem();
 		let kernel_file  = file.as_ref();
 
+		let mut first_load = true;
+
 		for header in file_elf.phdrs {
 			if header.progtype != PT_LOAD {
 				continue;
@@ -181,6 +184,23 @@ pub trait Vm {
 				libc::memset(vm_mem.offset(vm_end as isize) as *mut libc::c_void, 0x00,
 					(header.memsz - header.filesz) as usize);
 			}
+
+			unsafe {
+					if !first_load {
+						continue;
+					} else {
+						first_load = false;
+					}
+
+					let kernel_header = vm_mem.offset(header.paddr as isize) as *mut KernelHeader;
+
+					if (*kernel_header).magic_number == 0xDEADC0DEu32 {
+						debug!("Found latest eduOS-rs header at 0x{:x}", header.paddr as usize);
+						volatile_store(&mut (*kernel_header).mem_limit, vm_mem_length as u64);   // memory size
+						volatile_store(&mut (*kernel_header).num_cpus, 1);
+					}
+				}
+
 		}
 
 		debug!("Kernel loaded");
