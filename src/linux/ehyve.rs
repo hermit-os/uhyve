@@ -23,7 +23,7 @@ pub struct Ehyve {
 }
 
 impl Ehyve {
-    pub fn new(kernel_path: String, mem_size: usize, num_cpus: u32, file_path: Option<String>) -> Result<Ehyve> {
+	pub fn new(kernel_path: String, mem_size: usize, num_cpus: u32, file_path: Option<String>) -> Result<Ehyve> {
 		let api = KVM.api_version().unwrap();
 		debug!("KVM API version {}", api);
 
@@ -60,7 +60,7 @@ impl Ehyve {
 					flags: 0,
 					memory_size: 0,
 					guest_address: 0,
-				    host_address: std::ptr::null_mut()
+					host_address: std::ptr::null_mut()
 				}
 			}
 		};
@@ -76,8 +76,8 @@ impl Ehyve {
 
 		hyve.init()?;
 
-        Ok(hyve)
-    }
+		Ok(hyve)
+	}
 
 	fn init(&mut self) -> Result<()> {
 		self.init_guest_mem();
@@ -118,7 +118,7 @@ impl Vm for Ehyve {
 	}
 
 	fn kernel_path(&self) -> &str {
-			&self.path
+		&self.path
 	}
 
 	fn create_cpu(&self, id: u32) -> Result<Box<VirtualCPU>> {
@@ -131,9 +131,9 @@ impl Vm for Ehyve {
 }
 
 impl Drop for Ehyve {
-    fn drop(&mut self) {
-        debug!("Drop virtual machine");
-    }
+	fn drop(&mut self) {
+		debug!("Drop virtual machine");
+	}
 }
 
 unsafe impl Send for Ehyve {}
@@ -143,73 +143,75 @@ unsafe impl Sync for Ehyve {}
 struct MmapMemorySlot {
 	id: u32,
 	flags: u32,
-    memory_size: usize,
-    guest_address: u64,
-    host_address: *mut libc::c_void
+	memory_size: usize,
+	guest_address: u64,
+	host_address: *mut libc::c_void
 }
 
 impl MmapMemorySlot {
-    pub fn new(id: u32, flags: u32, memory_size: usize, guest_address: u64) -> MmapMemorySlot {
-        let host_address = unsafe {
-            libc::mmap(
-                std::ptr::null_mut(),
-                memory_size,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_NORESERVE,
-                -1,
-                0,
-            )
-        };
+	pub fn new(id: u32, flags: u32, memory_size: usize, guest_address: u64) -> MmapMemorySlot {
+		let host_address = unsafe {
+			libc::mmap(
+				std::ptr::null_mut(),
+				memory_size,
+				libc::PROT_READ | libc::PROT_WRITE,
+				libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_NORESERVE,
+				-1,
+				0,
+			)
+		};
 
-        if host_address == libc::MAP_FAILED {
-            panic!("mmap failed with: {}", unsafe {
-                *libc::__errno_location()
-            });
-        }
+		if host_address == libc::MAP_FAILED {
+			panic!("mmap failed with: {}", unsafe {
+				*libc::__errno_location()
+			});
+		}
 
-        MmapMemorySlot {
+		MmapMemorySlot {
 			id: id,
 			flags: flags,
-            memory_size: memory_size,
-            guest_address: guest_address,
-            host_address
-        }
-    }
+			memory_size: memory_size,
+			guest_address: guest_address,
+			host_address
+		}
+	}
 
-    fn as_slice_mut(&mut self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.host_address as *mut u8, self.memory_size) }
-    }
+	fn as_slice_mut(&mut self) -> &mut [u8] {
+		unsafe { std::slice::from_raw_parts_mut(self.host_address as *mut u8, self.memory_size) }
+	}
 }
 
 impl MemorySlot for MmapMemorySlot {
-    fn slot_id(&self) -> u32 {
-        self.id
-    }
+	fn slot_id(&self) -> u32 {
+		self.id
+	}
 
-    fn flags(&self) -> u32 {
-        self.flags
-    }
+	fn flags(&self) -> u32 {
+		self.flags
+	}
 
-    fn memory_size(&self) -> usize {
-        self.memory_size
-    }
+	fn memory_size(&self) -> usize {
+		self.memory_size
+	}
 
-    fn guest_address(&self) -> u64 {
-        self.guest_address
-    }
+	fn guest_address(&self) -> u64 {
+		self.guest_address
+	}
 
-    fn host_address(&self) -> u64 {
-        self.host_address as u64
-    }
+	fn host_address(&self) -> u64 {
+		self.host_address as u64
+	}
 }
 
 impl Drop for MmapMemorySlot {
-    fn drop(&mut self) {
-        let result = unsafe { libc::munmap(self.host_address, self.memory_size) };
-        if result != 0 {
-            panic!("munmap failed with: {}", unsafe {
-                *libc::__errno_location()
-            });
-        }
-    }
+	fn drop(&mut self) {
+		if self.memory_size > 0 {
+			let result = unsafe { libc::munmap(self.host_address, self.memory_size) };
+			if result != 0 {
+				panic!("munmap failed with: {}", unsafe {
+					*libc::__errno_location()
+				});
+			}
+		}
+	}
 }
