@@ -2,6 +2,8 @@
 //! create a Virtual Machine and load the kernel.
 
 use std;
+use std::io::prelude::*;
+use std::fs::File;
 use libc;
 use vm::{Vm, VirtualCPU};
 use error::*;
@@ -9,17 +11,19 @@ use linux::KVM;
 use linux::vcpu::*;
 use libkvm::vm::VirtualMachine;
 use libkvm::mem::MemorySlot;
+use libkvm::linux::kvm_bindings::KVM_MEM_READONLY;
 
 pub struct Ehyve {
 	vm: VirtualMachine,
 	entry_point: u64,
 	mem: MmapMemorySlot,
+	file: MmapMemorySlot,
 	num_cpus: u32,
 	path: String
 }
 
 impl Ehyve {
-    pub fn new(path: String, mem_size: usize, num_cpus: u32) -> Result<Ehyve> {
+    pub fn new(kernel_path: String, mem_size: usize, num_cpus: u32, file_path: Option<String>) -> Result<Ehyve> {
 		let api = KVM.api_version().unwrap();
 		debug!("KVM API version {}", api);
 
@@ -30,15 +34,44 @@ impl Ehyve {
 			vm.set_tss_address(0xfffbd000).unwrap();
 		}
 
-		let mem = MmapMemorySlot::new(mem_size, 0);
+		let mem = MmapMemorySlot::new(0, 0, mem_size, 0);
 		vm.set_user_memory_region(&mem).unwrap();
+
+		let file = match file_path {
+			Some(fname) => {
+				debug!("Map {} into the guest space", fname);
+
+				let mut f = File::open(fname.clone()).map_err(|_| Error::InvalidFile(fname.clone().into()))?;
+				let metadata = f.metadata().expect("Unable to create metadata");
+				let slot_len = ((metadata.len() + (0x1000u64 - 1u64)) & !(0x1000u64 - 1u64)) as usize;
+
+				// map file after the guest memory
+				let mut slot = MmapMemorySlot::new(1, KVM_MEM_READONLY, slot_len, mem_size as u64 + 0x200000u64);
+				// load file
+				f.read(slot.as_slice_mut()).map_err(|_| Error::InvalidFile(fname.clone().into()))?;
+				// map file into the guest space
+				vm.set_user_memory_region(&slot).unwrap();
+
+				slot
+			},
+			None => {
+				MmapMemorySlot {
+					id: !0,
+					flags: 0,
+					memory_size: 0,
+					guest_address: 0,
+				    host_address: std::ptr::null_mut()
+				}
+			}
+		};
 
 		let mut hyve = Ehyve {
 			vm: vm,
 			entry_point: 0,
 			mem: mem,
+			file: file,
 			num_cpus: num_cpus,
-			path: path
+			path: kernel_path
 		};
 
 		hyve.init()?;
@@ -91,6 +124,10 @@ impl Vm for Ehyve {
 	fn create_cpu(&self, id: u32) -> Result<Box<VirtualCPU>> {
 		Ok(Box::new(EhyveCPU::new(id, self.vm.create_vcpu().unwrap())))
 	}
+
+	fn file(&self) -> (u64, u64) {
+		(self.file.guest_address as u64, self.file.memory_size as u64)
+	}
 }
 
 impl Drop for Ehyve {
@@ -102,14 +139,17 @@ impl Drop for Ehyve {
 unsafe impl Send for Ehyve {}
 unsafe impl Sync for Ehyve {}
 
+#[derive(Debug)]
 struct MmapMemorySlot {
+	id: u32,
+	flags: u32,
     memory_size: usize,
     guest_address: u64,
-    host_address: *mut libc::c_void,
+    host_address: *mut libc::c_void
 }
 
 impl MmapMemorySlot {
-    pub fn new(memory_size: usize, guest_address: u64) -> MmapMemorySlot {
+    pub fn new(id: u32, flags: u32, memory_size: usize, guest_address: u64) -> MmapMemorySlot {
         let host_address = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
@@ -128,9 +168,11 @@ impl MmapMemorySlot {
         }
 
         MmapMemorySlot {
+			id: id,
+			flags: flags,
             memory_size: memory_size,
             guest_address: guest_address,
-            host_address,
+            host_address
         }
     }
 
@@ -141,11 +183,11 @@ impl MmapMemorySlot {
 
 impl MemorySlot for MmapMemorySlot {
     fn slot_id(&self) -> u32 {
-        0
+        self.id
     }
 
     fn flags(&self) -> u32 {
-        0
+        self.flags
     }
 
     fn memory_size(&self) -> usize {

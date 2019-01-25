@@ -8,6 +8,8 @@ extern crate elf;
 extern crate x86;
 extern crate aligned_alloc;
 #[macro_use]
+extern crate clap;
+#[macro_use]
 extern crate lazy_static;
 #[cfg(target_os = "macos")]
 extern crate hypervisor;
@@ -37,13 +39,50 @@ use std::env;
 use std::thread;
 use std::sync::Arc;
 use vm::*;
-use error::*;
+use clap::{Arg,App};
+use consts::*;
+
+pub fn parse_bool(name: &str, default: bool) -> bool {
+	env::var(name).map(|x| x.parse::<i32>().unwrap_or(default as i32) != 0).unwrap_or(default)
+}
 
 fn main() {
 	env_logger::init();
 
-    let path = env::args().nth(1).expect("Expect path to the kernel!");
-	let mut vm = create_vm(path, VmParameter::from_env()).unwrap();
+	let matches = App::new("eHyve")
+				.version(crate_version!())
+				.author("Stefan Lankes <slankes@eonerc.rwth-aachen.de>")
+				.about("A minimal hypervisor for eduOS-rs")
+				.arg(Arg::with_name("FILE")
+					.short("f")
+					.long("file")
+					.value_name("FILE")
+					.help("Map FILE into the address space of the guest")
+					.takes_value(true))
+				.arg(Arg::with_name("MEM")
+					.short("m")
+					.long("memsize")
+					.value_name("MEM")
+					.help("Memory size of the guest")
+					.takes_value(true))
+				.arg(Arg::with_name("CPUS")
+					.short("c")
+					.long("cpus")
+					.value_name("CPUS")
+					.help("Number of guest processors")
+					.takes_value(true))
+				.arg(Arg::with_name("KERNEL")
+                	.help("Sets path to the kernel")
+                	.required(true)
+                    .index(1))
+				.get_matches();
+
+	let path = matches.value_of("KERNEL").expect("Expect path to the kernel!");
+	let file = matches.value_of("FILE").map(str::to_string);
+	let mem_size: usize = matches.value_of("MEM").map(|x| utils::parse_mem(&x).unwrap_or(DEFAULT_GUEST_SIZE)).unwrap_or(DEFAULT_GUEST_SIZE);
+	let num_cpus: u32 = matches.value_of("CPUS").map(|x| utils::parse_u32(&x).unwrap_or(1)).unwrap_or(1);
+
+	let mut vm = create_vm(path.to_string(), VmParameter::new(mem_size, num_cpus, file)).unwrap();
 	let num_cpus = vm.num_cpus();
 
 	vm.load_kernel().unwrap();

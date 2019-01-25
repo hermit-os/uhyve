@@ -147,6 +147,7 @@ impl VirtualCPU for EhyveCPU {
 					break;
 				},
 				KVM_EXIT_SHUTDOWN => {
+					self.print_registers();
 					info!("Shutdown Exit");
 					break;
 				},

@@ -29,7 +29,7 @@ pub struct Ehyve {
 }
 
 impl Ehyve {
-    pub fn new(path: String, mem_size: usize, num_cpus: u32) -> Result<Ehyve> {
+    pub fn new(path: String, mem_size: usize, num_cpus: u32, _app: Option<String>) -> Result<Ehyve> {
 		check_hypervisor();
 
 		let mut p = Partition::new().unwrap();
@@ -130,6 +130,10 @@ impl Vm for Ehyve {
 	fn create_cpu(&self, id: u32) -> Result<Box<VirtualCPU>> {
         let vcpu = self.partition.create_virtual_processor(id).unwrap();
 		Ok(Box::new(EhyveCPU::new(id, vcpu)))
+	}
+
+	fn file(&self) -> (u64, u64) {
+		(0, 0)
 	}
 }
 

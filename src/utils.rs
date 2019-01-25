@@ -16,3 +16,7 @@ pub fn parse_mem(mem: &str) -> Result<usize> {
 
     Ok(num*factor)
 }
+
+pub fn parse_u32(s: &str) -> Result<u32> {
+	s.parse::<u32>().map_err(|_| Error::ParseMemory)
+}

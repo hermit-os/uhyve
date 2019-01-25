@@ -1,10 +1,7 @@
 use std;
-use std::env;
 use std::fs::File;
 use std::io::Cursor;
 use std::mem;
-use std::io::prelude::*;
-use std::io;
 use std::intrinsics::volatile_store;
 use libc;
 use memmap::Mmap;
@@ -18,35 +15,39 @@ pub use linux::ehyve::*;
 pub use macos::ehyve::*;
 #[cfg(target_os = "windows")]
 pub use windows::ehyve::*;
-use utils;
 use consts::*;
 
 #[repr(C)]
-struct KernelHeader {
+struct KernelHeaderV0 {
 	magic_number: u32,
 	version: u32,
 	mem_limit: u64,
 	num_cpus: u32
 }
 
+#[repr(C)]
+struct KernelHeaderV1 {
+	magic_number: u32,
+	version: u32,
+	mem_limit: u64,
+	num_cpus: u32,
+	file_addr: u64,
+	file_length: u64
+}
+
 #[derive(Debug, Clone)]
 pub struct VmParameter {
 	pub mem_size: usize,
-	pub num_cpus: u32
+	pub num_cpus: u32,
+	pub file: Option<String>
 }
 
 impl VmParameter {
-	pub fn parse_bool(name: &str, default: bool) -> bool {
-		env::var(name).map(|x| x.parse::<i32>().unwrap_or(default as i32) != 0).unwrap_or(default)
-	}
-
-	pub fn from_env() -> VmParameter {
-		let mem_size: usize = env::var("EHYVE_MEM").map(|x| utils::parse_mem(&x).unwrap_or(DEFAULT_GUEST_SIZE)).unwrap_or(DEFAULT_GUEST_SIZE);
-		let num_cpus: u32 = env::var("EHYVE_CPUS").map(|x| x.parse().unwrap_or(1)).map(|x| if x == 0 { 1 } else { x }).unwrap_or(1);
-
+	pub fn new(mem_size: usize, num_cpus: u32, file: Option<String>) -> Self {
 		VmParameter {
 			mem_size: mem_size,
-			num_cpus: num_cpus
+			num_cpus: num_cpus,
+			file: file
 		}
 	}
 }
@@ -90,6 +91,7 @@ pub trait Vm {
 	fn get_entry_point(&self) -> u64;
 	fn kernel_path(&self) -> &str;
 	fn create_cpu(&self, id: u32) -> Result<Box<VirtualCPU>>;
+	fn file(&self) -> (u64, u64);
 
 	fn init_guest_mem(&self)
 	{
@@ -192,12 +194,17 @@ pub trait Vm {
 						first_load = false;
 					}
 
-					let kernel_header = vm_mem.offset(header.paddr as isize) as *mut KernelHeader;
+					let kernel_header = vm_mem.offset(header.paddr as isize) as *mut KernelHeaderV1;
 
 					if (*kernel_header).magic_number == 0xDEADC0DEu32 {
 						debug!("Found latest eduOS-rs header at 0x{:x}", header.paddr as usize);
+						volatile_store(&mut (*kernel_header).version, 1);   // memory size
 						volatile_store(&mut (*kernel_header).mem_limit, vm_mem_length as u64);   // memory size
 						volatile_store(&mut (*kernel_header).num_cpus, 1);
+
+						let (addr, len) = self.file();
+						volatile_store(&mut (*kernel_header).file_addr, addr);
+						volatile_store(&mut (*kernel_header).file_length, len);
 					}
 				}
 
@@ -211,7 +218,7 @@ pub trait Vm {
 
 pub fn create_vm(path: String, specs: super::vm::VmParameter) -> Result<Ehyve> {
 	let vm = match specs {
-		super::vm::VmParameter{ mem_size, num_cpus } => Ehyve::new(path, mem_size, num_cpus)?,
+		super::vm::VmParameter{ mem_size, num_cpus, file } => Ehyve::new(path, mem_size, num_cpus, file)?,
 	};
 
 	Ok(vm)
