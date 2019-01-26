@@ -1,4 +1,7 @@
 use std;
+use std::borrow::BorrowMut;
+use std::io::prelude::*;
+use std::io::{self, Write};
 use consts::*;
 use vm::VirtualCPU;
 use error::*;
@@ -9,6 +12,41 @@ use x86::shared::PrivilegeLevel;
 use libwhp::instruction_emulator::*;
 use libwhp::memory::*;
 use libwhp::*;
+
+const CPUID_EXT_HYPERVISOR: UINT32 = 1 << 31;
+
+fn handle_cpuid_exit(vp: &mut VirtualProcessor, exit_context: &WHV_RUN_VP_EXIT_CONTEXT) {
+	let cpuid_access = unsafe { exit_context.anon_union.CpuidAccess };
+	debug!("Got CPUID leaf: {}", cpuid_access.Rax);
+
+	const NUM_REGS: UINT32 = 5;
+	let mut reg_names: [WHV_REGISTER_NAME; NUM_REGS as usize] = unsafe { std::mem::zeroed() };
+	let mut reg_values: [WHV_REGISTER_VALUE; NUM_REGS as usize] = unsafe { std::mem::zeroed() };
+
+	reg_names[0] = WHV_REGISTER_NAME::WHvX64RegisterRip;
+	reg_names[1] = WHV_REGISTER_NAME::WHvX64RegisterRax;
+	reg_names[2] = WHV_REGISTER_NAME::WHvX64RegisterRbx;
+	reg_names[3] = WHV_REGISTER_NAME::WHvX64RegisterRcx;
+	reg_names[4] = WHV_REGISTER_NAME::WHvX64RegisterRdx;
+
+	reg_values[0].Reg64 =
+	exit_context.VpContext.Rip + exit_context.VpContext.InstructionLength() as u64;
+	reg_values[1].Reg64 = cpuid_access.DefaultResultRax;
+	reg_values[2].Reg64 = cpuid_access.DefaultResultRbx;
+	reg_values[3].Reg64 = cpuid_access.DefaultResultRcx;
+	reg_values[4].Reg64 = cpuid_access.DefaultResultRdx;
+
+	match cpuid_access.Rax {
+		1 => {
+			reg_values[3].Reg64 = CPUID_EXT_HYPERVISOR as UINT64;
+		}
+		_ => {
+			println!("Unknown CPUID leaf: {}", cpuid_access.Rax);
+		}
+	}
+
+	vp.set_registers(&reg_names, &reg_values).unwrap();
+}
 
 pub struct EhyveCPU
 {
@@ -115,6 +153,9 @@ impl VirtualCPU for EhyveCPU {
 				        &exit_context.VpContext,
 				        io_port_access_ctx,
 				    ).unwrap();
+				},
+				WHV_RUN_VP_EXIT_REASON::WHvRunVpExitReasonX64Cpuid => {
+					handle_cpuid_exit(&mut self.vcpu.borrow_mut(), &exit_context)
 				},
 				_ => {
 					error!("Unhandled exit reason: {:?}", exit_context.ExitReason);
@@ -249,12 +290,16 @@ impl EmulatorCallbacks for EhyveCPU {
         _context: *mut VOID,
         io_access: &mut WHV_EMULATOR_IO_ACCESS_INFO,
     ) -> HRESULT {
-		let cstr = unsafe {
-			std::str::from_utf8(std::slice::from_raw_parts(&io_access.Data as *const _ as *const u8,
-				io_access.AccessSize as usize)).unwrap()
-		};
+		if io_access.Port == 0x3f8 {
+			let cstr = unsafe {
+				std::str::from_utf8(std::slice::from_raw_parts(&io_access.Data as *const _ as *const u8,
+					io_access.AccessSize as usize)).unwrap()
+			};
 
-		self.io_exit(io_access.Port, cstr.to_string()).unwrap();
+			self.io_exit(io_access.Port, cstr.to_string()).unwrap();
+		} else {
+            debug!("Ignore IO port 0x{:x}", io_access.Port);
+        }
 
         S_OK
     }

@@ -1,6 +1,8 @@
 use std;
 use std::mem;
 use std::rc::Rc;
+use std::fs::File;
+use std::io::Read;
 use libc::c_void;
 use vm::{Vm, VirtualCPU};
 use consts::*;
@@ -18,50 +20,88 @@ fn check_hypervisor() {
     }
 }
 
+#[derive(Clone)]
+struct GuestFile {
+    guest_addr: u64,
+    len: u64,
+    file_mem: Rc<VirtualMemory>,
+    gpa_mapping: Rc<GPARangeMapping>
+}
+
 pub struct Ehyve {
-	entry_point: u64,
-	mem_size: usize,
-	partition: Rc<Partition>,
-	guest_mem: Rc<VirtualMemory>,
+    entry_point: u64,
+    mem_size: usize,
+    partition: Rc<Partition>,
+    guest_mem: Rc<VirtualMemory>,
     gpa_mapping : Rc<GPARangeMapping>,
-	num_cpus: u32,
-	path: String
+    file: Option<GuestFile>,
+    num_cpus: u32,
+    path: String
 }
 
 impl Ehyve {
-    pub fn new(path: String, mem_size: usize, num_cpus: u32, _app: Option<String>) -> Result<Ehyve> {
-		check_hypervisor();
+    pub fn new(path: String, mem_size: usize, num_cpus: u32, file_path: Option<String>) -> Result<Ehyve> {
+        check_hypervisor();
 
-		let mut p = Partition::new().unwrap();
-	    Ehyve::setup_partition(&mut p);
+        let mut p = Partition::new().unwrap();
+        Ehyve::setup_partition(&mut p);
 
-	    let payload_mem = VirtualMemory::new(mem_size).unwrap();
+        let payload_mem = VirtualMemory::new(mem_size).unwrap();
 
-	    let guest_address: WHV_GUEST_PHYSICAL_ADDRESS = 0;
+        let guest_address: WHV_GUEST_PHYSICAL_ADDRESS = 0;
 
-	    let mapping = p.map_gpa_range(
-	        &payload_mem,
-	        guest_address,
-	        payload_mem.get_size() as UINT64,
-	        WHV_MAP_GPA_RANGE_FLAGS::WHvMapGpaRangeFlagRead
-	            | WHV_MAP_GPA_RANGE_FLAGS::WHvMapGpaRangeFlagWrite
-	            | WHV_MAP_GPA_RANGE_FLAGS::WHvMapGpaRangeFlagExecute,
-	    ).unwrap();
+        let mapping = p.map_gpa_range(
+            &payload_mem,
+            guest_address,
+            payload_mem.get_size() as UINT64,
+            WHV_MAP_GPA_RANGE_FLAGS::WHvMapGpaRangeFlagRead
+            | WHV_MAP_GPA_RANGE_FLAGS::WHvMapGpaRangeFlagWrite
+            | WHV_MAP_GPA_RANGE_FLAGS::WHvMapGpaRangeFlagExecute,
+        ).unwrap();
 
-		let hyve = Ehyve {
-			entry_point: 0,
-			mem_size: mem_size,
-			partition: Rc::new(p),
-			guest_mem: Rc::new(payload_mem),
+        let guest_file = match file_path {
+            Some(fname) => {
+                debug!("Map {} into the guest space", fname);
+
+                let mut f = File::open(fname.clone()).map_err(|_| Error::InvalidFile(fname.clone().into()))?;
+                let metadata = f.metadata().expect("Unable to create metadata");
+                let file_len = ((metadata.len() + (0x1000u64 - 1u64)) & !(0x1000u64 - 1u64)) as usize;
+
+                let mut file_mem = VirtualMemory::new(file_len as usize).unwrap();
+                f.read(file_mem.as_slice_mut()).map_err(|_| Error::InvalidFile(fname.clone().into()))?;
+
+                let file_mapping = p.map_gpa_range(
+                    &file_mem,
+                    guest_address + payload_mem.get_size() as u64 + 0x200000u64,
+                    file_len as UINT64,
+                    WHV_MAP_GPA_RANGE_FLAGS::WHvMapGpaRangeFlagRead,
+                ).unwrap();
+
+                Some(GuestFile {
+                    guest_addr: guest_address + payload_mem.get_size() as u64 + 0x200000u64,
+                    len: file_len as u64,
+                    file_mem: Rc::new(file_mem),
+                    gpa_mapping: Rc::new(file_mapping)
+                })
+            },
+            _ => { None }
+        };
+
+        let hyve = Ehyve {
+            entry_point: 0,
+            mem_size: mem_size,
+            partition: Rc::new(p),
+            guest_mem: Rc::new(payload_mem),
             gpa_mapping: Rc::new(mapping),
-			num_cpus: num_cpus,
-			path: path
+            file: guest_file,
+            num_cpus: num_cpus,
+            path: path
         };
 
         hyve.init_guest_mem();
 
-		Ok(hyve)
-	}
+        Ok(hyve)
+    }
 
 	fn setup_partition(partition: &mut Partition) {
 	    let mut property: WHV_PARTITION_PROPERTY = unsafe { std::mem::zeroed() };
@@ -133,7 +173,11 @@ impl Vm for Ehyve {
 	}
 
 	fn file(&self) -> (u64, u64) {
-		(0, 0)
+        if let Some(ref f) = self.file {
+            (f.guest_addr, f.len)
+        } else {
+            (0, 0)
+        }
 	}
 }
 
