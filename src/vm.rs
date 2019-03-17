@@ -2,7 +2,8 @@ use std;
 use std::fs::File;
 use std::io::Cursor;
 use std::mem;
-use std::intrinsics::volatile_store;
+use std::intrinsics::{volatile_store, volatile_load};
+use std::time::SystemTime;
 use libc;
 use memmap::Mmap;
 use elf;
@@ -18,7 +19,7 @@ pub use windows::ehyve::*;
 use consts::*;
 
 #[repr(C)]
-struct KernelHeaderV0 {
+struct KernelHeaderEduV0 {
 	magic_number: u32,
 	version: u32,
 	mem_limit: u64,
@@ -26,13 +27,40 @@ struct KernelHeaderV0 {
 }
 
 #[repr(C)]
-struct KernelHeaderV1 {
+struct KernelHeaderEduV1 {
 	magic_number: u32,
 	version: u32,
 	mem_limit: u64,
 	num_cpus: u32,
 	file_addr: u64,
 	file_length: u64
+}
+
+#[repr(C)]
+struct KernelHeaderHermitV0 {
+	magic_number: u32,
+	version: u32,
+	base: u64,
+	limit: u64,
+	image_size: u64,
+	current_stack_address: u64,
+	current_percore_address: u64,
+	host_logical_addr: u64,
+	boot_gtod: u64,
+	mb_info: u64,
+	cmdline: u64,
+	cmdsize: u64,
+	cpu_freq: u32,
+	boot_processor: u32,
+	cpu_online: u32,
+	possible_cpus: u32,
+	current_boot_id: u32,
+	uartport: u16,
+	single_kernel: u8,
+	uhyve: u8,
+	hcip: [u8; 4],
+	hcgateway: [u8; 4],
+	hcmask: [u8; 4],
 }
 
 #[derive(Debug, Clone)]
@@ -188,26 +216,48 @@ pub trait Vm {
 			}
 
 			unsafe {
-					if !first_load {
-						continue;
-					} else {
-						first_load = false;
-					}
-
-					let kernel_header = vm_mem.offset(header.paddr as isize) as *mut KernelHeaderV1;
-
-					if (*kernel_header).magic_number == 0xDEADC0DEu32 {
-						debug!("Found latest eduOS-rs header at 0x{:x}", header.paddr as usize);
-						volatile_store(&mut (*kernel_header).version, 1);   // memory size
-						volatile_store(&mut (*kernel_header).mem_limit, vm_mem_length as u64);   // memory size
-						volatile_store(&mut (*kernel_header).num_cpus, 1);
-
-						let (addr, len) = self.file();
-						volatile_store(&mut (*kernel_header).file_addr, addr);
-						volatile_store(&mut (*kernel_header).file_length, len);
-					}
+				if !first_load {
+					continue;
+				} else {
+					first_load = false;
 				}
 
+				let magic_number = volatile_load(vm_mem.offset(header.paddr as isize) as *const u32);
+
+				if magic_number == 0xDEADC0DEu32 {
+					debug!("Found latest eduOS-rs header at 0x{:x}", header.paddr as usize);
+
+					let kernel_header = vm_mem.offset(header.paddr as isize) as *mut KernelHeaderEduV1;
+					volatile_store(&mut (*kernel_header).mem_limit, vm_mem_length as u64);   // memory size
+					volatile_store(&mut (*kernel_header).num_cpus, 1);
+					volatile_store(&mut (*kernel_header).version, 1);   // memory size
+
+					let (addr, len) = self.file();
+					volatile_store(&mut (*kernel_header).file_addr, addr);
+					volatile_store(&mut (*kernel_header).file_length, len);
+				} else if magic_number == 0xC0DECAFEu32 {
+					debug!("Found latest HermitCore header at 0x{:x}", header.paddr as usize);
+
+					let kernel_header = vm_mem.offset(header.paddr as isize) as *mut KernelHeaderHermitV0;
+					volatile_store(&mut (*kernel_header).base, header.paddr);
+					volatile_store(&mut (*kernel_header).limit, vm_mem_length as u64);   // memory size
+					volatile_store(&mut (*kernel_header).possible_cpus, 1);
+					volatile_store(&mut (*kernel_header).uhyve, 1);
+					volatile_store(&mut (*kernel_header).current_boot_id, 0);
+					volatile_store(&mut (*kernel_header).uartport, 0x800);
+					volatile_store(&mut (*kernel_header).current_stack_address,
+						header.paddr + mem::size_of::<KernelHeaderHermitV0>() as u64);
+
+					match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+						Ok(n) => volatile_store(&mut (*kernel_header).boot_gtod, n.as_secs() * 1000000),
+						Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+					}
+
+					volatile_store(&mut (*kernel_header).image_size, header.memsz);
+				} else {
+					panic!("Unable to detect kernel");
+				}
+			}
 		}
 
 		debug!("Kernel loaded");

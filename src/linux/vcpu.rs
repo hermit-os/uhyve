@@ -8,6 +8,8 @@ use linux::KVM;
 use x86::shared::control_regs::*;
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
+const CPUID_ENABLE_MSR: u32 = 1 << 5;
+const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 
 pub struct EhyveCPU
 {
@@ -32,7 +34,7 @@ impl EhyveCPU {
 			.unwrap();
 
 		let mut id_reg_values: [u32; 3] = [0; 3];
-		let id = "libkvm\0";
+		let id = "uhyve\0";
 		unsafe {
 			std::ptr::copy_nonoverlapping(id.as_ptr(), id_reg_values.as_mut_ptr() as *mut u8, id.len());
 		}
@@ -45,7 +47,17 @@ impl EhyveCPU {
 				.position(|&r| r.function == 1)
 				.unwrap();
 
-		kvm_cpuid_entries[i].ecx |= CPUID_EXT_HYPERVISOR;
+		// CPUID to define basic cpu features
+		kvm_cpuid_entries[i].ecx |= CPUID_EXT_HYPERVISOR; // propagate that we are running on a hypervisor
+		kvm_cpuid_entries[i].edx |= CPUID_ENABLE_MSR; // enable msr support
+
+		let i = kvm_cpuid_entries
+				.iter()
+				.position(|&r| r.function == 0x0A)
+				.unwrap();
+
+		// disable performance monitor
+		kvm_cpuid_entries[i].eax = 0x00;
 
 		self.vcpu.set_cpuid(&kvm_cpuid_entries).unwrap();
 	}
@@ -53,7 +65,7 @@ impl EhyveCPU {
 	fn setup_msrs(&self) {
 	    let msr_list = KVM.get_msr_index_list().unwrap();
 
-	    let msr_entries = msr_list
+	    let mut msr_entries = msr_list
 	        .iter()
 	        .map(|i| kvm_msr_entry {
 	            index: *i,
@@ -61,6 +73,10 @@ impl EhyveCPU {
 	            ..Default::default()
 	        })
 	        .collect::<Vec<_>>();
+
+		// enable fast string operations
+		msr_entries[0].index = MSR_IA32_MISC_ENABLE;
+		msr_entries[0].data = 1;
 
 	    self.vcpu.set_msrs(&msr_entries).unwrap();
 	}
@@ -76,7 +92,7 @@ impl EhyveCPU {
 		sregs.cr3 = BOOT_PML4;
 		sregs.cr4 = cr4;
 		sregs.cr0 = cr0;
-		sregs.efer = EFER_LME | EFER_LMA;
+		sregs.efer = EFER_LME | EFER_LMA | EFER_NXE;
 
 		let mut seg = kvm_segment {
 			base: 0,
@@ -129,6 +145,11 @@ impl VirtualCPU for EhyveCPU {
 	{
 		self.setup_long_mode(entry_point);
 		self.setup_cpuid();
+
+		// be sure that the multiprocessor is runable
+		let mp_state = kvm_mp_state { mp_state: KVM_MP_STATE_RUNNABLE };
+		self.vcpu.set_mp_state(&mp_state).unwrap();
+
 		self.setup_msrs();
 
 		Ok(())
@@ -141,6 +162,7 @@ impl VirtualCPU for EhyveCPU {
 		loop {
 			self.vcpu.run().unwrap();
 			let kvm_run = self.vcpu.kvm_run();
+			println!("reason {}", kvm_run.exit_reason);
 			match kvm_run.exit_reason {
 				KVM_EXIT_HLT => {
 					info!("Halt Exit");

@@ -49,10 +49,10 @@ pub fn parse_bool(name: &str, default: bool) -> bool {
 fn main() {
 	env_logger::init();
 
-	let matches = App::new("eHyve")
+	let matches = App::new("uhyve")
 				.version(crate_version!())
 				.author("Stefan Lankes <slankes@eonerc.rwth-aachen.de>")
-				.about("A minimal hypervisor for eduOS-rs")
+				.about("A minimal hypervisor for HermitCore")
 				.arg(Arg::with_name("FILE")
 					.short("f")
 					.long("file")
