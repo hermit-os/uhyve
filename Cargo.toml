@@ -1,8 +1,12 @@
 [package]
-name = "ehyve"
-version = "0.0.8"
+name = "uhyve"
+version = "0.0.1"
 authors = ["Stefan Lankes <slankes@eonerc.rwth-aachen>"]
-license = "MIT"
+license = "MIT/Apache-2.0"
+readme = "README.md"
+description = """
+A Rust-based, unikernel hypervisor
+"""
 
 [dependencies]
 log = "0.4"
