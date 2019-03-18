@@ -2,8 +2,9 @@ use std;
 use std::fs::File;
 use std::io::Cursor;
 use std::mem;
-use std::intrinsics::{volatile_store, volatile_load};
+use std::intrinsics::volatile_store;
 use std::time::SystemTime;
+use std::fmt;
 use libc;
 use memmap::Mmap;
 use elf;
@@ -19,25 +20,7 @@ pub use windows::ehyve::*;
 use consts::*;
 
 #[repr(C)]
-struct KernelHeaderEduV0 {
-	magic_number: u32,
-	version: u32,
-	mem_limit: u64,
-	num_cpus: u32
-}
-
-#[repr(C)]
-struct KernelHeaderEduV1 {
-	magic_number: u32,
-	version: u32,
-	mem_limit: u64,
-	num_cpus: u32,
-	file_addr: u64,
-	file_length: u64
-}
-
-#[repr(C)]
-struct KernelHeaderHermitV0 {
+struct KernelHeaderV0 {
 	magic_number: u32,
 	version: u32,
 	base: u64,
@@ -63,6 +46,18 @@ struct KernelHeaderHermitV0 {
 	hcmask: [u8; 4],
 }
 
+impl fmt::Debug for KernelHeaderV0 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "magic_number 0x{:x}", self.magic_number)?;
+		writeln!(f, "version 0x{:x}", self.version)?;
+		writeln!(f, "base 0x{:x}", self.base)?;
+		writeln!(f, "limit 0x{:x}", self.limit)?;
+		writeln!(f, "image_size 0x{:x}", self.image_size)?;
+		writeln!(f, "current_stack_address 0x{:x}", self.current_stack_address)?;
+		writeln!(f, "current_percore_address 0x{:x}", self.current_percore_address)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct VmParameter {
 	pub mem_size: usize,
@@ -82,17 +77,20 @@ impl VmParameter {
 
 pub trait VirtualCPU {
 	fn init(&mut self, entry_point: u64) -> Result<()>;
-	fn run(&mut self) -> Result<()>;
+	fn run(&mut self, verbose: bool) -> Result<()>;
 	fn print_registers(&self);
 
-	fn io_exit(&self, port: u16, message: String) -> Result<()>
+	fn io_exit(&self, port: u16, message: String, verbose: bool) -> Result<()>
 	{
 		match port {
-			COM_PORT => {
-				print!("{}", message);
-				//io::stdout().flush().ok().expect("Could not flush stdout");
+			UHYVE_UART_PORT => {
+				if verbose == true {
+					print!("{}", message);
+					//io::stdout().flush().ok().expect("Could not flush stdout");
+				}
 				Ok(())
 			},
+
 			SHUTDOWN_PORT => {
 				Err(Error::Shutdown)
 			},
@@ -191,7 +189,7 @@ pub trait Vm {
 		let (vm_mem, vm_mem_length) = self.guest_mem();
 		let kernel_file  = file.as_ref();
 
-		let mut first_load = true;
+		let mut pstart: u64 = 0;
 
 		for header in file_elf.phdrs {
 			if header.progtype != PT_LOAD {
@@ -205,7 +203,7 @@ pub trait Vm {
 			let kernel_end   = kernel_start + header.filesz as usize;
 
 			debug!("Load segment with start addr 0x{:x} and size 0x{:x}, offset 0x{:x}",
-			header.paddr, header.filesz, header.offset);
+				header.paddr, header.filesz, header.offset);
 
 			let vm_slice = unsafe { std::slice::from_raw_parts_mut(vm_mem, vm_mem_length) };
 			vm_slice[vm_start..vm_end].copy_from_slice(&kernel_file[kernel_start..kernel_end]);
@@ -216,47 +214,34 @@ pub trait Vm {
 			}
 
 			unsafe {
-				if !first_load {
-					continue;
-				} else {
-					first_load = false;
-				}
+				if pstart == 0 {
+					pstart = header.paddr as u64;
+					let kernel_header = vm_mem.offset(header.paddr as isize) as *mut KernelHeaderV0;
 
-				let magic_number = volatile_load(vm_mem.offset(header.paddr as isize) as *const u32);
+					if (*kernel_header).magic_number == 0xC0DECAFEu32 {
+						debug!("Found latest HermitCore header at 0x{:x}", header.paddr as usize);
 
-				if magic_number == 0xDEADC0DEu32 {
-					debug!("Found latest eduOS-rs header at 0x{:x}", header.paddr as usize);
+						volatile_store(&mut (*kernel_header).base, header.paddr);
+						volatile_store(&mut (*kernel_header).limit, vm_mem_length as u64);   // memory size
+						volatile_store(&mut (*kernel_header).possible_cpus, 1);
+						volatile_store(&mut (*kernel_header).uhyve, 1);
+						volatile_store(&mut (*kernel_header).current_boot_id, 0);
+						volatile_store(&mut (*kernel_header).uartport, UHYVE_UART_PORT);
+						volatile_store(&mut (*kernel_header).current_stack_address,
+							header.paddr + mem::size_of::<KernelHeaderV0>() as u64);
 
-					let kernel_header = vm_mem.offset(header.paddr as isize) as *mut KernelHeaderEduV1;
-					volatile_store(&mut (*kernel_header).mem_limit, vm_mem_length as u64);   // memory size
-					volatile_store(&mut (*kernel_header).num_cpus, 1);
-					volatile_store(&mut (*kernel_header).version, 1);   // memory size
-
-					let (addr, len) = self.file();
-					volatile_store(&mut (*kernel_header).file_addr, addr);
-					volatile_store(&mut (*kernel_header).file_length, len);
-				} else if magic_number == 0xC0DECAFEu32 {
-					debug!("Found latest HermitCore header at 0x{:x}", header.paddr as usize);
-
-					let kernel_header = vm_mem.offset(header.paddr as isize) as *mut KernelHeaderHermitV0;
-					volatile_store(&mut (*kernel_header).base, header.paddr);
-					volatile_store(&mut (*kernel_header).limit, vm_mem_length as u64);   // memory size
-					volatile_store(&mut (*kernel_header).possible_cpus, 1);
-					volatile_store(&mut (*kernel_header).uhyve, 1);
-					volatile_store(&mut (*kernel_header).current_boot_id, 0);
-					volatile_store(&mut (*kernel_header).uartport, 0x800);
-					volatile_store(&mut (*kernel_header).current_stack_address,
-						header.paddr + mem::size_of::<KernelHeaderHermitV0>() as u64);
-
-					match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-						Ok(n) => volatile_store(&mut (*kernel_header).boot_gtod, n.as_secs() * 1000000),
-						Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+							match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+								Ok(n) => volatile_store(&mut (*kernel_header).boot_gtod, n.as_secs() * 1000000),
+								Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+							}
+					} else {
+						panic!("Unable to detect kernel");
 					}
-
-					volatile_store(&mut (*kernel_header).image_size, header.memsz);
-				} else {
-					panic!("Unable to detect kernel");
 				}
+
+				// store total kernel size
+				let kernel_header = vm_mem.offset(pstart as isize) as *mut KernelHeaderV0;
+				volatile_store(&mut (*kernel_header).image_size, header.paddr + header.memsz - pstart);
 			}
 		}
 

@@ -155,14 +155,15 @@ impl VirtualCPU for EhyveCPU {
 		Ok(())
 	}
 
-	fn run(&mut self) -> Result<()>
+	fn run(&mut self, verbose: bool) -> Result<()>
 	{
 		//self.print_registers();
 
 		loop {
 			self.vcpu.run().unwrap();
 			let kvm_run = self.vcpu.kvm_run();
-			println!("reason {}", kvm_run.exit_reason);
+
+			//println!("reason {}", kvm_run.exit_reason);
 			match kvm_run.exit_reason {
 				KVM_EXIT_HLT => {
 					info!("Halt Exit");
@@ -171,6 +172,15 @@ impl VirtualCPU for EhyveCPU {
 				KVM_EXIT_SHUTDOWN => {
 					self.print_registers();
 					info!("Shutdown Exit");
+					break;
+				},
+				KVM_EXIT_MMIO => {
+					let mmio = unsafe { &kvm_run.__bindgen_anon_1.mmio };
+					info!("KVM: handled KVM_EXIT_MMIO at 0x{:x}", mmio.phys_addr);
+
+					/*if mmio.is_write != 0 {
+						self.print_registers();
+					}*/
 					break;
 				},
 				KVM_EXIT_IO => {
@@ -183,7 +193,7 @@ impl VirtualCPU for EhyveCPU {
 							let data_addr = kvm_run as *const _ as u64 + io.data_offset;
 							let data = unsafe { std::slice::from_raw_parts(data_addr as *const u8, io.size as usize) };
 
-							self.io_exit(io.port, std::str::from_utf8(data).unwrap().to_string())?;
+							self.io_exit(io.port, std::str::from_utf8(data).unwrap().to_string(), verbose)?;
 						}
 					} else {
 						info!("Unhandled IO exit: 0x{:x}", io.port);

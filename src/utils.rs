@@ -1,3 +1,4 @@
+use std::env;
 use error::*;
 
 pub fn parse_mem(mem: &str) -> Result<usize> {
@@ -19,4 +20,8 @@ pub fn parse_mem(mem: &str) -> Result<usize> {
 
 pub fn parse_u32(s: &str) -> Result<u32> {
 	s.parse::<u32>().map_err(|_| Error::ParseMemory)
+}
+
+pub fn parse_bool(name: &str, default: bool) -> bool {
+	env::var(name).map(|x| x.parse::<i32>().unwrap_or(default as i32) != 0).unwrap_or(default)
 }

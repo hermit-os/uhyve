@@ -35,16 +35,11 @@ pub mod utils;
 pub mod consts;
 pub mod error;
 
-use std::env;
 use std::thread;
 use std::sync::Arc;
 use vm::*;
 use clap::{Arg,App};
 use consts::*;
-
-pub fn parse_bool(name: &str, default: bool) -> bool {
-	env::var(name).map(|x| x.parse::<i32>().unwrap_or(default as i32) != 0).unwrap_or(default)
-}
 
 fn main() {
 	env_logger::init();
@@ -53,6 +48,10 @@ fn main() {
 				.version(crate_version!())
 				.author("Stefan Lankes <slankes@eonerc.rwth-aachen.de>")
 				.about("A minimal hypervisor for HermitCore")
+				.arg(Arg::with_name("VERBOSE")
+					.short("v")
+					.long("verbose")
+					.help("Print also kernel messages"))
 				.arg(Arg::with_name("FILE")
 					.short("f")
 					.long("file")
@@ -64,13 +63,15 @@ fn main() {
 					.long("memsize")
 					.value_name("MEM")
 					.help("Memory size of the guest")
-					.takes_value(true))
+					.takes_value(true)
+					.env("HERMIT_MEM"))
 				.arg(Arg::with_name("CPUS")
 					.short("c")
 					.long("cpus")
 					.value_name("CPUS")
 					.help("Number of guest processors")
-					.takes_value(true))
+					.takes_value(true)
+					.env("HERMIT_CPUS"))
 				.arg(Arg::with_name("KERNEL")
                 	.help("Sets path to the kernel")
                 	.required(true)
@@ -81,6 +82,11 @@ fn main() {
 	let file = matches.value_of("FILE").map(str::to_string);
 	let mem_size: usize = matches.value_of("MEM").map(|x| utils::parse_mem(&x).unwrap_or(DEFAULT_GUEST_SIZE)).unwrap_or(DEFAULT_GUEST_SIZE);
 	let num_cpus: u32 = matches.value_of("CPUS").map(|x| utils::parse_u32(&x).unwrap_or(1)).unwrap_or(1);
+
+	let mut verbose: bool = utils::parse_bool("HERMIT_VERBOSE", false);
+	if matches.is_present("VERBOSE") {
+		verbose = true;
+	}
 
 	let mut vm = create_vm(path.to_string(), VmParameter::new(mem_size, num_cpus, file)).unwrap();
 	let num_cpus = vm.num_cpus();
@@ -98,7 +104,7 @@ fn main() {
 				let mut cpu = vm.create_cpu(tid).unwrap();
 				cpu.init(vm.get_entry_point()).unwrap();
 
-				let result = cpu.run();
+				let result = cpu.run(verbose);
 				match result {
 					Ok(()) => {},
 					Err(x) => {
