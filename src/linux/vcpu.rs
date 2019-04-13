@@ -164,6 +164,7 @@ impl VirtualCPU for EhyveCPU {
 			let kvm_run = self.vcpu.kvm_run();
 
 			//println!("reason {}", kvm_run.exit_reason);
+			//self.print_registers();
 			match kvm_run.exit_reason {
 				KVM_EXIT_HLT => {
 					info!("Halt Exit");
@@ -178,9 +179,9 @@ impl VirtualCPU for EhyveCPU {
 					let mmio = unsafe { &kvm_run.__bindgen_anon_1.mmio };
 					info!("KVM: handled KVM_EXIT_MMIO at 0x{:x}", mmio.phys_addr);
 
-					/*if mmio.is_write != 0 {
+					if mmio.is_write != 0 {
 						self.print_registers();
-					}*/
+					}
 					break;
 				},
 				KVM_EXIT_IO => {
@@ -199,11 +200,17 @@ impl VirtualCPU for EhyveCPU {
 						info!("Unhandled IO exit: 0x{:x}", io.port);
 					}
 				},
+				KVM_EXIT_INTERNAL_ERROR => {
+					error!("Internal error: {:?}", kvm_run.exit_reason);
+					self.print_registers();
+
+					return Err(Error::UnknownExitReason(kvm_run.exit_reason));
+				},
 				_ => {
-					error!("Unknown exit reason: {:?}", kvm_run.exit_reason );
+					error!("Unknown exit reason: {:?}", kvm_run.exit_reason);
 					//self.print_registers();
 
-					return Err(Error::UnknownExitReason(kvm_run.exit_reason ));
+					return Err(Error::UnknownExitReason(kvm_run.exit_reason));
 				}
 			}
 		}
@@ -244,5 +251,6 @@ impl VirtualCPU for EhyveCPU {
 impl Drop for EhyveCPU {
     fn drop(&mut self) {
 		debug!("Drop vCPU {}", self.id);
+		//self.print_registers();
     }
 }

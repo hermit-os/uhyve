@@ -10,6 +10,7 @@ use memmap::Mmap;
 use elf;
 use elf::types::{ELFCLASS64, PT_LOAD, ET_EXEC, EM_X86_64};
 use error::*;
+use raw_cpuid::CpuId;
 
 #[cfg(target_os = "linux")]
 pub use linux::ehyve::*;
@@ -54,8 +55,21 @@ impl fmt::Debug for KernelHeaderV0 {
 		writeln!(f, "limit 0x{:x}", self.limit)?;
 		writeln!(f, "image_size 0x{:x}", self.image_size)?;
 		writeln!(f, "current_stack_address 0x{:x}", self.current_stack_address)?;
-		writeln!(f, "current_percore_address 0x{:x}", self.current_percore_address)
-    }
+		writeln!(f, "current_percore_address 0x{:x}", self.current_percore_address)?;
+		writeln!(f, "host_logical_addr 0x{:x}", self.host_logical_addr)?;
+		writeln!(f, "boot_gtod 0x{:x}", self.boot_gtod)?;
+		writeln!(f, "mb_info 0x{:x}", self.mb_info)?;
+		writeln!(f, "cmdline 0x{:x}", self.cmdline)?;
+		writeln!(f, "cmdsize 0x{:x}", self.cmdsize)?;
+		writeln!(f, "cpu_freq {}", self.cpu_freq)?;
+		writeln!(f, "boot_processor {}", self.boot_processor)?;
+		writeln!(f, "cpu_online {}", self.cpu_online)?;
+		writeln!(f, "possible_cpus {}", self.possible_cpus)?;
+		writeln!(f, "current_boot_id {}", self.current_boot_id)?;
+		writeln!(f, "uartport 0x{:x}", self.uartport)?;
+		writeln!(f, "single_kernel {}", self.single_kernel)?;
+		writeln!(f, "uhyve {}", self.uhyve)
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -80,8 +94,7 @@ pub trait VirtualCPU {
 	fn run(&mut self, verbose: bool) -> Result<()>;
 	fn print_registers(&self);
 
-	fn io_exit(&self, port: u16, message: String, verbose: bool) -> Result<()>
-	{
+	fn io_exit(&self, port: u16, message: String, verbose: bool) -> Result<()> {
 		match port {
 			UHYVE_UART_PORT => {
 				if verbose == true {
@@ -148,12 +161,13 @@ pub trait Vm {
 			libc::memset(pdpte as *mut _, 0x00, PAGE_SIZE);
 			libc::memset(pde as *mut _, 0x00, PAGE_SIZE);
 
-			*(pml4 as *mut u64) = BOOT_PDPTE | (X86_PDPT_P | X86_PDPT_RW | X86_PDPT_US);
-			*(pdpte as *mut u64) = BOOT_PDE | (X86_PDPT_P | X86_PDPT_RW | X86_PDPT_US);
+			*(pml4 as *mut u64) = BOOT_PDPTE | (X86_PDPT_P | X86_PDPT_RW);
+			*((pml4 + 511 * mem::size_of::<*mut u64>() as u64) as *mut u64) = BOOT_PML4 | (X86_PDPT_P | X86_PDPT_RW);
+			*(pdpte as *mut u64) = BOOT_PDE | (X86_PDPT_P | X86_PDPT_RW);
 
 			let mut paddr = 0;
 			loop {
-				*(pde as *mut u64) = paddr | (X86_PDPT_P | X86_PDPT_RW | X86_PDPT_PS | X86_PDPT_US);
+				*(pde as *mut u64) = paddr | (X86_PDPT_P | X86_PDPT_RW | X86_PDPT_PS);
 
 				paddr += GUEST_PAGE_SIZE;
 				pde +=  mem::size_of::<*mut u64>() as u64;
@@ -230,10 +244,21 @@ pub trait Vm {
 						volatile_store(&mut (*kernel_header).current_stack_address,
 							header.paddr + mem::size_of::<KernelHeaderV0>() as u64);
 
-							match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-								Ok(n) => volatile_store(&mut (*kernel_header).boot_gtod, n.as_secs() * 1000000),
-								Err(_) => panic!("SystemTime before UNIX EPOCH!"),
-							}
+						volatile_store(&mut (*kernel_header).host_logical_addr, vm_mem.offset(0) as u64);
+
+						match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+							Ok(n) => volatile_store(&mut (*kernel_header).boot_gtod, n.as_secs() * 1000000),
+							Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+						}
+
+						let cpuid = CpuId::new();
+
+						match cpuid.get_processor_frequency_info() {
+							Some(freqinfo) => {
+								volatile_store(&mut (*kernel_header).cpu_freq, freqinfo.processor_base_frequency() as u32);
+							},
+							None => info!("Unable to determine processor frequency!"),
+						}
 					} else {
 						panic!("Unable to detect kernel");
 					}
@@ -242,6 +267,7 @@ pub trait Vm {
 				// store total kernel size
 				let kernel_header = vm_mem.offset(pstart as isize) as *mut KernelHeaderV0;
 				volatile_store(&mut (*kernel_header).image_size, header.paddr + header.memsz - pstart);
+				//debug!("Set kernel header to {:?}", *kernel_header);
 			}
 		}
 

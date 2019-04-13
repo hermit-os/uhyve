@@ -23,6 +23,7 @@ extern crate libkvm;
 #[macro_use]
 extern crate log;
 extern crate env_logger;
+extern crate raw_cpuid;
 
 mod vm;
 #[cfg(target_os = "linux")]
