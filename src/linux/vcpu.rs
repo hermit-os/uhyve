@@ -188,7 +188,7 @@ impl VirtualCPU for EhyveCPU {
 					let io = unsafe { &kvm_run.__bindgen_anon_1.io };
 
 					if io.direction == KVM_EXIT_IO_OUT as u8 {
-						if io.port == SHUTDOWN_PORT {
+						if io.port == SHUTDOWN_PORT || io.port == UHYVE_PORT_EXIT {
 							return Ok(());
 						} else {
 							let data_addr = kvm_run as *const _ as u64 + io.data_offset;

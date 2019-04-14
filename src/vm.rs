@@ -103,7 +103,6 @@ pub trait VirtualCPU {
 				}
 				Ok(())
 			},
-
 			SHUTDOWN_PORT => {
 				Err(Error::Shutdown)
 			},
