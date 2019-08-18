@@ -1,15 +1,15 @@
-use std;
 use consts::*;
-use vm::VirtualCPU;
 use error::*;
-use hypervisor::{vCPU, x86Reg,read_vmx_cap,VMXCap};
+use hypervisor;
 use hypervisor::consts::vmcs::*;
 use hypervisor::consts::vmx_cap::*;
 use hypervisor::consts::vmx_exit::*;
-use hypervisor;
-use x86::shared::segmentation::*;
+use hypervisor::{read_vmx_cap, vCPU, x86Reg, VMXCap};
+use std;
+use vm::VirtualCPU;
 use x86::shared::control_regs::*;
 use x86::shared::msr::*;
+use x86::shared::segmentation::*;
 use x86::shared::PrivilegeLevel;
 
 fn allows_one_setting(msr_val: u64, bitpos: u32) -> bool {
@@ -32,7 +32,7 @@ fn set_ctlreg(cap_field: &VMXCap, ones_mask: u64, zeros_mask: u64) -> Result<u64
 	let mut retval: u64 = 0;
 	let cap: u64 = { read_vmx_cap(cap_field).unwrap() };
 
-	for i in 0..32  {
+	for i in 0..32 {
 		let one_allowed = allows_one_setting(cap, i);
 		let zero_allowed = allows_zero_setting(cap, i);
 
@@ -58,7 +58,10 @@ fn set_ctlreg(cap_field: &VMXCap, ones_mask: u64, zeros_mask: u64) -> Result<u64
 			} else if (ones_mask & (1 << i)) != 0 {
 				retval = retval | (1 << i);
 			} else {
-				debug!("set_ctlreg: cap_field: bit {} unspecified for {}", i, cap_field);
+				debug!(
+					"set_ctlreg: cap_field: bit {} unspecified for {}",
+					i, cap_field
+				);
 				return Err(Error::InternalError);
 			}
 		}
@@ -103,71 +106,152 @@ lazy_static! {
 }
 
 #[derive(Debug)]
-pub struct EhyveCPU
-{
+pub struct EhyveCPU {
 	id: u32,
-	vcpu: vCPU
+	vcpu: vCPU,
 }
 
 impl EhyveCPU {
-    pub fn new(id: u32) -> EhyveCPU {
+	pub fn new(id: u32) -> EhyveCPU {
 		EhyveCPU {
 			id: id,
-			vcpu: vCPU::new().unwrap()
+			vcpu: vCPU::new().unwrap(),
 		}
 	}
 
 	fn setup_system_gdt(&mut self) -> Result<()> {
 		debug!("Setup GDT");
 
-		self.vcpu.write_vmcs(VMCS_GUEST_CS_LIMIT, 0x000fffff).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_CS_BASE, 0).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_CS_AR, 	0xA09B).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_SS_LIMIT, 0x000fffff).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_SS_BASE, 0).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_SS_AR, 0xC093).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_DS_LIMIT, 0x000fffff).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_DS_BASE, 0).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_DS_AR, 0xC093).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_ES_LIMIT, 0x000fffff).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_ES_BASE, 0).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_ES_AR, 0xC093).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_FS_LIMIT, 0x000fffff).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_FS_BASE, 0).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_FS_AR, 0xC093).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_GS_LIMIT, 0x000fffff).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_GS_BASE, 0).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_GS_AR, 0xC093).or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_CS_LIMIT, 0x000fffff)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_CS_BASE, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_CS_AR, 0xA09B)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_SS_LIMIT, 0x000fffff)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_SS_BASE, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_SS_AR, 0xC093)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_DS_LIMIT, 0x000fffff)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_DS_BASE, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_DS_AR, 0xC093)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_ES_LIMIT, 0x000fffff)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_ES_BASE, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_ES_AR, 0xC093)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_FS_LIMIT, 0x000fffff)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_FS_BASE, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_FS_AR, 0xC093)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_GS_LIMIT, 0x000fffff)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_GS_BASE, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_GS_AR, 0xC093)
+			.or_else(to_error)?;
 
-		self.vcpu.write_vmcs(VMCS_GUEST_GDTR_BASE, BOOT_GDT).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_GDTR_LIMIT,
-			((std::mem::size_of::<u64>() * BOOT_GDT_MAX as usize) - 1) as u64).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_IDTR_BASE, 0).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_IDTR_LIMIT, 0xffff).or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_GDTR_BASE, BOOT_GDT)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(
+				VMCS_GUEST_GDTR_LIMIT,
+				((std::mem::size_of::<u64>() * BOOT_GDT_MAX as usize) - 1) as u64,
+			)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_IDTR_BASE, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_IDTR_LIMIT, 0xffff)
+			.or_else(to_error)?;
 
 		self.vcpu.write_vmcs(VMCS_GUEST_TR, 0).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_TR_LIMIT, 0xffff).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_TR_AR, 0x8b).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_TR_BASE, 0).or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_TR_LIMIT, 0xffff)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_TR_AR, 0x8b)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_TR_BASE, 0)
+			.or_else(to_error)?;
 
 		self.vcpu.write_vmcs(VMCS_GUEST_LDTR, 0).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_LDTR_LIMIT, 0xffff).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_LDTR_AR, 0x82).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_LDTR_BASE, 0).or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_LDTR_LIMIT, 0xffff)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_LDTR_AR, 0x82)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_LDTR_BASE, 0)
+			.or_else(to_error)?;
 
 		// Reload the segment descriptors
-		self.vcpu.write_register(&x86Reg::CS,
-			SegmentSelector::new(GDT_KERNEL_CODE as u16, PrivilegeLevel::Ring0).bits() as u64).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::DS,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).bits() as u64).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::ES,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).bits() as u64).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::SS,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).bits() as u64).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::FS,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).bits() as u64).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::GS,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).bits() as u64).or_else(to_error)?;
+		self.vcpu
+			.write_register(
+				&x86Reg::CS,
+				SegmentSelector::new(GDT_KERNEL_CODE as u16, PrivilegeLevel::Ring0).bits() as u64,
+			)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(
+				&x86Reg::DS,
+				SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).bits() as u64,
+			)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(
+				&x86Reg::ES,
+				SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).bits() as u64,
+			)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(
+				&x86Reg::SS,
+				SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).bits() as u64,
+			)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(
+				&x86Reg::FS,
+				SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).bits() as u64,
+			)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(
+				&x86Reg::GS,
+				SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).bits() as u64,
+			)
+			.or_else(to_error)?;
 
 		Ok(())
 	}
@@ -175,27 +259,58 @@ impl EhyveCPU {
 	fn setup_system_64bit(&mut self) -> Result<()> {
 		debug!("Setup 64bit mode");
 
-		let cr0 = (CR0_PROTECTED_MODE | CR0_ENABLE_PAGING | CR0_EXTENSION_TYPE | CR0_NUMERIC_ERROR).bits() as u64;
+		let cr0 = (CR0_PROTECTED_MODE | CR0_ENABLE_PAGING | CR0_EXTENSION_TYPE | CR0_NUMERIC_ERROR)
+			.bits() as u64;
 		let cr4 = CR4_ENABLE_PAE.bits() as u64;
 
-		self.vcpu.write_vmcs(VMCS_GUEST_IA32_EFER, EFER_LME | EFER_LMA).or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_IA32_EFER, EFER_LME | EFER_LMA)
+			.or_else(to_error)?;
 
-		self.vcpu.write_vmcs(VMCS_CTRL_CR0_MASK, (CR0_PROTECTED_MODE | CR0_ENABLE_PAGING).bits() as u64).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_CTRL_CR0_SHADOW,
-			(CR0_PROTECTED_MODE | CR0_ENABLE_PAGING).bits() as u64).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_CTRL_CR4_MASK,
-			(CR4_ENABLE_VMX|CR4_ENABLE_PAE).bits() as u64).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_CTRL_CR4_SHADOW,
-			CR4_ENABLE_PAE.bits() as u64).or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(
+				VMCS_CTRL_CR0_MASK,
+				(CR0_PROTECTED_MODE | CR0_ENABLE_PAGING).bits() as u64,
+			)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(
+				VMCS_CTRL_CR0_SHADOW,
+				(CR0_PROTECTED_MODE | CR0_ENABLE_PAGING).bits() as u64,
+			)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(
+				VMCS_CTRL_CR4_MASK,
+				(CR4_ENABLE_VMX | CR4_ENABLE_PAE).bits() as u64,
+			)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_CTRL_CR4_SHADOW, CR4_ENABLE_PAE.bits() as u64)
+			.or_else(to_error)?;
 
-		self.vcpu.write_register(&x86Reg::CR0, cr0).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::CR4, cr4).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::CR3, BOOT_PML4).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::DR7, 0).or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::CR0, cr0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::CR4, cr4)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::CR3, BOOT_PML4)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::DR7, 0)
+			.or_else(to_error)?;
 
-		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_ESP, 0).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_EIP, 0).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_IA32_DEBUGCTL, 0).or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_SYSENTER_ESP, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_SYSENTER_EIP, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_IA32_DEBUGCTL, 0)
+			.or_else(to_error)?;
 
 		Ok(())
 	}
@@ -203,18 +318,40 @@ impl EhyveCPU {
 	fn setup_msr(&mut self) -> Result<()> {
 		debug!("Enable MSR registers");
 
-		self.vcpu.enable_native_msr(IA32_FS_BASE, true).or_else(to_error)?;
-		self.vcpu.enable_native_msr(IA32_GS_BASE, true).or_else(to_error)?;
-		self.vcpu.enable_native_msr(IA32_KERNEL_GSBASE, true).or_else(to_error)?;
-		self.vcpu.enable_native_msr(IA32_SYSENTER_CS, true).or_else(to_error)?;
-		self.vcpu.enable_native_msr(IA32_SYSENTER_EIP, true).or_else(to_error)?;
-		self.vcpu.enable_native_msr(IA32_SYSENTER_ESP, true).or_else(to_error)?;
-		self.vcpu.enable_native_msr(IA32_STAR, true).or_else(to_error)?;
-		self.vcpu.enable_native_msr(IA32_LSTAR, true).or_else(to_error)?;
-		self.vcpu.enable_native_msr(IA32_CSTAR, true).or_else(to_error)?;
-		self.vcpu.enable_native_msr(IA32_FMASK, true).or_else(to_error)?;
+		self.vcpu
+			.enable_native_msr(IA32_FS_BASE, true)
+			.or_else(to_error)?;
+		self.vcpu
+			.enable_native_msr(IA32_GS_BASE, true)
+			.or_else(to_error)?;
+		self.vcpu
+			.enable_native_msr(IA32_KERNEL_GSBASE, true)
+			.or_else(to_error)?;
+		self.vcpu
+			.enable_native_msr(IA32_SYSENTER_CS, true)
+			.or_else(to_error)?;
+		self.vcpu
+			.enable_native_msr(IA32_SYSENTER_EIP, true)
+			.or_else(to_error)?;
+		self.vcpu
+			.enable_native_msr(IA32_SYSENTER_ESP, true)
+			.or_else(to_error)?;
+		self.vcpu
+			.enable_native_msr(IA32_STAR, true)
+			.or_else(to_error)?;
+		self.vcpu
+			.enable_native_msr(IA32_LSTAR, true)
+			.or_else(to_error)?;
+		self.vcpu
+			.enable_native_msr(IA32_CSTAR, true)
+			.or_else(to_error)?;
+		self.vcpu
+			.enable_native_msr(IA32_FMASK, true)
+			.or_else(to_error)?;
 		self.vcpu.enable_native_msr(TSC, true).or_else(to_error)?;
-		self.vcpu.enable_native_msr(IA32_TSC_AUX, true).or_else(to_error)?;
+		self.vcpu
+			.enable_native_msr(IA32_TSC_AUX, true)
+			.or_else(to_error)?;
 
 		Ok(())
 	}
@@ -222,61 +359,122 @@ impl EhyveCPU {
 	fn setup_capabilities(&mut self) -> Result<()> {
 		debug!("Setup VMX capabilities");
 
-		self.vcpu.write_vmcs(VMCS_CTRL_PIN_BASED, *CAP_PINBASED).or_else(to_error)?;
-		debug!("Pin-Based VM-Execution Controls 0x{:x}",
-			self.vcpu.read_vmcs(VMCS_CTRL_PIN_BASED).unwrap());
-		self.vcpu.write_vmcs(VMCS_CTRL_CPU_BASED, *CAP_PROCBASED).or_else(to_error)?;
-		debug!("Primary Processor-Based VM-Execution Controls 0x{:x}",
-			self.vcpu.read_vmcs(VMCS_CTRL_CPU_BASED).unwrap());
-		self.vcpu.write_vmcs(VMCS_CTRL_CPU_BASED2, *CAP_PROCBASED2).or_else(to_error)?;
-		debug!("Secondary Processor-Based VM-Execution Controls 0x{:x}",
-			self.vcpu.read_vmcs(VMCS_CTRL_CPU_BASED2).unwrap());
-		self.vcpu.write_vmcs(VMCS_CTRL_VMENTRY_CONTROLS, *CAP_ENTRY).or_else(to_error)?;
-		debug!("VM-Entry Controls 0x{:x}",
-			self.vcpu.read_vmcs(VMCS_CTRL_VMENTRY_CONTROLS).unwrap());
-		self.vcpu.write_vmcs(VMCS_CTRL_VMEXIT_CONTROLS, *CAP_EXIT).or_else(to_error)?;
-		debug!("VM-Exit Controls 0x{:x}",
-			self.vcpu.read_vmcs(VMCS_CTRL_VMEXIT_CONTROLS).unwrap());
+		self.vcpu
+			.write_vmcs(VMCS_CTRL_PIN_BASED, *CAP_PINBASED)
+			.or_else(to_error)?;
+		debug!(
+			"Pin-Based VM-Execution Controls 0x{:x}",
+			self.vcpu.read_vmcs(VMCS_CTRL_PIN_BASED).unwrap()
+		);
+		self.vcpu
+			.write_vmcs(VMCS_CTRL_CPU_BASED, *CAP_PROCBASED)
+			.or_else(to_error)?;
+		debug!(
+			"Primary Processor-Based VM-Execution Controls 0x{:x}",
+			self.vcpu.read_vmcs(VMCS_CTRL_CPU_BASED).unwrap()
+		);
+		self.vcpu
+			.write_vmcs(VMCS_CTRL_CPU_BASED2, *CAP_PROCBASED2)
+			.or_else(to_error)?;
+		debug!(
+			"Secondary Processor-Based VM-Execution Controls 0x{:x}",
+			self.vcpu.read_vmcs(VMCS_CTRL_CPU_BASED2).unwrap()
+		);
+		self.vcpu
+			.write_vmcs(VMCS_CTRL_VMENTRY_CONTROLS, *CAP_ENTRY)
+			.or_else(to_error)?;
+		debug!(
+			"VM-Entry Controls 0x{:x}",
+			self.vcpu.read_vmcs(VMCS_CTRL_VMENTRY_CONTROLS).unwrap()
+		);
+		self.vcpu
+			.write_vmcs(VMCS_CTRL_VMEXIT_CONTROLS, *CAP_EXIT)
+			.or_else(to_error)?;
+		debug!(
+			"VM-Exit Controls 0x{:x}",
+			self.vcpu.read_vmcs(VMCS_CTRL_VMEXIT_CONTROLS).unwrap()
+		);
 
 		Ok(())
 	}
 }
 
 impl VirtualCPU for EhyveCPU {
-	fn init(&mut self, entry_point: u64) -> Result<()>
-	{
+	fn init(&mut self, entry_point: u64) -> Result<()> {
 		self.setup_msr()?;
 		self.setup_capabilities()?;
 
-		self.vcpu.write_vmcs(VMCS_CTRL_EXC_BITMAP, 0xffffffff).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_VPID, self.id as u64).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_LINK_POINTER, !0x0u64).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_IGNORE_IRQ, 0).or_else(to_error)?;
-		self.vcpu.write_vmcs(VMCS_GUEST_ACTIVITY_STATE, 0).or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_CTRL_EXC_BITMAP, 0xffffffff)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_VPID, self.id as u64)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_LINK_POINTER, !0x0u64)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_IGNORE_IRQ, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_ACTIVITY_STATE, 0)
+			.or_else(to_error)?;
 
 		//debug!("Setup APIC");
 		//self.vcpu.set_apic_addr(APIC_DEFAULT_BASE).or_else(to_error)?;
 
 		debug!("Setup general purpose registers");
-		self.vcpu.write_register(&x86Reg::RIP, entry_point).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::RFLAGS, 0x2).or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::RIP, entry_point)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::RFLAGS, 0x2)
+			.or_else(to_error)?;
 		// create temporary stack to boot the kernel
-		self.vcpu.write_register(&x86Reg::RSP, 0x200000 - 0x1000).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::RBP, 0).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::RAX, 0).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::RBX, 0).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::RCX, 0).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::RDX, 0).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::RSI, 0).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::RDI, 0).or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::RSP, 0x200000 - 0x1000)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::RBP, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::RAX, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::RBX, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::RCX, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::RDX, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::RSI, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::RDI, 0)
+			.or_else(to_error)?;
 		self.vcpu.write_register(&x86Reg::R8, 0).or_else(to_error)?;
 		self.vcpu.write_register(&x86Reg::R9, 0).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::R10, 0).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::R11, 0).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::R12, 0).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::R13, 0).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::R14, 0).or_else(to_error)?;
-		self.vcpu.write_register(&x86Reg::R15, 0).or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::R10, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::R11, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::R12, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::R13, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::R14, 0)
+			.or_else(to_error)?;
+		self.vcpu
+			.write_register(&x86Reg::R15, 0)
+			.or_else(to_error)?;
 
 		self.setup_system_gdt()?;
 		self.setup_system_64bit()?;
@@ -284,8 +482,7 @@ impl VirtualCPU for EhyveCPU {
 		Ok(())
 	}
 
-	fn run(&mut self) -> Result<()>
-	{
+	fn run(&mut self) -> Result<()> {
 		//self.print_registers();
 
 		debug!("Run vCPU {}", self.id);
@@ -296,28 +493,29 @@ impl VirtualCPU for EhyveCPU {
 
 			match reason {
 				VMX_REASON_VMENTRY_GUEST => {
-					error!("Exit reason {} - VM-entry failure due to invalid guest state", reason);
+					error!(
+						"Exit reason {} - VM-entry failure due to invalid guest state",
+						reason
+					);
 					self.print_registers();
 					return Err(Error::InternalError);
-				},
+				}
 				VMX_REASON_IO => {
 					let qualification = self.vcpu.read_vmcs(VMCS_RO_EXIT_QUALIFIC).unwrap();
 					//let len = self.vcpu.read_vmcs(VMCS_RO_VMEXIT_INSTR_LEN).unwrap();
 
 					info!("qualification 0x{:x}", qualification);
-				},
+				}
 				_ => {
 					error!("Unhandled exit: {}", reason);
 					self.print_registers();
 					return Err(Error::UnhandledExitReason);
-
 				}
 			}
 		}
 	}
 
-	fn print_registers(&self)
-	{
+	fn print_registers(&self) {
 		print!("\nDump state of CPU {}\n", self.id);
 		print!("\nRegisters:\n");
 		print!("----------\n");
@@ -341,18 +539,32 @@ impl VirtualCPU for EhyveCPU {
 		let r14 = self.vcpu.read_register(&x86Reg::R14).unwrap();
 		let r15 = self.vcpu.read_register(&x86Reg::R15).unwrap();
 
-		print!("rip: {:016x}   rsp: {:016x} flags: {:016x}\n\
-			rax: {:016x}   rbx: {:016x}   rcx: {:016x}\n\
-			rdx: {:016x}   rsi: {:016x}   rdi: {:016x}\n\
-			rbp: {:016x}    r8: {:016x}    r9: {:016x}\n\
-			r10: {:016x}   r11: {:016x}   r12: {:016x}\n\
-			r13: {:016x}   r14: {:016x}   r15: {:016x}\n",
-			rip, rsp, rflags,
-			rax, rbx, rcx,
-			rdx, rsi, rdi,
-			rbp, r8,  r9,
-			r10, r11, r12,
-			r13, r14, r15);
+		print!(
+			"rip: {:016x}   rsp: {:016x} flags: {:016x}\n\
+			 rax: {:016x}   rbx: {:016x}   rcx: {:016x}\n\
+			 rdx: {:016x}   rsi: {:016x}   rdi: {:016x}\n\
+			 rbp: {:016x}    r8: {:016x}    r9: {:016x}\n\
+			 r10: {:016x}   r11: {:016x}   r12: {:016x}\n\
+			 r13: {:016x}   r14: {:016x}   r15: {:016x}\n",
+			rip,
+			rsp,
+			rflags,
+			rax,
+			rbx,
+			rcx,
+			rdx,
+			rsi,
+			rdi,
+			rbp,
+			r8,
+			r9,
+			r10,
+			r11,
+			r12,
+			r13,
+			r14,
+			r15
+		);
 
 		let cr0 = self.vcpu.read_register(&x86Reg::CR0).unwrap();
 		//let cr1 = self.vcpu.read_register(&x86Reg::CR1).unwrap();
@@ -361,8 +573,10 @@ impl VirtualCPU for EhyveCPU {
 		let cr4 = self.vcpu.read_register(&x86Reg::CR4).unwrap();
 		let efer = self.vcpu.read_vmcs(VMCS_GUEST_IA32_EFER).unwrap();
 
-		print!("cr0: {:016x}   cr2: {:016x}   cr3: {:016x}\ncr4: {:016x}  efer: {:016x}\n",
-			cr0, cr2, cr3, cr4, efer);
+		print!(
+			"cr0: {:016x}   cr2: {:016x}   cr3: {:016x}\ncr4: {:016x}  efer: {:016x}\n",
+			cr0, cr2, cr3, cr4, efer
+		);
 
 		print!("\nSegment registers:\n");
 		print!("------------------\n");
@@ -437,8 +651,8 @@ impl VirtualCPU for EhyveCPU {
 }
 
 impl Drop for EhyveCPU {
-    fn drop(&mut self) {
-        debug!("Drop virtual CPU {}", self.id);
+	fn drop(&mut self) {
+		debug!("Drop virtual CPU {}", self.id);
 		let _ = self.vcpu.destroy();
 	}
 }

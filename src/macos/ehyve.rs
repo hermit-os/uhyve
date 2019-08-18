@@ -1,10 +1,10 @@
-use std;
+use error::*;
+use hypervisor::{create_vm, map_mem, unmap_mem, MemPerm};
 use libc;
 use libc::c_void;
-use vm::{Vm, VirtualCPU};
-use error::*;
 use macos::vcpu::*;
-use hypervisor::{create_vm,map_mem,unmap_mem,MemPerm};
+use std;
+use vm::{VirtualCPU, Vm};
 
 #[derive(Debug)]
 pub struct Ehyve {
@@ -12,7 +12,7 @@ pub struct Ehyve {
 	mem_size: usize,
 	guest_mem: *mut c_void,
 	num_cpus: u32,
-	path: String
+	path: String,
 }
 
 impl Ehyve {
@@ -40,7 +40,7 @@ impl Ehyve {
 			mem_size: mem_size,
 			guest_mem: mem,
 			num_cpus: num_cpus,
-			path: path
+			path: path,
 		};
 
 		hyve.init()?;
@@ -54,8 +54,12 @@ impl Ehyve {
 
 		debug!("Map guest memory...");
 		unsafe {
-			map_mem(std::slice::from_raw_parts(self.guest_mem as *mut u8, self.mem_size),
-			0, &MemPerm::ExecAndWrite).or_else(to_error)?;
+			map_mem(
+				std::slice::from_raw_parts(self.guest_mem as *mut u8, self.mem_size),
+				0,
+				&MemPerm::ExecAndWrite,
+			)
+			.or_else(to_error)?;
 		}
 
 		self.init_guest_mem();
@@ -65,13 +69,11 @@ impl Ehyve {
 }
 
 impl Vm for Ehyve {
-	fn set_entry_point(&mut self, entry: u64)
-	{
+	fn set_entry_point(&mut self, entry: u64) {
 		self.entry_point = entry;
 	}
 
-	fn get_entry_point(&self) -> u64
-	{
+	fn get_entry_point(&self) -> u64 {
 		self.entry_point
 	}
 
@@ -98,7 +100,9 @@ impl Drop for Ehyve {
 
 		unmap_mem(0, self.mem_size).unwrap();
 
-		unsafe { libc::munmap(self.guest_mem, self.mem_size); }
+		unsafe {
+			libc::munmap(self.guest_mem, self.mem_size);
+		}
 	}
 }
 

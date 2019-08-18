@@ -1,17 +1,17 @@
 //! This file contains the entry point to the Hypervisor. The ehyve utilizes KVM to
 //! create a Virtual Machine and load the kernel.
 
-use std;
-use std::io::prelude::*;
-use std::fs::File;
-use libc;
-use vm::{Vm, VirtualCPU};
 use error::*;
-use linux::KVM;
-use linux::vcpu::*;
-use libkvm::vm::VirtualMachine;
-use libkvm::mem::MemorySlot;
+use libc;
 use libkvm::linux::kvm_bindings::KVM_MEM_READONLY;
+use libkvm::mem::MemorySlot;
+use libkvm::vm::VirtualMachine;
+use linux::vcpu::*;
+use linux::KVM;
+use std;
+use std::fs::File;
+use std::io::prelude::*;
+use vm::{VirtualCPU, Vm};
 
 pub struct Ehyve {
 	vm: VirtualMachine,
@@ -19,11 +19,16 @@ pub struct Ehyve {
 	mem: MmapMemorySlot,
 	file: MmapMemorySlot,
 	num_cpus: u32,
-	path: String
+	path: String,
 }
 
 impl Ehyve {
-	pub fn new(kernel_path: String, mem_size: usize, num_cpus: u32, file_path: Option<String>) -> Result<Ehyve> {
+	pub fn new(
+		kernel_path: String,
+		mem_size: usize,
+		num_cpus: u32,
+		file_path: Option<String>,
+	) -> Result<Ehyve> {
 		let api = KVM.api_version().unwrap();
 		debug!("KVM API version {}", api);
 
@@ -41,28 +46,34 @@ impl Ehyve {
 			Some(fname) => {
 				debug!("Map {} into the guest space", fname);
 
-				let mut f = File::open(fname.clone()).map_err(|_| Error::InvalidFile(fname.clone().into()))?;
+				let mut f = File::open(fname.clone())
+					.map_err(|_| Error::InvalidFile(fname.clone().into()))?;
 				let metadata = f.metadata().expect("Unable to create metadata");
-				let slot_len = ((metadata.len() + (0x1000u64 - 1u64)) & !(0x1000u64 - 1u64)) as usize;
+				let slot_len =
+					((metadata.len() + (0x1000u64 - 1u64)) & !(0x1000u64 - 1u64)) as usize;
 
 				// map file after the guest memory
-				let mut slot = MmapMemorySlot::new(1, KVM_MEM_READONLY, slot_len, mem_size as u64 + 0x200000u64);
+				let mut slot = MmapMemorySlot::new(
+					1,
+					KVM_MEM_READONLY,
+					slot_len,
+					mem_size as u64 + 0x200000u64,
+				);
 				// load file
-				f.read(slot.as_slice_mut()).map_err(|_| Error::InvalidFile(fname.clone().into()))?;
+				f.read(slot.as_slice_mut())
+					.map_err(|_| Error::InvalidFile(fname.clone().into()))?;
 				// map file into the guest space
 				vm.set_user_memory_region(&slot).unwrap();
 
 				slot
-			},
-			None => {
-				MmapMemorySlot {
-					id: !0,
-					flags: 0,
-					memory_size: 0,
-					guest_address: 0,
-					host_address: std::ptr::null_mut()
-				}
 			}
+			None => MmapMemorySlot {
+				id: !0,
+				flags: 0,
+				memory_size: 0,
+				guest_address: 0,
+				host_address: std::ptr::null_mut(),
+			},
 		};
 
 		let mut hyve = Ehyve {
@@ -71,7 +82,7 @@ impl Ehyve {
 			mem: mem,
 			file: file,
 			num_cpus: num_cpus,
-			path: kernel_path
+			path: kernel_path,
 		};
 
 		hyve.init()?;
@@ -99,13 +110,11 @@ impl Ehyve {
 }
 
 impl Vm for Ehyve {
-	fn set_entry_point(&mut self, entry: u64)
-	{
+	fn set_entry_point(&mut self, entry: u64) {
 		self.entry_point = entry;
 	}
 
-	fn get_entry_point(&self) -> u64
-	{
+	fn get_entry_point(&self) -> u64 {
 		self.entry_point
 	}
 
@@ -145,7 +154,7 @@ struct MmapMemorySlot {
 	flags: u32,
 	memory_size: usize,
 	guest_address: u64,
-	host_address: *mut libc::c_void
+	host_address: *mut libc::c_void,
 }
 
 impl MmapMemorySlot {
@@ -162,9 +171,7 @@ impl MmapMemorySlot {
 		};
 
 		if host_address == libc::MAP_FAILED {
-			panic!("mmap failed with: {}", unsafe {
-				*libc::__errno_location()
-			});
+			panic!("mmap failed with: {}", unsafe { *libc::__errno_location() });
 		}
 
 		MmapMemorySlot {
@@ -172,7 +179,7 @@ impl MmapMemorySlot {
 			flags: flags,
 			memory_size: memory_size,
 			guest_address: guest_address,
-			host_address
+			host_address,
 		}
 	}
 
