@@ -1,11 +1,12 @@
 use std;
+use std::ffi::CStr;
 use vm::VirtualCPU;
 use error::*;
 use consts::*;
 use libkvm::linux::kvm_bindings::*;
 use libkvm::vcpu;
 use linux::KVM;
-use x86::shared::control_regs::*;
+use x86::controlregs::*;
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
 const CPUID_ENABLE_MSR: u32 = 1 << 5;
@@ -86,8 +87,8 @@ impl EhyveCPU {
 
 		let mut sregs = self.vcpu.get_kvm_sregs().unwrap();
 
-		let cr0 = (CR0_PROTECTED_MODE | CR0_ENABLE_PAGING | CR0_EXTENSION_TYPE | CR0_NUMERIC_ERROR).bits() as u64;
-		let cr4 = CR4_ENABLE_PAE.bits() as u64;
+		let cr0 = (Cr0::CR0_PROTECTED_MODE | Cr0::CR0_ENABLE_PAGING | Cr0::CR0_EXTENSION_TYPE | Cr0::CR0_NUMERIC_ERROR).bits() as u64;
+		let cr4 = Cr4::CR4_ENABLE_PAE.bits() as u64;
 
 		sregs.cr3 = BOOT_PML4;
 		sregs.cr4 = cr4;
@@ -191,10 +192,19 @@ impl VirtualCPU for EhyveCPU {
 						if io.port == SHUTDOWN_PORT || io.port == UHYVE_PORT_EXIT {
 							return Ok(());
 						} else {
-							let data_addr = kvm_run as *const _ as u64 + io.data_offset;
-							let data = unsafe { std::slice::from_raw_parts(data_addr as *const u8, io.size as usize) };
+							unsafe {
+								let data_addr = kvm_run as *const _ as u64 + io.data_offset;
+								let data = std::slice::from_raw_parts(data_addr as *const u8, io.size as usize);
 
-							self.io_exit(io.port, std::str::from_utf8(data).unwrap().to_string(), verbose)?;
+debug!("io.size {}", io.size);
+								//match std::str::from_utf8(data) {
+								//	Ok(message) => self.io_exit(io.port, message.to_string(), verbose)?,
+								//	Err(_) => {
+										let message = CStr::from_ptr(data_addr as *const i8);
+										self.io_exit(io.port, message.to_str().unwrap().to_string(), verbose)?;
+								//	}
+								//};
+							}
 						}
 					} else {
 						info!("Unhandled IO exit: 0x{:x}", io.port);

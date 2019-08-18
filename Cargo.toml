@@ -20,7 +20,7 @@ clap = "2"
 raw-cpuid = "6.1"
 
 [dependencies.x86]
-path = "crates/x86"
+version = "0.*"
 #default-features = false
 
 [target.'cfg(target_os = "macos")'.dependencies.hypervisor]
