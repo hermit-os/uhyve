@@ -3,11 +3,11 @@ use error::*;
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, MAX_KVM_CPUID_ENTRIES};
 use libc::ioctl;
-use linux::KVM;
 use std;
 use std::os::unix::io::AsRawFd;
 use vm::VirtualCPU;
 use x86::controlregs::*;
+use x86_64::KVM;
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
 const CPUID_ENABLE_MSR: u32 = 1 << 5;

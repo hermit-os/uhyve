@@ -5,11 +5,11 @@ use error::*;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use libc;
-use linux::vcpu::*;
-use linux::{MemorySlot, KVM};
 use std;
 use std::convert::TryInto;
 use vm::{VirtualCPU, Vm};
+use x86_64::vcpu::*;
+use x86_64::{MemorySlot, KVM};
 
 pub struct Ehyve {
 	vm: VmFd,

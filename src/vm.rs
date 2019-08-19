@@ -12,12 +12,7 @@ use std::time::SystemTime;
 use std::{fmt, mem, slice};
 
 use consts::*;
-#[cfg(target_os = "linux")]
-pub use linux::ehyve::*;
-#[cfg(target_os = "macos")]
-pub use macos::ehyve::*;
-#[cfg(target_os = "windows")]
-pub use windows::ehyve::*;
+pub use x86_64::ehyve::*;
 
 #[repr(C)]
 struct KernelHeaderV0 {
