@@ -229,67 +229,67 @@ impl VirtualCPU for EhyveCPU {
 										as *const usize)
 								};
 								self.cmdsize(self.host_address(args_ptr))?;
-							}
+							},
 							UHYVE_PORT_CMDVAL => {
 								let args_ptr = unsafe {
 									*((kvm_run as *const _ as usize + io.data_offset as usize)
 										as *const usize)
 								};
 								self.cmdval(self.host_address(args_ptr))?;
-							}
-							UHYVE_PORT_NETSTAT => {}
+							},
+							//UHYVE_PORT_NETSTAT => {},
 							UHYVE_PORT_EXIT => {
 								let args_ptr = unsafe {
 									*((kvm_run as *const _ as usize + io.data_offset as usize)
 										as *const usize)
 								};
 								self.exit(self.host_address(args_ptr));
-							}
+							},
 							UHYVE_PORT_OPEN => {
 								let args_ptr = unsafe {
 									*((kvm_run as *const _ as usize + io.data_offset as usize)
 										as *const usize)
 								};
 								self.open(self.host_address(args_ptr))?;
-							}
+							},
 							UHYVE_PORT_WRITE => {
 								let args_ptr = unsafe {
 									*((kvm_run as *const _ as usize + io.data_offset as usize)
 										as *const usize)
 								};
 								self.write(self.host_address(args_ptr))?;
-							}
+							},
 							UHYVE_PORT_READ => {
 								let args_ptr = unsafe {
 									*((kvm_run as *const _ as usize + io.data_offset as usize)
 										as *const usize)
 								};
 								self.read(self.host_address(args_ptr))?;
-							}
+							},
 							UHYVE_PORT_UNLINK => {
 								let args_ptr = unsafe {
 									*((kvm_run as *const _ as usize + io.data_offset as usize)
 										as *const usize)
 								};
 								self.unlink(self.host_address(args_ptr))?;
-							}
+							},
 							UHYVE_PORT_LSEEK => {
 								let args_ptr = unsafe {
 									*((kvm_run as *const _ as usize + io.data_offset as usize)
 										as *const usize)
 								};
 								self.lseek(self.host_address(args_ptr))?;
-							}
+							},
 							UHYVE_PORT_CLOSE => {
 								let args_ptr = unsafe {
 									*((kvm_run as *const _ as usize + io.data_offset as usize)
 										as *const usize)
 								};
 								self.close(self.host_address(args_ptr))?;
-							}
+							},
 							_ => {
 								info!("Unhandled IO exit: 0x{:x}", io.port);
-							}
+							},
 						}
 					} else {
 						info!("Unhandled IO exit: 0x{:x}", io.port);
