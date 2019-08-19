@@ -31,7 +31,7 @@ impl EhyveCPU {
 	}
 
 	fn setup_cpuid(&self) {
-		debug!("Setup cpuid");
+		//debug!("Setup cpuid");
 
 		let mut kvm_cpuid = KVM.get_supported_cpuid(MAX_KVM_CPUID_ENTRIES).unwrap();
 		let kvm_cpuid_entries = kvm_cpuid.mut_entries_slice();
@@ -74,7 +74,7 @@ impl EhyveCPU {
 	}
 
 	fn setup_msrs(&self) {
-		debug!("Setup MSR");
+		//debug!("Setup MSR");
 
 		let msr_list = KVM.get_msr_index_list().unwrap();
 
@@ -98,7 +98,7 @@ impl EhyveCPU {
 	}
 
 	fn setup_long_mode(&self, entry_point: u64) {
-		debug!("Setup long mode");
+		//debug!("Setup long mode");
 
 		let mut sregs = self.vcpu.get_sregs().unwrap();
 

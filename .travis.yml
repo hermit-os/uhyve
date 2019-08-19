@@ -1,22 +1,17 @@
 sudo: required
 git:
+  depth: 3
   submodules: true
-dist: trusty
-language: c
-
-services:
-  - docker
-
 env:
   matrix:
-    - OS_TYPE=centos OS_VERSION=7
-    - OS_TYPE=ubuntu OS_VERSION=18.04
-
+  - OS_TYPE=ubuntu OS_VERSION=18.04 OS_NAME=bionic
+services:
+- docker
+addons:
+  apt:
+    update: true
 before_install:
-  - echo 'DOCKER_OPTS="-H tcp://127.0.0.1:2375 -H unix:///var/run/docker.sock -s devicemapper"' | sudo tee /etc/default/docker > /dev/null
-  - sudo service docker restart
-  - sleep 5
-  - sudo docker pull ${OS_TYPE}:${OS_VERSION}
-
+- sudo apt-get -qq update
+- sudo docker pull ${OS_TYPE}:${OS_VERSION}
 script:
-  - ./setup_tests.sh ${OS_TYPE} ${OS_VERSION}
+- docker run -ti -v ${TRAVIS_BUILD_DIR}:/work:rw ${OS_TYPE}:${OS_VERSION} /bin/bash -c "cd /work; ./tests.sh ${OS_TYPE} ${OS_NAME}"

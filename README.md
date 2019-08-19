@@ -1,5 +1,8 @@
 # uhyve - A minimal hypervisor for RustyHermit
 
+[![Build Status](https://travis-ci.org/hermitcore/uhyve.svg?branch=master)](https://travis-ci.org/hermitcore/uhyve)
+[![Slack Status](https://radiant-ridge-95061.herokuapp.com/badge.svg)](https://radiant-ridge-95061.herokuapp.com)
+
 ## Introduction
 
 uhyve is small hypervisor to boot the library operating systems [RustyHermit](https://github.com/hermitcore/libhermit-rs), which  is a unikernel operating system targeting a scalable and predictable runtime behavior for HPC and cloud environments. 
