@@ -1,4 +1,4 @@
-# uhyve - A minimal hypervisor for HermitCore
+# uhyve - A minimal hypervisor for RustyHermit
 
 ## Introduction
 
