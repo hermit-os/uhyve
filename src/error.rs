@@ -14,7 +14,7 @@ pub enum Error {
 	MissingFrequency,
 	#[cfg(target_os = "macos")]
 	Hypervisor(hypervisor::Error),
-	UnknownExitReason(u32),
+	UnknownExitReason,
 	UnknownIOPort(u16),
 	KVMInitFailed,
 	KVMUnableToCreateVM,
@@ -52,9 +52,7 @@ impl fmt::Display for Error {
 			),
 			#[cfg(target_os = "macos")]
 			Error::Hypervisor(ref err) => write!(f, "The hypervisor has failed: {:?}", err),
-			Error::UnknownExitReason(ref exit_reason) => {
-				write!(f, "Unknown exit reason {:?}.", exit_reason)
-			}
+			Error::UnknownExitReason => write!(f, "Unknown exit reason."),
 			Error::UnknownIOPort(ref port) => write!(f, "Unknown io port 0x{:x}.", port),
 			Error::Shutdown => write!(f, "Receives shutdown command"),
 			Error::KVMInitFailed => write!(f, "Unable to initialize KVM"),

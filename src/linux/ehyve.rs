@@ -2,16 +2,17 @@
 //! create a Virtual Machine and load the kernel.
 
 use error::*;
+use kvm_bindings::*;
+use kvm_ioctls::VmFd;
 use libc;
-use libkvm::mem::MemorySlot;
-use libkvm::vm::VirtualMachine;
 use linux::vcpu::*;
-use linux::KVM;
+use linux::{MemorySlot, KVM};
 use std;
+use std::convert::TryInto;
 use vm::{VirtualCPU, Vm};
 
 pub struct Ehyve {
-	vm: VirtualMachine,
+	vm: VmFd,
 	entry_point: u64,
 	mem: MmapMemorySlot,
 	num_cpus: u32,
@@ -20,18 +21,19 @@ pub struct Ehyve {
 
 impl Ehyve {
 	pub fn new(kernel_path: String, mem_size: usize, num_cpus: u32) -> Result<Ehyve> {
-		let api = KVM.api_version().unwrap();
-		debug!("KVM API version {}", api);
-
 		let vm = KVM.create_vm().unwrap();
 
-		if KVM.check_cap_set_tss_address().unwrap() > 0 {
+		let mut cap: kvm_enable_cap = Default::default();
+		cap.cap = KVM_CAP_SET_TSS_ADDR;
+		if vm.enable_cap(&cap).is_ok() {
 			debug!("Setting TSS address");
 			vm.set_tss_address(0xfffbd000).unwrap();
 		}
 
 		let mem = MmapMemorySlot::new(0, 0, mem_size, 0);
-		vm.set_user_memory_region(&mem).unwrap();
+		unsafe {
+			vm.set_user_memory_region(mem.mem_region).unwrap();
+		}
 
 		let mut hyve = Ehyve {
 			vm: vm,
@@ -51,12 +53,13 @@ impl Ehyve {
 
 		debug!("Initialize interrupt controller");
 
-		match self.vm.create_irqchip() {
+		match self.vm.create_irq_chip() {
 			Err(_) => return Err(Error::KVMUnableToCreateIrqChip),
 			_ => {}
 		};
 
-		match self.vm.create_pit2() {
+		let pit_config = kvm_pit_config::default();
+		match self.vm.create_pit2(pit_config) {
 			Err(_) => return Err(Error::KVMUnableToCreatePit2),
 			_ => {}
 		};
@@ -91,7 +94,7 @@ impl Vm for Ehyve {
 		Ok(Box::new(EhyveCPU::new(
 			id,
 			self.path.clone(),
-			self.vm.create_vcpu().unwrap(),
+			self.vm.create_vcpu(id.try_into().unwrap()).unwrap(),
 			vm_start,
 		)))
 	}
@@ -108,11 +111,7 @@ unsafe impl Sync for Ehyve {}
 
 #[derive(Debug)]
 struct MmapMemorySlot {
-	id: u32,
-	flags: u32,
-	memory_size: usize,
-	guest_address: u64,
-	host_address: *mut libc::c_void,
+	pub mem_region: kvm_userspace_memory_region,
 }
 
 impl MmapMemorySlot {
@@ -133,45 +132,54 @@ impl MmapMemorySlot {
 		}
 
 		MmapMemorySlot {
-			id: id,
-			flags: flags,
-			memory_size: memory_size,
-			guest_address: guest_address,
-			host_address,
+			mem_region: kvm_userspace_memory_region {
+				slot: id,
+				flags: flags,
+				memory_size: memory_size as u64,
+				guest_phys_addr: guest_address,
+				userspace_addr: host_address as u64,
+			},
 		}
 	}
 
 	fn as_slice_mut(&mut self) -> &mut [u8] {
-		unsafe { std::slice::from_raw_parts_mut(self.host_address as *mut u8, self.memory_size) }
+		unsafe {
+			std::slice::from_raw_parts_mut(
+				self.mem_region.userspace_addr as *mut u8,
+				self.mem_region.memory_size as usize,
+			)
+		}
 	}
 }
 
 impl MemorySlot for MmapMemorySlot {
 	fn slot_id(&self) -> u32 {
-		self.id
+		self.mem_region.slot
 	}
 
 	fn flags(&self) -> u32 {
-		self.flags
+		self.mem_region.flags
 	}
 
 	fn memory_size(&self) -> usize {
-		self.memory_size
+		self.mem_region.memory_size as usize
 	}
 
 	fn guest_address(&self) -> u64 {
-		self.guest_address
+		self.mem_region.guest_phys_addr as u64
 	}
 
 	fn host_address(&self) -> u64 {
-		self.host_address as u64
+		self.mem_region.userspace_addr as u64
 	}
 }
 
 impl Drop for MmapMemorySlot {
 	fn drop(&mut self) {
-		if self.memory_size > 0 {
-			let result = unsafe { libc::munmap(self.host_address, self.memory_size) };
+		if self.memory_size() > 0 {
+			let result = unsafe {
+				libc::munmap(self.host_address() as *mut libc::c_void, self.memory_size())
+			};
 			if result != 0 {
 				panic!("munmap failed with: {}", unsafe {
 					*libc::__errno_location()

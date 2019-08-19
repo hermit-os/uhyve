@@ -1,10 +1,11 @@
 use consts::*;
 use error::*;
-use libkvm::linux::kvm_bindings::*;
-use libkvm::vcpu;
+use kvm_bindings::*;
+use kvm_ioctls::{VcpuExit, VcpuFd, MAX_KVM_CPUID_ENTRIES};
+use libc::ioctl;
 use linux::KVM;
 use std;
-use std::ffi::CStr;
+use std::os::unix::io::AsRawFd;
 use vm::VirtualCPU;
 use x86::controlregs::*;
 
@@ -14,13 +15,13 @@ const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 
 pub struct EhyveCPU {
 	id: u32,
-	vcpu: vcpu::VirtualCPU,
+	vcpu: VcpuFd,
 	vm_start: usize,
 	kernel_path: String,
 }
 
 impl EhyveCPU {
-	pub fn new(id: u32, kernel_path: String, vcpu: vcpu::VirtualCPU, vm_start: usize) -> EhyveCPU {
+	pub fn new(id: u32, kernel_path: String, vcpu: VcpuFd, vm_start: usize) -> EhyveCPU {
 		EhyveCPU {
 			id: id,
 			vcpu: vcpu,
@@ -30,8 +31,10 @@ impl EhyveCPU {
 	}
 
 	fn setup_cpuid(&self) {
-		let mut kvm_cpuid_entries = KVM.get_supported_cpuid().unwrap();
+		debug!("Setup cpuid");
 
+		let mut kvm_cpuid = KVM.get_supported_cpuid(MAX_KVM_CPUID_ENTRIES).unwrap();
+		let kvm_cpuid_entries = kvm_cpuid.mut_entries_slice();
 		let i = kvm_cpuid_entries
 			.iter()
 			.position(|&r| r.function == 0x40000000)
@@ -67,10 +70,12 @@ impl EhyveCPU {
 		// disable performance monitor
 		kvm_cpuid_entries[i].eax = 0x00;
 
-		self.vcpu.set_cpuid(&kvm_cpuid_entries).unwrap();
+		self.vcpu.set_cpuid2(&kvm_cpuid).unwrap();
 	}
 
 	fn setup_msrs(&self) {
+		debug!("Setup MSR");
+
 		let msr_list = KVM.get_msr_index_list().unwrap();
 
 		let mut msr_entries = msr_list
@@ -86,13 +91,16 @@ impl EhyveCPU {
 		msr_entries[0].index = MSR_IA32_MISC_ENABLE;
 		msr_entries[0].data = 1;
 
-		self.vcpu.set_msrs(&msr_entries).unwrap();
+		let mut msrs: &mut kvm_msrs = unsafe { &mut *(msr_entries.as_ptr() as *mut kvm_msrs) };
+		msrs.nmsrs = 1;
+
+		self.vcpu.set_msrs(msrs).unwrap();
 	}
 
 	fn setup_long_mode(&self, entry_point: u64) {
 		debug!("Setup long mode");
 
-		let mut sregs = self.vcpu.get_kvm_sregs().unwrap();
+		let mut sregs = self.vcpu.get_sregs().unwrap();
 
 		let cr0 = (Cr0::CR0_PROTECTED_MODE
 			| Cr0::CR0_ENABLE_PAGING
@@ -133,22 +141,22 @@ impl EhyveCPU {
 		sregs.gdt.base = BOOT_GDT;
 		sregs.gdt.limit = ((std::mem::size_of::<u64>() * BOOT_GDT_MAX as usize) - 1) as u16;
 
-		self.vcpu.set_kvm_sregs(&sregs).unwrap();
+		self.vcpu.set_sregs(&sregs).unwrap();
 
-		let mut regs = self.vcpu.get_kvm_regs().unwrap();
+		let mut regs = self.vcpu.get_regs().unwrap();
 		regs.rflags = 2;
 		regs.rip = entry_point;
 		regs.rsp = 0x200000u64 - 0x1000u64;
 
-		self.vcpu.set_kvm_regs(&regs).unwrap();
+		self.vcpu.set_regs(&regs).unwrap();
 	}
 
 	fn show_dtable(name: &str, dtable: &kvm_dtable) {
-		print!("{}                 {}\n", name, dtable);
+		print!("{}                 {:?}\n", name, dtable);
 	}
 
 	fn show_segment(name: &str, seg: &kvm_segment) {
-		print!("{}       {}\n", name, seg);
+		print!("{}       {:?}\n", name, seg);
 	}
 }
 
@@ -161,7 +169,16 @@ impl VirtualCPU for EhyveCPU {
 		let mp_state = kvm_mp_state {
 			mp_state: KVM_MP_STATE_RUNNABLE,
 		};
-		self.vcpu.set_mp_state(&mp_state).unwrap();
+		let ret = unsafe {
+			ioctl(
+				self.vcpu.as_raw_fd(),
+				0x4004ae99, /* KVM_SET_MP_STATE */
+				&mp_state,
+			)
+		};
+		if ret < 0 {
+			error!("Unable to set MP state");
+		}
 
 		self.setup_msrs();
 
@@ -177,135 +194,124 @@ impl VirtualCPU for EhyveCPU {
 	}
 
 	fn virt_to_phys(&self, addr: usize) -> usize {
-		self.vcpu.translate_address(addr as u64).unwrap() as usize
+		let executable_disable_mask: usize = !(1usize << 63);
+		let mut page_table = self.host_address(BOOT_PML4 as usize) as *const usize;
+		let mut page_bits = 39;
+
+		for _i in 0..4 {
+			let index = (addr >> page_bits) & ((1 << 9) - 1);
+			let entry = unsafe { *page_table.offset(index as isize) & executable_disable_mask };
+
+			// bit 7 is set if this entry references a 1 GiB (PDPT) or 2 MiB (PDT) page.
+			if entry & (1 << 7) != 0 {
+				return (entry & ((!0usize) << page_bits)) | (addr & !((!0usize) << page_bits));
+			}
+
+			page_table = (self.host_address(entry & !0xFFF)) as *const usize;
+			page_bits -= 9;
+		}
+
+		error!("Unable to determine physical address of 0x{:x}", addr);
+
+		0
 	}
 
 	fn run(&mut self, verbose: bool) -> Result<()> {
 		//self.print_registers();
 
 		loop {
-			self.vcpu.run().unwrap();
-			let kvm_run = self.vcpu.kvm_run();
-
-			//println!("reason {}", kvm_run.exit_reason);
-			//self.print_registers();
-			match kvm_run.exit_reason {
-				KVM_EXIT_HLT => {
-					info!("Halt Exit");
+			match self.vcpu.run().expect("KVM run failed") {
+				VcpuExit::Hlt => {
+					debug!("Halt Exit");
 					break;
 				}
-				KVM_EXIT_SHUTDOWN => {
+				VcpuExit::Shutdown => {
 					self.print_registers();
-					info!("Shutdown Exit");
+					debug!("Shutdown Exit");
 					break;
 				}
-				KVM_EXIT_MMIO => {
-					let mmio = unsafe { &kvm_run.__bindgen_anon_1.mmio };
-					info!("KVM: handled KVM_EXIT_MMIO at 0x{:x}", mmio.phys_addr);
-
-					if mmio.is_write != 0 {
-						self.print_registers();
-					}
+				VcpuExit::MmioRead(addr, _) => {
+					debug!("KVM: read at 0x{:x}", addr);
 					break;
 				}
-				KVM_EXIT_IO => {
-					let io = unsafe { &kvm_run.__bindgen_anon_1.io };
-
-					if io.direction == KVM_EXIT_IO_OUT as u8 {
-						match io.port {
-							SHUTDOWN_PORT | UHYVE_PORT_EXIT => return Ok(()),
-							UHYVE_UART_PORT => unsafe {
-								let data_addr = kvm_run as *const _ as u64 + io.data_offset;
-								let message = CStr::from_ptr(data_addr as *const i8);
-								self.io_exit(
-									io.port,
-									message.to_str().unwrap().to_string(),
-									verbose,
-								)?;
-							},
-							UHYVE_PORT_CMDSIZE => {
-								let args_ptr = unsafe {
-									*((kvm_run as *const _ as usize + io.data_offset as usize)
-										as *const usize)
-								};
-								self.cmdsize(self.host_address(args_ptr))?;
-							},
-							UHYVE_PORT_CMDVAL => {
-								let args_ptr = unsafe {
-									*((kvm_run as *const _ as usize + io.data_offset as usize)
-										as *const usize)
-								};
-								self.cmdval(self.host_address(args_ptr))?;
-							},
-							//UHYVE_PORT_NETSTAT => {},
-							UHYVE_PORT_EXIT => {
-								let args_ptr = unsafe {
-									*((kvm_run as *const _ as usize + io.data_offset as usize)
-										as *const usize)
-								};
-								self.exit(self.host_address(args_ptr));
-							},
-							UHYVE_PORT_OPEN => {
-								let args_ptr = unsafe {
-									*((kvm_run as *const _ as usize + io.data_offset as usize)
-										as *const usize)
-								};
-								self.open(self.host_address(args_ptr))?;
-							},
-							UHYVE_PORT_WRITE => {
-								let args_ptr = unsafe {
-									*((kvm_run as *const _ as usize + io.data_offset as usize)
-										as *const usize)
-								};
-								self.write(self.host_address(args_ptr))?;
-							},
-							UHYVE_PORT_READ => {
-								let args_ptr = unsafe {
-									*((kvm_run as *const _ as usize + io.data_offset as usize)
-										as *const usize)
-								};
-								self.read(self.host_address(args_ptr))?;
-							},
-							UHYVE_PORT_UNLINK => {
-								let args_ptr = unsafe {
-									*((kvm_run as *const _ as usize + io.data_offset as usize)
-										as *const usize)
-								};
-								self.unlink(self.host_address(args_ptr))?;
-							},
-							UHYVE_PORT_LSEEK => {
-								let args_ptr = unsafe {
-									*((kvm_run as *const _ as usize + io.data_offset as usize)
-										as *const usize)
-								};
-								self.lseek(self.host_address(args_ptr))?;
-							},
-							UHYVE_PORT_CLOSE => {
-								let args_ptr = unsafe {
-									*((kvm_run as *const _ as usize + io.data_offset as usize)
-										as *const usize)
-								};
-								self.close(self.host_address(args_ptr))?;
-							},
-							_ => {
-								info!("Unhandled IO exit: 0x{:x}", io.port);
-							},
+				VcpuExit::MmioWrite(addr, _) => {
+					debug!("KVM: write at 0x{:x}", addr);
+					self.print_registers();
+					break;
+				}
+				VcpuExit::IoOut(port, addr) => {
+					//debug!("out port 0x{:x}, addr {:?}", port, addr);
+					match port {
+						SHUTDOWN_PORT | UHYVE_PORT_EXIT => return Ok(()),
+						UHYVE_UART_PORT => {
+							self.io_exit(
+								port,
+								String::from_utf8_lossy(&addr).to_string(),
+								verbose,
+							)?;
 						}
-					} else {
-						info!("Unhandled IO exit: 0x{:x}", io.port);
+						UHYVE_PORT_CMDSIZE => {
+							let data_addr: usize =
+								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+							self.cmdsize(self.host_address(data_addr))?;
+						}
+						UHYVE_PORT_CMDVAL => {
+							let data_addr: usize =
+								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+							self.cmdval(self.host_address(data_addr))?;
+						}
+						//UHYVE_PORT_NETSTAT => {},
+						UHYVE_PORT_EXIT => {
+							let data_addr: usize =
+								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+							self.exit(self.host_address(data_addr));
+						}
+						UHYVE_PORT_OPEN => {
+							let data_addr: usize =
+								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+							self.open(self.host_address(data_addr))?;
+						}
+						UHYVE_PORT_WRITE => {
+							let data_addr: usize =
+								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+							self.write(self.host_address(data_addr))?;
+						}
+						UHYVE_PORT_READ => {
+							let data_addr: usize =
+								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+							self.read(self.host_address(data_addr))?;
+						}
+						UHYVE_PORT_UNLINK => {
+							let data_addr: usize =
+								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+							self.unlink(self.host_address(data_addr))?;
+						}
+						UHYVE_PORT_LSEEK => {
+							let data_addr: usize =
+								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+							self.lseek(self.host_address(data_addr))?;
+						}
+						UHYVE_PORT_CLOSE => {
+							let data_addr: usize =
+								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+							self.close(self.host_address(data_addr))?;
+						}
+						_ => {
+							info!("Unhandled IO exit: 0x{:x}", port);
+						}
 					}
 				}
-				KVM_EXIT_INTERNAL_ERROR => {
-					error!("Internal error: {:?}", kvm_run.exit_reason);
-					self.print_registers();
-
-					return Err(Error::UnknownExitReason(kvm_run.exit_reason));
-				}
-				_ => {
-					error!("Unknown exit reason: {:?}", kvm_run.exit_reason);
+				VcpuExit::InternalError => {
+					error!("Internal error");
 					//self.print_registers();
 
-					return Err(Error::UnknownExitReason(kvm_run.exit_reason));
+					return Err(Error::UnknownExitReason);
+				}
+				_ => {
+					error!("Unknown exit reason");
+					//self.print_registers();
+
+					return Err(Error::UnknownExitReason);
 				}
 			}
 		}
@@ -314,13 +320,13 @@ impl VirtualCPU for EhyveCPU {
 	}
 
 	fn print_registers(&self) {
-		let regs = self.vcpu.get_kvm_regs().unwrap();
-		let sregs = self.vcpu.get_kvm_sregs().unwrap();
+		let regs = self.vcpu.get_regs().unwrap();
+		let sregs = self.vcpu.get_sregs().unwrap();
 
 		print!("\nDump state of CPU {}\n", self.id);
 		print!("\nRegisters:\n");
 		print!("----------\n");
-		print!("{}{}", regs, sregs);
+		print!("{:?}{:?}", regs, sregs);
 
 		print!("\nSegment registers:\n");
 		print!("------------------\n");

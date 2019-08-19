@@ -11,14 +11,8 @@ extern crate x86;
 extern crate clap;
 #[macro_use]
 extern crate lazy_static;
-#[cfg(target_os = "macos")]
-extern crate hypervisor;
-#[cfg(target_os = "linux")]
-extern crate libkvm;
-#[cfg(target_os = "windows")]
-extern crate libwhp;
-//#[cfg(target_os = "windows")]
-//extern crate kernel32;
+extern crate kvm_bindings;
+extern crate kvm_ioctls;
 
 #[macro_use]
 extern crate log;
