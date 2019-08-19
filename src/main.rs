@@ -1,6 +1,4 @@
-#![feature(untagged_unions)]
 #![feature(core_intrinsics)]
-#![allow(dead_code)]
 
 extern crate aligned_alloc;
 extern crate elf;

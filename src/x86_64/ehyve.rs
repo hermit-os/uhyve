@@ -142,6 +142,7 @@ impl MmapMemorySlot {
 		}
 	}
 
+	#[allow(dead_code)]
 	fn as_slice_mut(&mut self) -> &mut [u8] {
 		unsafe {
 			std::slice::from_raw_parts_mut(
