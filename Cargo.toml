@@ -18,19 +18,9 @@ memmap = "0.6"
 lazy_static = "1.1"
 clap = "2"
 raw-cpuid = "6.1"
+kvm-ioctls = "0.*"
+kvm-bindings = "0.*"
 
 [dependencies.x86]
 version = "0.*"
 #default-features = false
-
-[target.'cfg(target_os = "macos")'.dependencies.hypervisor]
-path = "crates/hypervisor"
-
-[target.'cfg(target_os = "windows")'.dependencies.libwhp]
-path = "crates/libwhp"
-
-[target.'cfg(target_os = "linux")'.dependencies.kvm-ioctls]
-version = "0.*"
-
-[target.'cfg(target_os = "linux")'.dependencies.kvm-bindings]
-version = "0.*"
