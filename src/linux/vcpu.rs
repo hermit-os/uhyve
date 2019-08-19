@@ -15,11 +15,18 @@ const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 pub struct EhyveCPU {
 	id: u32,
 	vcpu: vcpu::VirtualCPU,
+	vm_start: usize,
+	kernel_path: String,
 }
 
 impl EhyveCPU {
-	pub fn new(id: u32, vcpu: vcpu::VirtualCPU) -> EhyveCPU {
-		EhyveCPU { id: id, vcpu: vcpu }
+	pub fn new(id: u32, kernel_path: String, vcpu: vcpu::VirtualCPU, vm_start: usize) -> EhyveCPU {
+		EhyveCPU {
+			id: id,
+			vcpu: vcpu,
+			vm_start: vm_start,
+			kernel_path: kernel_path,
+		}
 	}
 
 	fn setup_cpuid(&self) {
@@ -161,6 +168,18 @@ impl VirtualCPU for EhyveCPU {
 		Ok(())
 	}
 
+	fn kernel_path(&self) -> String {
+		self.kernel_path.clone()
+	}
+
+	fn host_address(&self, addr: usize) -> usize {
+		addr + self.vm_start
+	}
+
+	fn virt_to_phys(&self, addr: usize) -> usize {
+		self.vcpu.translate_address(addr as u64).unwrap() as usize
+	}
+
 	fn run(&mut self, verbose: bool) -> Result<()> {
 		//self.print_registers();
 
@@ -193,28 +212,83 @@ impl VirtualCPU for EhyveCPU {
 					let io = unsafe { &kvm_run.__bindgen_anon_1.io };
 
 					if io.direction == KVM_EXIT_IO_OUT as u8 {
-						if io.port == SHUTDOWN_PORT || io.port == UHYVE_PORT_EXIT {
-							return Ok(());
-						} else {
-							unsafe {
+						match io.port {
+							SHUTDOWN_PORT | UHYVE_PORT_EXIT => return Ok(()),
+							UHYVE_UART_PORT => unsafe {
 								let data_addr = kvm_run as *const _ as u64 + io.data_offset;
-								let data = std::slice::from_raw_parts(
-									data_addr as *const u8,
-									io.size as usize,
-								);
-
-								debug!("io.size {}", io.size);
-								//match std::str::from_utf8(data) {
-								//	Ok(message) => self.io_exit(io.port, message.to_string(), verbose)?,
-								//	Err(_) => {
 								let message = CStr::from_ptr(data_addr as *const i8);
 								self.io_exit(
 									io.port,
 									message.to_str().unwrap().to_string(),
 									verbose,
 								)?;
-								//	}
-								//};
+							},
+							UHYVE_PORT_CMDSIZE => {
+								let args_ptr = unsafe {
+									*((kvm_run as *const _ as usize + io.data_offset as usize)
+										as *const usize)
+								};
+								self.cmdsize(self.host_address(args_ptr))?;
+							}
+							UHYVE_PORT_CMDVAL => {
+								let args_ptr = unsafe {
+									*((kvm_run as *const _ as usize + io.data_offset as usize)
+										as *const usize)
+								};
+								self.cmdval(self.host_address(args_ptr))?;
+							}
+							UHYVE_PORT_NETSTAT => {}
+							UHYVE_PORT_EXIT => {
+								let args_ptr = unsafe {
+									*((kvm_run as *const _ as usize + io.data_offset as usize)
+										as *const usize)
+								};
+								self.exit(self.host_address(args_ptr));
+							}
+							UHYVE_PORT_OPEN => {
+								let args_ptr = unsafe {
+									*((kvm_run as *const _ as usize + io.data_offset as usize)
+										as *const usize)
+								};
+								self.open(self.host_address(args_ptr))?;
+							}
+							UHYVE_PORT_WRITE => {
+								let args_ptr = unsafe {
+									*((kvm_run as *const _ as usize + io.data_offset as usize)
+										as *const usize)
+								};
+								self.write(self.host_address(args_ptr))?;
+							}
+							UHYVE_PORT_READ => {
+								let args_ptr = unsafe {
+									*((kvm_run as *const _ as usize + io.data_offset as usize)
+										as *const usize)
+								};
+								self.read(self.host_address(args_ptr))?;
+							}
+							UHYVE_PORT_UNLINK => {
+								let args_ptr = unsafe {
+									*((kvm_run as *const _ as usize + io.data_offset as usize)
+										as *const usize)
+								};
+								self.unlink(self.host_address(args_ptr))?;
+							}
+							UHYVE_PORT_LSEEK => {
+								let args_ptr = unsafe {
+									*((kvm_run as *const _ as usize + io.data_offset as usize)
+										as *const usize)
+								};
+								self.lseek(self.host_address(args_ptr))?;
+							}
+							UHYVE_PORT_CLOSE => {
+								let args_ptr = unsafe {
+									*((kvm_run as *const _ as usize + io.data_offset as usize)
+										as *const usize)
+								};
+								self.close(self.host_address(args_ptr))?;
+							}
+							_ => {
+								info!("Unhandled IO exit: 0x{:x}", io.port);
 							}
 						}
 					} else {

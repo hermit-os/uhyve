@@ -5,12 +5,11 @@ use libc;
 use memmap::Mmap;
 use raw_cpuid::CpuId;
 use std;
-use std::fmt;
 use std::fs::File;
 use std::intrinsics::volatile_store;
 use std::io::Cursor;
-use std::mem;
 use std::time::SystemTime;
+use std::{fmt, mem, slice};
 
 use consts::*;
 #[cfg(target_os = "linux")]
@@ -84,23 +83,267 @@ impl fmt::Debug for KernelHeaderV0 {
 pub struct VmParameter {
 	pub mem_size: usize,
 	pub num_cpus: u32,
-	pub file: Option<String>,
 }
 
 impl VmParameter {
-	pub fn new(mem_size: usize, num_cpus: u32, file: Option<String>) -> Self {
+	pub fn new(mem_size: usize, num_cpus: u32) -> Self {
 		VmParameter {
 			mem_size: mem_size,
 			num_cpus: num_cpus,
-			file: file,
 		}
 	}
+}
+
+#[repr(C, packed)]
+struct SysWrite {
+	fd: i32,
+	buf: *const u8,
+	len: usize,
+}
+
+#[repr(C, packed)]
+struct SysRead {
+	fd: i32,
+	buf: *const u8,
+	len: usize,
+	ret: isize,
+}
+
+#[repr(C, packed)]
+struct SysClose {
+	fd: i32,
+	ret: i32,
+}
+
+struct SysOpen {
+	name: *const u8,
+	flags: i32,
+	mode: i32,
+	ret: i32,
+}
+
+#[repr(C, packed)]
+struct SysLseek {
+	fd: i32,
+	offset: isize,
+	whence: i32,
+}
+
+#[repr(C, packed)]
+struct SysExit {
+	arg: i32,
+}
+
+const MAX_ARGC_ENVC: usize = 128;
+
+#[repr(C, packed)]
+struct SysCmdsize {
+	argc: i32,
+	argsz: [i32; MAX_ARGC_ENVC],
+	envc: i32,
+	envsz: [i32; MAX_ARGC_ENVC],
+}
+
+#[repr(C, packed)]
+struct SysCmdval {
+	argv: *const u8,
+	envp: *const u8,
+}
+
+#[repr(C, packed)]
+struct SysUnlink {
+	name: *const u8,
+	ret: i32,
 }
 
 pub trait VirtualCPU {
 	fn init(&mut self, entry_point: u64) -> Result<()>;
 	fn run(&mut self, verbose: bool) -> Result<()>;
 	fn print_registers(&self);
+	fn host_address(&self, addr: usize) -> usize;
+	fn virt_to_phys(&self, addr: usize) -> usize;
+	fn kernel_path(&self) -> String;
+
+	fn cmdsize(&self, args_ptr: usize) -> Result<()> {
+		let syssize = unsafe { &mut *(args_ptr as *mut SysCmdsize) };
+		syssize.argc = 0;
+		syssize.envc = 0;
+
+		let mut counter: i32 = 0;
+		let mut kernel_pos: i32 = 0;
+		let path = self.kernel_path();
+		let mut found_kernel = false;
+		for argument in std::env::args() {
+			if !found_kernel {
+				if path == argument {
+					kernel_pos = counter;
+					found_kernel = true;
+				}
+			}
+
+			if found_kernel {
+				syssize.argsz[(counter - kernel_pos) as usize] = argument.len() as i32 + 1;
+			}
+
+			counter += 1;
+		}
+		syssize.argc = counter - kernel_pos;
+
+		counter = 0;
+		for (key, value) in std::env::vars() {
+			syssize.envsz[counter as usize] = (key.len() + value.len()) as i32 + 2;
+			counter += 1;
+		}
+		syssize.envc = counter;
+
+		Ok(())
+	}
+
+	fn cmdval(&self, args_ptr: usize) -> Result<()> {
+		let syscmdval = unsafe { &*(args_ptr as *const SysCmdval) };
+
+		let mut counter: i32 = 0;
+		let argv = self.host_address(syscmdval.argv as usize);
+		let mut found_kernel = false;
+		let mut kernel_pos: i32 = 0;
+		let path = self.kernel_path();
+		for argument in std::env::args() {
+			if !found_kernel {
+				if argument == path {
+					kernel_pos = counter;
+					found_kernel = true;
+				}
+			}
+
+			if found_kernel {
+				let argvptr = unsafe {
+					self.host_address(
+						*((argv + (counter - kernel_pos) as usize * mem::size_of::<usize>())
+							as *mut *mut u8) as usize,
+					)
+				};
+				let len = argument.len();
+				let slice = unsafe { slice::from_raw_parts_mut(argvptr as *mut u8, len + 1) };
+
+				// Create string for environment variable
+				slice[0..len].copy_from_slice(argument.as_bytes());
+				slice[len..len + 1].copy_from_slice(&"\0".to_string().as_bytes());
+			}
+
+			counter += 1;
+		}
+
+		counter = 0;
+		let envp = self.host_address(syscmdval.envp as usize);
+		for (key, value) in std::env::vars() {
+			let envptr = unsafe {
+				self.host_address(
+					*((envp + counter as usize * mem::size_of::<usize>()) as *mut *mut u8) as usize,
+				)
+			};
+			let len = key.len() + value.len();
+			let slice = unsafe { slice::from_raw_parts_mut(envptr as *mut u8, len + 2) };
+
+			// Create string for environment variable
+			slice[0..key.len()].copy_from_slice(key.as_bytes());
+			slice[key.len()..key.len() + 1].copy_from_slice(&"=".to_string().as_bytes());
+			slice[key.len() + 1..len + 1].copy_from_slice(value.as_bytes());
+			slice[len + 1..len + 2].copy_from_slice(&"\0".to_string().as_bytes());
+			counter += 1;
+		}
+
+		Ok(())
+	}
+
+	fn unlink(&self, args_ptr: usize) -> Result<()> {
+		unsafe {
+			let sysunlink = &mut *(args_ptr as *mut SysUnlink);
+			sysunlink.ret = libc::unlink(self.host_address(sysunlink.name as usize) as *const i8);
+		}
+
+		Ok(())
+	}
+
+	fn exit(&self, args_ptr: usize) -> ! {
+		let sysexit = unsafe { &*(args_ptr as *const SysExit) };
+		std::process::exit(sysexit.arg);
+	}
+
+	fn open(&self, args_ptr: usize) -> Result<()> {
+		unsafe {
+			let sysopen = &mut *(args_ptr as *mut SysOpen);
+			sysopen.ret = libc::open(
+				self.host_address(sysopen.name as usize) as *const i8,
+				sysopen.flags,
+				sysopen.mode,
+			);
+		}
+
+		Ok(())
+	}
+
+	fn close(&self, args_ptr: usize) -> Result<()> {
+		unsafe {
+			let sysclose = &mut *(args_ptr as *mut SysClose);
+			sysclose.ret = libc::close(sysclose.fd);
+		}
+
+		Ok(())
+	}
+
+	fn read(&self, args_ptr: usize) -> Result<()> {
+		unsafe {
+			let sysread = &mut *(args_ptr as *mut SysRead);
+			let buffer = self.virt_to_phys(sysread.buf as usize);
+
+			let bytes_read = libc::read(
+				sysread.fd,
+				self.host_address(buffer) as *mut libc::c_void,
+				sysread.len,
+			);
+			if bytes_read > 0 {
+				sysread.ret = bytes_read;
+			} else {
+				sysread.ret = -1;
+			}
+		}
+
+		Ok(())
+	}
+
+	fn write(&self, args_ptr: usize) -> Result<()> {
+		let syswrite = unsafe { &*(args_ptr as *const SysWrite) };
+		let mut bytes_written: usize = 0;
+		let buffer = self.virt_to_phys(syswrite.buf as usize);
+
+		while bytes_written != syswrite.len {
+			unsafe {
+				let step = libc::write(
+					syswrite.fd,
+					self.host_address(buffer + bytes_written) as *const libc::c_void,
+					syswrite.len - bytes_written,
+				);
+				if step >= 0 {
+					bytes_written += step as usize;
+				} else {
+					let errloc = libc::__errno_location();
+					return Err(Error::LibcError(*errloc as i32));
+				}
+			}
+		}
+
+		Ok(())
+	}
+
+	fn lseek(&self, args_ptr: usize) -> Result<()> {
+		unsafe {
+			let syslseek = &mut *(args_ptr as *mut SysLseek);
+			syslseek.offset =
+				libc::lseek(syslseek.fd, syslseek.offset as i64, syslseek.whence) as isize;
+		}
+
+		Ok(())
+	}
 
 	fn io_exit(&self, port: u16, message: String, verbose: bool) -> Result<()> {
 		match port {
@@ -132,8 +375,7 @@ pub trait Vm {
 	fn set_entry_point(&mut self, entry: u64);
 	fn get_entry_point(&self) -> u64;
 	fn kernel_path(&self) -> &str;
-	fn create_cpu(&self, id: u32) -> Result<Box<VirtualCPU>>;
-	fn file(&self) -> (u64, u64);
+	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>>;
 
 	fn init_guest_mem(&self) {
 		debug!("Initialize guest memory");
@@ -301,7 +543,7 @@ pub trait Vm {
 					&mut (*kernel_header).image_size,
 					header.paddr + header.memsz - pstart,
 				);
-				debug!("Set kernel header to {:?}", *kernel_header);
+				//debug!("Set kernel header to {:?}", *kernel_header);
 			}
 		}
 
@@ -313,11 +555,9 @@ pub trait Vm {
 
 pub fn create_vm(path: String, specs: super::vm::VmParameter) -> Result<Ehyve> {
 	let vm = match specs {
-		super::vm::VmParameter {
-			mem_size,
-			num_cpus,
-			file,
-		} => Ehyve::new(path, mem_size, num_cpus, file)?,
+		super::vm::VmParameter { mem_size, num_cpus } => {
+			Ehyve::new(path.clone(), mem_size, num_cpus)?
+		}
 	};
 
 	Ok(vm)

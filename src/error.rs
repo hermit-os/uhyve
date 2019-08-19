@@ -8,6 +8,7 @@ pub type Result<T> = result::Result<T, Error>;
 pub enum Error {
 	FileMissing,
 	InternalError,
+	LibcError(i32),
 	InvalidFile(String),
 	NotEnoughMemory,
 	MissingFrequency,
@@ -37,6 +38,7 @@ impl fmt::Display for Error {
 		match *self {
 			Error::FileMissing => write!(f, "No execution file given"),
 			Error::InternalError => write!(f, "An internal error has occurred, please report."),
+			Error::LibcError(ref err) => write!(f, "Error from libc: {}", err),
 			Error::InvalidFile(ref file) => {
 				write!(f, "The file {} was not found or is invalid.", file)
 			}

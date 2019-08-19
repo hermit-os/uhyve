@@ -47,3 +47,4 @@ pub const UHYVE_PORT_CMDSIZE: u16 = 0x740;
 pub const UHYVE_PORT_CMDVAL: u16 = 0x780;
 
 pub const UHYVE_UART_PORT: u16 = 0x800;
+pub const UHYVE_PORT_UNLINK: u16 = 0x840;

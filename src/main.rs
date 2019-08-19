@@ -56,14 +56,6 @@ fn main() {
 				.help("Print also kernel messages"),
 		)
 		.arg(
-			Arg::with_name("FILE")
-				.short("f")
-				.long("file")
-				.value_name("FILE")
-				.help("Map FILE into the address space of the guest")
-				.takes_value(true),
-		)
-		.arg(
 			Arg::with_name("MEM")
 				.short("m")
 				.long("memsize")
@@ -92,7 +84,6 @@ fn main() {
 	let path = matches
 		.value_of("KERNEL")
 		.expect("Expect path to the kernel!");
-	let file = matches.value_of("FILE").map(str::to_string);
 	let mem_size: usize = matches
 		.value_of("MEM")
 		.map(|x| utils::parse_mem(&x).unwrap_or(DEFAULT_GUEST_SIZE))
@@ -107,7 +98,7 @@ fn main() {
 		verbose = true;
 	}
 
-	let mut vm = create_vm(path.to_string(), VmParameter::new(mem_size, num_cpus, file)).unwrap();
+	let mut vm = create_vm(path.to_string(), VmParameter::new(mem_size, num_cpus)).unwrap();
 	let num_cpus = vm.num_cpus();
 
 	vm.load_kernel().unwrap();

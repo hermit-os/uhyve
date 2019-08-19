@@ -3,32 +3,23 @@
 
 use error::*;
 use libc;
-use libkvm::linux::kvm_bindings::KVM_MEM_READONLY;
 use libkvm::mem::MemorySlot;
 use libkvm::vm::VirtualMachine;
 use linux::vcpu::*;
 use linux::KVM;
 use std;
-use std::fs::File;
-use std::io::prelude::*;
 use vm::{VirtualCPU, Vm};
 
 pub struct Ehyve {
 	vm: VirtualMachine,
 	entry_point: u64,
 	mem: MmapMemorySlot,
-	file: MmapMemorySlot,
 	num_cpus: u32,
 	path: String,
 }
 
 impl Ehyve {
-	pub fn new(
-		kernel_path: String,
-		mem_size: usize,
-		num_cpus: u32,
-		file_path: Option<String>,
-	) -> Result<Ehyve> {
+	pub fn new(kernel_path: String, mem_size: usize, num_cpus: u32) -> Result<Ehyve> {
 		let api = KVM.api_version().unwrap();
 		debug!("KVM API version {}", api);
 
@@ -42,45 +33,10 @@ impl Ehyve {
 		let mem = MmapMemorySlot::new(0, 0, mem_size, 0);
 		vm.set_user_memory_region(&mem).unwrap();
 
-		let file = match file_path {
-			Some(fname) => {
-				debug!("Map {} into the guest space", fname);
-
-				let mut f = File::open(fname.clone())
-					.map_err(|_| Error::InvalidFile(fname.clone().into()))?;
-				let metadata = f.metadata().expect("Unable to create metadata");
-				let slot_len =
-					((metadata.len() + (0x1000u64 - 1u64)) & !(0x1000u64 - 1u64)) as usize;
-
-				// map file after the guest memory
-				let mut slot = MmapMemorySlot::new(
-					1,
-					KVM_MEM_READONLY,
-					slot_len,
-					mem_size as u64 + 0x200000u64,
-				);
-				// load file
-				f.read(slot.as_slice_mut())
-					.map_err(|_| Error::InvalidFile(fname.clone().into()))?;
-				// map file into the guest space
-				vm.set_user_memory_region(&slot).unwrap();
-
-				slot
-			}
-			None => MmapMemorySlot {
-				id: !0,
-				flags: 0,
-				memory_size: 0,
-				guest_address: 0,
-				host_address: std::ptr::null_mut(),
-			},
-		};
-
 		let mut hyve = Ehyve {
 			vm: vm,
 			entry_point: 0,
 			mem: mem,
-			file: file,
 			num_cpus: num_cpus,
 			path: kernel_path,
 		};
@@ -130,12 +86,14 @@ impl Vm for Ehyve {
 		&self.path
 	}
 
-	fn create_cpu(&self, id: u32) -> Result<Box<VirtualCPU>> {
-		Ok(Box::new(EhyveCPU::new(id, self.vm.create_vcpu().unwrap())))
-	}
-
-	fn file(&self) -> (u64, u64) {
-		(self.file.guest_address as u64, self.file.memory_size as u64)
+	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>> {
+		let vm_start = self.mem.host_address() as usize;
+		Ok(Box::new(EhyveCPU::new(
+			id,
+			self.path.clone(),
+			self.vm.create_vcpu().unwrap(),
+			vm_start,
+		)))
 	}
 }
 
