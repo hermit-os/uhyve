@@ -2,44 +2,10 @@
 
 ## Introduction
 
-uhyve is small hypervisor to boot the library operating systems [HermitCore](https://hermitcore.org), which  is a novel unikernel operating system targeting a scalable and predictable runtime behavior for HPC and cloud environments. uhyve is tested under Linux, and Windows. The macOS is currently not finalized and currently under development.
+uhyve is small hypervisor to boot the library operating systems [RustyHermit](https://github.com/hermitcore/libhermit-rs), which  is a unikernel operating system targeting a scalable and predictable runtime behavior for HPC and cloud environments. 
 
 ## Requirements
 
-### macOS
-Apple's *Command Line Tools* must be installed.
-The Command Line Tool package gives macOS terminal users many commonly used tools and compilers, that are usually found in default Linux installations.
-Following terminal command installs these tools without Apple's IDE Xcode:
-
-```sh
-$ xcode-select --install
-```
-
-Additionally, the included hypervisor bases on the [Hypervisor Framework](https://developer.apple.com/documentation/hypervisor) depending on OS X Yosemite (10.10) or newer.
-Please activate this feature as *root* by using the following command on your system:
-
-```sh
-$ sysctl kern.hv_support=1
-```
-
-### Windows
-
-On Windows, *uhyve* bases on the [Windows Hypervisor Platform](https://docs.microsoft.com/en-us/virtualization/api/) depending on Windows 10 (build 17134 or above) or Windows Server (1803 or above).
-Please activate this feature as *root* by using the following command on your system:
-
-```sh
-Dism /Online /Enable-Feature /FeatureName:HypervisorPlatform
-```
-
-### Linux
-Linux users should install common developer tools.
-For instance, on Ubuntu 18.04 the following command installs the required tools:
-
-```sh
-$ apt-get install -y curl wget make autotools-dev gcc g++ build-essential
-```
-
-### Common for macOS, Windows and Linux
 It is required to install the Rust toolchain.
 Please visit the [Rust website](https://www.rust-lang.org/) and follow the installation instructions for your operating system.
 
@@ -53,8 +19,29 @@ $ cd uhyve
 
 $ # Get a copy of the Rust source code so we can rebuild core
 $ # for a bare-metal target.
-$ git submodule update --init
-$ make
+$ cargo build
+```
+
+Use the hypervisor to start the unikernel.
+
+```sh
+$ ./uhyve /path_to_the_unikernel/hello_world
+```
+
+There are two environment variables to modify the virtual machine:
+The variable `HERMIT_CPUS` specifies the number of cores the virtual machine may use.
+The variable `HERMIT_MEM` defines the memory size of the virtual machine. The suffixes *M* and *G* can be used to specify a value in megabytes or gigabytes, respectively.
+By default, the loader initializes a system with one core and 512 MiB RAM.
+For instance, the following command starts the demo application in a virtual machine, which has 4 cores and 8GiB memory:
+
+```bash
+$ HERMIT_CPUS=4 HERMIT_MEM=8G uhyve /path_to_the_unikernel/hello_world
+```
+
+Setting the environment variable `HERMIT_VERBOSE` to `1` makes the hypervisor print kernel log messages to the terminal.
+
+```bash
+$ HERMIT_VERBOSE=1 uhyve /path_to_the_unikernel/hello_world
 ```
 
 ## Licensing
@@ -65,3 +52,7 @@ Licensed under either of
  * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
+
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
