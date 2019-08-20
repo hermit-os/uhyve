@@ -7,7 +7,9 @@ use kvm_ioctls::VmFd;
 use libc;
 use std;
 use std::convert::TryInto;
-use vm::{VirtualCPU, Vm};
+use std::intrinsics::volatile_load;
+use std::ptr;
+use vm::{KernelHeaderV0, VirtualCPU, Vm};
 use x86_64::vcpu::*;
 use x86_64::{MemorySlot, KVM};
 
@@ -17,6 +19,7 @@ pub struct Uhyve {
 	mem: MmapMemorySlot,
 	num_cpus: u32,
 	path: String,
+	kernel_header: *const KernelHeaderV0,
 }
 
 impl Uhyve {
@@ -41,6 +44,7 @@ impl Uhyve {
 			mem: mem,
 			num_cpus: num_cpus,
 			path: kernel_path,
+			kernel_header: ptr::null(),
 		};
 
 		hyve.init()?;
@@ -97,6 +101,18 @@ impl Vm for Uhyve {
 			self.vm.create_vcpu(id.try_into().unwrap()).unwrap(),
 			vm_start,
 		)))
+	}
+
+	fn set_kernel_header(&mut self, header: *const KernelHeaderV0) {
+		self.kernel_header = header;
+	}
+
+	fn cpu_online(&self) -> u32 {
+		if self.kernel_header.is_null() {
+			0
+		} else {
+			unsafe { volatile_load(&(*self.kernel_header).cpu_online) }
+		}
 	}
 }
 

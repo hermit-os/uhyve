@@ -10,6 +10,7 @@ use x86::controlregs::*;
 use x86_64::KVM;
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
+const CPUID_TSC_DEADLINE: u32 = 1 << 24;
 const CPUID_ENABLE_MSR: u32 = 1 << 5;
 const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 
@@ -37,11 +38,12 @@ impl UhyveCPU {
 		let kvm_cpuid_entries = kvm_cpuid.mut_entries_slice();
 		let i = kvm_cpuid_entries
 			.iter()
-			.position(|&r| r.function == 0x40000000)
+			.position(|&r| r.function == 0x80000002)
 			.unwrap();
 
-		let mut id_reg_values: [u32; 3] = [0; 3];
-		let id = "uhyve\0";
+		// create own processor string (first part)
+		let mut id_reg_values: [u32; 4] = [0; 4];
+		let id = b"uhyve - unikerne";
 		unsafe {
 			std::ptr::copy_nonoverlapping(
 				id.as_ptr(),
@@ -49,9 +51,29 @@ impl UhyveCPU {
 				id.len(),
 			);
 		}
-		kvm_cpuid_entries[i].ebx = id_reg_values[0];
-		kvm_cpuid_entries[i].ecx = id_reg_values[1];
-		kvm_cpuid_entries[i].edx = id_reg_values[2];
+		kvm_cpuid_entries[i].eax = id_reg_values[0];
+		kvm_cpuid_entries[i].ebx = id_reg_values[1];
+		kvm_cpuid_entries[i].ecx = id_reg_values[2];
+		kvm_cpuid_entries[i].edx = id_reg_values[3];
+
+		let i = kvm_cpuid_entries
+			.iter()
+			.position(|&r| r.function == 0x80000003)
+			.unwrap();
+
+		// create own processor string (second part)
+		let id = b"l hypervisor\0";
+		unsafe {
+			std::ptr::copy_nonoverlapping(
+				id.as_ptr(),
+				id_reg_values.as_mut_ptr() as *mut u8,
+				id.len(),
+			);
+		}
+		kvm_cpuid_entries[i].eax = id_reg_values[0];
+		kvm_cpuid_entries[i].ebx = id_reg_values[1];
+		kvm_cpuid_entries[i].ecx = id_reg_values[2];
+		kvm_cpuid_entries[i].edx = id_reg_values[3];
 
 		let i = kvm_cpuid_entries
 			.iter()
@@ -60,6 +82,7 @@ impl UhyveCPU {
 
 		// CPUID to define basic cpu features
 		kvm_cpuid_entries[i].ecx |= CPUID_EXT_HYPERVISOR; // propagate that we are running on a hypervisor
+		kvm_cpuid_entries[i].ecx |= CPUID_TSC_DEADLINE; // enable TSC deadline feature
 		kvm_cpuid_entries[i].edx |= CPUID_ENABLE_MSR; // enable msr support
 
 		let i = kvm_cpuid_entries
@@ -146,7 +169,6 @@ impl UhyveCPU {
 		let mut regs = self.vcpu.get_regs().unwrap();
 		regs.rflags = 2;
 		regs.rip = entry_point;
-		regs.rsp = 0x200000u64 - 0x1000u64;
 
 		self.vcpu.set_regs(&regs).unwrap();
 	}
@@ -242,7 +264,9 @@ impl VirtualCPU for UhyveCPU {
 				VcpuExit::IoOut(port, addr) => {
 					//debug!("out port 0x{:x}, addr {:?}", port, addr);
 					match port {
-						SHUTDOWN_PORT | UHYVE_PORT_EXIT => return Ok(()),
+						SHUTDOWN_PORT => {
+							return Ok(());
+						}
 						UHYVE_UART_PORT => {
 							self.uart(String::from_utf8_lossy(&addr).to_string(), verbose)?;
 						}
@@ -256,7 +280,7 @@ impl VirtualCPU for UhyveCPU {
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
 							self.cmdval(self.host_address(data_addr))?;
 						}
-						//UHYVE_PORT_NETSTAT => {},
+						//UHYVE_PORT_NETSTAT => {}
 						UHYVE_PORT_EXIT => {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };

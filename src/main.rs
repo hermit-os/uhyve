@@ -1,3 +1,6 @@
+#![feature(renamed_spin_loop)]
+#![feature(core_intrinsics)]
+
 extern crate aligned_alloc;
 extern crate elf;
 extern crate libc;
@@ -7,13 +10,15 @@ extern crate x86;
 extern crate clap;
 #[macro_use]
 extern crate lazy_static;
+#[cfg(target_os = "linux")]
 extern crate kvm_bindings;
+#[cfg(target_os = "linux")]
 extern crate kvm_ioctls;
 
 #[macro_use]
 extern crate log;
 extern crate env_logger;
-extern crate procfs;
+extern crate raw_cpuid;
 
 pub mod consts;
 pub mod error;
@@ -86,7 +91,7 @@ fn main() {
 	let mut vm = create_vm(path.to_string(), VmParameter::new(mem_size, num_cpus)).unwrap();
 	let num_cpus = vm.num_cpus();
 
-	vm.load_kernel().unwrap();
+	vm.load_kernel(verbose).unwrap();
 
 	let vm = Arc::new(vm);
 	let threads: Vec<_> = (0..num_cpus)
@@ -98,6 +103,12 @@ fn main() {
 
 				let mut cpu = vm.create_cpu(tid).unwrap();
 				cpu.init(vm.get_entry_point()).unwrap();
+
+				// only one core is able to enter startup code
+				// => the wait for the predecessor core
+				while tid != vm.cpu_online() {
+					std::hint::spin_loop();
+				}
 
 				let result = cpu.run(verbose);
 				match result {

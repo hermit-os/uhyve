@@ -3,11 +3,11 @@ use elf::types::{ELFCLASS64, EM_X86_64, ET_EXEC, PT_LOAD};
 use error::*;
 use libc;
 use memmap::Mmap;
-use procfs;
+use raw_cpuid::CpuId;
 use std;
 use std::fs::File;
+use std::intrinsics::volatile_store;
 use std::io::Cursor;
-use std::ptr;
 use std::time::SystemTime;
 use std::{fmt, mem, slice};
 
@@ -15,30 +15,30 @@ use consts::*;
 pub use x86_64::uhyve::*;
 
 #[repr(C)]
-struct KernelHeaderV0 {
-	magic_number: u32,
-	version: u32,
-	base: u64,
-	limit: u64,
-	image_size: u64,
-	current_stack_address: u64,
-	current_percore_address: u64,
-	host_logical_addr: u64,
-	boot_gtod: u64,
-	mb_info: u64,
-	cmdline: u64,
-	cmdsize: u64,
-	cpu_freq: u32,
-	boot_processor: u32,
-	cpu_online: u32,
-	possible_cpus: u32,
-	current_boot_id: u32,
-	uartport: u16,
-	single_kernel: u8,
-	uhyve: u8,
-	hcip: [u8; 4],
-	hcgateway: [u8; 4],
-	hcmask: [u8; 4],
+pub struct KernelHeaderV0 {
+	pub magic_number: u32,
+	pub version: u32,
+	pub base: u64,
+	pub limit: u64,
+	pub image_size: u64,
+	pub current_stack_address: u64,
+	pub current_percore_address: u64,
+	pub host_logical_addr: u64,
+	pub boot_gtod: u64,
+	pub mb_info: u64,
+	pub cmdline: u64,
+	pub cmdsize: u64,
+	pub cpu_freq: u32,
+	pub boot_processor: u32,
+	pub cpu_online: u32,
+	pub possible_cpus: u32,
+	pub current_boot_id: u32,
+	pub uartport: u16,
+	pub single_kernel: u8,
+	pub uhyve: u8,
+	pub hcip: [u8; 4],
+	pub hcgateway: [u8; 4],
+	pub hcmask: [u8; 4],
 }
 
 impl fmt::Debug for KernelHeaderV0 {
@@ -260,6 +260,7 @@ pub trait VirtualCPU {
 	}
 
 	fn exit(&self, args_ptr: usize) -> ! {
+		info!("JJJ");
 		let sysexit = unsafe { &*(args_ptr as *const SysExit) };
 		std::process::exit(sysexit.arg);
 	}
@@ -365,6 +366,8 @@ pub trait Vm {
 	fn get_entry_point(&self) -> u64;
 	fn kernel_path(&self) -> &str;
 	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>>;
+	fn set_kernel_header(&mut self, header: *const KernelHeaderV0);
+	fn cpu_online(&self) -> u32;
 
 	fn init_guest_mem(&self) {
 		debug!("Initialize guest memory");
@@ -388,10 +391,8 @@ pub trait Vm {
 			*((gdt_entry + 2 * mem::size_of::<*mut u64>() as u64) as *mut u64) =
 				create_gdt_entry(0xC093, 0, 0xFFFFF); /* data */
 
-			/*
-				* For simplicity we currently use 2MB pages and only a single
-				* PML4/PDPTE/PDE.
-				*/
+			/* For simplicity we currently use 2MB pages and only a single
+			PML4/PDPTE/PDE. */
 
 			libc::memset(pml4 as *mut _, 0x00, PAGE_SIZE);
 			libc::memset(pdpte as *mut _, 0x00, PAGE_SIZE);
@@ -415,7 +416,7 @@ pub trait Vm {
 		}
 	}
 
-	fn load_kernel(&mut self) -> Result<()> {
+	fn load_kernel(&mut self, verbose: bool) -> Result<()> {
 		debug!("Load kernel from {}", self.kernel_path());
 
 		// open the file in read only
@@ -466,13 +467,8 @@ pub trait Vm {
 
 			let vm_slice = unsafe { std::slice::from_raw_parts_mut(vm_mem, vm_mem_length) };
 			vm_slice[vm_start..vm_end].copy_from_slice(&kernel_file[kernel_start..kernel_end]);
-
-			unsafe {
-				libc::memset(
-					vm_mem.offset(vm_end as isize) as *mut libc::c_void,
-					0x00,
-					(header.memsz - header.filesz) as usize,
-				);
+			for i in &mut vm_slice[vm_end..vm_end + (header.memsz - header.filesz) as usize] {
+				*i = 0
 			}
 
 			unsafe {
@@ -485,43 +481,47 @@ pub trait Vm {
 							"Found latest HermitCore header at 0x{:x}",
 							header.paddr as usize
 						);
+						self.set_kernel_header(kernel_header);
 
-						ptr::write_volatile(&mut (*kernel_header).base, header.paddr);
-						ptr::write_volatile(&mut (*kernel_header).limit, vm_mem_length as u64); // memory size
-						ptr::write_volatile(&mut (*kernel_header).possible_cpus, 1);
-						ptr::write_volatile(&mut (*kernel_header).uhyve, 1);
-						ptr::write_volatile(&mut (*kernel_header).current_boot_id, 0);
-						ptr::write_volatile(&mut (*kernel_header).uartport, UHYVE_UART_PORT);
-						ptr::write_volatile(
+						volatile_store(&mut (*kernel_header).base, header.paddr);
+						volatile_store(&mut (*kernel_header).limit, vm_mem_length as u64); // memory size
+						volatile_store(&mut (*kernel_header).possible_cpus, 1);
+						volatile_store(&mut (*kernel_header).uhyve, 1);
+						volatile_store(&mut (*kernel_header).current_boot_id, 0);
+						if verbose {
+							volatile_store(&mut (*kernel_header).uartport, UHYVE_UART_PORT);
+						} else {
+							volatile_store(&mut (*kernel_header).uartport, 0);
+						}
+						volatile_store(
 							&mut (*kernel_header).current_stack_address,
 							header.paddr + mem::size_of::<KernelHeaderV0>() as u64,
 						);
 
-						ptr::write_volatile(
+						volatile_store(
 							&mut (*kernel_header).host_logical_addr,
 							vm_mem.offset(0) as u64,
 						);
 
 						match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-							Ok(n) => ptr::write_volatile(
+							Ok(n) => volatile_store(
 								&mut (*kernel_header).boot_gtod,
 								n.as_secs() * 1000000,
 							),
 							Err(_) => panic!("SystemTime before UNIX EPOCH!"),
 						}
 
-						let cpuinfo = procfs::cpuinfo().unwrap();
-						let info = cpuinfo.get_info(0).unwrap();
-						let freq: u32 = info
-							.get("cpu MHz")
-							.expect("Unable to determine processor frequency")
-							.split_ascii_whitespace()
-							.next()
-							.expect("Unable to determine processor frequency")
-							.parse::<f32>()
-							.expect("Unable to determine processor frequency") as u32;
+						let cpuid = CpuId::new();
 
-						ptr::write_volatile(&mut (*kernel_header).cpu_freq, freq);
+						match cpuid.get_processor_frequency_info() {
+							Some(freqinfo) => {
+								volatile_store(
+									&mut (*kernel_header).cpu_freq,
+									freqinfo.processor_base_frequency() as u32,
+								);
+							}
+							None => info!("Unable to determine processor frequency!"),
+						}
 					} else {
 						panic!("Unable to detect kernel");
 					}
@@ -529,7 +529,7 @@ pub trait Vm {
 
 				// store total kernel size
 				let kernel_header = vm_mem.offset(pstart as isize) as *mut KernelHeaderV0;
-				ptr::write_volatile(
+				volatile_store(
 					&mut (*kernel_header).image_size,
 					header.paddr + header.memsz - pstart,
 				);
