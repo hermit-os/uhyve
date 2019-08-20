@@ -261,7 +261,6 @@ pub trait VirtualCPU {
 	}
 
 	fn exit(&self, args_ptr: usize) -> ! {
-		info!("JJJ");
 		let sysexit = unsafe { &*(args_ptr as *const SysExit) };
 		std::process::exit(sysexit.arg);
 	}
