@@ -12,7 +12,8 @@ use std::time::SystemTime;
 use std::{fmt, mem, slice};
 
 use consts::*;
-pub use x86_64::uhyve::*;
+#[cfg(target_os = "linux")]
+pub use linux::uhyve::*;
 
 #[repr(C)]
 pub struct KernelHeaderV0 {

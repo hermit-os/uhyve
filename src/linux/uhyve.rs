@@ -5,13 +5,13 @@ use error::*;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use libc;
+use linux::vcpu::*;
+use linux::{MemorySlot, KVM};
 use std;
 use std::convert::TryInto;
 use std::intrinsics::volatile_load;
 use std::ptr;
 use vm::{KernelHeaderV0, VirtualCPU, Vm};
-use x86_64::vcpu::*;
-use x86_64::{MemorySlot, KVM};
 
 pub struct Uhyve {
 	vm: VmFd,

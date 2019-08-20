@@ -22,9 +22,10 @@ extern crate raw_cpuid;
 
 pub mod consts;
 pub mod error;
+#[cfg(target_os = "linux")]
+mod linux;
 pub mod utils;
 mod vm;
-mod x86_64;
 
 use clap::{App, Arg};
 use consts::*;
