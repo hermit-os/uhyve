@@ -244,8 +244,7 @@ impl VirtualCPU for EhyveCPU {
 					match port {
 						SHUTDOWN_PORT | UHYVE_PORT_EXIT => return Ok(()),
 						UHYVE_UART_PORT => {
-							self.io_exit(
-								port,
+							self.uart(
 								String::from_utf8_lossy(&addr).to_string(),
 								verbose,
 							)?;

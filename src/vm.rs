@@ -340,18 +340,12 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
-	fn io_exit(&self, port: u16, message: String, verbose: bool) -> Result<()> {
-		match port {
-			UHYVE_UART_PORT => {
-				if verbose == true {
-					print!("{}", message);
-					//io::stdout().flush().ok().expect("Could not flush stdout");
-				}
-				Ok(())
-			}
-			SHUTDOWN_PORT => Err(Error::Shutdown),
-			_ => Err(Error::UnknownIOPort(port)),
+	fn uart(&self, message: String, verbose: bool) -> Result<()> {
+		if verbose == true {
+			print!("{}", message);
+			//io::stdout().flush().ok().expect("Could not flush stdout");
 		}
+		Ok(())
 	}
 }
 
