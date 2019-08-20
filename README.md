@@ -9,8 +9,8 @@ uhyve is small hypervisor to boot the library operating systems [RustyHermit](ht
 
 ## Requirements
 
-It is required to install the Rust toolchain.
-Please visit the [Rust website](https://www.rust-lang.org/) and follow the installation instructions for your operating system.
+It is required to install the **nightly version** of the Rust toolchain on your Linux system.
+Please visit the [Rust website](https://www.rust-lang.org/) and follow the installation instructions.
 
 ## Building
 The final step is to create a copy of the repository and to build the kernel:
