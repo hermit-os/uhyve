@@ -1,5 +1,3 @@
-#![feature(core_intrinsics)]
-
 extern crate aligned_alloc;
 extern crate elf;
 extern crate libc;
@@ -15,7 +13,7 @@ extern crate kvm_ioctls;
 #[macro_use]
 extern crate log;
 extern crate env_logger;
-extern crate raw_cpuid;
+extern crate procfs;
 
 pub mod consts;
 pub mod error;

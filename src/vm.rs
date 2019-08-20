@@ -3,13 +3,13 @@ use elf::types::{ELFCLASS64, EM_X86_64, ET_EXEC, PT_LOAD};
 use error::*;
 use libc;
 use memmap::Mmap;
-use raw_cpuid::CpuId;
 use std;
 use std::fs::File;
-use std::intrinsics::volatile_store;
+use std::ptr;
 use std::io::Cursor;
 use std::time::SystemTime;
 use std::{fmt, mem, slice};
+use procfs;
 
 use consts::*;
 pub use x86_64::ehyve::*;
@@ -486,41 +486,44 @@ pub trait Vm {
 							header.paddr as usize
 						);
 
-						volatile_store(&mut (*kernel_header).base, header.paddr);
-						volatile_store(&mut (*kernel_header).limit, vm_mem_length as u64); // memory size
-						volatile_store(&mut (*kernel_header).possible_cpus, 1);
-						volatile_store(&mut (*kernel_header).uhyve, 1);
-						volatile_store(&mut (*kernel_header).current_boot_id, 0);
-						volatile_store(&mut (*kernel_header).uartport, UHYVE_UART_PORT);
-						volatile_store(
+						ptr::write_volatile(&mut (*kernel_header).base, header.paddr);
+						ptr::write_volatile(&mut (*kernel_header).limit, vm_mem_length as u64); // memory size
+						ptr::write_volatile(&mut (*kernel_header).possible_cpus, 1);
+						ptr::write_volatile(&mut (*kernel_header).uhyve, 1);
+						ptr::write_volatile(&mut (*kernel_header).current_boot_id, 0);
+						ptr::write_volatile(&mut (*kernel_header).uartport, UHYVE_UART_PORT);
+						ptr::write_volatile(
 							&mut (*kernel_header).current_stack_address,
 							header.paddr + mem::size_of::<KernelHeaderV0>() as u64,
 						);
 
-						volatile_store(
+						ptr::write_volatile(
 							&mut (*kernel_header).host_logical_addr,
 							vm_mem.offset(0) as u64,
 						);
 
 						match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-							Ok(n) => volatile_store(
+							Ok(n) => ptr::write_volatile(
 								&mut (*kernel_header).boot_gtod,
 								n.as_secs() * 1000000,
 							),
 							Err(_) => panic!("SystemTime before UNIX EPOCH!"),
 						}
 
-						let cpuid = CpuId::new();
-
-						match cpuid.get_processor_frequency_info() {
-							Some(freqinfo) => {
-								volatile_store(
-									&mut (*kernel_header).cpu_freq,
-									freqinfo.processor_base_frequency() as u32,
-								);
-							}
-							None => info!("Unable to determine processor frequency!"),
-						}
+						let cpuinfo = procfs::cpuinfo().unwrap();
+						let info = cpuinfo.get_info(0).unwrap();
+						let freq: u32 = info.get("cpu MHz")
+							.expect("Unable to determine processor frequency")
+							.split_ascii_whitespace()
+							.next()
+							.expect("Unable to determine processor frequency")
+							.parse::<f32>()
+							.expect("Unable to determine processor frequency") as u32;
+				
+						ptr::write_volatile(
+							&mut (*kernel_header).cpu_freq,
+							freq,
+						);
 					} else {
 						panic!("Unable to detect kernel");
 					}
@@ -528,7 +531,7 @@ pub trait Vm {
 
 				// store total kernel size
 				let kernel_header = vm_mem.offset(pstart as isize) as *mut KernelHeaderV0;
-				volatile_store(
+				ptr::write_volatile(
 					&mut (*kernel_header).image_size,
 					header.paddr + header.memsz - pstart,
 				);
