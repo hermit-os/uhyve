@@ -3,16 +3,16 @@ use elf::types::{ELFCLASS64, EM_X86_64, ET_EXEC, PT_LOAD};
 use error::*;
 use libc;
 use memmap::Mmap;
+use procfs;
 use std;
 use std::fs::File;
-use std::ptr;
 use std::io::Cursor;
+use std::ptr;
 use std::time::SystemTime;
 use std::{fmt, mem, slice};
-use procfs;
 
 use consts::*;
-pub use x86_64::ehyve::*;
+pub use x86_64::uhyve::*;
 
 #[repr(C)]
 struct KernelHeaderV0 {
@@ -512,18 +512,16 @@ pub trait Vm {
 
 						let cpuinfo = procfs::cpuinfo().unwrap();
 						let info = cpuinfo.get_info(0).unwrap();
-						let freq: u32 = info.get("cpu MHz")
+						let freq: u32 = info
+							.get("cpu MHz")
 							.expect("Unable to determine processor frequency")
 							.split_ascii_whitespace()
 							.next()
 							.expect("Unable to determine processor frequency")
 							.parse::<f32>()
 							.expect("Unable to determine processor frequency") as u32;
-				
-						ptr::write_volatile(
-							&mut (*kernel_header).cpu_freq,
-							freq,
-						);
+
+						ptr::write_volatile(&mut (*kernel_header).cpu_freq, freq);
 					} else {
 						panic!("Unable to detect kernel");
 					}
@@ -545,10 +543,10 @@ pub trait Vm {
 	}
 }
 
-pub fn create_vm(path: String, specs: super::vm::VmParameter) -> Result<Ehyve> {
+pub fn create_vm(path: String, specs: super::vm::VmParameter) -> Result<Uhyve> {
 	let vm = match specs {
 		super::vm::VmParameter { mem_size, num_cpus } => {
-			Ehyve::new(path.clone(), mem_size, num_cpus)?
+			Uhyve::new(path.clone(), mem_size, num_cpus)?
 		}
 	};
 

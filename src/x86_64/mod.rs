@@ -1,4 +1,4 @@
-pub mod ehyve;
+pub mod uhyve;
 pub mod vcpu;
 
 use kvm_ioctls::Kvm;

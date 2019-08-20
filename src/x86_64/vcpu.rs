@@ -13,16 +13,16 @@ const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
 const CPUID_ENABLE_MSR: u32 = 1 << 5;
 const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 
-pub struct EhyveCPU {
+pub struct UhyveCPU {
 	id: u32,
 	vcpu: VcpuFd,
 	vm_start: usize,
 	kernel_path: String,
 }
 
-impl EhyveCPU {
-	pub fn new(id: u32, kernel_path: String, vcpu: VcpuFd, vm_start: usize) -> EhyveCPU {
-		EhyveCPU {
+impl UhyveCPU {
+	pub fn new(id: u32, kernel_path: String, vcpu: VcpuFd, vm_start: usize) -> UhyveCPU {
+		UhyveCPU {
 			id: id,
 			vcpu: vcpu,
 			vm_start: vm_start,
@@ -160,7 +160,7 @@ impl EhyveCPU {
 	}
 }
 
-impl VirtualCPU for EhyveCPU {
+impl VirtualCPU for UhyveCPU {
 	fn init(&mut self, entry_point: u64) -> Result<()> {
 		self.setup_long_mode(entry_point);
 		self.setup_cpuid();
@@ -244,10 +244,7 @@ impl VirtualCPU for EhyveCPU {
 					match port {
 						SHUTDOWN_PORT | UHYVE_PORT_EXIT => return Ok(()),
 						UHYVE_UART_PORT => {
-							self.uart(
-								String::from_utf8_lossy(&addr).to_string(),
-								verbose,
-							)?;
+							self.uart(String::from_utf8_lossy(&addr).to_string(), verbose)?;
 						}
 						UHYVE_PORT_CMDSIZE => {
 							let data_addr: usize =
@@ -330,16 +327,16 @@ impl VirtualCPU for EhyveCPU {
 		print!("\nSegment registers:\n");
 		print!("------------------\n");
 		print!("register  selector  base              limit     type  p dpl db s l g avl\n");
-		EhyveCPU::show_segment("cs ", &sregs.cs);
-		EhyveCPU::show_segment("ss ", &sregs.ss);
-		EhyveCPU::show_segment("ds ", &sregs.ds);
-		EhyveCPU::show_segment("es ", &sregs.es);
-		EhyveCPU::show_segment("fs ", &sregs.fs);
-		EhyveCPU::show_segment("gs ", &sregs.gs);
-		EhyveCPU::show_segment("tr ", &sregs.tr);
-		EhyveCPU::show_segment("ldt", &sregs.ldt);
-		EhyveCPU::show_dtable("gdt", &sregs.gdt);
-		EhyveCPU::show_dtable("idt", &sregs.idt);
+		UhyveCPU::show_segment("cs ", &sregs.cs);
+		UhyveCPU::show_segment("ss ", &sregs.ss);
+		UhyveCPU::show_segment("ds ", &sregs.ds);
+		UhyveCPU::show_segment("es ", &sregs.es);
+		UhyveCPU::show_segment("fs ", &sregs.fs);
+		UhyveCPU::show_segment("gs ", &sregs.gs);
+		UhyveCPU::show_segment("tr ", &sregs.tr);
+		UhyveCPU::show_segment("ldt", &sregs.ldt);
+		UhyveCPU::show_dtable("gdt", &sregs.gdt);
+		UhyveCPU::show_dtable("idt", &sregs.idt);
 
 		print!("\nAPIC:\n");
 		print!("-----\n");
@@ -350,7 +347,7 @@ impl VirtualCPU for EhyveCPU {
 	}
 }
 
-impl Drop for EhyveCPU {
+impl Drop for UhyveCPU {
 	fn drop(&mut self) {
 		debug!("Drop vCPU {}", self.id);
 		//self.print_registers();

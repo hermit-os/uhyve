@@ -1,4 +1,4 @@
-//! This file contains the entry point to the Hypervisor. The ehyve utilizes KVM to
+//! This file contains the entry point to the Hypervisor. The Uhyve utilizes KVM to
 //! create a Virtual Machine and load the kernel.
 
 use error::*;
@@ -11,7 +11,7 @@ use vm::{VirtualCPU, Vm};
 use x86_64::vcpu::*;
 use x86_64::{MemorySlot, KVM};
 
-pub struct Ehyve {
+pub struct Uhyve {
 	vm: VmFd,
 	entry_point: u64,
 	mem: MmapMemorySlot,
@@ -19,8 +19,8 @@ pub struct Ehyve {
 	path: String,
 }
 
-impl Ehyve {
-	pub fn new(kernel_path: String, mem_size: usize, num_cpus: u32) -> Result<Ehyve> {
+impl Uhyve {
+	pub fn new(kernel_path: String, mem_size: usize, num_cpus: u32) -> Result<Uhyve> {
 		let vm = KVM.create_vm().unwrap();
 
 		let mut cap: kvm_enable_cap = Default::default();
@@ -35,7 +35,7 @@ impl Ehyve {
 			vm.set_user_memory_region(mem.mem_region).unwrap();
 		}
 
-		let mut hyve = Ehyve {
+		let mut hyve = Uhyve {
 			vm: vm,
 			entry_point: 0,
 			mem: mem,
@@ -68,7 +68,7 @@ impl Ehyve {
 	}
 }
 
-impl Vm for Ehyve {
+impl Vm for Uhyve {
 	fn set_entry_point(&mut self, entry: u64) {
 		self.entry_point = entry;
 	}
@@ -91,7 +91,7 @@ impl Vm for Ehyve {
 
 	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>> {
 		let vm_start = self.mem.host_address() as usize;
-		Ok(Box::new(EhyveCPU::new(
+		Ok(Box::new(UhyveCPU::new(
 			id,
 			self.path.clone(),
 			self.vm.create_vcpu(id.try_into().unwrap()).unwrap(),
@@ -100,14 +100,14 @@ impl Vm for Ehyve {
 	}
 }
 
-impl Drop for Ehyve {
+impl Drop for Uhyve {
 	fn drop(&mut self) {
 		debug!("Drop virtual machine");
 	}
 }
 
-unsafe impl Send for Ehyve {}
-unsafe impl Sync for Ehyve {}
+unsafe impl Send for Uhyve {}
+unsafe impl Sync for Uhyve {}
 
 #[derive(Debug)]
 struct MmapMemorySlot {
