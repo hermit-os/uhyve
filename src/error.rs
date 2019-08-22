@@ -1,5 +1,3 @@
-#[cfg(target_os = "macos")]
-use hypervisor;
 use std::{fmt, result};
 
 pub type Result<T> = result::Result<T, Error>;
@@ -12,10 +10,7 @@ pub enum Error {
 	InvalidFile(String),
 	NotEnoughMemory,
 	MissingFrequency,
-	#[cfg(target_os = "macos")]
-	Hypervisor(hypervisor::Error),
 	UnknownExitReason,
-	UnknownIOPort(u16),
 	KVMInitFailed,
 	KVMUnableToCreateVM,
 	KVMUnableToCreateIrqChip,
@@ -23,14 +18,6 @@ pub enum Error {
 	Shutdown,
 	ParseMemory,
 	UnhandledExitReason,
-}
-
-#[cfg(target_os = "macos")]
-pub fn to_error(err: hypervisor::Error) -> Result<()> {
-	match err {
-		hypervisor::Error::Success => Ok(()),
-		_ => Err(Error::Hypervisor(err)),
-	}
 }
 
 impl fmt::Display for Error {
@@ -50,10 +37,7 @@ impl fmt::Display for Error {
 				f,
 				"Couldn't get the CPU frequency from your system. (is /proc/cpuinfo missing?)"
 			),
-			#[cfg(target_os = "macos")]
-			Error::Hypervisor(ref err) => write!(f, "The hypervisor has failed: {:?}", err),
 			Error::UnknownExitReason => write!(f, "Unknown exit reason."),
-			Error::UnknownIOPort(ref port) => write!(f, "Unknown io port 0x{:x}.", port),
 			Error::Shutdown => write!(f, "Receives shutdown command"),
 			Error::KVMInitFailed => write!(f, "Unable to initialize KVM"),
 			Error::KVMUnableToCreateVM => write!(f, "Unable to create VM"),
