@@ -42,12 +42,22 @@ fn main() {
 	let matches = App::new("uhyve")
 		.version(crate_version!())
 		.author("Stefan Lankes <slankes@eonerc.rwth-aachen.de>")
-		.about("A minimal hypervisor for HermitCore")
+		.about("A minimal hypervisor for RustyHermit")
 		.arg(
 			Arg::with_name("VERBOSE")
 				.short("v")
 				.long("verbose")
 				.help("Print also kernel messages"),
+		)
+		.arg(
+			Arg::with_name("HUGEPAGE")
+				.long("disable-hugepage")
+				.help("Disable the usage of huge pages")
+		)
+		.arg(
+			Arg::with_name("MERGEABLE")
+				.long("mergeable")
+				.help("Enable kernel feature to merge same pages")
 		)
 		.arg(
 			Arg::with_name("MEM")
@@ -87,15 +97,23 @@ fn main() {
 		.map(|x| utils::parse_u32(&x).unwrap_or(1))
 		.unwrap_or(1);
 
+	let mut mergeable: bool = utils::parse_bool("HERMIT_MERGEABLE", false);
+	if matches.is_present("MERGEABLE") {
+		mergeable = true;
+	}
+	let mut hugepage: bool = !utils::parse_bool("HERMIT_HUGEPAGE", false);
+	if matches.is_present("HUGEPAGE") {
+		hugepage = true;
+	}
 	let mut verbose: bool = utils::parse_bool("HERMIT_VERBOSE", false);
 	if matches.is_present("VERBOSE") {
 		verbose = true;
 	}
 
-	let mut vm = create_vm(path.to_string(), VmParameter::new(mem_size, num_cpus)).unwrap();
+	let mut vm = create_vm(path.to_string(), &VmParameter::new(mem_size, num_cpus, verbose, hugepage, mergeable)).unwrap();
 	let num_cpus = vm.num_cpus();
 
-	vm.load_kernel(verbose).unwrap();
+	vm.load_kernel().unwrap();
 
 	let vm = Arc::new(vm);
 	let threads: Vec<_> = (0..num_cpus)

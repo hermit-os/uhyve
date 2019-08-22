@@ -7,6 +7,8 @@
 
 // This is a heavily stripped down and slightly modified version of the libhermit-rs x86-64 paging code written by Colin Finck
 
+#![allow(dead_code)]
+
 /// Number of Offset bits of a virtual address for a 4 KiB page, which are shifted away to get its Page Frame Number (PFN).
 const PAGE_BITS: usize = 12;
 

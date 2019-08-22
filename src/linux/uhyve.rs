@@ -11,7 +11,8 @@ use std;
 use std::convert::TryInto;
 use std::intrinsics::volatile_load;
 use std::ptr;
-use vm::{KernelHeaderV0, VirtualCPU, Vm};
+use vm::{KernelHeaderV0, VirtualCPU, Vm, VmParameter};
+use error::Error::*;
 
 pub struct Uhyve {
 	vm: VmFd,
@@ -20,10 +21,11 @@ pub struct Uhyve {
 	num_cpus: u32,
 	path: String,
 	kernel_header: *const KernelHeaderV0,
+	verbose: bool
 }
 
 impl Uhyve {
-	pub fn new(kernel_path: String, mem_size: usize, num_cpus: u32) -> Result<Uhyve> {
+	pub fn new(kernel_path: String, specs: &VmParameter) -> Result<Uhyve> {
 		let vm = KVM.create_vm().unwrap();
 
 		let mut cap: kvm_enable_cap = Default::default();
@@ -33,7 +35,30 @@ impl Uhyve {
 			vm.set_tss_address(0xfffbd000).unwrap();
 		}
 
-		let mem = MmapMemorySlot::new(0, 0, mem_size, 0);
+		let mem = MmapMemorySlot::new(0, 0, specs.mem_size, 0);
+
+		if specs.mergeable {
+			debug!("Enable kernel feature to merge same pages");
+			let ret = unsafe {
+				libc::madvise(mem.mem_region.userspace_addr as *mut libc::c_void, specs.mem_size, libc::MADV_MERGEABLE)
+			};
+
+			if ret < 0 {
+				return Err(LibcError(unsafe { *libc::__errno_location() }));
+			}
+		}
+
+		if specs.hugepage {
+			debug!("Uhyve uses huge pages");
+			let ret = unsafe {
+				libc::madvise(mem.mem_region.userspace_addr as *mut libc::c_void, specs.mem_size, libc::MADV_HUGEPAGE)
+			};
+
+			if ret < 0 {
+				return Err(LibcError(unsafe { *libc::__errno_location() }));
+			}
+		}
+
 		unsafe {
 			vm.set_user_memory_region(mem.mem_region).unwrap();
 		}
@@ -42,9 +67,10 @@ impl Uhyve {
 			vm: vm,
 			entry_point: 0,
 			mem: mem,
-			num_cpus: num_cpus,
+			num_cpus: specs.num_cpus,
 			path: kernel_path,
 			kernel_header: ptr::null(),
+			verbose: specs.verbose
 		};
 
 		hyve.init()?;
@@ -81,6 +107,10 @@ impl Uhyve {
 }
 
 impl Vm for Uhyve {
+	fn verbose(&self) -> bool {
+		self.verbose
+	}
+
 	fn set_entry_point(&mut self, entry: u64) {
 		self.entry_point = entry;
 	}

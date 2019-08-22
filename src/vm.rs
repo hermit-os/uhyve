@@ -76,17 +76,24 @@ impl fmt::Debug for KernelHeaderV0 {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct VmParameter {
 	pub mem_size: usize,
 	pub num_cpus: u32,
+	pub verbose: bool,
+	pub hugepage: bool,
+	pub mergeable: bool,
 }
 
 impl VmParameter {
-	pub fn new(mem_size: usize, num_cpus: u32) -> Self {
+	pub fn new(mem_size: usize, num_cpus: u32, verbose: bool, hugepage: bool, mergeable: bool) -> Self {
 		VmParameter {
 			mem_size: mem_size,
 			num_cpus: num_cpus,
+			verbose: verbose,
+			hugepage: hugepage,
+			mergeable: mergeable
+
 		}
 	}
 }
@@ -369,6 +376,7 @@ pub trait Vm {
 	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>>;
 	fn set_kernel_header(&mut self, header: *const KernelHeaderV0);
 	fn cpu_online(&self) -> u32;
+	fn verbose(&self) -> bool;
 
 	/// Initialize the page tables for the guest
 	fn init_guest_mem(&self) {
@@ -421,7 +429,7 @@ pub trait Vm {
 		}
 	}
 
-	fn load_kernel(&mut self, verbose: bool) -> Result<()> {
+	fn load_kernel(&mut self) -> Result<()> {
 		debug!("Load kernel from {}", self.kernel_path());
 
 		// open the file in read only
@@ -493,7 +501,7 @@ pub trait Vm {
 						volatile_store(&mut (*kernel_header).possible_cpus, 1);
 						volatile_store(&mut (*kernel_header).uhyve, 1);
 						volatile_store(&mut (*kernel_header).current_boot_id, 0);
-						if verbose {
+						if self.verbose() {
 							volatile_store(&mut (*kernel_header).uartport, UHYVE_UART_PORT);
 						} else {
 							volatile_store(&mut (*kernel_header).uartport, 0);
@@ -548,12 +556,8 @@ pub trait Vm {
 	}
 }
 
-pub fn create_vm(path: String, specs: super::vm::VmParameter) -> Result<Uhyve> {
-	let vm = match specs {
-		super::vm::VmParameter { mem_size, num_cpus } => {
-			Uhyve::new(path.clone(), mem_size, num_cpus)?
-		}
-	};
+pub fn create_vm(path: String, specs: &super::vm::VmParameter) -> Result<Uhyve> {
+	let vm = Uhyve::new(path.clone(), &specs)?;
 
 	Ok(vm)
 }
