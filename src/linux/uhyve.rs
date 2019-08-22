@@ -68,6 +68,14 @@ impl Uhyve {
 			_ => {}
 		};
 
+		// currently, we support only system, which provides the
+		// cpu feature TSC_DEADLINE
+		let mut cap: kvm_enable_cap = Default::default();
+		cap.cap = KVM_CAP_TSC_DEADLINE_TIMER;
+		if self.vm.enable_cap(&cap).is_ok() {
+			panic!("Processor feature \"tsc deadline\" isn't supported!")
+		}
+
 		Ok(())
 	}
 }
