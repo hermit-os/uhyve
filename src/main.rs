@@ -7,6 +7,8 @@ extern crate libc;
 extern crate memmap;
 extern crate x86;
 #[macro_use]
+extern crate bitflags;
+#[macro_use]
 extern crate clap;
 #[macro_use]
 extern crate lazy_static;
@@ -24,6 +26,7 @@ pub mod consts;
 pub mod error;
 #[cfg(target_os = "linux")]
 mod linux;
+mod paging;
 pub mod utils;
 mod vm;
 
