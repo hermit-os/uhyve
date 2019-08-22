@@ -1,6 +1,7 @@
 //! This file contains the entry point to the Hypervisor. The Uhyve utilizes KVM to
 //! create a Virtual Machine and load the kernel.
 
+use error::Error::*;
 use error::*;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
@@ -12,7 +13,6 @@ use std::convert::TryInto;
 use std::intrinsics::volatile_load;
 use std::ptr;
 use vm::{KernelHeaderV0, VirtualCPU, Vm, VmParameter};
-use error::Error::*;
 
 pub struct Uhyve {
 	vm: VmFd,
@@ -21,7 +21,7 @@ pub struct Uhyve {
 	num_cpus: u32,
 	path: String,
 	kernel_header: *const KernelHeaderV0,
-	verbose: bool
+	verbose: bool,
 }
 
 impl Uhyve {
@@ -40,7 +40,11 @@ impl Uhyve {
 		if specs.mergeable {
 			debug!("Enable kernel feature to merge same pages");
 			let ret = unsafe {
-				libc::madvise(mem.mem_region.userspace_addr as *mut libc::c_void, specs.mem_size, libc::MADV_MERGEABLE)
+				libc::madvise(
+					mem.mem_region.userspace_addr as *mut libc::c_void,
+					specs.mem_size,
+					libc::MADV_MERGEABLE,
+				)
 			};
 
 			if ret < 0 {
@@ -51,7 +55,11 @@ impl Uhyve {
 		if specs.hugepage {
 			debug!("Uhyve uses huge pages");
 			let ret = unsafe {
-				libc::madvise(mem.mem_region.userspace_addr as *mut libc::c_void, specs.mem_size, libc::MADV_HUGEPAGE)
+				libc::madvise(
+					mem.mem_region.userspace_addr as *mut libc::c_void,
+					specs.mem_size,
+					libc::MADV_HUGEPAGE,
+				)
 			};
 
 			if ret < 0 {
@@ -70,7 +78,7 @@ impl Uhyve {
 			num_cpus: specs.num_cpus,
 			path: kernel_path,
 			kernel_header: ptr::null(),
-			verbose: specs.verbose
+			verbose: specs.verbose,
 		};
 
 		hyve.init()?;

@@ -86,14 +86,19 @@ pub struct VmParameter {
 }
 
 impl VmParameter {
-	pub fn new(mem_size: usize, num_cpus: u32, verbose: bool, hugepage: bool, mergeable: bool) -> Self {
+	pub fn new(
+		mem_size: usize,
+		num_cpus: u32,
+		verbose: bool,
+		hugepage: bool,
+		mergeable: bool,
+	) -> Self {
 		VmParameter {
 			mem_size: mem_size,
 			num_cpus: num_cpus,
 			verbose: verbose,
 			hugepage: hugepage,
-			mergeable: mergeable
-
+			mergeable: mergeable,
 		}
 	}
 }
@@ -418,7 +423,7 @@ pub trait Vm {
 				PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
 			);
 
-			for i in 0..511 { //GUEST_SIZE / LargePageSize::SIZE {
+			for i in 0..511 {
 				pde.entries[i].set(
 					i * LargePageSize::SIZE,
 					PageTableEntryFlags::PRESENT

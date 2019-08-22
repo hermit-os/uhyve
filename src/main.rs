@@ -52,12 +52,12 @@ fn main() {
 		.arg(
 			Arg::with_name("HUGEPAGE")
 				.long("disable-hugepage")
-				.help("Disable the usage of huge pages")
+				.help("Disable the usage of huge pages"),
 		)
 		.arg(
 			Arg::with_name("MERGEABLE")
 				.long("mergeable")
-				.help("Enable kernel feature to merge same pages")
+				.help("Enable kernel feature to merge same pages"),
 		)
 		.arg(
 			Arg::with_name("MEM")
@@ -110,7 +110,11 @@ fn main() {
 		verbose = true;
 	}
 
-	let mut vm = create_vm(path.to_string(), &VmParameter::new(mem_size, num_cpus, verbose, hugepage, mergeable)).unwrap();
+	let mut vm = create_vm(
+		path.to_string(),
+		&VmParameter::new(mem_size, num_cpus, verbose, hugepage, mergeable),
+	)
+	.unwrap();
 	let num_cpus = vm.num_cpus();
 
 	vm.load_kernel().unwrap();
