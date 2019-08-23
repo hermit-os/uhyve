@@ -83,6 +83,13 @@ fn main() {
 				.required(true)
 				.index(1),
 		)
+		.arg(
+			Arg::with_name("ARGUMENTS")
+				.help("Arguments of the unikernel")
+				.required(false)
+				.multiple(true)
+				.max_values(255)
+		)
 		.get_matches();
 
 	let path = matches
