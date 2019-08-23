@@ -1,4 +1,5 @@
 use consts::*;
+use error::Error::*;
 use error::*;
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, MAX_KVM_CPUID_ENTRIES};
@@ -31,10 +32,10 @@ impl UhyveCPU {
 		}
 	}
 
-	fn setup_cpuid(&self) {
+	fn setup_cpuid(&self) -> Result<()> {
 		//debug!("Setup cpuid");
 
-		let mut kvm_cpuid = KVM.get_supported_cpuid(MAX_KVM_CPUID_ENTRIES).unwrap();
+		let mut kvm_cpuid = KVM.get_supported_cpuid(MAX_KVM_CPUID_ENTRIES).or_else(to_error)?;
 		let kvm_cpuid_entries = kvm_cpuid.mut_entries_slice();
 		let i = kvm_cpuid_entries
 			.iter()
@@ -93,13 +94,15 @@ impl UhyveCPU {
 		// disable performance monitor
 		kvm_cpuid_entries[i].eax = 0x00;
 
-		self.vcpu.set_cpuid2(&kvm_cpuid).unwrap();
+		self.vcpu.set_cpuid2(&kvm_cpuid).or_else(to_error)?;
+
+		Ok(())
 	}
 
-	fn setup_msrs(&self) {
+	fn setup_msrs(&self) -> Result<()> {
 		//debug!("Setup MSR");
 
-		let msr_list = KVM.get_msr_index_list().unwrap();
+		let msr_list = KVM.get_msr_index_list().or_else(to_error)?;
 
 		let mut msr_entries = msr_list
 			.iter()
@@ -117,13 +120,15 @@ impl UhyveCPU {
 		let mut msrs: &mut kvm_msrs = unsafe { &mut *(msr_entries.as_ptr() as *mut kvm_msrs) };
 		msrs.nmsrs = 1;
 
-		self.vcpu.set_msrs(msrs).unwrap();
+		self.vcpu.set_msrs(msrs).or_else(to_error)?;
+
+		Ok(())
 	}
 
-	fn setup_long_mode(&self, entry_point: u64) {
+	fn setup_long_mode(&self, entry_point: u64) -> Result<()> {
 		//debug!("Setup long mode");
 
-		let mut sregs = self.vcpu.get_sregs().unwrap();
+		let mut sregs = self.vcpu.get_sregs().or_else(to_error)?;
 
 		let cr0 = (Cr0::CR0_PROTECTED_MODE
 			| Cr0::CR0_ENABLE_PAGING
@@ -164,13 +169,15 @@ impl UhyveCPU {
 		sregs.gdt.base = BOOT_GDT;
 		sregs.gdt.limit = ((std::mem::size_of::<u64>() * BOOT_GDT_MAX as usize) - 1) as u16;
 
-		self.vcpu.set_sregs(&sregs).unwrap();
+		self.vcpu.set_sregs(&sregs).or_else(to_error)?;
 
-		let mut regs = self.vcpu.get_regs().unwrap();
+		let mut regs = self.vcpu.get_regs().or_else(to_error)?;
 		regs.rflags = 2;
 		regs.rip = entry_point;
 
-		self.vcpu.set_regs(&regs).unwrap();
+		self.vcpu.set_regs(&regs).or_else(to_error)?;
+
+		Ok(())
 	}
 
 	fn show_dtable(name: &str, dtable: &kvm_dtable) {
@@ -184,8 +191,8 @@ impl UhyveCPU {
 
 impl VirtualCPU for UhyveCPU {
 	fn init(&mut self, entry_point: u64) -> Result<()> {
-		self.setup_long_mode(entry_point);
-		self.setup_cpuid();
+		self.setup_long_mode(entry_point)?;
+		self.setup_cpuid()?;
 
 		// be sure that the multiprocessor is runable
 		let mp_state = kvm_mp_state {
@@ -199,10 +206,10 @@ impl VirtualCPU for UhyveCPU {
 			)
 		};
 		if ret < 0 {
-			error!("Unable to set MP state");
+			return Err(OsError(unsafe { *libc::__errno_location() }));
 		}
 
-		self.setup_msrs();
+		self.setup_msrs()?;
 
 		Ok(())
 	}
@@ -242,7 +249,7 @@ impl VirtualCPU for UhyveCPU {
 		//self.print_registers();
 
 		loop {
-			match self.vcpu.run().expect("KVM run failed") {
+			match self.vcpu.run().or_else(to_error)? {
 				VcpuExit::Hlt => {
 					debug!("Halt Exit");
 					break;

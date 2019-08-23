@@ -26,13 +26,13 @@ pub struct Uhyve {
 
 impl Uhyve {
 	pub fn new(kernel_path: String, specs: &VmParameter) -> Result<Uhyve> {
-		let vm = KVM.create_vm().unwrap();
+		let vm = KVM.create_vm().or_else(to_error)?;
 
 		let mut cap: kvm_enable_cap = Default::default();
 		cap.cap = KVM_CAP_SET_TSS_ADDR;
 		if vm.enable_cap(&cap).is_ok() {
 			debug!("Setting TSS address");
-			vm.set_tss_address(0xfffbd000).unwrap();
+			vm.set_tss_address(0xfffbd000).or_else(to_error)?;
 		}
 
 		let mem = MmapMemorySlot::new(0, 0, specs.mem_size, 0);
@@ -48,7 +48,7 @@ impl Uhyve {
 			};
 
 			if ret < 0 {
-				return Err(LibcError(unsafe { *libc::__errno_location() }));
+				return Err(OsError(unsafe { *libc::__errno_location() }));
 			}
 		}
 
@@ -63,13 +63,11 @@ impl Uhyve {
 			};
 
 			if ret < 0 {
-				return Err(LibcError(unsafe { *libc::__errno_location() }));
+				return Err(OsError(unsafe { *libc::__errno_location() }));
 			}
 		}
 
-		unsafe {
-			vm.set_user_memory_region(mem.mem_region).unwrap();
-		}
+		unsafe { vm.set_user_memory_region(mem.mem_region) }.or_else(to_error)?;
 
 		let mut hyve = Uhyve {
 			vm: vm,
@@ -91,16 +89,10 @@ impl Uhyve {
 
 		debug!("Initialize interrupt controller");
 
-		match self.vm.create_irq_chip() {
-			Err(_) => return Err(Error::KVMUnableToCreateIrqChip),
-			_ => {}
-		};
-
+		// create basic interrupt controller
+		self.vm.create_irq_chip().or_else(to_error)?;
 		let pit_config = kvm_pit_config::default();
-		match self.vm.create_pit2(pit_config) {
-			Err(_) => return Err(Error::KVMUnableToCreatePit2),
-			_ => {}
-		};
+		self.vm.create_pit2(pit_config).or_else(to_error)?;
 
 		// currently, we support only system, which provides the
 		// cpu feature TSC_DEADLINE
@@ -144,7 +136,7 @@ impl Vm for Uhyve {
 		Ok(Box::new(UhyveCPU::new(
 			id,
 			self.path.clone(),
-			self.vm.create_vcpu(id.try_into().unwrap()).unwrap(),
+			self.vm.create_vcpu(id.try_into().unwrap()).or_else(to_error)?,
 			vm_start,
 		)))
 	}

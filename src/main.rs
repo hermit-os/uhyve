@@ -101,6 +101,8 @@ fn main() {
 	if matches.is_present("MERGEABLE") {
 		mergeable = true;
 	}
+	// per default we use huge page to improve the performace
+	// => negate the result of parase_bool
 	let mut hugepage: bool = !utils::parse_bool("HERMIT_HUGEPAGE", false);
 	if matches.is_present("HUGEPAGE") {
 		hugepage = true;
@@ -114,9 +116,10 @@ fn main() {
 		path.to_string(),
 		&VmParameter::new(mem_size, num_cpus, verbose, hugepage, mergeable),
 	)
-	.unwrap();
+	.expect("Unable to create VM");
 	let num_cpus = vm.num_cpus();
 
+	// load kernel into the memory of the VM
 	vm.load_kernel().unwrap();
 
 	let vm = Arc::new(vm);
@@ -124,6 +127,7 @@ fn main() {
 		.map(|tid| {
 			let vm = vm.clone();
 
+			// create thread for each CPU
 			thread::spawn(move || {
 				debug!("Create thread for CPU {}", tid);
 
@@ -136,6 +140,7 @@ fn main() {
 					std::hint::spin_loop();
 				}
 
+				// jump into the VM and excute code of the guest
 				let result = cpu.run(verbose);
 				match result {
 					Ok(()) => {}

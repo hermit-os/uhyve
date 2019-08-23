@@ -336,7 +336,7 @@ pub trait VirtualCPU {
 					bytes_written += step as usize;
 				} else {
 					let errloc = libc::__errno_location();
-					return Err(Error::LibcError(*errloc as i32));
+					return Err(Error::OsError(*errloc as i32));
 				}
 			}
 		}
