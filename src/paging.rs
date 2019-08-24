@@ -10,10 +10,10 @@
 #![allow(dead_code)]
 
 /// Number of Offset bits of a virtual address for a 4 KiB page, which are shifted away to get its Page Frame Number (PFN).
-const PAGE_BITS: usize = 12;
+pub const PAGE_BITS: usize = 12;
 
 /// Number of bits of the index in each table (PML4, PDPT, PDT, PGT).
-const PAGE_MAP_BITS: usize = 9;
+pub const PAGE_MAP_BITS: usize = 9;
 
 bitflags! {
 	/// Possible flags for an entry in either table (PML4, PDPT, PDT, PGT)

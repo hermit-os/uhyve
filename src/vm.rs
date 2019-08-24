@@ -167,7 +167,7 @@ struct SysUnlink {
 
 pub trait VirtualCPU {
 	fn init(&mut self, entry_point: u64) -> Result<()>;
-	fn run(&mut self, verbose: bool) -> Result<()>;
+	fn run(&mut self) -> Result<()>;
 	fn print_registers(&self);
 	fn host_address(&self, addr: usize) -> usize;
 	fn virt_to_phys(&self, addr: usize) -> usize;
@@ -236,7 +236,7 @@ pub trait VirtualCPU {
 
 				// Create string for environment variable
 				slice[0..len].copy_from_slice(argument.as_bytes());
-				slice[len..len + 1].copy_from_slice(&"\0".to_string().as_bytes());
+				slice[len] = 0;
 			}
 
 			counter += 1;
@@ -255,9 +255,9 @@ pub trait VirtualCPU {
 
 			// Create string for environment variable
 			slice[0..key.len()].copy_from_slice(key.as_bytes());
-			slice[key.len()..key.len() + 1].copy_from_slice(&"=".to_string().as_bytes());
-			slice[key.len() + 1..len + 1].copy_from_slice(value.as_bytes());
-			slice[len + 1..len + 2].copy_from_slice(&"\0".to_string().as_bytes());
+			slice[key.len()..(key.len() + 1)].copy_from_slice(&"=".to_string().as_bytes());
+			slice[(key.len() + 1)..(len + 1)].copy_from_slice(value.as_bytes());
+			slice[len + 1] = 0;
 			counter += 1;
 		}
 
@@ -354,11 +354,10 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
-	fn uart(&self, message: String, verbose: bool) -> Result<()> {
-		if verbose == true {
-			print!("{}", message);
-			//io::stdout().flush().ok().expect("Could not flush stdout");
-		}
+	fn uart(&self, message: String) -> Result<()> {
+		print!("{}", message);
+		//io::stdout().flush().ok().expect("Could not flush stdout");
+
 		Ok(())
 	}
 }

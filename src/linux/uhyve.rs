@@ -1,23 +1,26 @@
 //! This file contains the entry point to the Hypervisor. The Uhyve utilizes KVM to
 //! create a Virtual Machine and load the kernel.
 
-use error::Error::*;
 use error::*;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use libc;
 use linux::vcpu::*;
-use linux::{MemorySlot, KVM};
+use linux::{MemoryRegion, KVM};
 use std;
 use std::convert::TryInto;
 use std::intrinsics::volatile_load;
 use std::ptr;
 use vm::{KernelHeaderV0, VirtualCPU, Vm, VmParameter};
 
+const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
+const KVM_32BIT_GAP_SIZE: usize = 768 << 20;
+const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
+
 pub struct Uhyve {
 	vm: VmFd,
 	entry_point: u64,
-	mem: MmapMemorySlot,
+	mem: MmapMemory,
 	num_cpus: u32,
 	path: String,
 	kernel_header: *const KernelHeaderV0,
@@ -35,39 +38,37 @@ impl Uhyve {
 			vm.set_tss_address(0xfffbd000).or_else(to_error)?;
 		}
 
-		let mem = MmapMemorySlot::new(0, 0, specs.mem_size, 0);
+		let mem = MmapMemory::new(0, specs.mem_size, 0, specs.hugepage, specs.mergeable);
 
-		if specs.mergeable {
-			debug!("Enable kernel feature to merge same pages");
-			let ret = unsafe {
-				libc::madvise(
-					mem.mem_region.userspace_addr as *mut libc::c_void,
-					specs.mem_size,
-					libc::MADV_MERGEABLE,
-				)
+		let sz = if specs.mem_size < KVM_32BIT_GAP_START {
+			specs.mem_size
+		} else {
+			KVM_32BIT_GAP_START
+		};
+
+		let kvm_mem = kvm_userspace_memory_region {
+			slot: 0,
+			flags: mem.flags(),
+			memory_size: sz as u64,
+			guest_phys_addr: mem.guest_address() as u64,
+			userspace_addr: mem.host_address() as u64,
+		};
+
+		unsafe { vm.set_user_memory_region(kvm_mem) }.or_else(to_error)?;
+
+		if specs.mem_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
+			let kvm_mem = kvm_userspace_memory_region {
+				slot: 1,
+				flags: mem.flags(),
+				memory_size: (specs.mem_size - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
+				guest_phys_addr: (mem.guest_address() + KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE)
+					as u64,
+				userspace_addr: (mem.host_address() + KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE)
+					as u64,
 			};
 
-			if ret < 0 {
-				return Err(OsError(unsafe { *libc::__errno_location() }));
-			}
+			unsafe { vm.set_user_memory_region(kvm_mem) }.or_else(to_error)?;
 		}
-
-		if specs.hugepage {
-			debug!("Uhyve uses huge pages");
-			let ret = unsafe {
-				libc::madvise(
-					mem.mem_region.userspace_addr as *mut libc::c_void,
-					specs.mem_size,
-					libc::MADV_HUGEPAGE,
-				)
-			};
-
-			if ret < 0 {
-				return Err(OsError(unsafe { *libc::__errno_location() }));
-			}
-		}
-
-		unsafe { vm.set_user_memory_region(mem.mem_region) }.or_else(to_error)?;
 
 		let mut hyve = Uhyve {
 			vm: vm,
@@ -136,7 +137,9 @@ impl Vm for Uhyve {
 		Ok(Box::new(UhyveCPU::new(
 			id,
 			self.path.clone(),
-			self.vm.create_vcpu(id.try_into().unwrap()).or_else(to_error)?,
+			self.vm
+				.create_vcpu(id.try_into().unwrap())
+				.or_else(to_error)?,
 			vm_start,
 		)))
 	}
@@ -164,12 +167,21 @@ unsafe impl Send for Uhyve {}
 unsafe impl Sync for Uhyve {}
 
 #[derive(Debug)]
-struct MmapMemorySlot {
-	pub mem_region: kvm_userspace_memory_region,
+struct MmapMemory {
+	flags: u32,
+	memory_size: usize,
+	guest_address: usize,
+	host_address: usize,
 }
 
-impl MmapMemorySlot {
-	pub fn new(id: u32, flags: u32, memory_size: usize, guest_address: u64) -> MmapMemorySlot {
+impl MmapMemory {
+	pub fn new(
+		flags: u32,
+		memory_size: usize,
+		guest_address: u64,
+		huge_pages: bool,
+		mergeable: bool,
+	) -> MmapMemory {
 		let host_address = unsafe {
 			libc::mmap(
 				std::ptr::null_mut(),
@@ -185,51 +197,61 @@ impl MmapMemorySlot {
 			panic!("mmap failed with: {}", unsafe { *libc::__errno_location() });
 		}
 
-		MmapMemorySlot {
-			mem_region: kvm_userspace_memory_region {
-				slot: id,
-				flags: flags,
-				memory_size: memory_size as u64,
-				guest_phys_addr: guest_address,
-				userspace_addr: host_address as u64,
-			},
+		if mergeable {
+			debug!("Enable kernel feature to merge same pages");
+			let ret = unsafe { libc::madvise(host_address, memory_size, libc::MADV_MERGEABLE) };
+
+			if ret < 0 {
+				panic!("madvise failed with: {}", unsafe {
+					*libc::__errno_location()
+				});
+			}
+		}
+
+		if huge_pages {
+			debug!("Uhyve uses huge pages");
+			let ret = unsafe { libc::madvise(host_address, memory_size, libc::MADV_HUGEPAGE) };
+
+			if ret < 0 {
+				panic!("madvise failed with: {}", unsafe {
+					*libc::__errno_location()
+				});
+			}
+		}
+
+		MmapMemory {
+			flags: flags,
+			memory_size: memory_size,
+			guest_address: guest_address as usize,
+			host_address: host_address as usize,
 		}
 	}
 
 	#[allow(dead_code)]
 	fn as_slice_mut(&mut self) -> &mut [u8] {
-		unsafe {
-			std::slice::from_raw_parts_mut(
-				self.mem_region.userspace_addr as *mut u8,
-				self.mem_region.memory_size as usize,
-			)
-		}
+		unsafe { std::slice::from_raw_parts_mut(self.host_address as *mut u8, self.memory_size) }
 	}
 }
 
-impl MemorySlot for MmapMemorySlot {
-	fn slot_id(&self) -> u32 {
-		self.mem_region.slot
-	}
-
+impl MemoryRegion for MmapMemory {
 	fn flags(&self) -> u32 {
-		self.mem_region.flags
+		self.flags
 	}
 
 	fn memory_size(&self) -> usize {
-		self.mem_region.memory_size as usize
+		self.memory_size
 	}
 
-	fn guest_address(&self) -> u64 {
-		self.mem_region.guest_phys_addr as u64
+	fn guest_address(&self) -> usize {
+		self.guest_address
 	}
 
-	fn host_address(&self) -> u64 {
-		self.mem_region.userspace_addr as u64
+	fn host_address(&self) -> usize {
+		self.host_address
 	}
 }
 
-impl Drop for MmapMemorySlot {
+impl Drop for MmapMemory {
 	fn drop(&mut self) {
 		if self.memory_size() > 0 {
 			let result = unsafe {

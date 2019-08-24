@@ -88,7 +88,7 @@ fn main() {
 				.help("Arguments of the unikernel")
 				.required(false)
 				.multiple(true)
-				.max_values(255)
+				.max_values(255),
 		)
 		.get_matches();
 
@@ -148,7 +148,7 @@ fn main() {
 				}
 
 				// jump into the VM and excute code of the guest
-				let result = cpu.run(verbose);
+				let result = cpu.run();
 				match result {
 					Ok(()) => {}
 					Err(x) => {

@@ -5,6 +5,7 @@ use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, MAX_KVM_CPUID_ENTRIES};
 use libc::ioctl;
 use linux::KVM;
+use paging::*;
 use std;
 use std::os::unix::io::AsRawFd;
 use vm::VirtualCPU;
@@ -35,7 +36,9 @@ impl UhyveCPU {
 	fn setup_cpuid(&self) -> Result<()> {
 		//debug!("Setup cpuid");
 
-		let mut kvm_cpuid = KVM.get_supported_cpuid(MAX_KVM_CPUID_ENTRIES).or_else(to_error)?;
+		let mut kvm_cpuid = KVM
+			.get_supported_cpuid(MAX_KVM_CPUID_ENTRIES)
+			.or_else(to_error)?;
 		let kvm_cpuid_entries = kvm_cpuid.mut_entries_slice();
 		let i = kvm_cpuid_entries
 			.iter()
@@ -223,29 +226,33 @@ impl VirtualCPU for UhyveCPU {
 	}
 
 	fn virt_to_phys(&self, addr: usize) -> usize {
-		let executable_disable_mask: usize = !(1usize << 63);
+		let executable_disable_mask: usize = !PageTableEntryFlags::EXECUTE_DISABLE.bits();
 		let mut page_table = self.host_address(BOOT_PML4 as usize) as *const usize;
 		let mut page_bits = 39;
+		let mut entry: usize = 0;
 
 		for _i in 0..4 {
-			let index = (addr >> page_bits) & ((1 << 9) - 1);
-			let entry = unsafe { *page_table.offset(index as isize) & executable_disable_mask };
+			let index = (addr >> page_bits) & ((1 << PAGE_MAP_BITS) - 1);
+			entry = unsafe { *page_table.offset(index as isize) & executable_disable_mask };
 
 			// bit 7 is set if this entry references a 1 GiB (PDPT) or 2 MiB (PDT) page.
-			if entry & (1 << 7) != 0 {
+			if entry & PageTableEntryFlags::HUGE_PAGE.bits() != 0 {
 				return (entry & ((!0usize) << page_bits)) | (addr & !((!0usize) << page_bits));
+			} else {
+				page_table = self.host_address(entry & !((1 << PAGE_BITS) - 1)) as *const usize;
+				page_bits -= PAGE_MAP_BITS;
 			}
-
-			page_table = (self.host_address(entry & !0xFFF)) as *const usize;
-			page_bits -= 9;
 		}
 
-		error!("Unable to determine physical address of 0x{:x}", addr);
+		error!(
+			"Unable to determine physical address of 0x{:x}, 0x{:x}",
+			addr, entry
+		);
 
-		0
+		(entry & ((!0usize) << PAGE_BITS)) | (addr & !((!0usize) << PAGE_BITS))
 	}
 
-	fn run(&mut self, verbose: bool) -> Result<()> {
+	fn run(&mut self) -> Result<()> {
 		//self.print_registers();
 
 		loop {
@@ -275,7 +282,7 @@ impl VirtualCPU for UhyveCPU {
 							return Ok(());
 						}
 						UHYVE_UART_PORT => {
-							self.uart(String::from_utf8_lossy(&addr).to_string(), verbose)?;
+							self.uart(String::from_utf8_lossy(&addr).to_string())?;
 						}
 						UHYVE_PORT_CMDSIZE => {
 							let data_addr: usize =

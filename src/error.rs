@@ -16,8 +16,7 @@ pub enum Error {
 	UnhandledExitReason,
 }
 
-pub fn to_error<T>(err: std::io::Error) -> Result<T>
-{
+pub fn to_error<T>(err: std::io::Error) -> Result<T> {
 	if let Some(raw_os_err) = err.raw_os_error() {
 		Err(Error::OsError(raw_os_err))
 	} else {
