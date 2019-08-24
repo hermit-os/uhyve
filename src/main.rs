@@ -51,7 +51,7 @@ fn main() {
 		)
 		.arg(
 			Arg::with_name("HUGEPAGE")
-				.long("disable-hugepage")
+				.long("disable-hugepages")
 				.help("Disable the usage of huge pages"),
 		)
 		.arg(
