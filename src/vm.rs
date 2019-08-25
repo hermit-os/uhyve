@@ -464,7 +464,7 @@ pub trait Vm {
 		let (vm_mem, vm_mem_length) = self.guest_mem();
 		let kernel_file = file.as_ref();
 
-		let mut pstart: u64 = 0;
+		let mut pstart: Option<u64> = None;
 
 		for header in file_elf.phdrs {
 			if header.progtype != PT_LOAD {
@@ -489,8 +489,8 @@ pub trait Vm {
 			}
 
 			unsafe {
-				if pstart == 0 {
-					pstart = header.paddr as u64;
+				if pstart.is_none() {
+					pstart = Some(header.paddr as u64);
 					let kernel_header = vm_mem.offset(header.paddr as isize) as *mut KernelHeaderV0;
 
 					if (*kernel_header).magic_number == 0xC0DECAFEu32 {
@@ -545,10 +545,11 @@ pub trait Vm {
 				}
 
 				// store total kernel size
-				let kernel_header = vm_mem.offset(pstart as isize) as *mut KernelHeaderV0;
+				let start = pstart.unwrap();
+				let kernel_header = vm_mem.offset(start as isize) as *mut KernelHeaderV0;
 				volatile_store(
 					&mut (*kernel_header).image_size,
-					header.paddr + header.memsz - pstart,
+					header.paddr + header.memsz - start,
 				);
 				//debug!("Set kernel header to {:?}", *kernel_header);
 			}
