@@ -9,8 +9,8 @@ use linux::vcpu::*;
 use linux::{MemoryRegion, KVM};
 use std;
 use std::convert::TryInto;
-use std::intrinsics::volatile_load;
 use std::ptr;
+use std::ptr::read_volatile;
 use vm::{KernelHeaderV0, VirtualCPU, Vm, VmParameter};
 
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
@@ -152,7 +152,7 @@ impl Vm for Uhyve {
 		if self.kernel_header.is_null() {
 			0
 		} else {
-			unsafe { volatile_load(&(*self.kernel_header).cpu_online) }
+			unsafe { read_volatile(&(*self.kernel_header).cpu_online) }
 		}
 	}
 }

@@ -7,8 +7,8 @@ use memmap::Mmap;
 use raw_cpuid::CpuId;
 use std;
 use std::fs::File;
-use std::intrinsics::volatile_store;
 use std::io::Cursor;
+use std::ptr::write_volatile;
 use std::time::SystemTime;
 use std::{fmt, mem, slice};
 
@@ -500,28 +500,28 @@ pub trait Vm {
 						);
 						self.set_kernel_header(kernel_header);
 
-						volatile_store(&mut (*kernel_header).base, header.paddr);
-						volatile_store(&mut (*kernel_header).limit, vm_mem_length as u64); // memory size
-						volatile_store(&mut (*kernel_header).possible_cpus, 1);
-						volatile_store(&mut (*kernel_header).uhyve, 1);
-						volatile_store(&mut (*kernel_header).current_boot_id, 0);
+						write_volatile(&mut (*kernel_header).base, header.paddr);
+						write_volatile(&mut (*kernel_header).limit, vm_mem_length as u64); // memory size
+						write_volatile(&mut (*kernel_header).possible_cpus, 1);
+						write_volatile(&mut (*kernel_header).uhyve, 1);
+						write_volatile(&mut (*kernel_header).current_boot_id, 0);
 						if self.verbose() {
-							volatile_store(&mut (*kernel_header).uartport, UHYVE_UART_PORT);
+							write_volatile(&mut (*kernel_header).uartport, UHYVE_UART_PORT);
 						} else {
-							volatile_store(&mut (*kernel_header).uartport, 0);
+							write_volatile(&mut (*kernel_header).uartport, 0);
 						}
-						volatile_store(
+						write_volatile(
 							&mut (*kernel_header).current_stack_address,
 							header.paddr + mem::size_of::<KernelHeaderV0>() as u64,
 						);
 
-						volatile_store(
+						write_volatile(
 							&mut (*kernel_header).host_logical_addr,
 							vm_mem.offset(0) as u64,
 						);
 
 						match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-							Ok(n) => volatile_store(
+							Ok(n) => write_volatile(
 								&mut (*kernel_header).boot_gtod,
 								n.as_secs() * 1000000,
 							),
@@ -532,7 +532,7 @@ pub trait Vm {
 
 						match cpuid.get_processor_frequency_info() {
 							Some(freqinfo) => {
-								volatile_store(
+								write_volatile(
 									&mut (*kernel_header).cpu_freq,
 									freqinfo.processor_base_frequency() as u32,
 								);
@@ -547,7 +547,7 @@ pub trait Vm {
 				// store total kernel size
 				let start = pstart.unwrap();
 				let kernel_header = vm_mem.offset(start as isize) as *mut KernelHeaderV0;
-				volatile_store(
+				write_volatile(
 					&mut (*kernel_header).image_size,
 					header.paddr + header.memsz - start,
 				);

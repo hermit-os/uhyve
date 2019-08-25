@@ -1,5 +1,4 @@
 #![feature(renamed_spin_loop)]
-#![feature(core_intrinsics)]
 
 extern crate aligned_alloc;
 extern crate elf;
