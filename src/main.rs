@@ -4,6 +4,7 @@ extern crate aligned_alloc;
 extern crate elf;
 extern crate libc;
 extern crate memmap;
+extern crate nix;
 extern crate x86;
 #[macro_use]
 extern crate bitflags;

@@ -4,11 +4,12 @@
 use error::*;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
-use libc;
 use linux::vcpu::*;
 use linux::{MemoryRegion, KVM};
+use nix::sys::mman::*;
 use std;
 use std::convert::TryInto;
+use std::ffi::c_void;
 use std::ptr;
 use std::ptr::read_volatile;
 use vm::{KernelHeaderV0, VirtualCPU, Vm, VmParameter};
@@ -183,39 +184,32 @@ impl MmapMemory {
 		mergeable: bool,
 	) -> MmapMemory {
 		let host_address = unsafe {
-			libc::mmap(
+			mmap(
 				std::ptr::null_mut(),
 				memory_size,
-				libc::PROT_READ | libc::PROT_WRITE,
-				libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_NORESERVE,
+				ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
+				MapFlags::MAP_PRIVATE | MapFlags::MAP_ANONYMOUS | MapFlags::MAP_NORESERVE,
 				-1,
 				0,
 			)
+			.expect("mmap failed")
 		};
-
-		if host_address == libc::MAP_FAILED {
-			panic!("mmap failed with: {}", unsafe { *libc::__errno_location() });
-		}
 
 		if mergeable {
 			debug!("Enable kernel feature to merge same pages");
-			let ret = unsafe { libc::madvise(host_address, memory_size, libc::MADV_MERGEABLE) };
-
-			if ret < 0 {
-				panic!("madvise failed with: {}", unsafe {
-					*libc::__errno_location()
-				});
+			unsafe {
+				if madvise(host_address, memory_size, MmapAdvise::MADV_MERGEABLE).is_err() {
+					panic!("madvise failed");
+				}
 			}
 		}
 
 		if huge_pages {
 			debug!("Uhyve uses huge pages");
-			let ret = unsafe { libc::madvise(host_address, memory_size, libc::MADV_HUGEPAGE) };
-
-			if ret < 0 {
-				panic!("madvise failed with: {}", unsafe {
-					*libc::__errno_location()
-				});
+			unsafe {
+				if madvise(host_address, memory_size, MmapAdvise::MADV_HUGEPAGE).is_err() {
+					panic!("madvise failed");
+				}
 			}
 		}
 
@@ -254,13 +248,10 @@ impl MemoryRegion for MmapMemory {
 impl Drop for MmapMemory {
 	fn drop(&mut self) {
 		if self.memory_size() > 0 {
-			let result = unsafe {
-				libc::munmap(self.host_address() as *mut libc::c_void, self.memory_size())
-			};
-			if result != 0 {
-				panic!("munmap failed with: {}", unsafe {
-					*libc::__errno_location()
-				});
+			unsafe {
+				if munmap(self.host_address() as *mut c_void, self.memory_size()).is_err() {
+					panic!("munmap failed");
+				}
 			}
 		}
 	}
