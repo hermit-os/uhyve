@@ -9,7 +9,7 @@ use paging::*;
 use std;
 use std::os::unix::io::AsRawFd;
 use vm::VirtualCPU;
-use x86::controlregs::*;
+use x86::*;
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
 const CPUID_TSC_DEADLINE: u32 = 1 << 24;

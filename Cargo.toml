@@ -32,7 +32,3 @@ version = "0.*"
 
 [target.'cfg(target_os = "linux")'.dependencies.kvm-bindings]
 version = "0.*"
-
-[dependencies.x86]
-version = "0.*"
-#default-features = false

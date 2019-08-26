@@ -1,11 +1,8 @@
-#![feature(renamed_spin_loop)]
-
 extern crate aligned_alloc;
 extern crate elf;
 extern crate libc;
 extern crate memmap;
 extern crate nix;
-extern crate x86;
 #[macro_use]
 extern crate bitflags;
 #[macro_use]
@@ -22,6 +19,7 @@ extern crate log;
 extern crate env_logger;
 extern crate raw_cpuid;
 
+pub mod arch;
 pub mod consts;
 pub mod error;
 #[cfg(target_os = "linux")]
@@ -30,8 +28,10 @@ mod paging;
 pub mod utils;
 mod vm;
 
+pub use arch::*;
 use clap::{App, Arg};
 use consts::*;
+use std::sync::atomic::spin_loop_hint;
 use std::sync::Arc;
 use std::thread;
 use vm::*;
@@ -144,7 +144,7 @@ fn main() {
 				// only one core is able to enter startup code
 				// => the wait for the predecessor core
 				while tid != vm.cpu_online() {
-					std::hint::spin_loop();
+					spin_loop_hint();
 				}
 
 				// jump into the VM and excute code of the guest
