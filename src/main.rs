@@ -78,6 +78,38 @@ fn main() {
 				.env("HERMIT_CPUS"),
 		)
 		.arg(
+			Arg::with_name("NETIF")
+				.long("nic")
+				.value_name("NETIF")
+				.help("Name of the network interface")
+				.takes_value(true)
+				.env("HERMIT_NETIF"),
+		)
+		.arg(
+			Arg::with_name("IP")
+				.long("ip")
+				.value_name("IP")
+				.help("IP address of the guest")
+				.takes_value(true)
+				.env("HERMIT_IP"),
+		)
+		.arg(
+			Arg::with_name("GATEWAY")
+				.long("gateway")
+				.value_name("GATEWAY")
+				.help("Gateway address")
+				.takes_value(true)
+				.env("HERMIT_GATEWAY"),
+		)
+		.arg(
+			Arg::with_name("MASK")
+				.long("mask")
+				.value_name("MASK")
+				.help("Network mask")
+				.takes_value(true)
+				.env("HERMIT_MASK"),
+		)
+		.arg(
 			Arg::with_name("KERNEL")
 				.help("Sets path to the kernel")
 				.required(true)
@@ -127,7 +159,9 @@ fn main() {
 	let num_cpus = vm.num_cpus();
 
 	// load kernel into the memory of the VM
-	vm.load_kernel().unwrap();
+	unsafe {
+		vm.load_kernel().unwrap();
+	}
 
 	let vm = Arc::new(vm);
 	let threads: Vec<_> = (0..num_cpus)

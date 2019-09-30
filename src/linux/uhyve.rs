@@ -12,7 +12,7 @@ use std::convert::TryInto;
 use std::ffi::c_void;
 use std::ptr;
 use std::ptr::read_volatile;
-use vm::{KernelHeaderV0, VirtualCPU, Vm, VmParameter};
+use vm::{BootInfo, VirtualCPU, Vm, VmParameter};
 
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
 const KVM_32BIT_GAP_SIZE: usize = 768 << 20;
@@ -24,7 +24,7 @@ pub struct Uhyve {
 	mem: MmapMemory,
 	num_cpus: u32,
 	path: String,
-	kernel_header: *const KernelHeaderV0,
+	boot_info: *const BootInfo,
 	verbose: bool,
 }
 
@@ -77,7 +77,7 @@ impl Uhyve {
 			mem: mem,
 			num_cpus: specs.num_cpus,
 			path: kernel_path,
-			kernel_header: ptr::null(),
+			boot_info: ptr::null(),
 			verbose: specs.verbose,
 		};
 
@@ -145,15 +145,15 @@ impl Vm for Uhyve {
 		)))
 	}
 
-	fn set_kernel_header(&mut self, header: *const KernelHeaderV0) {
-		self.kernel_header = header;
+	fn set_boot_info(&mut self, header: *const BootInfo) {
+		self.boot_info = header;
 	}
 
 	fn cpu_online(&self) -> u32 {
-		if self.kernel_header.is_null() {
+		if self.boot_info.is_null() {
 			0
 		} else {
-			unsafe { read_volatile(&(*self.kernel_header).cpu_online) }
+			unsafe { read_volatile(&(*self.boot_info).cpu_online) }
 		}
 	}
 }

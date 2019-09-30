@@ -166,9 +166,9 @@ impl UhyveCPU {
 		seg.l = 0;
 		sregs.ds = seg;
 		sregs.es = seg;
-		sregs.fs = seg;
-		sregs.gs = seg;
 		sregs.ss = seg;
+		//sregs.fs = seg;
+		//sregs.gs = seg;
 		sregs.gdt.base = BOOT_GDT;
 		sregs.gdt.limit = ((std::mem::size_of::<u64>() * BOOT_GDT_MAX as usize) - 1) as u16;
 
@@ -177,6 +177,7 @@ impl UhyveCPU {
 		let mut regs = self.vcpu.get_regs().or_else(to_error)?;
 		regs.rflags = 2;
 		regs.rip = entry_point;
+		regs.rdi = BOOT_INFO_ADDR;
 
 		self.vcpu.set_regs(&regs).or_else(to_error)?;
 
@@ -276,7 +277,6 @@ impl VirtualCPU for UhyveCPU {
 					break;
 				}
 				VcpuExit::IoOut(port, addr) => {
-					//debug!("out port 0x{:x}, addr {:?}", port, addr);
 					match port {
 						SHUTDOWN_PORT => {
 							return Ok(());

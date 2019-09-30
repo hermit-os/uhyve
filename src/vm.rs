@@ -1,6 +1,6 @@
 use super::paging::*;
 use elf;
-use elf::types::{ELFCLASS64, EM_X86_64, ET_EXEC, PT_LOAD};
+use elf::types::{ELFCLASS64, EM_X86_64, ET_EXEC, PT_LOAD, PT_TLS};
 use error::*;
 use libc;
 use memmap::Mmap;
@@ -17,12 +17,16 @@ use consts::*;
 pub use linux::uhyve::*;
 
 #[repr(C)]
-pub struct KernelHeaderV0 {
+#[derive(Clone, Copy)]
+pub struct BootInfo {
 	pub magic_number: u32,
 	pub version: u32,
 	pub base: u64,
 	pub limit: u64,
 	pub image_size: u64,
+	pub tls_start: u64,
+	pub tls_filesz: u64,
+	pub tls_memsz: u64,
 	pub current_stack_address: u64,
 	pub current_percore_address: u64,
 	pub host_logical_addr: u64,
@@ -43,7 +47,40 @@ pub struct KernelHeaderV0 {
 	pub hcmask: [u8; 4],
 }
 
-impl fmt::Debug for KernelHeaderV0 {
+impl BootInfo {
+	pub fn new() -> Self {
+		BootInfo {
+			magic_number: 0xC0DE_CAFEu32,
+			version: 1,
+			base: 0,
+			limit: 0,
+			tls_start: 0,
+			tls_filesz: 0,
+			tls_memsz: 0,
+			image_size: 0,
+			current_stack_address: 0,
+			current_percore_address: 0,
+			host_logical_addr: 0,
+			boot_gtod: 0,
+			mb_info: 0,
+			cmdline: 0,
+			cmdsize: 0,
+			cpu_freq: 0,
+			boot_processor: !0,
+			cpu_online: 0,
+			possible_cpus: 0,
+			current_boot_id: 0,
+			uartport: 0,
+			single_kernel: 1,
+			uhyve: 0,
+			hcip: [255, 255, 255, 255],
+			hcgateway: [255, 255, 255, 255],
+			hcmask: [255, 255, 255, 0],
+		}
+	}
+}
+
+impl fmt::Debug for BootInfo {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		writeln!(f, "magic_number 0x{:x}", self.magic_number)?;
 		writeln!(f, "version 0x{:x}", self.version)?;
@@ -378,7 +415,7 @@ pub trait Vm {
 	fn get_entry_point(&self) -> u64;
 	fn kernel_path(&self) -> &str;
 	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>>;
-	fn set_kernel_header(&mut self, header: *const KernelHeaderV0);
+	fn set_boot_info(&mut self, header: *const BootInfo);
 	fn cpu_online(&self) -> u32;
 	fn verbose(&self) -> bool;
 
@@ -405,9 +442,10 @@ pub trait Vm {
 			/* For simplicity we currently use 2MB pages and only a single
 			PML4/PDPTE/PDE. */
 
-			libc::memset(pml4 as *mut _ as *mut libc::c_void, 0x00, PAGE_SIZE);
+			// per default is the memory zeroed, which we allocate by the system call mmap
+			/*libc::memset(pml4 as *mut _ as *mut libc::c_void, 0x00, PAGE_SIZE);
 			libc::memset(pdpte as *mut _ as *mut libc::c_void, 0x00, PAGE_SIZE);
-			libc::memset(pde as *mut _ as *mut libc::c_void, 0x00, PAGE_SIZE);
+			libc::memset(pde as *mut _ as *mut libc::c_void, 0x00, PAGE_SIZE);*/
 
 			pml4.entries[0].set(
 				BOOT_PDPTE as usize,
@@ -433,14 +471,14 @@ pub trait Vm {
 		}
 	}
 
-	fn load_kernel(&mut self) -> Result<()> {
+	unsafe fn load_kernel(&mut self) -> Result<()> {
 		debug!("Load kernel from {}", self.kernel_path());
 
 		// open the file in read only
 		let kernel_file = File::open(self.kernel_path())
 			.map_err(|_| Error::InvalidFile(self.kernel_path().into()))?;
-		let file = unsafe { Mmap::map(&kernel_file) }
-			.map_err(|_| Error::InvalidFile(self.kernel_path().into()))?;
+		let file =
+			Mmap::map(&kernel_file).map_err(|_| Error::InvalidFile(self.kernel_path().into()))?;
 
 		// parse the header with ELF module
 		let file_elf = {
@@ -457,101 +495,92 @@ pub trait Vm {
 			return Err(Error::InvalidFile(self.kernel_path().into()));
 		}
 
-		self.set_entry_point(file_elf.ehdr.entry);
-		debug!("ELF entry point at 0x{:x}", file_elf.ehdr.entry);
-
 		// acquire the slices of the user memory and kernel file
 		let (vm_mem, vm_mem_length) = self.guest_mem();
 		let kernel_file = file.as_ref();
 
+		// create default bootinfo
+		let boot_info = vm_mem.offset(BOOT_INFO_ADDR as isize) as *mut BootInfo;
+		*boot_info = BootInfo::new();
+
 		let mut pstart: Option<u64> = None;
 
 		for header in file_elf.phdrs {
-			if header.progtype != PT_LOAD {
-				continue;
-			}
+			if header.progtype == PT_TLS {
+				write_volatile(&mut (*boot_info).tls_start, header.paddr);
+				write_volatile(&mut (*boot_info).tls_filesz, header.filesz);
+				write_volatile(&mut (*boot_info).tls_memsz, header.memsz);
+			} else if header.progtype == PT_LOAD {
+				let vm_start = header.paddr as usize;
+				let vm_end = vm_start + header.filesz as usize;
 
-			let vm_start = header.paddr as usize;
-			let vm_end = vm_start + header.filesz as usize;
+				let kernel_start = header.offset as usize;
+				let kernel_end = kernel_start + header.filesz as usize;
 
-			let kernel_start = header.offset as usize;
-			let kernel_end = kernel_start + header.filesz as usize;
+				debug!(
+					"Load segment with start addr 0x{:x} and size 0x{:x}, offset 0x{:x}",
+					header.paddr, header.filesz, header.offset
+				);
 
-			debug!(
-				"Load segment with start addr 0x{:x} and size 0x{:x}, offset 0x{:x}",
-				header.paddr, header.filesz, header.offset
-			);
+				let vm_slice = std::slice::from_raw_parts_mut(vm_mem, vm_mem_length);
+				vm_slice[vm_start..vm_end].copy_from_slice(&kernel_file[kernel_start..kernel_end]);
+				for i in &mut vm_slice[vm_end..vm_end + (header.memsz - header.filesz) as usize] {
+					*i = 0
+				}
 
-			let vm_slice = unsafe { std::slice::from_raw_parts_mut(vm_mem, vm_mem_length) };
-			vm_slice[vm_start..vm_end].copy_from_slice(&kernel_file[kernel_start..kernel_end]);
-			for i in &mut vm_slice[vm_end..vm_end + (header.memsz - header.filesz) as usize] {
-				*i = 0
-			}
-
-			unsafe {
 				if pstart.is_none() {
+					self.set_entry_point(file_elf.ehdr.entry);
+					debug!("ELF entry point at 0x{:x}", file_elf.ehdr.entry);
+
 					pstart = Some(header.paddr as u64);
-					let kernel_header = vm_mem.offset(header.paddr as isize) as *mut KernelHeaderV0;
 
-					if (*kernel_header).magic_number == 0xC0DECAFEu32 {
-						debug!(
-							"Found latest HermitCore header at 0x{:x}",
-							header.paddr as usize
-						);
-						self.set_kernel_header(kernel_header);
+					debug!("Set HermitCore header at 0x{:x}", BOOT_INFO_ADDR as usize);
+					self.set_boot_info(boot_info);
 
-						write_volatile(&mut (*kernel_header).base, header.paddr);
-						write_volatile(&mut (*kernel_header).limit, vm_mem_length as u64); // memory size
-						write_volatile(&mut (*kernel_header).possible_cpus, 1);
-						write_volatile(&mut (*kernel_header).uhyve, 1);
-						write_volatile(&mut (*kernel_header).current_boot_id, 0);
-						if self.verbose() {
-							write_volatile(&mut (*kernel_header).uartport, UHYVE_UART_PORT);
-						} else {
-							write_volatile(&mut (*kernel_header).uartport, 0);
-						}
-						write_volatile(
-							&mut (*kernel_header).current_stack_address,
-							header.paddr + mem::size_of::<KernelHeaderV0>() as u64,
-						);
-
-						write_volatile(
-							&mut (*kernel_header).host_logical_addr,
-							vm_mem.offset(0) as u64,
-						);
-
-						match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-							Ok(n) => write_volatile(
-								&mut (*kernel_header).boot_gtod,
-								n.as_secs() * 1000000,
-							),
-							Err(_) => panic!("SystemTime before UNIX EPOCH!"),
-						}
-
-						let cpuid = CpuId::new();
-
-						match cpuid.get_processor_frequency_info() {
-							Some(freqinfo) => {
-								write_volatile(
-									&mut (*kernel_header).cpu_freq,
-									freqinfo.processor_base_frequency() as u32,
-								);
-							}
-							None => info!("Unable to determine processor frequency!"),
-						}
+					write_volatile(&mut (*boot_info).base, header.paddr);
+					write_volatile(&mut (*boot_info).limit, vm_mem_length as u64); // memory size
+					write_volatile(&mut (*boot_info).possible_cpus, 1);
+					write_volatile(&mut (*boot_info).uhyve, 1);
+					write_volatile(&mut (*boot_info).current_boot_id, 0);
+					if self.verbose() {
+						write_volatile(&mut (*boot_info).uartport, UHYVE_UART_PORT);
 					} else {
-						panic!("Unable to detect kernel");
+						write_volatile(&mut (*boot_info).uartport, 0);
+					}
+
+					debug!("Set stack base to 0x{:x}", header.paddr - KERNEL_STACK_SIZE);
+					write_volatile(
+						&mut (*boot_info).current_stack_address,
+						header.paddr - KERNEL_STACK_SIZE,
+					);
+
+					write_volatile(&mut (*boot_info).host_logical_addr, vm_mem.offset(0) as u64);
+
+					match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+						Ok(n) => write_volatile(&mut (*boot_info).boot_gtod, n.as_secs() * 1000000),
+						Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+					}
+
+					let cpuid = CpuId::new();
+
+					match cpuid.get_processor_frequency_info() {
+						Some(freqinfo) => {
+							write_volatile(
+								&mut (*boot_info).cpu_freq,
+								freqinfo.processor_base_frequency() as u32,
+							);
+						}
+						None => info!("Unable to determine processor frequency!"),
 					}
 				}
 
 				// store total kernel size
 				let start = pstart.unwrap();
-				let kernel_header = vm_mem.offset(start as isize) as *mut KernelHeaderV0;
 				write_volatile(
-					&mut (*kernel_header).image_size,
+					&mut (*boot_info).image_size,
 					header.paddr + header.memsz - start,
 				);
-				//debug!("Set kernel header to {:?}", *kernel_header);
+				//debug!("Kernel header: {:?}", *boot_info);
 			}
 		}
 
