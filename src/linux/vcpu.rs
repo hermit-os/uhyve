@@ -245,11 +245,6 @@ impl VirtualCPU for UhyveCPU {
 			}
 		}
 
-		error!(
-			"Unable to determine physical address of 0x{:x}, 0x{:x}",
-			addr, entry
-		);
-
 		(entry & ((!0usize) << PAGE_BITS)) | (addr & !((!0usize) << PAGE_BITS))
 	}
 
