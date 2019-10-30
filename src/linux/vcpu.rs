@@ -39,7 +39,7 @@ impl UhyveCPU {
 		let mut kvm_cpuid = KVM
 			.get_supported_cpuid(MAX_KVM_CPUID_ENTRIES)
 			.or_else(to_error)?;
-		let kvm_cpuid_entries = kvm_cpuid.mut_entries_slice();
+		let kvm_cpuid_entries = kvm_cpuid.as_mut_slice();
 		let i = kvm_cpuid_entries
 			.iter()
 			.position(|&r| r.function == 0x80000002)
