@@ -4,6 +4,7 @@ use error::*;
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, MAX_KVM_CPUID_ENTRIES};
 use libc::ioctl;
+use linux::virtio::*;
 use linux::KVM;
 use paging::*;
 use std;
@@ -15,6 +16,9 @@ const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
 const CPUID_TSC_DEADLINE: u32 = 1 << 24;
 const CPUID_ENABLE_MSR: u32 = 1 << 5;
 const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
+const PCI_CONFIG_DATA_PORT: u16 = 0xCFC;
+const PCI_CONFIG_ADDRESS_PORT: u16 = 0xCF8;
+static mut VIRTIO_DEVICE: VirtioNetPciDevice = VirtioNetPciDevice::new();
 
 pub struct UhyveCPU {
 	id: u32,
@@ -250,7 +254,8 @@ impl VirtualCPU for UhyveCPU {
 
 	fn run(&mut self) -> Result<()> {
 		//self.print_registers();
-
+		let mut pci_addr: u32 = 0;
+		let mut pci_addr_set: bool = false;
 		loop {
 			match self.vcpu.run().or_else(to_error)? {
 				VcpuExit::Hlt => {
@@ -271,6 +276,22 @@ impl VirtualCPU for UhyveCPU {
 					self.print_registers();
 					break;
 				}
+				VcpuExit::IoIn(port, addr) => match port {
+					PCI_CONFIG_DATA_PORT => {
+						if (pci_addr & 0x1ff800 == 0 && pci_addr_set) {
+							unsafe {
+								VIRTIO_DEVICE.handle_read(pci_addr & 0x3ff, addr);
+							}
+						} else {
+							unsafe { (*(addr.as_ptr() as *mut u32) = 0xffffffff) };
+						}
+					}
+					PCI_CONFIG_ADDRESS_PORT => {}
+
+					_ => {
+						info!("Unhanded IO Exit");
+					}
+				},
 				VcpuExit::IoOut(port, addr) => {
 					match port {
 						SHUTDOWN_PORT => {
@@ -325,6 +346,18 @@ impl VirtualCPU for UhyveCPU {
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
 							self.close(self.host_address(data_addr))?;
 						}
+						//TODO:
+						PCI_CONFIG_DATA_PORT => {
+							if (pci_addr & 0x1ff800 == 0 && pci_addr_set) {
+								unsafe {
+									VIRTIO_DEVICE.handle_write(pci_addr & 0x3ff, addr);
+								}
+							}
+						}
+						PCI_CONFIG_ADDRESS_PORT => {
+							pci_addr = unsafe { (*(addr.as_ptr() as *const u32)) };
+							pci_addr_set = true;
+						}
 						_ => {
 							info!("Unhandled IO exit: 0x{:x}", port);
 						}
@@ -338,7 +371,7 @@ impl VirtualCPU for UhyveCPU {
 				}
 				_ => {
 					error!("Unknown exit reason");
-					//self.print_registers();
+					self.print_registers();
 
 					return Err(Error::UnknownExitReason);
 				}
