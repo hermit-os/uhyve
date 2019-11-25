@@ -19,6 +19,15 @@ extern crate log;
 extern crate env_logger;
 extern crate raw_cpuid;
 
+#[macro_use]
+extern crate nom;
+extern crate strum;
+#[macro_use]
+extern crate strum_macros;
+extern crate rustc_serialize;
+extern crate byteorder;
+extern crate gdb_protocol;
+
 pub mod arch;
 pub mod consts;
 pub mod error;
@@ -27,10 +36,13 @@ mod linux;
 mod paging;
 pub mod utils;
 mod vm;
+mod gdb_parser;
+mod debug_manager;
 
 pub use arch::*;
 use clap::{App, Arg};
 use consts::*;
+use std::env;
 use std::sync::atomic::spin_loop_hint;
 use std::sync::Arc;
 use std::thread;
@@ -76,6 +88,15 @@ fn main() {
 				.help("Number of guest processors")
 				.takes_value(true)
 				.env("HERMIT_CPUS"),
+		)
+		.arg(
+			Arg::with_name("GDB_PORT")
+				.short("s")
+				.long("gdb_port")
+				.value_name("GDB_PORT")
+				.help("Enables GDB-Stub on given port")
+				.takes_value(true)
+				.env("HERMIT_GDB_PORT"),
 		)
 		.arg(
 			Arg::with_name("NETIF")
@@ -150,10 +171,12 @@ fn main() {
 	if matches.is_present("VERBOSE") {
 		verbose = true;
 	}
+	let gdbport = matches.value_of("GDB_PORT").map(|p| p.parse::<u32>().expect("Could not parse gdb port"))
+		.or_else(|| env::var("HERMIT_GDB_PORT").ok().map(|p| p.parse::<u32>().expect("Could not parse gdb port")));
 
 	let mut vm = create_vm(
 		path.to_string(),
-		&VmParameter::new(mem_size, num_cpus, verbose, hugepage, mergeable),
+		&VmParameter::new(mem_size, num_cpus, verbose, hugepage, mergeable, gdbport),
 	)
 	.expect("Unable to create VM");
 	let num_cpus = vm.num_cpus();

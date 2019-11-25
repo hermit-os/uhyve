@@ -27,3 +27,13 @@ pub fn parse_bool(name: &str, default: bool) -> bool {
 		.map(|x| x.parse::<i32>().unwrap_or(default as i32) != 0)
 		.unwrap_or(default)
 }
+
+/// returns subslice of s at given offset of at most given length. If offset OOB, return empty slice
+pub fn get_max_subslice(s: &str, offset: usize, length: usize) -> &str {
+	let large = s.get(offset .. s.len()).unwrap_or("");
+	if large.len() > length {
+		&large[0..length]
+	} else {
+		large
+	}
+}

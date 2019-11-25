@@ -26,6 +26,12 @@ raw-cpuid = "7.0"
 bitflags = "1.2"
 libc = "0.2"
 nix = "0.15"
+rustc-serialize = "0.3"
+byteorder = "1"
+nom = "3.2.0"
+strum = "0.8.0"
+strum_macros = "0.8.0"
+gdb-protocol = "0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies.kvm-ioctls]
 version = "0.*"
