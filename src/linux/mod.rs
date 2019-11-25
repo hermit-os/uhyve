@@ -1,6 +1,7 @@
 pub mod uhyve;
 pub mod vcpu;
 pub mod gdb;
+pub mod virtio;
 
 use kvm_ioctls::Kvm;
 
