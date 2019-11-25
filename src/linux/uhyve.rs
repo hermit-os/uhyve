@@ -12,7 +12,9 @@ use std::convert::TryInto;
 use std::ffi::c_void;
 use std::ptr;
 use std::ptr::read_volatile;
+use std::sync::{Arc, Mutex};
 use vm::{BootInfo, VirtualCPU, Vm, VmParameter};
+use debug_manager::DebugManager;
 
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
 const KVM_32BIT_GAP_SIZE: usize = 768 << 20;
@@ -26,10 +28,11 @@ pub struct Uhyve {
 	path: String,
 	boot_info: *const BootInfo,
 	verbose: bool,
+	dbg: Option<Arc<Mutex<DebugManager>>>,
 }
 
 impl Uhyve {
-	pub fn new(kernel_path: String, specs: &VmParameter) -> Result<Uhyve> {
+	pub fn new(kernel_path: String, specs: &VmParameter, dbg: Option<DebugManager>) -> Result<Uhyve> {
 		let vm = KVM.create_vm().or_else(to_error)?;
 
 		let mut cap: kvm_enable_cap = Default::default();
@@ -79,6 +82,7 @@ impl Uhyve {
 			path: kernel_path,
 			boot_info: ptr::null(),
 			verbose: specs.verbose,
+			dbg: dbg.map(|g| Arc::new(Mutex::new(g))),
 		};
 
 		hyve.init()?;
@@ -142,6 +146,7 @@ impl Vm for Uhyve {
 				.create_vcpu(id.try_into().unwrap())
 				.or_else(to_error)?,
 			vm_start,
+			self.dbg.as_ref().cloned(),
 		)))
 	}
 

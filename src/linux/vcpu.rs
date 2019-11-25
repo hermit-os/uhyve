@@ -6,9 +6,11 @@ use kvm_ioctls::{VcpuExit, VcpuFd, MAX_KVM_CPUID_ENTRIES};
 use libc::ioctl;
 use linux::virtio::*;
 use linux::KVM;
+use debug_manager::DebugManager;
 use paging::*;
 use std;
 use std::os::unix::io::AsRawFd;
+use std::sync::{Arc, Mutex};
 use vm::VirtualCPU;
 use x86::*;
 
@@ -25,15 +27,17 @@ pub struct UhyveCPU {
 	vcpu: VcpuFd,
 	vm_start: usize,
 	kernel_path: String,
+	pub dbg: Option<Arc<Mutex<DebugManager>>>,
 }
 
 impl UhyveCPU {
-	pub fn new(id: u32, kernel_path: String, vcpu: VcpuFd, vm_start: usize) -> UhyveCPU {
+	pub fn new(id: u32, kernel_path: String, vcpu: VcpuFd, vm_start: usize, dbg: Option<Arc<Mutex<DebugManager>>>) -> UhyveCPU {
 		UhyveCPU {
 			id: id,
 			vcpu: vcpu,
 			vm_start: vm_start,
 			kernel_path: kernel_path,
+			dbg: dbg
 		}
 	}
 
@@ -195,6 +199,14 @@ impl UhyveCPU {
 	fn show_segment(name: &str, seg: &kvm_segment) {
 		print!("{}       {:?}\n", name, seg);
 	}
+
+	pub fn get_vcpu(&self) -> &VcpuFd {
+		&self.vcpu
+	}
+
+	pub fn get_vcpu_mut(&mut self) -> &mut VcpuFd {
+		&mut self.vcpu
+	}
 }
 
 impl VirtualCPU for UhyveCPU {
@@ -254,10 +266,17 @@ impl VirtualCPU for UhyveCPU {
 
 	fn run(&mut self) -> Result<()> {
 		//self.print_registers();
+
+		// Pause first CPU before first execution, so we have time to attach debugger
+		if self.id == 0 {
+			self.gdb_handle_exception(None);
+		}
+
 		let mut pci_addr: u32 = 0;
 		let mut pci_addr_set: bool = false;
 		loop {
-			match self.vcpu.run().or_else(to_error)? {
+			let exitreason = self.vcpu.run().or_else(to_error)?;
+			match exitreason {
 				VcpuExit::Hlt => {
 					debug!("Halt Exit");
 					break;
@@ -363,6 +382,10 @@ impl VirtualCPU for UhyveCPU {
 						}
 					}
 				}
+				VcpuExit::Debug => {
+					info!("Caught Debug Interrupt! {:?}", exitreason);
+					self.gdb_handle_exception(Some(VcpuExit::Debug));
+				}
 				VcpuExit::InternalError => {
 					error!("Internal error");
 					//self.print_registers();
@@ -370,8 +393,8 @@ impl VirtualCPU for UhyveCPU {
 					return Err(Error::UnknownExitReason);
 				}
 				_ => {
-					error!("Unknown exit reason");
-					self.print_registers();
+					error!("Unknown exit reason: {:?}", exitreason);
+					//self.print_registers();
 
 					return Err(Error::UnknownExitReason);
 				}
