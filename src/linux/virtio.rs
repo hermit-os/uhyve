@@ -3,7 +3,8 @@ use std::fmt;
 use std::sync::Mutex;
 use std::vec::Vec;
 use linux::virtqueue::Virtqueue;
-
+extern crate tun_tap;
+use self::tun_tap::*;
 
 const VENDOR_ID_REGISTER: usize = 0x0;
 const DEVICE_ID_REGISTER: usize = 0x2;
@@ -17,7 +18,6 @@ const _INTERRUPT_REGISTER: usize = 0x3C;
 const RX_QUEUE: usize = 0;
 const TX_QUEUE: usize = 1;
 const IOBASE: u16 = 0xc000;
-
 const VIRTIO_PCI_HOST_FEATURES: u16 = 0;
 const VIRTIO_PCI_GUEST_FEATURES: u16 = 4;
 const VIRTIO_PCI_QUEUE_PFN: u16 = IOBASE + 8;
@@ -26,6 +26,7 @@ const VIRTIO_PCI_QUEUE_SEL: u16 = IOBASE + 14;
 const VIRTIO_PCI_QUEUE_NOTIFY: u16 = IOBASE + 16;
 const VIRTIO_PCI_STATUS: u16 = IOBASE + 18;
 const VIRTIO_PCI_ISR: u16 = 19;
+const TAP_DEVICE_NAME : &str = "uhyve-tap";
 
 pub trait PciDevice {
 	fn handle_read(&self, address: u32, dest: &mut [u8]) -> ();
@@ -39,6 +40,7 @@ pub struct VirtioNetPciDevice {
 	requested_features: Option<u32>,
 	selected_queue_num: Option<u16>,
     virt_queues: Vec<Virtqueue<'a>>,
+    iface : Option<Iface>,
 }
 
 impl fmt::Debug for VirtioNetPciDevice<'_> {
@@ -138,7 +140,9 @@ impl VirtioNetPciDevice<'_> {
 
 	pub fn reset_interrupt(&self) {
 		// TODO
->>>>>>> b94f16e8b18a98362ba5969557a4b05a4967a55f
+        //let iface = Iface::new(TAP_DEVICE_NAME, Mode::Tap).expect("Failed to create a TAP device");
+        let iface = None;
+		VirtioNetPciDevice { registers, virt_queues, iface }
 	}
 }
 
