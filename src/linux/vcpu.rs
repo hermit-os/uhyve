@@ -18,22 +18,23 @@ const CPUID_ENABLE_MSR: u32 = 1 << 5;
 const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 const PCI_CONFIG_DATA_PORT: u16 = 0xCFC;
 const PCI_CONFIG_ADDRESS_PORT: u16 = 0xCF8;
-static mut VIRTIO_DEVICE: VirtioNetPciDevice = VirtioNetPciDevice::new();
 
 pub struct UhyveCPU {
 	id: u32,
 	vcpu: VcpuFd,
 	vm_start: usize,
 	kernel_path: String,
+	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 }
 
 impl UhyveCPU {
-	pub fn new(id: u32, kernel_path: String, vcpu: VcpuFd, vm_start: usize) -> UhyveCPU {
+	pub fn new(id: u32, kernel_path: String, vcpu: VcpuFd, vm_start: usize, virtio_device: Arc<Mutex<DebugManager>>) -> UhyveCPU {
 		UhyveCPU {
 			id: id,
 			vcpu: vcpu,
 			vm_start: vm_start,
 			kernel_path: kernel_path,
+			virtio_device : virtio_device,
 		}
 	}
 
@@ -279,33 +280,28 @@ impl VirtualCPU for UhyveCPU {
 				VcpuExit::IoIn(port, addr) => match port {
 					PCI_CONFIG_DATA_PORT => {
 						if pci_addr & 0x1ff800 == 0 && pci_addr_set {
-							unsafe {
-								VIRTIO_DEVICE.handle_read(pci_addr & 0x3ff, addr);
-							}
+							let virtio_device = virtio_device.lock().unwrap();
+							virtio_device.handle_read(pci_addr & 0x3ff, addr);
 						} else {
 							unsafe { (*(addr.as_ptr() as *mut u32) = 0xffffffff) };
 						}
 					}
 					PCI_CONFIG_ADDRESS_PORT => {}
 					VIRTIO_PCI_STATUS => {
-						unsafe {
-							VIRTIO_DEVICE.read_status(dest);
-						}
+						let virtio_device = virtio_device.lock().unwrap();
+						virtio_device.read_status(dest);
 					}
 					VIRTIO_PCI_HOST_FEATURES => {
-						unsafe {
-							VIRTIO_DEVICE.read_host_features(dest);
-						}
+						let virtio_device = virtio_device.lock().unwrap();
+						virtio_device.read_host_features(dest);
 					}
 					VIRTIO_PCI_GUEST_FEATURES => {
-						unsafe {
-							VIRTIO_DEVICE.read_requested_features(dest);
-						}
+						let virtio_device = virtio_device.lock().unwrap();
+						virtio_device.read_requested_features(dest);
 					}
 					VIRTIO_PCI_ISR => {
-						unsafe {
-							VIRTIO_DEVICE.reset_interrupt()
-						}
+						let virtio_device = virtio_device.lock().unwrap();
+						virtio_device.reset_interrupt()
 					}
 
 					_ => {
@@ -369,9 +365,8 @@ impl VirtualCPU for UhyveCPU {
 						//TODO:
 						PCI_CONFIG_DATA_PORT => {
 							if pci_addr & 0x1ff800 == 0 && pci_addr_set {
-								unsafe {
-									VIRTIO_DEVICE.handle_write(pci_addr & 0x3ff, addr);
-								}
+								let virtio_device = virtio_device.lock().unwrap();
+								virtio_device.handle_write(pci_addr & 0x3ff, addr);
 							}
 						}
 						PCI_CONFIG_ADDRESS_PORT => {
@@ -379,29 +374,24 @@ impl VirtualCPU for UhyveCPU {
 							pci_addr_set = true;
 						}
 						VIRTIO_PCI_STATUS => {
-							unsafe {
-								VIRTIO_DEVICE.write_status(dest);
-							}
+							let virtio_device = virtio_device.lock().unwrap();
+							virtio_device.write_status(dest);
 						}
 						VIRTIO_PCI_GUEST_FEATURES => {
-							unsafe {
-								VIRTIO_DEVICE.write_requested_features(dest);
-							}
+							let virtio_device = virtio_device.lock().unwrap();
+							virtio_device.write_requested_features(dest);
 						}
 						VIRTIO_PCI_QUEUE_NOTIFY => {
-							unsafe {
-								VIRTIO_DEVICE.handle_notify_output(dest);
-							}
+							let virtio_device = virtio_device.lock().unwrap();
+							virtio_device.handle_notify_output(dest);
 						}
 						VIRTIO_PCI_QUEUE_SEL => {
-							unsafe {
-								VIRTIO_DEVICE.write_selected_queue(dest);
-							}
+							let virtio_device = virtio_device.lock().unwrap();
+							virtio_device.write_selected_queue(dest);
 						}
 						VIRTIO_PCI_QUEUE_PFN => {
-							unsafe {
-								VIRTIO_DEVICE.write_pfn(dest);
-							}
+							let virtio_device = virtio_device.lock().unwrap();
+							virtio_device.write_pfn(dest);
 						}
 
 						_ => {

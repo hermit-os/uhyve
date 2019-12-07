@@ -26,6 +26,7 @@ pub struct Uhyve {
 	path: String,
 	boot_info: *const BootInfo,
 	verbose: bool,
+	virtio_device: Arc<Mutex<VirtioNetPciDevice>>
 }
 
 impl Uhyve {
@@ -46,6 +47,9 @@ impl Uhyve {
 		} else {
 			KVM_32BIT_GAP_START
 		};
+
+		let mut virtio_device : VirtioNetPciDevice = VirtioNetPciDevice::new();
+
 
 		let kvm_mem = kvm_userspace_memory_region {
 			slot: 0,
@@ -79,6 +83,7 @@ impl Uhyve {
 			path: kernel_path,
 			boot_info: ptr::null(),
 			verbose: specs.verbose,
+			virtio_device : Arc::new(Mutex::new(virtio_device))
 		};
 
 		hyve.init()?;
@@ -142,6 +147,7 @@ impl Vm for Uhyve {
 				.create_vcpu(id.try_into().unwrap())
 				.or_else(to_error)?,
 			vm_start,
+			self.virtio_device.as_ref().cloned()
 		)))
 	}
 
