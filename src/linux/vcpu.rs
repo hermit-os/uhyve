@@ -18,29 +18,6 @@ const CPUID_ENABLE_MSR: u32 = 1 << 5;
 const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 const PCI_CONFIG_DATA_PORT: u16 = 0xCFC;
 const PCI_CONFIG_ADDRESS_PORT: u16 = 0xCF8;
-/* A 32-bit r/o bitmask of the features supported by the host */
-const VIRTIO_PCI_HOST_FEATURES: u32 = 0;
-/* A 32-bit r/w bitmask of features activated by the guest */
-const VIRTIO_PCI_GUEST_FEATURES: u32 = 4;
-/* A 32-bit r/w PFN for the currently selected queue */
-const VIRTIO_PCI_QUEUE_PFN: u32 = 8;
-/* A 16-bit r/o queue size for the currently selected queue */
-const VIRTIO_PCI_QUEUE_NUM: u32 = 12;
-/* A 16-bit r/w queue selector */
-const VIRTIO_PCI_QUEUE_SEL: u32 = 14;
-/* A 16-bit r/w queue notifier */
-const VIRTIO_PCI_QUEUE_NOTIFY: u32 = 16;
-/* An 8-bit device status register.  */
-const VIRTIO_PCI_STATUS: u32 = 18;
-/* An 8-bit r/o interrupt status register.  Reading the value will return the
- * current contents of the ISR and will also clear it.  This is effectively
- * a read-and-acknowledge. */
-const VIRTIO_PCI_ISR: u32 = 19;
-/* MSI-X registers: only enabled if MSI-X is enabled. */
-/* A 16-bit vector for configuration changes. */
-const VIRTIO_MSI_CONFIG_VECTOR: u32 = 20;
-/* A 16-bit vector for selected queue notifications. */
-const VIRTIO_MSI_QUEUE_VECTOR: u32 = 22;
 
 static mut VIRTIO_DEVICE: VirtioNetPciDevice = VirtioNetPciDevice::new();
 
@@ -313,17 +290,17 @@ impl VirtualCPU for UhyveCPU {
 					PCI_CONFIG_ADDRESS_PORT => {}
 					VIRTIO_PCI_STATUS => {
 						unsafe {
-							VIRTIO_DEVICE.read_status(dest);
+							VIRTIO_DEVICE.read_status(addr);
 						}
 					}
 					VIRTIO_PCI_HOST_FEATURES => {
 						unsafe {
-							VIRTIO_DEVICE.read_host_features(dest);
+							VIRTIO_DEVICE.read_host_features(addr);
 						}
 					}
 					VIRTIO_PCI_GUEST_FEATURES => {
 						unsafe {
-							VIRTIO_DEVICE.read_requested_features(dest);
+							VIRTIO_DEVICE.read_requested_features(addr);
 						}
 					}
 					VIRTIO_PCI_ISR => {
@@ -404,27 +381,27 @@ impl VirtualCPU for UhyveCPU {
 						}
 						VIRTIO_PCI_STATUS => {
 							unsafe {
-								VIRTIO_DEVICE.write_status(dest);
+								VIRTIO_DEVICE.write_status(addr);
 							}
 						}
 						VIRTIO_PCI_GUEST_FEATURES => {
 							unsafe {
-								VIRTIO_DEVICE.write_requested_features(dest);
+								VIRTIO_DEVICE.write_requested_features(addr);
 							}
 						}
 						VIRTIO_PCI_QUEUE_NOTIFY => {
 							unsafe {
-								VIRTIO_DEVICE.handle_notify_output(dest);
+								VIRTIO_DEVICE.handle_notify_output(addr);
 							}
 						}
 						VIRTIO_PCI_QUEUE_SEL => {
 							unsafe {
-								VIRTIO_DEVICE.write_selected_queue(dest);
+								VIRTIO_DEVICE.write_selected_queue(addr);
 							}
 						}
 						VIRTIO_PCI_QUEUE_PFN => {
 							unsafe {
-								VIRTIO_DEVICE.write_pfn(dest);
+								VIRTIO_DEVICE.write_pfn(addr);
 							}
 						}
 

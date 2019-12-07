@@ -27,6 +27,7 @@ bitflags = "1.2"
 libc = "0.2"
 nix = "0.15"
 tun-tap = "0.1.2"
+virtio-bindings = { version = "0.1", features = ["virtio-v4_14_0"]}
 
 [target.'cfg(target_os = "linux")'.dependencies.kvm-ioctls]
 version = "0.*"
