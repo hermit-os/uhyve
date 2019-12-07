@@ -278,7 +278,7 @@ impl VirtualCPU for UhyveCPU {
 				}
 				VcpuExit::IoIn(port, addr) => match port {
 					PCI_CONFIG_DATA_PORT => {
-						if (pci_addr & 0x1ff800 == 0 && pci_addr_set) {
+						if pci_addr & 0x1ff800 == 0 && pci_addr_set {
 							unsafe {
 								VIRTIO_DEVICE.handle_read(pci_addr & 0x3ff, addr);
 							}
@@ -287,6 +287,26 @@ impl VirtualCPU for UhyveCPU {
 						}
 					}
 					PCI_CONFIG_ADDRESS_PORT => {}
+					VIRTIO_PCI_STATUS => {
+						unsafe {
+							VIRTIO_DEVICE.read_status(dest);
+						}
+					}
+					VIRTIO_PCI_HOST_FEATURES => {
+						unsafe {
+							VIRTIO_DEVICE.read_host_features(dest);
+						}
+					}
+					VIRTIO_PCI_GUEST_FEATURES => {
+						unsafe {
+							VIRTIO_DEVICE.read_requested_features(dest);
+						}
+					}
+					VIRTIO_PCI_ISR => {
+						unsafe {
+							VIRTIO_DEVICE.reset_interrupt()
+						}
+					}
 
 					_ => {
 						info!("Unhanded IO Exit");
@@ -348,7 +368,7 @@ impl VirtualCPU for UhyveCPU {
 						}
 						//TODO:
 						PCI_CONFIG_DATA_PORT => {
-							if (pci_addr & 0x1ff800 == 0 && pci_addr_set) {
+							if pci_addr & 0x1ff800 == 0 && pci_addr_set {
 								unsafe {
 									VIRTIO_DEVICE.handle_write(pci_addr & 0x3ff, addr);
 								}
@@ -358,6 +378,32 @@ impl VirtualCPU for UhyveCPU {
 							pci_addr = unsafe { (*(addr.as_ptr() as *const u32)) };
 							pci_addr_set = true;
 						}
+						VIRTIO_PCI_STATUS => {
+							unsafe {
+								VIRTIO_DEVICE.write_status(dest);
+							}
+						}
+						VIRTIO_PCI_GUEST_FEATURES => {
+							unsafe {
+								VIRTIO_DEVICE.write_requested_features(dest);
+							}
+						}
+						VIRTIO_PCI_QUEUE_NOTIFY => {
+							unsafe {
+								VIRTIO_DEVICE.handle_notify_output(dest);
+							}
+						}
+						VIRTIO_PCI_QUEUE_SEL => {
+							unsafe {
+								VIRTIO_DEVICE.write_selected_queue(dest);
+							}
+						}
+						VIRTIO_PCI_QUEUE_PFN => {
+							unsafe {
+								VIRTIO_DEVICE.write_pfn(dest);
+							}
+						}
+
 						_ => {
 							info!("Unhandled IO exit: 0x{:x}", port);
 						}
