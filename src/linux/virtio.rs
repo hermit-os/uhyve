@@ -1,22 +1,21 @@
+
+use linux::virtqueue::*;
+use vm::{VirtualCPU};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Mutex;
 use std::vec::Vec;
-use linux::virtqueue::Virtqueue;
 extern crate tun_tap;
 use self::tun_tap::*;
 extern crate virtio_bindings;
 use self::virtio_bindings::bindings::virtio_net::*;
 
-#[repr(u8)]
-enum Status {
-    ACKNOWLEDGE = 1,
-    DRIVE = 2,
-    FAILED = 128,
-    FEATURES_OK = 8,
-    DRIVER_OK = 4,
-    DRIVE_NEEDS_RESET = 64,
-}
+const STATUS_ACKNOWLEDGE: u8 = 0b00000001;
+const STATUS_DRIVER: u8 = 0b00000010;
+const STATUS_DRIVER_OK: u8 = 0b00000100;
+const STATUS_FEATURES_OK: u8 = 0b00001000;
+const STATUS_DRIVER_NEEDS_RESET: u8 = 0b01000000;
+const STATUS_FAILED: u8= 0b10000000;		
 
 
 const VENDOR_ID_REGISTER: usize = 0x0;
@@ -39,7 +38,7 @@ const VIRTIO_PCI_QUEUE_SEL: u16 = IOBASE + 14;
 const VIRTIO_PCI_QUEUE_NOTIFY: u16 = IOBASE + 16;
 const VIRTIO_PCI_STATUS: u16 = IOBASE + 18;
 const VIRTIO_PCI_ISR: u16 = IOBASE + 19;
-const TAP_DEVICE_NAME : &str = "uhyve-tap";
+const TAP_DEVICE_NAME: &str = "uhyve-tap";
 
 const HOST_FEATURES: u32 = (1 << VIRTIO_NET_F_STATUS) | (1 << VIRTIO_NET_F_MAC);
 
@@ -50,17 +49,17 @@ pub trait PciDevice {
 
 type PciRegisters = [u8; 0x40];
 
-pub struct VirtioNetPciDevice<'a> {
+pub struct VirtioNetPciDevice {
 	registers: PciRegisters, //Add more
 	requested_features: u32,
 	selected_queue_num: u16,
-    virt_queues: Vec<Virtqueue<'a>>,
-    iface : Option<Iface>,
+	virt_queues: Vec<Virtqueue>,
+	iface: Option<Iface>,
 }
 
-impl fmt::Debug for VirtioNetPciDevice<'_> {
+impl fmt::Debug for VirtioNetPciDevice {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "Useless")
+		write!(f, "Status: {}\n IRQ: ", self.registers[STATUS_REGISTER as usize])
 	}
 }
 
@@ -98,20 +97,21 @@ macro_rules! write_u32 {
 	};
 }
 
-impl VirtioNetPciDevice<'_> {
-	pub const fn new<'a>() -> VirtioNetPciDevice<'a> {
+impl VirtioNetPciDevice {
+	pub const fn new() -> VirtioNetPciDevice {
 		let mut registers: PciRegisters = [0; 0x40];
 		write_u16!(registers, VENDOR_ID_REGISTER, 0x1AF4 as u16);
 		write_u16!(registers, DEVICE_ID_REGISTER, 0x1000 as u16);
 		write_u16!(registers, CLASS_REGISTER + 2, 0x0200 as u16);
 		write_u16!(registers, BAR0_REGISTER, IOBASE as u16);
-        let mut virt_queues: Vec<Virtqueue> = Vec::new();
+		registers[STATUS_REGISTER as usize] = STATUS_DRIVER_NEEDS_RESET;
+		let mut virt_queues: Vec<Virtqueue> = Vec::new();
 		VirtioNetPciDevice {
 			registers,
 			requested_features: 0,
 			selected_queue_num: 0,
-            virt_queues,
-            iface: None,
+			virt_queues,
+			iface: None,
 		}
 	}
 
@@ -124,43 +124,96 @@ impl VirtioNetPciDevice<'_> {
 	}
 
 	pub fn write_status(&mut self, dest: &[u8]) {
-		// TODO: Status transition logic.
-		self.handle_write(STATUS_REGISTER & 0x3FFF, dest);
+		let status = self.read_status_enum();
+		if dest[0] == 0 {
+			self.write_status_enum(0);
+			self.requested_features = 0;
+			self.selected_queue_num = 0;
+			self.virt_queues.clear();
+		}
+		else if (status == STATUS_DRIVER_NEEDS_RESET || status == 0) {
+			self.write_status_reset(dest);
+		}
+		else if (status == STATUS_ACKNOWLEDGE) {
+			self.write_status_acknowledge(dest);
+		}
+		else if (status == STATUS_ACKNOWLEDGE | STATUS_DRIVER) {
+			self.write_status_features(dest);
+		}
+		else if (status == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK) {
+			self.write_status_ok(dest);
+		}
 	}
 
-    fn write_status_enum(&mut self, status : Status) {
-        let byte_status = status as u8;
-        self.write_status(&[byte_status]);
-    }
+	fn write_status_reset(&mut self, dest: &[u8]) {
+		if (dest[0]) == STATUS_ACKNOWLEDGE {
+			self.write_status_enum((dest[0]));
+		}
+	}
+
+	fn write_status_acknowledge(&mut self, dest: &[u8]) {
+		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
+			self.write_status_enum((dest[0]));
+		}
+	}
+
+	fn set_failed_status(&mut self) {
+		self.registers[STATUS_REGISTER as usize] |= STATUS_FAILED;
+	}
+
+	fn write_status_features(&mut self, dest: &[u8]) {
+		if (dest[0]) == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
+			self.write_status_enum(STATUS_FEATURES_OK);
+		}
+	}
+
+	fn write_status_ok(&mut self, dest: &[u8]) {
+		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK {
+			self.write_status_enum((dest[0]));
+		}
+	}
+
+	fn write_status_enum(&mut self, status: u8) {
+		self.registers[STATUS_REGISTER as usize] = status;
+	}
+
+	fn read_status_enum(&self) -> u8 {
+		(self.registers[STATUS_REGISTER as usize])
+	}
 
 	pub fn write_selected_queue(&mut self, dest: &[u8]) {
 		self.selected_queue_num = unsafe { *(dest.as_ptr() as *const u16) }
 	}
 
-	pub fn write_pfn(&mut self, dest: &[u8]) {
-        if self.selected_queue_num as usize != self.virt_queues.len() { 
-        } else {
-            //TODO: whats going on
-            self.write_status(dest)
-        }
+	pub fn write_pfn(&mut self, dest: &[u8], uhyve: &VirtualCPU) {
+		let status = self.read_status_enum();
+		if status & STATUS_FEATURES_OK != 0 
+			&& status & STATUS_DRIVER_OK == 0
+			&& self.selected_queue_num as usize != self.virt_queues.len() {
+			let gpa = unsafe { *(dest.as_ptr() as *const usize) };
+			let hva = (*uhyve).host_address(gpa) as *mut u8;
+			let queue = Virtqueue::new(hva, QUEUE_LIMIT);
+			self.virt_queues.push(queue);
+		}
 	}
 
 	pub fn write_requested_features(&mut self, dest: &[u8]) {
-		// TODO: And requested and host features, store in requested_features
-		let requested_features = unsafe { *(dest.as_ptr() as *const u32) };
-		self.requested_features = (self.requested_features | requested_features) & HOST_FEATURES;
+		if self.read_status_enum() == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
+			let requested_features = unsafe { *(dest.as_ptr() as *const u32) };
+			self.requested_features = (self.requested_features | requested_features) & HOST_FEATURES;
+		}
 	}
 
-	pub fn read_requested_features(&self, dest: &mut [u8]) {
-		// TODO: Write requested_features to dest if they exist. Error if not requested?
-		let bytes = self.requested_features.to_ne_bytes();
-		for i in 0..bytes.len() {
-			dest[i] = bytes[i];
+	pub fn read_requested_features(&mut self, dest: &mut [u8]) {
+		if self.read_status_enum() == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
+			let bytes = self.requested_features.to_ne_bytes();
+			for i in 0..bytes.len() {
+				dest[i] = bytes[i];
+			}
 		}
 	}
 
 	pub fn read_host_features(&self, dest: &mut [u8]) {
-		// TODO: Write features supported by device to dest.
 		let bytes = HOST_FEATURES.to_ne_bytes();
 		for i in 0..bytes.len() {
 			dest[i] = bytes[i];
@@ -168,13 +221,13 @@ impl VirtioNetPciDevice<'_> {
 	}
 
 	pub fn reset_interrupt(&mut self) {
-		// TODO
-        //let iface = Iface::new(TAP_DEVICE_NAME, Mode::Tap).expect("Failed to create a TAP device");
-        self.iface = None;
+		// TODO: what are IRQ
+		//let iface = Iface::new(TAP_DEVICE_NAME, Mode::Tap).expect("Failed to create a TAP device");
+		self.iface = None;
 	}
 }
 
-impl PciDevice for VirtioNetPciDevice<'_> {
+impl PciDevice for VirtioNetPciDevice {
 	fn handle_read(&self, address: u32, dest: &mut [u8]) -> () {
 		for i in 0..dest.len() {
 			dest[i] = self.registers[(address as usize) + i];
