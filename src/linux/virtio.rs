@@ -1,10 +1,9 @@
-
 use linux::virtqueue::*;
-use vm::{VirtualCPU};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Mutex;
 use std::vec::Vec;
+use vm::VirtualCPU;
 extern crate tun_tap;
 use self::tun_tap::*;
 extern crate virtio_bindings;
@@ -15,8 +14,7 @@ const STATUS_DRIVER: u8 = 0b00000010;
 const STATUS_DRIVER_OK: u8 = 0b00000100;
 const STATUS_FEATURES_OK: u8 = 0b00001000;
 const STATUS_DRIVER_NEEDS_RESET: u8 = 0b01000000;
-const STATUS_FAILED: u8= 0b10000000;		
-
+const STATUS_FAILED: u8 = 0b10000000;
 
 const VENDOR_ID_REGISTER: usize = 0x0;
 const DEVICE_ID_REGISTER: usize = 0x2;
@@ -59,7 +57,11 @@ pub struct VirtioNetPciDevice {
 
 impl fmt::Debug for VirtioNetPciDevice {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "Status: {}\n IRQ: ", self.registers[STATUS_REGISTER as usize])
+		write!(
+			f,
+			"Status: {}\n IRQ: ",
+			self.registers[STATUS_REGISTER as usize]
+		)
 	}
 }
 
@@ -130,17 +132,13 @@ impl VirtioNetPciDevice {
 			self.requested_features = 0;
 			self.selected_queue_num = 0;
 			self.virt_queues.clear();
-		}
-		else if (status == STATUS_DRIVER_NEEDS_RESET || status == 0) {
+		} else if (status == STATUS_DRIVER_NEEDS_RESET || status == 0) {
 			self.write_status_reset(dest);
-		}
-		else if (status == STATUS_ACKNOWLEDGE) {
+		} else if (status == STATUS_ACKNOWLEDGE) {
 			self.write_status_acknowledge(dest);
-		}
-		else if (status == STATUS_ACKNOWLEDGE | STATUS_DRIVER) {
+		} else if (status == STATUS_ACKNOWLEDGE | STATUS_DRIVER) {
 			self.write_status_features(dest);
-		}
-		else if (status == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK) {
+		} else if (status == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK) {
 			self.write_status_ok(dest);
 		}
 	}
@@ -187,9 +185,10 @@ impl VirtioNetPciDevice {
 
 	pub fn write_pfn(&mut self, dest: &[u8], uhyve: &VirtualCPU) {
 		let status = self.read_status_enum();
-		if status & STATUS_FEATURES_OK != 0 
+		if status & STATUS_FEATURES_OK != 0
 			&& status & STATUS_DRIVER_OK == 0
-			&& self.selected_queue_num as usize != self.virt_queues.len() {
+			&& self.selected_queue_num as usize != self.virt_queues.len()
+		{
 			let gpa = unsafe { *(dest.as_ptr() as *const usize) };
 			let hva = (*uhyve).host_address(gpa) as *mut u8;
 			let queue = Virtqueue::new(hva, QUEUE_LIMIT);
@@ -200,7 +199,8 @@ impl VirtioNetPciDevice {
 	pub fn write_requested_features(&mut self, dest: &[u8]) {
 		if self.read_status_enum() == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
 			let requested_features = unsafe { *(dest.as_ptr() as *const u32) };
-			self.requested_features = (self.requested_features | requested_features) & HOST_FEATURES;
+			self.requested_features =
+				(self.requested_features | requested_features) & HOST_FEATURES;
 		}
 	}
 
