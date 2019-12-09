@@ -2,6 +2,7 @@ use linux::virtqueue::*;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Mutex;
+use std::thread;
 use std::vec::Vec;
 use vm::VirtualCPU;
 extern crate tun_tap;
@@ -36,7 +37,7 @@ const VIRTIO_PCI_QUEUE_SEL: u16 = IOBASE + 14;
 const VIRTIO_PCI_QUEUE_NOTIFY: u16 = IOBASE + 16;
 const VIRTIO_PCI_STATUS: u16 = IOBASE + 18;
 const VIRTIO_PCI_ISR: u16 = IOBASE + 19;
-const TAP_DEVICE_NAME: &str = "uhyve-tap";
+const TAP_DEVICE_NAME_BASE: &str = "uhyve-tap";
 
 const HOST_FEATURES: u32 = (1 << VIRTIO_NET_F_STATUS) | (1 << VIRTIO_NET_F_MAC);
 
@@ -52,7 +53,7 @@ pub struct VirtioNetPciDevice {
 	requested_features: u32,
 	selected_queue_num: u16,
 	virt_queues: Vec<Virtqueue>,
-	iface: Option<Iface>,
+	iface: Option<Mutex<Iface>>,
 }
 
 impl fmt::Debug for VirtioNetPciDevice {
@@ -119,6 +120,9 @@ impl VirtioNetPciDevice {
 
 	pub fn handle_notify_output(&mut self, dest: &[u8]) {
 		// TODO: Validate state and send packets, etc.
+        // strip off virtio header
+        // lock around tap dev
+        // put on net?
 	}
 
 	pub fn read_status(&self, dest: &mut [u8]) {
@@ -126,9 +130,9 @@ impl VirtioNetPciDevice {
 	}
 
 	pub fn write_status(&mut self, dest: &[u8]) {
-		let status = self.read_status_enum();
+		let status = self.read_status_reg();
 		if dest[0] == 0 {
-			self.write_status_enum(0);
+			self.write_status_reg(0);
 			self.requested_features = 0;
 			self.selected_queue_num = 0;
 			self.virt_queues.clear();
@@ -145,33 +149,44 @@ impl VirtioNetPciDevice {
 
 	fn write_status_reset(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE {
-			self.write_status_enum(dest[0]);
+			self.write_status_reg(dest[0]);
 		}
 	}
 
 	fn write_status_acknowledge(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
-			self.write_status_enum(dest[0]);
+			self.write_status_reg(dest[0]);
 		}
 	}
 
 	fn write_status_features(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK {
-			self.write_status_enum(STATUS_FEATURES_OK);
+			self.write_status_reg(STATUS_FEATURES_OK);
 		}
 	}
 
 	fn write_status_ok(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK | STATUS_DRIVER_OK {
-			self.write_status_enum(dest[0]);
+			self.write_status_reg(dest[0]);
+            //TODO: activate tap_tun device, spawn polling thread
+            self.iface = match Iface::new("",Mode::Tap) {
+                Ok(tap) => Some(Mutex::new(tap)),
+                Err(err) => {
+                    info!("Error creating TAP device: {}", err);
+                    self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET;
+                    None
+                },
+            };
+            let rcv_thread = thread::spawn(|| {
+            });
 		}
 	}
 
-	fn write_status_enum(&mut self, status: u8) {
+	fn write_status_reg(&mut self, status: u8) {
 		self.registers[STATUS_REGISTER as usize] = status;
 	}
 
-	fn read_status_enum(&self) -> u8 {
+	fn read_status_reg(&self) -> u8 {
 		(self.registers[STATUS_REGISTER as usize])
 	}
 
@@ -180,7 +195,7 @@ impl VirtioNetPciDevice {
 	}
 
 	pub fn write_pfn(&mut self, dest: &[u8], uhyve: &dyn VirtualCPU) {
-		let status = self.read_status_enum();
+		let status = self.read_status_reg();
 		if status & STATUS_FEATURES_OK != 0
 			&& status & STATUS_DRIVER_OK == 0
 			&& self.selected_queue_num as usize != self.virt_queues.len()
@@ -193,7 +208,7 @@ impl VirtioNetPciDevice {
 	}
 
 	pub fn write_requested_features(&mut self, dest: &[u8]) {
-		if self.read_status_enum() == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
+		if self.read_status_reg() == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
 			let requested_features = unsafe { *(dest.as_ptr() as *const u32) };
 			self.requested_features =
 				(self.requested_features | requested_features) & HOST_FEATURES;
@@ -201,7 +216,7 @@ impl VirtioNetPciDevice {
 	}
 
 	pub fn read_requested_features(&mut self, dest: &mut [u8]) {
-		if self.read_status_enum() == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
+		if self.read_status_reg() == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
 			let bytes = self.requested_features.to_ne_bytes();
 			for i in 0..bytes.len() {
 				dest[i] = bytes[i];
