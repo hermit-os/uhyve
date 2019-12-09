@@ -52,7 +52,7 @@ pub struct VirtioNetPciDevice {
 	requested_features: u32,
 	selected_queue_num: u16,
 	virt_queues: Vec<Virtqueue>,
-	iface: Option<Iface>,
+	iface: Option<Mutex<Iface>>,
 }
 
 impl fmt::Debug for VirtioNetPciDevice {
@@ -235,8 +235,6 @@ impl PciDevice for VirtioNetPciDevice {
 		for (i, var) in dest.iter().enumerate() {
 			self.registers[(address as usize) + i] = *var;
 		}
-
-		//Case statement to determine what was updated
 		()
 	}
 }
