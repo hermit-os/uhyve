@@ -250,8 +250,6 @@ impl PciDevice for VirtioNetPciDevice {
 		for (i, var) in dest.iter().enumerate() {
 			self.registers[(address as usize) + i] = *var;
 		}
-
-		//Case statement to determine what was updated
 		()
 	}
 }

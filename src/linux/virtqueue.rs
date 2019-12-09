@@ -68,24 +68,22 @@ pub struct Virtqueue {
 }
 
 pub struct AvailIter<'a> {
-	descriptor_table: *mut VringDescriptor,
 	available_ring: &'a VringAvailable,
 	last_seen_available: &'a mut u16,
 	queue_size: u16,
 }
 
 impl<'a> Iterator for AvailIter<'a> {
-	type Item = &'a VringDescriptor;
+	type Item = u16;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		if *self.last_seen_available == self.available_ring.index() {
 			return None;
 		}
 
-		let index = (*self.last_seen_available % self.queue_size) as isize;
-		let result = unsafe { &*self.descriptor_table.offset(index) };
+		let index = (*self.last_seen_available % self.queue_size);
 		*self.last_seen_available += 1;
-		Some(result)
+		Some(index)
 	}
 }
 
@@ -123,9 +121,12 @@ impl Virtqueue {
 		}
 	}
 
+	pub unsafe fn get_descriptor(&mut self, index: u16) -> &mut VringDescriptor {
+		&mut *self.descriptor_table.offset(index as isize)
+	}
+
 	pub fn avail_iter(&mut self) -> AvailIter {
 		AvailIter {
-			descriptor_table: self.descriptor_table,
 			available_ring: &self.available_ring,
 			last_seen_available: &mut self.last_seen_available,
 			queue_size: self.queue_size,
