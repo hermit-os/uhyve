@@ -132,42 +132,38 @@ impl VirtioNetPciDevice {
 			self.requested_features = 0;
 			self.selected_queue_num = 0;
 			self.virt_queues.clear();
-		} else if (status == STATUS_DRIVER_NEEDS_RESET || status == 0) {
+		} else if status == STATUS_DRIVER_NEEDS_RESET || status == 0 {
 			self.write_status_reset(dest);
-		} else if (status == STATUS_ACKNOWLEDGE) {
+		} else if status == STATUS_ACKNOWLEDGE {
 			self.write_status_acknowledge(dest);
-		} else if (status == STATUS_ACKNOWLEDGE | STATUS_DRIVER) {
+		} else if status == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
 			self.write_status_features(dest);
-		} else if (status == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK) {
+		} else if status == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK {
 			self.write_status_ok(dest);
 		}
 	}
 
 	fn write_status_reset(&mut self, dest: &[u8]) {
-		if (dest[0]) == STATUS_ACKNOWLEDGE {
-			self.write_status_enum((dest[0]));
+		if dest[0] == STATUS_ACKNOWLEDGE {
+			self.write_status_enum(dest[0]);
 		}
 	}
 
 	fn write_status_acknowledge(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
-			self.write_status_enum((dest[0]));
+			self.write_status_enum(dest[0]);
 		}
 	}
 
-	fn set_failed_status(&mut self) {
-		self.registers[STATUS_REGISTER as usize] |= STATUS_FAILED;
-	}
-
 	fn write_status_features(&mut self, dest: &[u8]) {
-		if (dest[0]) == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
+		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK {
 			self.write_status_enum(STATUS_FEATURES_OK);
 		}
 	}
 
 	fn write_status_ok(&mut self, dest: &[u8]) {
-		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK {
-			self.write_status_enum((dest[0]));
+		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK | STATUS_DRIVER_OK {
+			self.write_status_enum(dest[0]);
 		}
 	}
 
@@ -183,7 +179,7 @@ impl VirtioNetPciDevice {
 		self.selected_queue_num = unsafe { *(dest.as_ptr() as *const u16) }
 	}
 
-	pub fn write_pfn(&mut self, dest: &[u8], uhyve: &VirtualCPU) {
+	pub fn write_pfn(&mut self, dest: &[u8], uhyve: &dyn VirtualCPU) {
 		let status = self.read_status_enum();
 		if status & STATUS_FEATURES_OK != 0
 			&& status & STATUS_DRIVER_OK == 0
