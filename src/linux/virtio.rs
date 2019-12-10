@@ -242,7 +242,7 @@ impl VirtioNetPciDevice {
 
 	fn write_status_features(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK {
-			self.write_status_reg(STATUS_FEATURES_OK);
+			self.write_status_reg(dest[0]);
 		}
 	}
 
@@ -259,11 +259,6 @@ impl VirtioNetPciDevice {
 				}
 			};
 			self.get_mac_addr();
-
-			//match self.iface {
-			//    Some(tap) => spawn_rcv_thread(self.virt_queues[RX_QUEUE], &self.registers, tap),
-			//    None => {}
-			//}
 		}
 	}
 
@@ -279,14 +274,14 @@ impl VirtioNetPciDevice {
 		self.selected_queue_num = unsafe { *(dest.as_ptr() as *const u16) }
 	}
 
-	pub fn write_pfn(&mut self, dest: &[u8], uhyve: &dyn VirtualCPU) {
+	pub fn write_pfn(&mut self, dest: &[u8], vcpu: &dyn VirtualCPU) {
 		let status = self.read_status_reg();
 		if status & STATUS_FEATURES_OK != 0
 			&& status & STATUS_DRIVER_OK == 0
-			&& self.selected_queue_num as usize != self.virt_queues.len()
+			&& self.selected_queue_num as usize == self.virt_queues.len()
 		{
 			let gpa = unsafe { *(dest.as_ptr() as *const usize) };
-			let hva = (*uhyve).host_address(gpa) as *mut u8;
+			let hva = (*vcpu).host_address(gpa) as *mut u8;
 			let queue = Virtqueue::new(hva, QUEUE_LIMIT);
 			self.virt_queues.push(queue);
 		}
@@ -318,22 +313,8 @@ impl VirtioNetPciDevice {
 
 	pub fn reset_interrupt(&mut self) {
 		// TODO: what are IRQ
-		//let iface = Iface::new(TAP_DEVICE_NAME, Mode::Tap).expect("Failed to create a TAP device");
 		self.iface = None;
 	}
-
-	//pub fn start(this : Arc<Mutex<Self>>) {
-	//    thread::spawn(move || {
-	//        loop {
-	//            thread::sleep(Duration::from_millis(500));
-	//            let lock = this.lock().unwrap();
-	//            if lock.registers[STATUS_REGISTER as usize] & STATUS_DRIVER_OK == 1 {
-	//                let vec = vec![0, ETH_FRAME_LEN];
-	//
-	//            }
-	//        }
-	//    });
-	//}
 }
 
 impl PciDevice for VirtioNetPciDevice {
