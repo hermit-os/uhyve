@@ -286,7 +286,7 @@ impl VirtualCPU for UhyveCPU {
 				VcpuExit::IoIn(port, addr) => match port {
 					PCI_CONFIG_DATA_PORT => {
 						if pci_addr & 0x1ff800 == 0 && pci_addr_set {
-							let mut virtio_device = self.virtio_device.lock().unwrap();
+							let virtio_device = self.virtio_device.lock().unwrap();
 							virtio_device.handle_read(pci_addr & 0x3ff, addr);
 						} else {
 							unsafe { (*(addr.as_ptr() as *mut u32) = 0xffffffff) };
@@ -294,16 +294,24 @@ impl VirtualCPU for UhyveCPU {
 					}
 					PCI_CONFIG_ADDRESS_PORT => {}
 					VIRTIO_PCI_STATUS => {
-						let mut virtio_device = self.virtio_device.lock().unwrap();
+						let virtio_device = self.virtio_device.lock().unwrap();
 						virtio_device.read_status(addr);
 					}
 					VIRTIO_PCI_HOST_FEATURES => {
-						let mut virtio_device = self.virtio_device.lock().unwrap();
+						let virtio_device = self.virtio_device.lock().unwrap();
 						virtio_device.read_host_features(addr);
 					}
 					VIRTIO_PCI_GUEST_FEATURES => {
 						let mut virtio_device = self.virtio_device.lock().unwrap();
 						virtio_device.read_requested_features(addr);
+					}
+					VIRTIO_PCI_CONFIG_OFF_MSIX_ON..=VIRTIO_PCI_CONFIG_OFF_MSIX_ON_MAX => {
+						let virtio_device = self.virtio_device.lock().unwrap();
+						virtio_device.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_ON);
+					}
+					VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
+						let virtio_device = self.virtio_device.lock().unwrap();
+						virtio_device.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_OFF);
 					}
 					VIRTIO_PCI_ISR => {
 						let mut virtio_device = self.virtio_device.lock().unwrap();
@@ -389,7 +397,7 @@ impl VirtualCPU for UhyveCPU {
 						}
 						VIRTIO_PCI_QUEUE_NOTIFY => {
 							let mut virtio_device = self.virtio_device.lock().unwrap();
-							virtio_device.handle_notify_output(addr);
+							virtio_device.handle_notify_output(addr, self);
 						}
 						VIRTIO_PCI_QUEUE_SEL => {
 							let mut virtio_device = self.virtio_device.lock().unwrap();

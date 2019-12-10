@@ -1,14 +1,18 @@
 use linux::virtqueue::*;
-use std::collections::HashMap;
 use std::fmt;
-use std::sync::Mutex;
+use std::mem::size_of;
+use std::ptr::copy_nonoverlapping;
+use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 use std::vec::Vec;
 use vm::VirtualCPU;
 extern crate tun_tap;
 use self::tun_tap::*;
 extern crate virtio_bindings;
 use self::virtio_bindings::bindings::virtio_net::*;
+extern crate mac_address;
+use self::mac_address::*;
 
 const STATUS_ACKNOWLEDGE: u8 = 0b00000001;
 const STATUS_DRIVER: u8 = 0b00000010;
@@ -29,15 +33,18 @@ const _INTERRUPT_REGISTER: usize = 0x3C;
 const RX_QUEUE: usize = 0;
 const TX_QUEUE: usize = 1;
 const IOBASE: u16 = 0xc000;
-const VIRTIO_PCI_HOST_FEATURES: u16 = IOBASE;
-const VIRTIO_PCI_GUEST_FEATURES: u16 = IOBASE + 4;
-const VIRTIO_PCI_QUEUE_PFN: u16 = IOBASE + 8;
-const VIRTIO_PCI_QUEUE_NUM: u16 = IOBASE + 12;
-const VIRTIO_PCI_QUEUE_SEL: u16 = IOBASE + 14;
-const VIRTIO_PCI_QUEUE_NOTIFY: u16 = IOBASE + 16;
-const VIRTIO_PCI_STATUS: u16 = IOBASE + 18;
-const VIRTIO_PCI_ISR: u16 = IOBASE + 19;
-const TAP_DEVICE_NAME_BASE: &str = "uhyve-tap";
+pub const VIRTIO_PCI_HOST_FEATURES: u16 = IOBASE;
+pub const VIRTIO_PCI_GUEST_FEATURES: u16 = IOBASE + 4;
+pub const VIRTIO_PCI_QUEUE_PFN: u16 = IOBASE + 8;
+pub const VIRTIO_PCI_QUEUE_NUM: u16 = IOBASE + 12;
+pub const VIRTIO_PCI_QUEUE_SEL: u16 = IOBASE + 14;
+pub const VIRTIO_PCI_QUEUE_NOTIFY: u16 = IOBASE + 16;
+pub const VIRTIO_PCI_STATUS: u16 = IOBASE + 18;
+pub const VIRTIO_PCI_ISR: u16 = IOBASE + 19;
+pub const VIRTIO_PCI_CONFIG_OFF_MSIX_ON: u16 = 24;
+pub const VIRTIO_PCI_CONFIG_OFF_MSIX_OFF: u16 = 20;
+pub const VIRTIO_PCI_CONFIG_OFF_MSIX_ON_MAX: u16 = VIRTIO_PCI_CONFIG_OFF_MSIX_ON + 5;
+pub const VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX: u16 = VIRTIO_PCI_CONFIG_OFF_MSIX_OFF + 5;
 
 const HOST_FEATURES: u32 = (1 << VIRTIO_NET_F_STATUS) | (1 << VIRTIO_NET_F_MAC);
 
@@ -48,12 +55,21 @@ pub trait PciDevice {
 
 type PciRegisters = [u8; 0x40];
 
+fn spawn_rcv_thread(rx_queue: Virtqueue, registers: &'static [u8], iface: Mutex<Iface>) {
+	thread::spawn(
+		move || {
+			while registers[STATUS_REGISTER as usize] & STATUS_DRIVER_OK == 1 {}
+		},
+	);
+}
+
 pub struct VirtioNetPciDevice {
 	registers: PciRegisters, //Add more
 	requested_features: u32,
 	selected_queue_num: u16,
 	virt_queues: Vec<Virtqueue>,
 	iface: Option<Mutex<Iface>>,
+	mac_addr: [u8; 6],
 }
 
 impl fmt::Debug for VirtioNetPciDevice {
@@ -108,21 +124,62 @@ impl VirtioNetPciDevice {
 		write_u16!(registers, CLASS_REGISTER + 2, 0x0200 as u16);
 		write_u16!(registers, BAR0_REGISTER, IOBASE as u16);
 		registers[STATUS_REGISTER as usize] = STATUS_DRIVER_NEEDS_RESET;
-		let mut virt_queues: Vec<Virtqueue> = Vec::new();
+		let virt_queues: Vec<Virtqueue> = Vec::new();
 		VirtioNetPciDevice {
 			registers,
 			requested_features: 0,
 			selected_queue_num: 0,
 			virt_queues,
 			iface: None,
+			mac_addr: [0; 6],
 		}
 	}
 
-	pub fn handle_notify_output(&mut self, dest: &[u8]) {
+	pub fn handle_notify_output(&mut self, dest: &[u8], cpu: &dyn VirtualCPU) {
 		// TODO: Validate state and send packets, etc.
-        // strip off virtio header
-        // lock around tap dev
-        // put on net?
+		// strip off virtio header
+		// lock around tap dev
+		// put on net?
+		//
+		let tx_num = read_u16!(dest, 0);
+		if tx_num == 1 && self.read_status_reg() & STATUS_DRIVER_OK == 1 {
+			self.send_available_packets(cpu);
+		}
+	}
+
+	fn send_available_packets(&mut self, cpu: &dyn VirtualCPU) {
+		let tx_queue = &mut self.virt_queues[TX_QUEUE];
+		let mut iter = tx_queue.avail_iter();
+		let mut send_indices = Vec::new();
+		loop {
+			match iter.next() {
+				Some(index) => {
+					send_indices.push(index);
+				}
+				None => break,
+			}
+		}
+		for index in send_indices {
+			let desc = unsafe { tx_queue.get_descriptor(index) };
+			let gpa = unsafe { *(desc.addr as *const usize) };
+			let hva = (*cpu).host_address(gpa) as *mut u8;
+			// TODO: packet sending magic
+			match &self.iface {
+				Some(tap) => unsafe {
+					let vec = vec![0; (desc.len as usize) - size_of::<virtio_net_hdr>()];
+					let slice: &[u8] = &vec;
+					copy_nonoverlapping(
+						hva as *const u8,
+						slice.as_ptr() as *mut u8,
+						(desc.len as usize) - size_of::<virtio_net_hdr>(),
+					);
+					let unlocked_tap = tap.lock().unwrap();
+					unlocked_tap.send(slice).unwrap_or(0);
+				},
+				None => self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET,
+			}
+			tx_queue.add_used(index as u32, 1)
+		}
 	}
 
 	pub fn read_status(&self, dest: &mut [u8]) {
@@ -147,6 +204,30 @@ impl VirtioNetPciDevice {
 		}
 	}
 
+	pub fn read_mac_byte(&self, dest: &mut [u8], index: u16) {
+		dest[0] = self.mac_addr[index as usize];
+	}
+
+	fn get_mac_addr(&mut self) {
+		match &self.iface {
+			Some(tap) => {
+				let locked_dev = tap.lock().unwrap();
+				match mac_address_by_name(locked_dev.name()) {
+					Ok(Some(ma)) => self.mac_addr = ma.bytes(),
+					Ok(None) => {
+						info!("No MAC address found.");
+						self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET;
+					}
+					Err(e) => {
+						info!("{:?}", e);
+						self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET;
+					}
+				}
+			}
+			None => {}
+		}
+	}
+
 	fn write_status_reset(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE {
 			self.write_status_reg(dest[0]);
@@ -168,17 +249,21 @@ impl VirtioNetPciDevice {
 	fn write_status_ok(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK | STATUS_DRIVER_OK {
 			self.write_status_reg(dest[0]);
-            //TODO: activate tap_tun device, spawn polling thread
-            self.iface = match Iface::new("",Mode::Tap) {
-                Ok(tap) => Some(Mutex::new(tap)),
-                Err(err) => {
-                    info!("Error creating TAP device: {}", err);
-                    self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET;
-                    None
-                },
-            };
-            let rcv_thread = thread::spawn(|| {
-            });
+			//TODO: activate tap_tun device, spawn polling thread
+			self.iface = match Iface::new("", Mode::Tap) {
+				Ok(tap) => Some(Mutex::new(tap)),
+				Err(err) => {
+					info!("Error creating TAP device: {}", err);
+					self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET;
+					None
+				}
+			};
+			self.get_mac_addr();
+
+			//match self.iface {
+			//    Some(tap) => spawn_rcv_thread(self.virt_queues[RX_QUEUE], &self.registers, tap),
+			//    None => {}
+			//}
 		}
 	}
 
@@ -236,6 +321,19 @@ impl VirtioNetPciDevice {
 		//let iface = Iface::new(TAP_DEVICE_NAME, Mode::Tap).expect("Failed to create a TAP device");
 		self.iface = None;
 	}
+
+	//pub fn start(this : Arc<Mutex<Self>>) {
+	//    thread::spawn(move || {
+	//        loop {
+	//            thread::sleep(Duration::from_millis(500));
+	//            let lock = this.lock().unwrap();
+	//            if lock.registers[STATUS_REGISTER as usize] & STATUS_DRIVER_OK == 1 {
+	//                let vec = vec![0, ETH_FRAME_LEN];
+	//
+	//            }
+	//        }
+	//    });
+	//}
 }
 
 impl PciDevice for VirtioNetPciDevice {

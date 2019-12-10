@@ -2,7 +2,6 @@ use consts::PAGE_SIZE;
 use std::marker::PhantomData;
 use std::mem;
 use std::mem::size_of;
-use std::slice;
 
 pub const QUEUE_LIMIT: usize = 256;
 
@@ -51,8 +50,8 @@ impl<T> Vring<T> {
 
 #[repr(C)]
 pub struct VringUsedElement {
-	pub id: u16,
-	pub len: u16,
+	pub id: u32,
+	pub len: u32,
 }
 
 pub type VringAvailable = Vring<u16>;
@@ -121,7 +120,7 @@ impl Virtqueue {
 		}
 	}
 
-	pub unsafe fn get_descriptor(&mut self, index: u16) -> &mut VringDescriptor {
+	pub unsafe fn get_descriptor(&self, index: u16) -> &mut VringDescriptor {
 		&mut *self.descriptor_table.offset(index as isize)
 	}
 
@@ -133,7 +132,7 @@ impl Virtqueue {
 		}
 	}
 
-	pub fn add_used(&mut self, desc_index: u16, len: u16) {
+	pub fn add_used(&mut self, desc_index: u32, len: u32) {
 		let tgt_index = self.used_ring.index() % self.queue_size;
 		let mut used_elem = self.used_ring.ring_elem(tgt_index);
 		used_elem.id = desc_index;
