@@ -317,6 +317,14 @@ impl VirtualCPU for UhyveCPU {
 						let mut virtio_device = self.virtio_device.lock().unwrap();
 						virtio_device.reset_interrupt()
 					}
+                    VIRTIO_PCI_LINK_STATUS_MSIX_OFF => {
+						let mut virtio_device = self.virtio_device.lock().unwrap();
+                        virtio_device.read_link_status(addr);
+                    }
+                    VIRTIO_PCI_LINK_STATUS_MSIX_ON => {
+						let mut virtio_device = self.virtio_device.lock().unwrap();
+                        virtio_device.read_link_status(addr);
+                    }
 
 					_ => {
 						info!("Unhanded IO Exit");

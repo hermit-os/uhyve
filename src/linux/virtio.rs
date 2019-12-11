@@ -33,6 +33,7 @@ const _INTERRUPT_REGISTER: usize = 0x3C;
 const RX_QUEUE: usize = 0;
 const TX_QUEUE: usize = 1;
 const IOBASE: u16 = 0xc000;
+const ETHARP_HWADDR_LEN: u16 = 6;
 pub const VIRTIO_PCI_HOST_FEATURES: u16 = IOBASE;
 pub const VIRTIO_PCI_GUEST_FEATURES: u16 = IOBASE + 4;
 pub const VIRTIO_PCI_QUEUE_PFN: u16 = IOBASE + 8;
@@ -45,6 +46,8 @@ pub const VIRTIO_PCI_CONFIG_OFF_MSIX_ON: u16 = 24;
 pub const VIRTIO_PCI_CONFIG_OFF_MSIX_OFF: u16 = 20;
 pub const VIRTIO_PCI_CONFIG_OFF_MSIX_ON_MAX: u16 = VIRTIO_PCI_CONFIG_OFF_MSIX_ON + 5;
 pub const VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX: u16 = VIRTIO_PCI_CONFIG_OFF_MSIX_OFF + 5;
+pub const VIRTIO_PCI_LINK_STATUS_MSIX_OFF: u16 = ETHARP_HWADDR_LEN + VIRTIO_PCI_CONFIG_OFF_MSIX_OFF;
+pub const VIRTIO_PCI_LINK_STATUS_MSIX_ON: u16 = ETHARP_HWADDR_LEN + VIRTIO_PCI_CONFIG_OFF_MSIX_ON;
 
 const HOST_FEATURES: u32 = (1 << VIRTIO_NET_F_STATUS) | (1 << VIRTIO_NET_F_MAC);
 
@@ -135,12 +138,16 @@ impl VirtioNetPciDevice {
 		}
 	}
 
+    pub fn poll_rx(device: &mut VirtioNetPciDevice) {
+        //TODO: deadlock????/
+        match self.iface {
+            Some(device) => {
+            }
+            None => {}
+        }
+    }
+
 	pub fn handle_notify_output(&mut self, dest: &[u8], cpu: &dyn VirtualCPU) {
-		// TODO: Validate state and send packets, etc.
-		// strip off virtio header
-		// lock around tap dev
-		// put on net?
-		//
 		let tx_num = read_u16!(dest, 0);
 		if tx_num == 1 && self.read_status_reg() & STATUS_DRIVER_OK == 1 {
 			self.send_available_packets(cpu);
@@ -193,6 +200,7 @@ impl VirtioNetPciDevice {
 			self.requested_features = 0;
 			self.selected_queue_num = 0;
 			self.virt_queues.clear();
+            self.iface = None;
 		} else if status == STATUS_DRIVER_NEEDS_RESET || status == 0 {
 			self.write_status_reset(dest);
 		} else if status == STATUS_ACKNOWLEDGE {
@@ -303,6 +311,18 @@ impl VirtioNetPciDevice {
 			}
 		}
 	}
+
+    pub fn read_link_status(&self, dest: &mut[u8]) {
+        let status = self.read_status_reg();
+        if status & STATUS_FAILED != 0 || status & STATUS_DRIVER_NEEDS_RESET != 0 {
+            dest[0] = 0;
+        } else {
+            match &self.iface {
+                Some(iface) => dest[0] = 1,
+                None => dest[0] = 0
+            }
+        }
+    }
 
 	pub fn read_host_features(&self, dest: &mut [u8]) {
 		let bytes = HOST_FEATURES.to_ne_bytes();
