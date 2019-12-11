@@ -32,6 +32,7 @@ const _RX_QUEUE: usize = 0;
 const TX_QUEUE: usize = 1;
 const IOBASE: u16 = 0xc000;
 const ETHARP_HWADDR_LEN: u16 = 6;
+
 pub const VIRTIO_PCI_HOST_FEATURES: u16 = IOBASE;
 pub const VIRTIO_PCI_GUEST_FEATURES: u16 = IOBASE + 4;
 pub const VIRTIO_PCI_QUEUE_PFN: u16 = IOBASE + 8;
@@ -66,7 +67,7 @@ impl fmt::Debug for VirtioNetPciDevice {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(
 			f,
-			"Status: {}\n IRQ: ",
+			"Status: {}",
 			self.registers[STATUS_REGISTER as usize]
 		)
 	}
@@ -126,8 +127,7 @@ impl VirtioNetPciDevice {
 	}
 
 	pub fn _poll_rx(_device: &mut VirtioNetPciDevice) {
-
-		//TODO: how to read packets
+		//TODO: how to read packets without synchronization issues
 	}
 
 	pub fn handle_notify_output(&mut self, dest: &[u8], cpu: &dyn VirtualCPU) {
@@ -137,6 +137,7 @@ impl VirtioNetPciDevice {
 		}
 	}
 
+    // Sends packets using the tun_tap crate, subject to change
 	fn send_available_packets(&mut self, cpu: &dyn VirtualCPU) {
 		let tx_queue = &mut self.virt_queues[TX_QUEUE];
 		let mut iter = tx_queue.avail_iter();
@@ -153,7 +154,6 @@ impl VirtioNetPciDevice {
 			let desc = unsafe { tx_queue.get_descriptor(index) };
 			let gpa = unsafe { *(desc.addr as *const usize) };
 			let hva = (*cpu).host_address(gpa) as *mut u8;
-			// TODO: packet sending magic
 			match &self.iface {
 				Some(tap) => unsafe {
 					let vec = vec![0; (desc.len as usize) - size_of::<virtio_net_hdr>()];
@@ -164,6 +164,7 @@ impl VirtioNetPciDevice {
 						(desc.len as usize) - size_of::<virtio_net_hdr>(),
 					);
 					let unlocked_tap = tap.lock().unwrap();
+                    //Actually send packet
 					unlocked_tap.send(slice).unwrap_or(0);
 				},
 				None => self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET,
@@ -176,6 +177,7 @@ impl VirtioNetPciDevice {
 		self.handle_read(STATUS_REGISTER & 0x3FFF, dest);
 	}
 
+    // Virtio handshake
 	pub fn write_status(&mut self, dest: &[u8]) {
 		let status = self.read_status_reg();
 		if dest[0] == 0 {
@@ -199,6 +201,8 @@ impl VirtioNetPciDevice {
 		dest[0] = self.mac_addr[index as usize];
 	}
 
+    // This function is reliant on tap devices as the underlying packet sending mechanism
+    // Gets the tap device by name then gets its mac address
 	fn get_mac_addr(&mut self) {
 		match &self.iface {
 			Some(tap) => {
@@ -219,28 +223,31 @@ impl VirtioNetPciDevice {
 		}
 	}
 
+    // Driver acknowledges device
 	fn write_status_reset(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE {
 			self.write_status_reg(dest[0]);
 		}
 	}
 
+    // Driver recognizes the device
 	fn write_status_acknowledge(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
 			self.write_status_reg(dest[0]);
 		}
 	}
 
+    // finish negotiating features
 	fn write_status_features(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK {
 			self.write_status_reg(dest[0]);
 		}
 	}
 
+    // Complete handshake
 	fn write_status_ok(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK | STATUS_DRIVER_OK {
 			self.write_status_reg(dest[0]);
-			//TODO: activate tap_tun device, spawn polling thread
 			self.iface = match Iface::new("", Mode::Tap) {
 				Ok(tap) => Some(Mutex::new(tap)),
 				Err(err) => {
@@ -258,13 +265,14 @@ impl VirtioNetPciDevice {
 	}
 
 	fn read_status_reg(&self) -> u8 {
-		(self.registers[STATUS_REGISTER as usize])
+		self.registers[STATUS_REGISTER as usize]
 	}
 
 	pub fn write_selected_queue(&mut self, dest: &[u8]) {
-		self.selected_queue_num = unsafe { *(dest.as_ptr() as *const u16) }
+		self.selected_queue_num = unsafe { *(dest.as_ptr() as *const u16) };
 	}
 
+    // Register virtqueue
 	pub fn write_pfn(&mut self, dest: &[u8], vcpu: &dyn VirtualCPU) {
 		let status = self.read_status_reg();
 		if status & STATUS_FEATURES_OK != 0
@@ -315,8 +323,7 @@ impl VirtioNetPciDevice {
 	}
 
 	pub fn reset_interrupt(&mut self) {
-		// TODO: what are IRQ
-		self.iface = None;
+		// TODO: IRQ
 	}
 }
 
