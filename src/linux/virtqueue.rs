@@ -26,7 +26,7 @@ impl<T> Vring<T> {
 		}
 	}
 
-	pub fn flags(&self) -> u16 {
+	pub fn _flags(&self) -> u16 {
 		unsafe { *(self.mem as *const u16) }
 	}
 
@@ -80,7 +80,7 @@ impl<'a> Iterator for AvailIter<'a> {
 			return None;
 		}
 
-		let index = (*self.last_seen_available % self.queue_size);
+		let index = *self.last_seen_available % self.queue_size;
 		*self.last_seen_available += 1;
 		Some(index)
 	}
