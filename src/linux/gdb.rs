@@ -1,19 +1,22 @@
-use std::borrow::Cow;
-use std::slice;
-use std::os::unix::io::AsRawFd;
-use std::collections::HashMap;
-use std::cell::{RefCell};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use error::{self, Error::OsError};
-use libc::ioctl;
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
+use libc::ioctl;
 use rustc_serialize::hex::ToHex;
+use std::borrow::Cow;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::os::unix::io::AsRawFd;
+use std::slice;
 
-use gdb_parser::{Error, Handler, ProcessType, ProcessInfo, StopReason, ThreadId, VCont, VContFeature, Id, MemoryRegion, FileData, Breakpoint, Watchpoint};
+use gdb_parser::{
+	Breakpoint, Error, FileData, Handler, Id, MemoryRegion, ProcessInfo, ProcessType, StopReason,
+	ThreadId, VCont, VContFeature, Watchpoint,
+};
 use linux::vcpu::UhyveCPU;
-use vm::VirtualCPU;
 use utils::get_max_subslice;
+use vm::VirtualCPU;
 use x86;
 
 /// Debugging Stub for linux/x64
@@ -41,35 +44,41 @@ impl UhyveCPU {
 
 			let (mut cmdhandler, signal) = if let Some(signal) = signal {
 				// send signal with which we are stopped. Hardcoded to 5 for now (TODO)
-				(CmdHandler::new(self, &dbg.state, signal), Some(StopReason::Signal(5)))
+				(
+					CmdHandler::new(self, &dbg.state, signal),
+					Some(StopReason::Signal(5)),
+				)
 			} else {
 				// target stopped on boot. No signal recv'd yet. Pretend debug singal..? Not used rn anyways
 				(CmdHandler::new(self, &dbg.state, VcpuExit::Debug), None)
 			};
 
 			// enter command-handler, stay there until we receive a continue signal
-			let vcont = dbg.handle_commands(&mut cmdhandler, signal).unwrap_or_else(|error| {
-				error!("Cannot handle debugging commands: {:?}", error);
-				// always continue
-				VCont::Continue
-			});
+			let vcont = dbg
+				.handle_commands(&mut cmdhandler, signal)
+				.unwrap_or_else(|error| {
+					error!("Cannot handle debugging commands: {:?}", error);
+					// always continue
+					VCont::Continue
+				});
 
 			let hwbr = dbg.state.borrow().get_hardware_breakpoints();
 
 			// handler returned with a continuation command,
 			// determine if we should continue single-stepped or until next trap
 			match vcont {
-				VCont::Continue | VCont::ContinueWithSignal(_)=> {
-						info!("Continuing execution..");
-						self.kvm_change_guestdbg(false, hwbr.as_ref()).expect("Could not change KVM debugging state"); // TODO: optimize this, dont call too often?
-					},
+				VCont::Continue | VCont::ContinueWithSignal(_) => {
+					info!("Continuing execution..");
+					self.kvm_change_guestdbg(false, hwbr.as_ref())
+						.expect("Could not change KVM debugging state"); // TODO: optimize this, dont call too often?
+				}
 				VCont::Step | VCont::StepWithSignal(_) => {
-						info!("Starting Single Stepping..");
-						self.kvm_change_guestdbg(true, hwbr.as_ref()).expect("Could not change KVM debugging state"); // TODO: optimize this, dont call too often?
-					},
+					info!("Starting Single Stepping..");
+					self.kvm_change_guestdbg(true, hwbr.as_ref())
+						.expect("Could not change KVM debugging state"); // TODO: optimize this, dont call too often?
+				}
 				_ => error!("Unknown Handler exit reason!"),
 			}
-
 		} else {
 			info!("Debugging disabled, ignoring exception {:?}.", signal);
 		};
@@ -91,12 +100,16 @@ impl UhyveCPU {
 		mem.copy_from_slice(data);
 	}
 
-	pub fn kvm_change_guestdbg(&mut self, single_step: bool, hwbr: Option<&x86::HWBreakpoints>/*&HashMap<usize, Breakpoint>*/) -> Result<(), error::Error> {
+	pub fn kvm_change_guestdbg(
+		&mut self,
+		single_step: bool,
+		hwbr: Option<&x86::HWBreakpoints>, /*&HashMap<usize, Breakpoint>*/
+	) -> Result<(), error::Error> {
 		debug!("KVM: Enable guest debug. SS:{}", single_step);
 		let mut dbg = kvm_guest_debug {
 			control: KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_SW_BP, // KVM_GUESTDBG_USE_HW_BP
 			pad: 0,
-			arch: kvm_guest_debug_arch {debugreg: [0;8]},
+			arch: kvm_guest_debug_arch { debugreg: [0; 8] },
 		};
 
 		if single_step {
@@ -127,7 +140,6 @@ impl UhyveCPU {
 		Ok(())
 	}
 }
-
 
 pub struct State {
 	breakpoints: HashMap<usize, SWBreakpoint>,
@@ -190,7 +202,7 @@ impl State {
 				_ => {
 					error!("Unknown watchpoint size!");
 					x86::BreakSize::B1
-				},
+				}
 			};
 		}
 
@@ -198,19 +210,21 @@ impl State {
 	}
 }
 
-
-
 pub struct CmdHandler<'a> {
 	// use RefCells to not break existing api of gdb_parser (no mutability in handler)
-	resume:      RefCell<Option<VCont>>,
+	resume: RefCell<Option<VCont>>,
 	current_cpu: RefCell<&'a mut UhyveCPU>,
-	state:   &'a RefCell<State>,
+	state: &'a RefCell<State>,
 	_current_signal: VcpuExit<'a>,
 }
 
 impl<'a> CmdHandler<'a> {
-	pub fn new(cpu: &'a mut UhyveCPU, state: &'a RefCell<State>, signal: VcpuExit<'a>) -> CmdHandler<'a> {
-		CmdHandler{
+	pub fn new(
+		cpu: &'a mut UhyveCPU,
+		state: &'a RefCell<State>,
+		signal: VcpuExit<'a>,
+	) -> CmdHandler<'a> {
+		CmdHandler {
 			resume: RefCell::new(None),
 			current_cpu: RefCell::new(cpu),
 			_current_signal: signal,
@@ -239,15 +253,28 @@ impl<'a> CmdHandler<'a> {
 
 		// HW BREAKPOINTS get set/removed during KVM update on cmd-loop exit! (kvm_change_guestdbg)
 
-		self.state.borrow_mut().breakpoints_hw.insert(bp.addr as _, bp);
-		info!("Add breakpoints_hw: {:?}", self.state.borrow().breakpoints_hw);
+		self.state
+			.borrow_mut()
+			.breakpoints_hw
+			.insert(bp.addr as _, bp);
+		info!(
+			"Add breakpoints_hw: {:?}",
+			self.state.borrow().breakpoints_hw
+		);
 		Ok(())
 	}
 
 	fn deregister_hardware_trap(&self, breakpoint: HWBreakpoint) -> Result<(), Error> {
-		info!("Remove breakpoints_hw: {:?}", self.state.borrow().breakpoints_hw);
-		if let Some(_bp) = self.state.borrow_mut().breakpoints_hw.remove(&(breakpoint.addr as _)) {
-
+		info!(
+			"Remove breakpoints_hw: {:?}",
+			self.state.borrow().breakpoints_hw
+		);
+		if let Some(_bp) = self
+			.state
+			.borrow_mut()
+			.breakpoints_hw
+			.remove(&(breakpoint.addr as _))
+		{
 			// HW BREAKPOINTS get set/removed during KVM update on cmd-loop exit! (kvm_change_guestdbg)
 
 			Ok(())
@@ -255,7 +282,6 @@ impl<'a> CmdHandler<'a> {
 			Err(Error::Error(4))
 		}
 	}
-
 }
 
 impl<'a> Handler for CmdHandler<'a> {
@@ -274,7 +300,7 @@ impl<'a> Handler for CmdHandler<'a> {
 	}
 
 	fn query_supported_features(&self) -> Vec<String> {
-		vec!["qXfer:features:read+".to_string(),]
+		vec!["qXfer:features:read+".to_string()]
 	}
 
 	fn query_supported_vcont(&self) -> Result<Cow<'static, [VContFeature]>, Error> {
@@ -295,7 +321,10 @@ impl<'a> Handler for CmdHandler<'a> {
 
 	/// Return the identifier of the current thread.
 	fn current_thread(&self) -> Result<Option<ThreadId>, Error> {
-		Ok(Some(ThreadId{pid: Id::Id(1), tid: Id::Id(1)}))
+		Ok(Some(ThreadId {
+			pid: Id::Id(1),
+			tid: Id::Id(1),
+		}))
 	}
 
 	fn read_general_registers(&self) -> Result<Vec<u8>, Error> {
@@ -310,23 +339,27 @@ impl<'a> Handler for CmdHandler<'a> {
 	}
 
 	fn read_memory(&self, mem: MemoryRegion) -> Result<Vec<u8>, Error> {
-		Ok(
-			unsafe{
-				self.current_cpu.borrow().read_mem(mem.address as _, mem.length as _)
-			}.to_vec()
-		)
+		Ok(unsafe {
+			self.current_cpu
+				.borrow()
+				.read_mem(mem.address as _, mem.length as _)
+		}
+		.to_vec())
 	}
 
 	fn write_memory(&self, address: u64, bytes: &[u8]) -> Result<(), Error> {
-		unsafe {
-			self.current_cpu.borrow().write_mem(address as _, bytes)
-		}
+		unsafe { self.current_cpu.borrow().write_mem(address as _, bytes) }
 		Ok(())
 	}
 
 	fn insert_software_breakpoint(&self, bp: Breakpoint) -> Result<(), Error> {
 		// bail if breakpoint already exists
-		if self.state.borrow().breakpoints.contains_key(&(bp.addr as _)) {
+		if self
+			.state
+			.borrow()
+			.breakpoints
+			.contains_key(&(bp.addr as _))
+		{
 			return Err(Error::Error(6));
 		}
 
@@ -335,23 +368,34 @@ impl<'a> Handler for CmdHandler<'a> {
 		// overwrite with int3
 		unsafe { self.current_cpu.borrow().write_mem(bp.addr as _, INT3) }
 
-		let bp = SWBreakpoint{bp, insn};
-		self.state.borrow_mut().breakpoints.insert(bp.bp.addr as _, bp);
+		let bp = SWBreakpoint { bp, insn };
+		self.state
+			.borrow_mut()
+			.breakpoints
+			.insert(bp.bp.addr as _, bp);
 		info!("Add breakpoints: {:?}", self.state.borrow().breakpoints);
 		Ok(())
 	}
 
 	fn remove_software_breakpoint(&self, breakpoint: Breakpoint) -> Result<(), Error> {
 		info!("Remove breakpoints: {:?}", self.state.borrow().breakpoints);
-		if let Some(bp) = self.state.borrow_mut().breakpoints.remove(&(breakpoint.addr as _)) {
+		if let Some(bp) = self
+			.state
+			.borrow_mut()
+			.breakpoints
+			.remove(&(breakpoint.addr as _))
+		{
 			// restore original instruction byte
-			 unsafe { self.current_cpu.borrow().write_mem(breakpoint.addr as _, &[bp.insn]) };
+			unsafe {
+				self.current_cpu
+					.borrow()
+					.write_mem(breakpoint.addr as _, &[bp.insn])
+			};
 			Ok(())
 		} else {
 			Err(Error::Error(4))
 		}
 	}
-
 
 	fn insert_hardware_breakpoint(&self, bp: Breakpoint) -> Result<(), Error> {
 		self.register_hardware_trap(HWBreakpoint {
@@ -423,13 +467,15 @@ impl<'a> Handler for CmdHandler<'a> {
 		})
 	}
 
-
 	/// TODO: currently ignores tid/pid, and just continues/steps currently running cpu according to first command
 	/// At most apply one action per thread. GDB likes to send default action for other threads,
 	/// even if it knows only about 1: "vCont;s:1;c" (step thread 1, continue others)
 	fn vcont(&self, actions: Vec<(VCont, Option<ThreadId>)>) -> Result<StopReason, Error> {
 		for (cmd, id) in &actions {
-			let _id = id.unwrap_or(ThreadId { pid: Id::All, tid: Id::All });
+			let _id = id.unwrap_or(ThreadId {
+				pid: Id::All,
+				tid: Id::All,
+			});
 			//debug!("{:?}", id);
 			//println!(self.tracee.pid());
 			/*match (id.pid, id.tid) {
@@ -452,7 +498,10 @@ impl<'a> Handler for CmdHandler<'a> {
 	fn thread_list(&self, reset: bool) -> Result<Vec<ThreadId>, Error> {
 		if reset {
 			Ok(vec![
-				ThreadId{pid: Id::Id(1), tid: Id::Id(1)},
+				ThreadId {
+					pid: Id::Id(1),
+					tid: Id::Id(1),
+				},
 				/*ThreadId{pid: Id::Id(1), tid: Id::Id(2)},
 				ThreadId{pid: Id::Id(1), tid: Id::Id(3)},
 				ThreadId{pid: Id::Id(1), tid: Id::Id(4)},*/
@@ -464,13 +513,11 @@ impl<'a> Handler for CmdHandler<'a> {
 
 	fn process_list(&self, reset: bool) -> Result<Vec<ProcessInfo>, Error> {
 		if reset {
-			Ok(vec![
-				ProcessInfo{
-					pid: Id::Id(1),
-					name: "hermitcore app".to_string(),
-					triple: "x86_64-unknown-hermit".to_string(),
-				},
-			])
+			Ok(vec![ProcessInfo {
+				pid: Id::Id(1),
+				name: "hermitcore app".to_string(),
+				triple: "x86_64-unknown-hermit".to_string(),
+			}])
 		} else {
 			Ok(Vec::new())
 		}
@@ -479,11 +526,16 @@ impl<'a> Handler for CmdHandler<'a> {
 	fn read_feature(&self, name: String, offset: u64, length: u64) -> Result<FileData, Error> {
 		let targetxml = include_str!("i386-64bit.xml");
 		match name.as_ref() {
-			"target.xml" => Ok(FileData(get_max_subslice(targetxml, offset as _, length as _).to_string())),
+			"target.xml" => Ok(FileData(
+				get_max_subslice(targetxml, offset as _, length as _).to_string(),
+			)),
 			_ => {
-				info!("Error: emote tried to read {}, which is unimplemented", name);
+				info!(
+					"Error: emote tried to read {}, which is unimplemented",
+					name
+				);
 				Err(Error::Unimplemented)
-			},
+			}
 		}
 	}
 
@@ -491,8 +543,6 @@ impl<'a> Handler for CmdHandler<'a> {
 		Ok(format!("triple:{};", b"x86_64-unknown-hermit".to_hex()))
 	}
 }
-
-
 
 #[derive(Default)]
 pub struct Registers {
@@ -559,11 +609,10 @@ pub struct Registers {
 	pub gs_base: Option<u64>,*/
 }
 
-
 impl Registers {
 	/// Loads the register set from kvm into the register struct
 	pub fn from_kvm(cpu: &VcpuFd) -> Self {
-		let regs =  cpu.get_regs().expect("Cant get regs from kvm!");
+		let regs = cpu.get_regs().expect("Cant get regs from kvm!");
 		let sregs = cpu.get_sregs().expect("Cant get sregs from kvm!");
 
 		let mut registers = Registers::default();
@@ -573,8 +622,8 @@ impl Registers {
 		registers.r12 = Some(regs.r12);
 		registers.r11 = Some(regs.r11);
 		registers.r10 = Some(regs.r10);
-		registers.r9  = Some(regs.r9);
-		registers.r8  = Some(regs.r8);
+		registers.r9 = Some(regs.r9);
+		registers.r8 = Some(regs.r8);
 		registers.rax = Some(regs.rax);
 		registers.rbx = Some(regs.rbx);
 		registers.rcx = Some(regs.rcx);
@@ -630,7 +679,7 @@ impl Registers {
 
 	/// Saves a register struct (only where non-None values are) into kvm.
 	pub fn to_kvm(&self, cpu: &mut VcpuFd) {
-		let mut regs =  cpu.get_regs().expect("Cant get regs from kvm!");
+		let mut regs = cpu.get_regs().expect("Cant get regs from kvm!");
 		let mut sregs = cpu.get_sregs().expect("Cant get sregs from kvm!");
 
 		regs.r15 = self.r15.unwrap_or(regs.r15);
@@ -639,8 +688,8 @@ impl Registers {
 		regs.r12 = self.r12.unwrap_or(regs.r12);
 		regs.r11 = self.r11.unwrap_or(regs.r11);
 		regs.r10 = self.r10.unwrap_or(regs.r10);
-		regs.r9  = self.r9.unwrap_or(regs.r9);
-		regs.r8  = self.r8.unwrap_or(regs.r8);
+		regs.r9 = self.r9.unwrap_or(regs.r9);
+		regs.r8 = self.r8.unwrap_or(regs.r8);
 		regs.rax = self.rax.unwrap_or(regs.rax);
 		regs.rbx = self.rbx.unwrap_or(regs.rbx);
 		regs.rcx = self.rcx.unwrap_or(regs.rcx);
@@ -702,25 +751,41 @@ impl Registers {
 	pub fn encode(&self) -> Vec<u8> {
 		let mut out: Vec<u8> = vec![];
 
-		out.write_u64::<LittleEndian>(self.rax.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.rbx.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.rcx.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.rdx.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.rsi.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.rdi.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.rbp.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.rsp.unwrap_or(0)).unwrap();
+		out.write_u64::<LittleEndian>(self.rax.unwrap_or(0))
+			.unwrap();
+		out.write_u64::<LittleEndian>(self.rbx.unwrap_or(0))
+			.unwrap();
+		out.write_u64::<LittleEndian>(self.rcx.unwrap_or(0))
+			.unwrap();
+		out.write_u64::<LittleEndian>(self.rdx.unwrap_or(0))
+			.unwrap();
+		out.write_u64::<LittleEndian>(self.rsi.unwrap_or(0))
+			.unwrap();
+		out.write_u64::<LittleEndian>(self.rdi.unwrap_or(0))
+			.unwrap();
+		out.write_u64::<LittleEndian>(self.rbp.unwrap_or(0))
+			.unwrap();
+		out.write_u64::<LittleEndian>(self.rsp.unwrap_or(0))
+			.unwrap();
 		out.write_u64::<LittleEndian>(self.r8.unwrap_or(0)).unwrap();
 		out.write_u64::<LittleEndian>(self.r9.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.r10.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.r11.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.r12.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.r13.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.r14.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.r15.unwrap_or(0)).unwrap();
-		out.write_u64::<LittleEndian>(self.rip.unwrap_or(0)).unwrap();
+		out.write_u64::<LittleEndian>(self.r10.unwrap_or(0))
+			.unwrap();
+		out.write_u64::<LittleEndian>(self.r11.unwrap_or(0))
+			.unwrap();
+		out.write_u64::<LittleEndian>(self.r12.unwrap_or(0))
+			.unwrap();
+		out.write_u64::<LittleEndian>(self.r13.unwrap_or(0))
+			.unwrap();
+		out.write_u64::<LittleEndian>(self.r14.unwrap_or(0))
+			.unwrap();
+		out.write_u64::<LittleEndian>(self.r15.unwrap_or(0))
+			.unwrap();
+		out.write_u64::<LittleEndian>(self.rip.unwrap_or(0))
+			.unwrap();
 
-		out.write_u32::<LittleEndian>(self.eflags.unwrap_or(0)).unwrap();
+		out.write_u32::<LittleEndian>(self.eflags.unwrap_or(0))
+			.unwrap();
 		out.write_u32::<LittleEndian>(self.cs.unwrap_or(0)).unwrap();
 		out.write_u32::<LittleEndian>(self.ss.unwrap_or(0)).unwrap();
 		out.write_u32::<LittleEndian>(self.ds.unwrap_or(0)).unwrap();

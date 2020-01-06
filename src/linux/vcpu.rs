@@ -1,4 +1,5 @@
 use consts::*;
+use debug_manager::DebugManager;
 use error::Error::*;
 use error::*;
 use kvm_bindings::*;
@@ -6,7 +7,6 @@ use kvm_ioctls::{VcpuExit, VcpuFd, MAX_KVM_CPUID_ENTRIES};
 use libc::ioctl;
 use linux::virtio::*;
 use linux::KVM;
-use debug_manager::DebugManager;
 use paging::*;
 use std;
 use std::os::unix::io::AsRawFd;
@@ -31,13 +31,19 @@ pub struct UhyveCPU {
 }
 
 impl UhyveCPU {
-	pub fn new(id: u32, kernel_path: String, vcpu: VcpuFd, vm_start: usize, dbg: Option<Arc<Mutex<DebugManager>>>) -> UhyveCPU {
+	pub fn new(
+		id: u32,
+		kernel_path: String,
+		vcpu: VcpuFd,
+		vm_start: usize,
+		dbg: Option<Arc<Mutex<DebugManager>>>,
+	) -> UhyveCPU {
 		UhyveCPU {
 			id: id,
 			vcpu: vcpu,
 			vm_start: vm_start,
 			kernel_path: kernel_path,
-			dbg: dbg
+			dbg: dbg,
 		}
 	}
 

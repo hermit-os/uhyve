@@ -87,8 +87,6 @@ bitflags! {
 	}
 }
 
-
-
 /// Describe Hardware Break/Watchpoints in a format easily convertible into raw addrs and bits in Dr7 register
 #[derive(Copy, Clone)]
 pub struct HWBreakpoint {
@@ -102,7 +100,7 @@ pub struct HWBreakpoint {
 #[derive(Copy, Clone, PartialEq)]
 pub enum BreakTrigger {
 	Ex = 0b00,
-	W  = 0b01,
+	W = 0b01,
 	RW = 0b11,
 }
 
@@ -115,7 +113,7 @@ pub enum BreakSize {
 }
 
 impl Default for HWBreakpoint {
-    fn default() -> Self {
+	fn default() -> Self {
 		HWBreakpoint {
 			addr: 0,
 			is_local: false,
@@ -123,13 +121,11 @@ impl Default for HWBreakpoint {
 			trigger: BreakTrigger::Ex,
 			size: BreakSize::B1,
 		}
-    }
+	}
 }
 
 #[derive(Copy, Clone, Default)]
-pub struct HWBreakpoints (
-	pub [HWBreakpoint; 4]
-);
+pub struct HWBreakpoints(pub [HWBreakpoint; 4]);
 
 /// See https://stackoverflow.com/a/40820763
 /// https://www.intel.com/content/dam/support/us/en/documents/processors/pentium4/sb/253669.pdf page 5-7
@@ -163,11 +159,11 @@ impl HWBreakpoints {
 					    Code breakpoints for other operand sizes are undefined");
 			}
 
-			out |= (bp.trigger as u64)   << (4*n) << 16;
-			out |= (bp.size as u64) << 2 << (4*n) << 16;
+			out |= (bp.trigger as u64) << (4 * n) << 16;
+			out |= (bp.size as u64) << 2 << (4 * n) << 16;
 
-			out |= (bp.is_local as u64)       << (2*n);
-			out |= (bp.is_global as u64) << 1 << (2*n);
+			out |= (bp.is_local as u64) << (2 * n);
+			out |= (bp.is_global as u64) << 1 << (2 * n);
 		}
 
 		out
@@ -176,7 +172,7 @@ impl HWBreakpoints {
 
 #[test]
 fn test_hwbreakpoints_dr7() {
-	let br = HWBreakpoints ([
+	let br = HWBreakpoints([
 		HWBreakpoint {
 			addr: 0,
 			is_local: false,
@@ -206,5 +202,10 @@ fn test_hwbreakpoints_dr7() {
 			size: BreakSize::B2,
 		},
 	]);
-	assert_eq!(br.get_dr7(), 0b_0101_0000_1011_1101_00000111_01_11_10_10, "dr7 wrong: {:#034b}", br.get_dr7());
+	assert_eq!(
+		br.get_dr7(),
+		0b_0101_0000_1011_1101_00000111_01_11_10_10,
+		"dr7 wrong: {:#034b}",
+		br.get_dr7()
+	);
 }

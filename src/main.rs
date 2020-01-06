@@ -24,20 +24,20 @@ extern crate nom;
 extern crate strum;
 #[macro_use]
 extern crate strum_macros;
-extern crate rustc_serialize;
 extern crate byteorder;
 extern crate gdb_protocol;
+extern crate rustc_serialize;
 
 pub mod arch;
 pub mod consts;
+mod debug_manager;
 pub mod error;
+mod gdb_parser;
 #[cfg(target_os = "linux")]
 mod linux;
 mod paging;
 pub mod utils;
 mod vm;
-mod gdb_parser;
-mod debug_manager;
 
 pub use arch::*;
 use clap::{App, Arg};
@@ -171,8 +171,14 @@ fn main() {
 	if matches.is_present("VERBOSE") {
 		verbose = true;
 	}
-	let gdbport = matches.value_of("GDB_PORT").map(|p| p.parse::<u32>().expect("Could not parse gdb port"))
-		.or_else(|| env::var("HERMIT_GDB_PORT").ok().map(|p| p.parse::<u32>().expect("Could not parse gdb port")));
+	let gdbport = matches
+		.value_of("GDB_PORT")
+		.map(|p| p.parse::<u32>().expect("Could not parse gdb port"))
+		.or_else(|| {
+			env::var("HERMIT_GDB_PORT")
+				.ok()
+				.map(|p| p.parse::<u32>().expect("Could not parse gdb port"))
+		});
 
 	let mut vm = create_vm(
 		path.to_string(),

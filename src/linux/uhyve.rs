@@ -1,6 +1,7 @@
 //! This file contains the entry point to the Hypervisor. The Uhyve utilizes KVM to
 //! create a Virtual Machine and load the kernel.
 
+use debug_manager::DebugManager;
 use error::*;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
@@ -14,7 +15,6 @@ use std::ptr;
 use std::ptr::read_volatile;
 use std::sync::{Arc, Mutex};
 use vm::{BootInfo, VirtualCPU, Vm, VmParameter};
-use debug_manager::DebugManager;
 
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
 const KVM_32BIT_GAP_SIZE: usize = 768 << 20;
@@ -32,7 +32,11 @@ pub struct Uhyve {
 }
 
 impl Uhyve {
-	pub fn new(kernel_path: String, specs: &VmParameter, dbg: Option<DebugManager>) -> Result<Uhyve> {
+	pub fn new(
+		kernel_path: String,
+		specs: &VmParameter,
+		dbg: Option<DebugManager>,
+	) -> Result<Uhyve> {
 		let vm = KVM.create_vm().or_else(to_error)?;
 
 		let mut cap: kvm_enable_cap = Default::default();

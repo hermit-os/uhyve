@@ -1,9 +1,11 @@
-use std::net::TcpStream;
-use std::io::BufReader;
+use gdb_parser::{self, handle_packet, Handler, Response, StopReason, VCont};
+use gdb_protocol::{
+	io::GdbServer,
+	packet::{CheckedPacket, Kind},
+};
 use std::cell::RefCell;
-use gdb_protocol::{io::GdbServer, packet::{CheckedPacket, Kind}};
-use gdb_parser::{self, handle_packet, Response, Handler, StopReason, VCont};
-
+use std::io::BufReader;
+use std::net::TcpStream;
 
 /// GDBStub Implementation Details:
 ///
@@ -29,76 +31,80 @@ use linux::gdb;
 
 pub type State = gdb::State;
 
-
 pub struct DebugManager {
-    server: RefCell<GdbServer<BufReader<TcpStream>, TcpStream>>,
-    pub state: RefCell<State>,
+	server: RefCell<GdbServer<BufReader<TcpStream>, TcpStream>>,
+	pub state: RefCell<State>,
 }
 
 impl DebugManager {
+	pub fn new(port: u32) -> Result<DebugManager, gdb_protocol::Error> {
+		println!("Waiting for debugger to attach on port {}...", port);
+		let server = GdbServer::listen(format!("0.0.0.0:{}", port))?;
+		info!("Connected!");
 
-    pub fn new(port: u32) -> Result<DebugManager, gdb_protocol::Error> {
-        println!("Waiting for debugger to attach on port {}...", port);
-        let server = GdbServer::listen(format!("0.0.0.0:{}", port))?;
-        info!("Connected!");
+		let state = State::new();
 
-        let state = State::new();
+		Ok(DebugManager {
+			server: RefCell::new(server),
+			state: RefCell::new(state),
+		})
+	}
 
-        Ok(DebugManager {
-            server: RefCell::new(server),
-            state: RefCell::new(state),
-        })
-    }
+	/// main event-loop. Called from vcpu trap, loops and executes commmands until debugger tells us to continue.
+	/// Do not borrow state in this func, since handler is expected to borrow/mutate it.
+	pub fn handle_commands<H>(
+		&self,
+		handler: &mut H,
+		signal: Option<StopReason>,
+	) -> std::result::Result<VCont, gdb_protocol::Error>
+	where
+		H: Handler,
+	{
+		let mut server = self.server.borrow_mut();
+		if let Some(signal) = signal {
+			let resp = Response::Stopped(signal);
+			let resp = CheckedPacket::from_data(Kind::Packet, resp.into());
+			let mut bytes = Vec::new();
+			resp.encode(&mut bytes).unwrap();
+			debug!("OUT {:?}", std::str::from_utf8(&bytes));
+			server.dispatch(&resp)?;
+		}
 
-    /// main event-loop. Called from vcpu trap, loops and executes commmands until debugger tells us to continue.
-    /// Do not borrow state in this func, since handler is expected to borrow/mutate it.
-    pub fn handle_commands<H>(&self, handler: &mut H, signal: Option<StopReason> ) -> std::result::Result<VCont, gdb_protocol::Error>
-    where H: Handler
-     {
-        let mut server = self.server.borrow_mut();
-        if let Some(signal) = signal {
-            let resp = Response::Stopped(signal);
-            let resp = CheckedPacket::from_data(Kind::Packet, resp.into());
-            let mut bytes = Vec::new();
-            resp.encode(&mut bytes).unwrap();
-            debug!("OUT {:?}", std::str::from_utf8(&bytes));
-            server.dispatch(&resp)?;
-        }
+		while let Some(packet) = server.next_packet()? {
+			debug!(
+				" IN {:?} {:?}",
+				packet.kind,
+				std::str::from_utf8(&packet.data)
+			);
 
-        while let Some(packet) = server.next_packet()? {
-            debug!(
-                " IN {:?} {:?}",
-                packet.kind,
-                std::str::from_utf8(&packet.data)
-            );
+			let resp = match handle_packet(&packet.data, handler) {
+				Ok(resp) => resp,
+				Err(e) => {
+					info!(
+						"Could not execute command: {:?} ({:?})",
+						std::str::from_utf8(&packet.data),
+						e
+					);
+					match e {
+						gdb_parser::Error::Unimplemented => Response::Empty,
+						gdb_parser::Error::Error(e) => Response::Error(e),
+					}
+				}
+			};
 
-            let resp = match handle_packet(&packet.data, handler) {
-                Ok(resp) => {
-                    resp
-                },
-                Err(e) => {
-                    info!("Could not execute command: {:?} ({:?})", std::str::from_utf8(&packet.data), e);
-                    match e {
-                        gdb_parser::Error::Unimplemented => Response::Empty,
-                        gdb_parser::Error::Error(e) => Response::Error(e),
-                    }
-                }
-            };
+			// Early abort if we are continuing. Response gets send next time the handler is entered!
+			if let Some(vcont) = handler.should_cont() {
+				return Ok(vcont);
+			}
 
-            // Early abort if we are continuing. Response gets send next time the handler is entered!
-            if let Some(vcont) = handler.should_cont() {
-                return Ok(vcont);
-            }
+			let resp = CheckedPacket::from_data(Kind::Packet, resp.into());
+			let mut bytes = Vec::new();
+			resp.encode(&mut bytes).unwrap();
+			debug!("OUT {:?}", std::str::from_utf8(&bytes));
+			server.dispatch(&resp)?;
+		}
 
-            let resp = CheckedPacket::from_data(Kind::Packet, resp.into());
-            let mut bytes = Vec::new();
-            resp.encode(&mut bytes).unwrap();
-            debug!("OUT {:?}", std::str::from_utf8(&bytes));
-            server.dispatch(&resp)?;
-        }
-
-        info!("No next packet! Has GDB exited?");
-        Ok(VCont::Continue)
-    }
-
+		info!("No next packet! Has GDB exited?");
+		Ok(VCont::Continue)
+	}
 }
