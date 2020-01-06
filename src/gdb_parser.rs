@@ -14,20 +14,18 @@
 //! * [LLDB extensions](https://github.com/llvm-mirror/lldb/blob/master/docs/lldb-gdb-remote.txt)
 // from https://github.com/luser/rust-gdb-remote-protocol/blob/master/src/lib.rs
 
-
 //#![deny(missing_docs)]
 //#![allow(dead_code)]
 
+use gdb_protocol::io::BUF_SIZE;
 use nom::IResult::*;
 use nom::{IResult, Needed};
 use std::borrow::Cow;
 use std::convert::From;
 use std::ops::Range;
 use std::str::{self, FromStr};
-use gdb_protocol::io::BUF_SIZE;
 
 use rustc_serialize::hex::ToHex;
-
 
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone, Debug, EnumString, PartialEq)]
@@ -144,7 +142,6 @@ pub struct ThreadId {
 	pub tid: Id,
 }
 
-
 /// A process identifier for LLDBs qfProcessInfo.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProcessInfo {
@@ -152,7 +149,6 @@ pub struct ProcessInfo {
 	pub pid: Id,
 	pub triple: String,
 }
-
 
 /// A descriptor for a watchpoint.  The particular semantics of the watchpoint
 /// (watching memory for read or write access) are addressed elsewhere.
@@ -389,7 +385,6 @@ named!(q_read_feature<&[u8], (&str, u64, u64)>,
 		   tag!(",") >>
 		   length: hex_value >>
 		   (filename, offset, length))));
-
 
 fn query<'a>(i: &'a [u8]) -> IResult<&'a [u8], Query<'a>> {
 	alt_complete!(i,
@@ -664,10 +659,8 @@ fn parse_z_packet<'a>(i: &'a [u8]) -> IResult<&'a [u8], Command<'a>> {
 		do_parse!(
 			action: parse_z_action
 				>> type_: parse_z_type
-				>> tag!(",")
-				>> addr: hex_value
-				>> tag!(",")
-				>> kind: hex_value
+				>> tag!(",") >> addr: hex_value
+				>> tag!(",") >> kind: hex_value
 				>> (action, type_, addr, kind)
 		)
 	);
@@ -998,7 +991,6 @@ pub trait Handler {
 		Err(Error::Unimplemented)
 	}
 
-
 	/// Insert a software breakpoint.
 	fn insert_software_breakpoint(&self, _breakpoint: Breakpoint) -> Result<(), Error> {
 		Err(Error::Unimplemented)
@@ -1069,7 +1061,6 @@ pub trait Handler {
 	fn should_cont(&self) -> Option<VCont>;
 }
 
-
 #[derive(Debug)]
 pub enum Response<'a> {
 	Empty,
@@ -1099,7 +1090,7 @@ where
 			Result::Err(Error::Unimplemented) => {
 				println!("Unimplemented!");
 				Response::Empty
-			},
+			}
 		}
 	}
 }
@@ -1172,8 +1163,7 @@ impl<'a> From<Vec<ProcessInfo>> for Response<'a> {
 	}
 }
 
-fn get_thread_id(thread_id: ThreadId) -> String
-{
+fn get_thread_id(thread_id: ThreadId) -> String {
 	let mut tid = String::new();
 	// LLDB does not support multiprocess syntax!
 	// Always just send thread
@@ -1186,19 +1176,18 @@ fn get_thread_id(thread_id: ThreadId) -> String
 	tid.push_str(".");*/
 	match thread_id.tid {
 		Id::All => tid.push_str("-1"),
-		Id::Any => tid.push_str( "0"),
+		Id::Any => tid.push_str("0"),
 		Id::Id(num) => tid.push_str(&format!("{:x}", num)),
 	};
 	tid
 }
 
-fn get_process_info(p: &ProcessInfo) -> String
-{
+fn get_process_info(p: &ProcessInfo) -> String {
 	let mut out = String::new();
 	out.push_str("pid:");
 	match p.pid {
 		Id::All => out.push_str("-1"),
-		Id::Any => out.push_str( "0"),
+		Id::Any => out.push_str("0"),
 		Id::Id(num) => out.push_str(&format!("{:x}", num)),
 	};
 	out.push_str(&format!("name:{}", p.name));
@@ -1208,8 +1197,7 @@ fn get_process_info(p: &ProcessInfo) -> String
 
 /// get a byte vector we can send to remote from a response
 impl<'a> From<Response<'a>> for Vec<u8> {
-	fn from(response: Response) -> Vec<u8>
-	{
+	fn from(response: Response) -> Vec<u8> {
 		trace!("Response: {:?}", response);
 
 		let mut rsp = String::new();
@@ -1217,36 +1205,28 @@ impl<'a> From<Response<'a>> for Vec<u8> {
 			Response::Ok => "OK".into(),
 			Response::Empty => "".into(),
 			Response::Error(val) => format!("E{:02x}", val),
-			Response::String(s) =>  format!("{}", s),
-			Response::Output(s) => {
-				format!("O{}", s.as_bytes().to_hex())
-			}
-			Response::Bytes(bytes) => {
-				bytes.to_hex().to_string()
-			}
+			Response::String(s) => format!("{}", s),
+			Response::Output(s) => format!("O{}", s.as_bytes().to_hex()),
+			Response::Bytes(bytes) => bytes.to_hex().to_string(),
 			Response::File(data) => {
 				if data.0.is_empty() {
 					"l".into()
 				} else {
 					// LLDB is weird and does not decode our hex.
-					format!("m{}", data.0/*.as_bytes().to_hex()*/)
+					format!("m{}", data.0 /*.as_bytes().to_hex()*/)
 				}
 			}
 			Response::CurrentThread(tid) => {
 				// This is incorrect if multiprocess hasn't yet been enabled.
 				match tid {
 					None => "OK".into(),
-					Some(thread_id) => {
-						format!("QC{}", get_thread_id(thread_id))
-					}
+					Some(thread_id) => format!("QC{}", get_thread_id(thread_id)),
 				}
 			}
-			Response::ProcessType(process_type) => {
-				match process_type {
-					ProcessType::Attached => "1".into(),
-					ProcessType::Created =>  "0".into(),
-				}
-			}
+			Response::ProcessType(process_type) => match process_type {
+				ProcessType::Attached => "1".into(),
+				ProcessType::Created => "0".into(),
+			},
 			Response::SearchResult(maybe_addr) => match maybe_addr {
 				Some(addr) => format!("1,{:x}", addr),
 				None => "0".into(),
@@ -1307,7 +1287,9 @@ impl<'a> From<Response<'a>> for Vec<u8> {
 					rsp
 				}
 			}
-		}.as_bytes().to_vec()
+		}
+		.as_bytes()
+		.to_vec()
 	}
 }
 
@@ -1339,7 +1321,11 @@ where
 {
 	let mut _no_ack_mode = false;
 	let response = if let Done(_, command) = command(data) {
-		debug!("Successfully parsed command: {} into {:?}", String::from_utf8_lossy(data), command);
+		debug!(
+			"Successfully parsed command: {} into {:?}",
+			String::from_utf8_lossy(data),
+			command
+		);
 		match command {
 			// We unconditionally support extended mode.
 			Command::EnableExtendedMode => Response::Ok,
@@ -1403,7 +1389,9 @@ where
 				handler.set_address_randomization(randomize)?.into()
 			}
 			Command::Query(Query::CatchSyscalls(calls)) => handler.catch_syscalls(calls)?.into(),
-			Command::Query(Query::PassSignals(signals)) => handler.set_pass_signals(signals)?.into(),
+			Command::Query(Query::PassSignals(signals)) => {
+				handler.set_pass_signals(signals)?.into()
+			}
 			Command::Query(Query::ProgramSignals(signals)) => {
 				handler.set_program_signals(signals)?.into()
 			}
@@ -1413,7 +1401,11 @@ where
 			Command::Query(Query::ThreadList(reset)) => handler.thread_list(reset)?.into(),
 			Command::Query(Query::ProcessList(reset)) => handler.process_list(reset)?.into(),
 			Command::Query(Query::HostInfo) => handler.host_info()?.into(),
-			Command::Query(Query::FeatureRead{name, offset, length}) => handler.read_feature(name, offset, length)?.into(),
+			Command::Query(Query::FeatureRead {
+				name,
+				offset,
+				length,
+			}) => handler.read_feature(name, offset, length)?.into(),
 			Command::PingThread(thread_id) => handler.ping_thread(thread_id)?.into(),
 			// Empty means "not implemented".
 			Command::CtrlC => Response::Empty,
@@ -1436,13 +1428,15 @@ where
 			Command::VCont(list) => handler.vcont(list)?.into(),
 		}
 	} else {
-		info!("Command could not be parsed: {}", String::from_utf8_lossy(data));
+		info!(
+			"Command could not be parsed: {}",
+			String::from_utf8_lossy(data)
+		);
 		Response::Empty
 	};
 	//Ok(no_ack_mode)
 	Ok(response)
 }
-
 
 #[test]
 fn test_gdbfeaturesupported() {
@@ -1838,7 +1832,6 @@ fn test_parse_write_general_registers() {
 		Done(&b""[..], vec!(0, 1, 2, 3, 4))
 	);
 }
-
 
 #[cfg(test)]
 macro_rules! bytecode {

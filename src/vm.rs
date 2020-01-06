@@ -13,9 +13,9 @@ use std::time::SystemTime;
 use std::{fmt, mem, slice};
 
 use consts::*;
+use debug_manager::DebugManager;
 #[cfg(target_os = "linux")]
 pub use linux::uhyve::*;
-use debug_manager::DebugManager;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
