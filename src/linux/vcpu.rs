@@ -1,4 +1,5 @@
 use consts::*;
+use debug_manager::DebugManager;
 use error::Error::*;
 use error::*;
 use kvm_bindings::*;
@@ -25,6 +26,7 @@ pub struct UhyveCPU {
 	vm_start: usize,
 	kernel_path: String,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
+	pub dbg: Option<Arc<Mutex<DebugManager>>>,
 }
 
 impl UhyveCPU {
@@ -34,6 +36,7 @@ impl UhyveCPU {
 		vcpu: VcpuFd,
 		vm_start: usize,
 		virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
+		dbg: Option<Arc<Mutex<DebugManager>>>,
 	) -> UhyveCPU {
 		UhyveCPU {
 			id: id,
@@ -41,6 +44,7 @@ impl UhyveCPU {
 			vm_start: vm_start,
 			kernel_path: kernel_path,
 			virtio_device: virtio_device,
+			dbg: dbg,
 		}
 	}
 
@@ -202,6 +206,14 @@ impl UhyveCPU {
 	fn show_segment(name: &str, seg: &kvm_segment) {
 		print!("{}       {:?}\n", name, seg);
 	}
+
+	pub fn get_vcpu(&self) -> &VcpuFd {
+		&self.vcpu
+	}
+
+	pub fn get_vcpu_mut(&mut self) -> &mut VcpuFd {
+		&mut self.vcpu
+	}
 }
 
 impl VirtualCPU for UhyveCPU {
@@ -261,10 +273,17 @@ impl VirtualCPU for UhyveCPU {
 
 	fn run(&mut self) -> Result<()> {
 		//self.print_registers();
+
+		// Pause first CPU before first execution, so we have time to attach debugger
+		if self.id == 0 {
+			self.gdb_handle_exception(None);
+		}
+
 		let mut pci_addr: u32 = 0;
 		let mut pci_addr_set: bool = false;
 		loop {
-			match self.vcpu.run().or_else(to_error)? {
+			let exitreason = self.vcpu.run().or_else(to_error)?;
+			match exitreason {
 				VcpuExit::Hlt => {
 					debug!("Halt Exit");
 					break;
@@ -412,6 +431,10 @@ impl VirtualCPU for UhyveCPU {
 						}
 					}
 				}
+				VcpuExit::Debug => {
+					info!("Caught Debug Interrupt! {:?}", exitreason);
+					self.gdb_handle_exception(Some(VcpuExit::Debug));
+				}
 				VcpuExit::InternalError => {
 					error!("Internal error");
 					//self.print_registers();
@@ -419,8 +442,8 @@ impl VirtualCPU for UhyveCPU {
 					return Err(Error::UnknownExitReason);
 				}
 				_ => {
-					error!("Unknown exit reason");
-					self.print_registers();
+					error!("Unknown exit reason: {:?}", exitreason);
+					//self.print_registers();
 
 					return Err(Error::UnknownExitReason);
 				}

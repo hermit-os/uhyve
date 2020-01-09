@@ -1,6 +1,7 @@
 //! This file contains the entry point to the Hypervisor. The Uhyve utilizes KVM to
 //! create a Virtual Machine and load the kernel.
 
+use debug_manager::DebugManager;
 use error::*;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
@@ -30,10 +31,15 @@ pub struct Uhyve {
 	boot_info: *const BootInfo,
 	verbose: bool,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
+	dbg: Option<Arc<Mutex<DebugManager>>>,
 }
 
 impl Uhyve {
-	pub fn new(kernel_path: String, specs: &VmParameter) -> Result<Uhyve> {
+	pub fn new(
+		kernel_path: String,
+		specs: &VmParameter,
+		dbg: Option<DebugManager>,
+	) -> Result<Uhyve> {
 		let vm = KVM.create_vm().or_else(to_error)?;
 
 		let mut cap: kvm_enable_cap = Default::default();
@@ -90,6 +96,7 @@ impl Uhyve {
 			boot_info: ptr::null(),
 			verbose: specs.verbose,
 			virtio_device: lock_dev.clone(),
+			dbg: dbg.map(|g| Arc::new(Mutex::new(g))),
 		};
 
 		hyve.init()?;
@@ -154,6 +161,7 @@ impl Vm for Uhyve {
 				.or_else(to_error)?,
 			vm_start,
 			self.virtio_device.clone(),
+			self.dbg.as_ref().cloned(),
 		)))
 	}
 

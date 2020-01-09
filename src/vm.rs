@@ -13,6 +13,7 @@ use std::time::SystemTime;
 use std::{fmt, mem, slice};
 
 use consts::*;
+use debug_manager::DebugManager;
 #[cfg(target_os = "linux")]
 pub use linux::uhyve::*;
 
@@ -120,6 +121,7 @@ pub struct VmParameter {
 	pub verbose: bool,
 	pub hugepage: bool,
 	pub mergeable: bool,
+	pub gdbport: Option<u32>,
 }
 
 impl VmParameter {
@@ -129,6 +131,7 @@ impl VmParameter {
 		verbose: bool,
 		hugepage: bool,
 		mergeable: bool,
+		gdbport: Option<u32>,
 	) -> Self {
 		VmParameter {
 			mem_size: mem_size,
@@ -136,6 +139,7 @@ impl VmParameter {
 			verbose: verbose,
 			hugepage: hugepage,
 			mergeable: mergeable,
+			gdbport: gdbport,
 		}
 	}
 }
@@ -591,7 +595,10 @@ pub trait Vm {
 }
 
 pub fn create_vm(path: String, specs: &super::vm::VmParameter) -> Result<Uhyve> {
-	let vm = Uhyve::new(path.clone(), &specs)?;
+	// If we are given a port, create new DebugManager.
+	let gdb = specs.gdbport.map(|port| DebugManager::new(port).unwrap());
+
+	let vm = Uhyve::new(path.clone(), &specs, gdb)?;
 
 	Ok(vm)
 }
