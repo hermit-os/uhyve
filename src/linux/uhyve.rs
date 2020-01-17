@@ -6,6 +6,7 @@ use error::*;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use linux::vcpu::*;
+use linux::virtio::*;
 use linux::{MemoryRegion, KVM};
 use nix::sys::mman::*;
 use std;
@@ -14,6 +15,7 @@ use std::ffi::c_void;
 use std::ptr;
 use std::ptr::read_volatile;
 use std::sync::{Arc, Mutex};
+use std::thread;
 use vm::{BootInfo, VirtualCPU, Vm, VmParameter};
 
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
@@ -28,6 +30,7 @@ pub struct Uhyve {
 	path: String,
 	boot_info: *const BootInfo,
 	verbose: bool,
+	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	dbg: Option<Arc<Mutex<DebugManager>>>,
 }
 
@@ -54,6 +57,8 @@ impl Uhyve {
 			KVM_32BIT_GAP_START
 		};
 
+		let virtio_device: VirtioNetPciDevice = VirtioNetPciDevice::new();
+
 		let kvm_mem = kvm_userspace_memory_region {
 			slot: 0,
 			flags: mem.flags(),
@@ -78,6 +83,10 @@ impl Uhyve {
 			unsafe { vm.set_user_memory_region(kvm_mem) }.or_else(to_error)?;
 		}
 
+		let lock_dev = Arc::new(Mutex::new(virtio_device));
+
+		thread::spawn(|| {});
+
 		let mut hyve = Uhyve {
 			vm: vm,
 			entry_point: 0,
@@ -86,6 +95,7 @@ impl Uhyve {
 			path: kernel_path,
 			boot_info: ptr::null(),
 			verbose: specs.verbose,
+			virtio_device: lock_dev.clone(),
 			dbg: dbg.map(|g| Arc::new(Mutex::new(g))),
 		};
 
@@ -150,6 +160,7 @@ impl Vm for Uhyve {
 				.create_vcpu(id.try_into().unwrap())
 				.or_else(to_error)?,
 			vm_start,
+			self.virtio_device.clone(),
 			self.dbg.as_ref().cloned(),
 		)))
 	}

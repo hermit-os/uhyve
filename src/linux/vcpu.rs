@@ -8,7 +8,6 @@ use libc::ioctl;
 use linux::virtio::*;
 use linux::KVM;
 use paging::*;
-use std;
 use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
 use vm::VirtualCPU;
@@ -20,13 +19,13 @@ const CPUID_ENABLE_MSR: u32 = 1 << 5;
 const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 const PCI_CONFIG_DATA_PORT: u16 = 0xCFC;
 const PCI_CONFIG_ADDRESS_PORT: u16 = 0xCF8;
-static mut VIRTIO_DEVICE: VirtioNetPciDevice = VirtioNetPciDevice::new();
 
 pub struct UhyveCPU {
 	id: u32,
 	vcpu: VcpuFd,
 	vm_start: usize,
 	kernel_path: String,
+	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	pub dbg: Option<Arc<Mutex<DebugManager>>>,
 }
 
@@ -36,6 +35,7 @@ impl UhyveCPU {
 		kernel_path: String,
 		vcpu: VcpuFd,
 		vm_start: usize,
+		virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 		dbg: Option<Arc<Mutex<DebugManager>>>,
 	) -> UhyveCPU {
 		UhyveCPU {
@@ -43,6 +43,7 @@ impl UhyveCPU {
 			vcpu: vcpu,
 			vm_start: vm_start,
 			kernel_path: kernel_path,
+			virtio_device: virtio_device,
 			dbg: dbg,
 		}
 	}
@@ -303,16 +304,38 @@ impl VirtualCPU for UhyveCPU {
 				}
 				VcpuExit::IoIn(port, addr) => match port {
 					PCI_CONFIG_DATA_PORT => {
-						if (pci_addr & 0x1ff800 == 0 && pci_addr_set) {
-							unsafe {
-								VIRTIO_DEVICE.handle_read(pci_addr & 0x3ff, addr);
-							}
+						if pci_addr & 0x1ff800 == 0 && pci_addr_set {
+							let virtio_device = self.virtio_device.lock().unwrap();
+							virtio_device.handle_read(pci_addr & 0x3ff, addr);
 						} else {
 							unsafe { (*(addr.as_ptr() as *mut u32) = 0xffffffff) };
 						}
 					}
 					PCI_CONFIG_ADDRESS_PORT => {}
-
+					VIRTIO_PCI_STATUS => {
+						let virtio_device = self.virtio_device.lock().unwrap();
+						virtio_device.read_status(addr);
+					}
+					VIRTIO_PCI_HOST_FEATURES => {
+						let virtio_device = self.virtio_device.lock().unwrap();
+						virtio_device.read_host_features(addr);
+					}
+					VIRTIO_PCI_GUEST_FEATURES => {
+						let mut virtio_device = self.virtio_device.lock().unwrap();
+						virtio_device.read_requested_features(addr);
+					}
+					VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
+						let virtio_device = self.virtio_device.lock().unwrap();
+						virtio_device.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_OFF);
+					}
+					VIRTIO_PCI_ISR => {
+						let mut virtio_device = self.virtio_device.lock().unwrap();
+						virtio_device.reset_interrupt()
+					}
+					VIRTIO_PCI_LINK_STATUS_MSIX_OFF => {
+						let virtio_device = self.virtio_device.lock().unwrap();
+						virtio_device.read_link_status(addr);
+					}
 					_ => {
 						info!("Unhanded IO Exit");
 					}
@@ -373,16 +396,36 @@ impl VirtualCPU for UhyveCPU {
 						}
 						//TODO:
 						PCI_CONFIG_DATA_PORT => {
-							if (pci_addr & 0x1ff800 == 0 && pci_addr_set) {
-								unsafe {
-									VIRTIO_DEVICE.handle_write(pci_addr & 0x3ff, addr);
-								}
+							if pci_addr & 0x1ff800 == 0 && pci_addr_set {
+								let mut virtio_device = self.virtio_device.lock().unwrap();
+								virtio_device.handle_write(pci_addr & 0x3ff, addr);
 							}
 						}
 						PCI_CONFIG_ADDRESS_PORT => {
 							pci_addr = unsafe { (*(addr.as_ptr() as *const u32)) };
 							pci_addr_set = true;
 						}
+						VIRTIO_PCI_STATUS => {
+							let mut virtio_device = self.virtio_device.lock().unwrap();
+							virtio_device.write_status(addr);
+						}
+						VIRTIO_PCI_GUEST_FEATURES => {
+							let mut virtio_device = self.virtio_device.lock().unwrap();
+							virtio_device.write_requested_features(addr);
+						}
+						VIRTIO_PCI_QUEUE_NOTIFY => {
+							let mut virtio_device = self.virtio_device.lock().unwrap();
+							virtio_device.handle_notify_output(addr, self);
+						}
+						VIRTIO_PCI_QUEUE_SEL => {
+							let mut virtio_device = self.virtio_device.lock().unwrap();
+							virtio_device.write_selected_queue(addr);
+						}
+						VIRTIO_PCI_QUEUE_PFN => {
+							let mut virtio_device = self.virtio_device.lock().unwrap();
+							virtio_device.write_pfn(addr, self);
+						}
+
 						_ => {
 							info!("Unhandled IO exit: 0x{:x}", port);
 						}
