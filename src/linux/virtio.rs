@@ -65,11 +65,7 @@ pub struct VirtioNetPciDevice {
 
 impl fmt::Debug for VirtioNetPciDevice {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(
-			f,
-			"Status: {}",
-			self.registers[STATUS_REGISTER as usize]
-		)
+		write!(f, "Status: {}", self.registers[STATUS_REGISTER as usize])
 	}
 }
 
@@ -137,7 +133,7 @@ impl VirtioNetPciDevice {
 		}
 	}
 
-    // Sends packets using the tun_tap crate, subject to change
+	// Sends packets using the tun_tap crate, subject to change
 	fn send_available_packets(&mut self, cpu: &dyn VirtualCPU) {
 		let tx_queue = &mut self.virt_queues[TX_QUEUE];
 		let mut iter = tx_queue.avail_iter();
@@ -164,7 +160,7 @@ impl VirtioNetPciDevice {
 						(desc.len as usize) - size_of::<virtio_net_hdr>(),
 					);
 					let unlocked_tap = tap.lock().unwrap();
-                    //Actually send packet
+					//Actually send packet
 					unlocked_tap.send(slice).unwrap_or(0);
 				},
 				None => self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET,
@@ -177,7 +173,7 @@ impl VirtioNetPciDevice {
 		self.handle_read(STATUS_REGISTER & 0x3FFF, dest);
 	}
 
-    // Virtio handshake
+	// Virtio handshake
 	pub fn write_status(&mut self, dest: &[u8]) {
 		let status = self.read_status_reg();
 		if dest[0] == 0 {
@@ -201,8 +197,8 @@ impl VirtioNetPciDevice {
 		dest[0] = self.mac_addr[index as usize];
 	}
 
-    // This function is reliant on tap devices as the underlying packet sending mechanism
-    // Gets the tap device by name then gets its mac address
+	// This function is reliant on tap devices as the underlying packet sending mechanism
+	// Gets the tap device by name then gets its mac address
 	fn get_mac_addr(&mut self) {
 		match &self.iface {
 			Some(tap) => {
@@ -223,28 +219,28 @@ impl VirtioNetPciDevice {
 		}
 	}
 
-    // Driver acknowledges device
+	// Driver acknowledges device
 	fn write_status_reset(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE {
 			self.write_status_reg(dest[0]);
 		}
 	}
 
-    // Driver recognizes the device
+	// Driver recognizes the device
 	fn write_status_acknowledge(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
 			self.write_status_reg(dest[0]);
 		}
 	}
 
-    // finish negotiating features
+	// finish negotiating features
 	fn write_status_features(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK {
 			self.write_status_reg(dest[0]);
 		}
 	}
 
-    // Complete handshake
+	// Complete handshake
 	fn write_status_ok(&mut self, dest: &[u8]) {
 		if dest[0] == STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK | STATUS_DRIVER_OK {
 			self.write_status_reg(dest[0]);
@@ -272,7 +268,7 @@ impl VirtioNetPciDevice {
 		self.selected_queue_num = unsafe { *(dest.as_ptr() as *const u16) };
 	}
 
-    // Register virtqueue
+	// Register virtqueue
 	pub fn write_pfn(&mut self, dest: &[u8], vcpu: &dyn VirtualCPU) {
 		let status = self.read_status_reg();
 		if status & STATUS_FEATURES_OK != 0
