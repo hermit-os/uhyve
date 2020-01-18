@@ -12,8 +12,10 @@ use nix::sys::mman::*;
 use std;
 use std::convert::TryInto;
 use std::ffi::c_void;
+use std::net::Ipv4Addr;
 use std::ptr;
 use std::ptr::read_volatile;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use vm::{BootInfo, VirtualCPU, Vm, VmParameter};
@@ -30,6 +32,9 @@ pub struct Uhyve {
 	path: String,
 	boot_info: *const BootInfo,
 	verbose: bool,
+	ip: Option<Ipv4Addr>,
+	gateway: Option<Ipv4Addr>,
+	mask: Option<Ipv4Addr>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	dbg: Option<Arc<Mutex<DebugManager>>>,
 }
@@ -40,6 +45,30 @@ impl Uhyve {
 		specs: &VmParameter,
 		dbg: Option<DebugManager>,
 	) -> Result<Uhyve> {
+		// parse string to get IP address
+		let ip_addr = match &specs.ip {
+			Some(addr_str) => {
+				Some(Ipv4Addr::from_str(addr_str).expect("Unable to parse ip address"))
+			},
+			_ => None,
+		};
+
+		// parse string to get gateway address
+		let gw_addr = match &specs.gateway {
+			Some(addr_str) => {
+				Some(Ipv4Addr::from_str(addr_str).expect("Unable to parse gateway address"))
+			},
+			_ => None,
+		};
+
+		// parse string to get gateway address
+		let mask = match &specs.mask {
+			Some(addr_str) => {
+				Some(Ipv4Addr::from_str(addr_str).expect("Unable to parse network parse"))
+			},
+			_ => None,
+		};
+
 		let vm = KVM.create_vm().or_else(to_error)?;
 
 		let mut cap: kvm_enable_cap = Default::default();
@@ -95,6 +124,9 @@ impl Uhyve {
 			path: kernel_path,
 			boot_info: ptr::null(),
 			verbose: specs.verbose,
+			ip: ip_addr,
+			gateway: gw_addr,
+			mask: mask,
 			virtio_device: lock_dev.clone(),
 			dbg: dbg.map(|g| Arc::new(Mutex::new(g))),
 		};
@@ -137,6 +169,18 @@ impl Vm for Uhyve {
 
 	fn get_entry_point(&self) -> u64 {
 		self.entry_point
+	}
+
+	fn get_ip(&self) -> Option<Ipv4Addr> {
+		self.ip
+	}
+
+	fn get_gateway(&self) -> Option<Ipv4Addr> {
+		self.gateway
+	}
+
+	fn get_mask(&self) -> Option<Ipv4Addr> {
+		self.mask
 	}
 
 	fn num_cpus(&self) -> u32 {

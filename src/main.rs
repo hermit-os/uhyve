@@ -156,6 +156,10 @@ fn main() {
 		.value_of("CPUS")
 		.map(|x| utils::parse_u32(&x).unwrap_or(1))
 		.unwrap_or(1);
+	let ip = matches.value_of("IP").or(None);
+	let gateway = matches.value_of("GATEWAY").or(None);
+	let mask = matches.value_of("MASK").or(None);
+	let nic = matches.value_of("NETIF").or(None);
 
 	let mut mergeable: bool = utils::parse_bool("HERMIT_MERGEABLE", false);
 	if matches.is_present("MERGEABLE") {
@@ -182,7 +186,9 @@ fn main() {
 
 	let mut vm = create_vm(
 		path.to_string(),
-		&VmParameter::new(mem_size, num_cpus, verbose, hugepage, mergeable, gdbport),
+		&VmParameter::new(
+			mem_size, num_cpus, verbose, hugepage, mergeable, ip, gateway, mask, nic, gdbport,
+		),
 	)
 	.expect("Unable to create VM");
 	let num_cpus = vm.num_cpus();

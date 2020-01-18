@@ -8,6 +8,7 @@ use raw_cpuid::CpuId;
 use std;
 use std::fs::File;
 use std::io::Cursor;
+use std::net::Ipv4Addr;
 use std::ptr::write_volatile;
 use std::time::SystemTime;
 use std::{fmt, mem, slice};
@@ -115,22 +116,30 @@ impl fmt::Debug for BootInfo {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct VmParameter {
+pub struct VmParameter<'a> {
 	pub mem_size: usize,
 	pub num_cpus: u32,
 	pub verbose: bool,
 	pub hugepage: bool,
 	pub mergeable: bool,
+	pub ip: Option<&'a str>,
+	pub gateway: Option<&'a str>,
+	pub mask: Option<&'a str>,
+	pub nic: Option<&'a str>,
 	pub gdbport: Option<u32>,
 }
 
-impl VmParameter {
+impl<'a> VmParameter<'a> {
 	pub fn new(
 		mem_size: usize,
 		num_cpus: u32,
 		verbose: bool,
 		hugepage: bool,
 		mergeable: bool,
+		ip: Option<&'a str>,
+		gateway: Option<&'a str>,
+		mask: Option<&'a str>,
+		nic: Option<&'a str>,
 		gdbport: Option<u32>,
 	) -> Self {
 		VmParameter {
@@ -139,6 +148,10 @@ impl VmParameter {
 			verbose: verbose,
 			hugepage: hugepage,
 			mergeable: mergeable,
+			ip: ip,
+			gateway: gateway,
+			mask: mask,
+			nic: nic,
 			gdbport: gdbport,
 		}
 	}
@@ -421,6 +434,9 @@ pub trait Vm {
 	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>>;
 	fn set_boot_info(&mut self, header: *const BootInfo);
 	fn cpu_online(&self) -> u32;
+	fn get_ip(&self) -> Option<Ipv4Addr>;
+	fn get_gateway(&self) -> Option<Ipv4Addr>;
+	fn get_mask(&self) -> Option<Ipv4Addr>;
 	fn verbose(&self) -> bool;
 
 	/// Initialize the page tables for the guest
@@ -506,6 +522,30 @@ pub trait Vm {
 		// create default bootinfo
 		let boot_info = vm_mem.offset(BOOT_INFO_ADDR as isize) as *mut BootInfo;
 		*boot_info = BootInfo::new();
+
+		// forward IP address to kernel
+		match self.get_ip() {
+			Some(ip) => {
+				write_volatile(&mut (*boot_info).hcip, ip.octets());
+			},
+			_ => {},
+		}
+
+		// forward gateway address to kernel
+		match self.get_gateway() {
+			Some(gateway) => {
+				write_volatile(&mut (*boot_info).hcgateway, gateway.octets());
+			},
+			_ => {},
+		}
+
+		// forward mask to kernel
+		match self.get_mask() {
+			Some(mask) => {
+				write_volatile(&mut (*boot_info).hcmask, mask.octets());
+			},
+			_ => {},
+		}
 
 		let mut pstart: Option<u64> = None;
 
