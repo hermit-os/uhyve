@@ -49,7 +49,7 @@ impl Uhyve {
 		let ip_addr = match &specs.ip {
 			Some(addr_str) => {
 				Some(Ipv4Addr::from_str(addr_str).expect("Unable to parse ip address"))
-			},
+			}
 			_ => None,
 		};
 
@@ -57,7 +57,7 @@ impl Uhyve {
 		let gw_addr = match &specs.gateway {
 			Some(addr_str) => {
 				Some(Ipv4Addr::from_str(addr_str).expect("Unable to parse gateway address"))
-			},
+			}
 			_ => None,
 		};
 
@@ -65,7 +65,7 @@ impl Uhyve {
 		let mask = match &specs.mask {
 			Some(addr_str) => {
 				Some(Ipv4Addr::from_str(addr_str).expect("Unable to parse network parse"))
-			},
+			}
 			_ => None,
 		};
 

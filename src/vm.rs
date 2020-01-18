@@ -527,24 +527,24 @@ pub trait Vm {
 		match self.get_ip() {
 			Some(ip) => {
 				write_volatile(&mut (*boot_info).hcip, ip.octets());
-			},
-			_ => {},
+			}
+			_ => {}
 		}
 
 		// forward gateway address to kernel
 		match self.get_gateway() {
 			Some(gateway) => {
 				write_volatile(&mut (*boot_info).hcgateway, gateway.octets());
-			},
-			_ => {},
+			}
+			_ => {}
 		}
 
 		// forward mask to kernel
 		match self.get_mask() {
 			Some(mask) => {
 				write_volatile(&mut (*boot_info).hcmask, mask.octets());
-			},
-			_ => {},
+			}
+			_ => {}
 		}
 
 		let mut pstart: Option<u64> = None;

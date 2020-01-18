@@ -8,6 +8,8 @@ use libc::ioctl;
 use linux::virtio::*;
 use linux::KVM;
 use paging::*;
+use std::fs::File;
+use std::io::Read;
 use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
 use vm::VirtualCPU;
@@ -357,6 +359,30 @@ impl VirtualCPU for UhyveCPU {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
 							self.cmdval(self.host_address(data_addr))?;
+						}
+						UHYVE_PORT_NETINFO => {
+							let mut mac: [u8; 6] = [0; 6];
+							let mut urandom =
+								File::open("/dev/urandom").expect("Unable to open urandom");
+							urandom
+								.read_exact(&mut mac)
+								.expect("Unable to read random numbers");
+
+							mac[0] &= 0xfe; // creats a random MAC-address in the locally administered
+							mac[0] |= 0x02; // address range which can be used without conflict with other public devices
+
+							debug!("Create random MAC address {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+								mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+							let data_addr: usize =
+								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+							let netinfo_addr = unsafe {
+								std::slice::from_raw_parts_mut(
+									self.host_address(data_addr) as *mut u8,
+									6,
+								)
+							};
+							netinfo_addr[0..].clone_from_slice(&mac);
 						}
 						//UHYVE_PORT_NETSTAT => {}
 						UHYVE_PORT_EXIT => {
