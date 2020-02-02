@@ -35,9 +35,10 @@ nom = "3.2.0"
 strum = "0.8.0"
 strum_macros = "0.8.0"
 gdb-protocol = "0.1"
+vmm-sys-util = ">=0.2.1"
 
 [target.'cfg(target_os = "linux")'.dependencies.kvm-ioctls]
-version = "0.3.*"
+version = "0.5.*"
 
 [target.'cfg(target_os = "linux")'.dependencies.kvm-bindings]
 version = "0.*"

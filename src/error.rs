@@ -16,13 +16,10 @@ pub enum Error {
 	UnhandledExitReason,
 }
 
-pub fn to_error<T>(err: std::io::Error) -> Result<T> {
-	if let Some(raw_os_err) = err.raw_os_error() {
-		Err(Error::OsError(raw_os_err))
-	} else {
-		Err(Error::InternalError)
-	}
+pub fn to_error<T>(err: kvm_ioctls::Error) -> Result<T> {
+	Err(Error::OsError(err.errno()))
 }
+
 impl fmt::Display for Error {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match *self {

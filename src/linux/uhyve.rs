@@ -1,28 +1,131 @@
 //! This file contains the entry point to the Hypervisor. The Uhyve utilizes KVM to
 //! create a Virtual Machine and load the kernel.
 
+use consts::*;
 use debug_manager::DebugManager;
 use error::*;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
+use libc::EFD_NONBLOCK;
 use linux::vcpu::*;
 use linux::virtio::*;
 use linux::{MemoryRegion, KVM};
 use nix::sys::mman::*;
+use shared_queue::*;
 use std;
 use std::convert::TryInto;
-use std::ffi::c_void;
+use std::mem;
 use std::net::Ipv4Addr;
+use std::os::raw::c_void;
 use std::ptr;
-use std::ptr::read_volatile;
+use std::ptr::{read_volatile, write_volatile};
 use std::str::FromStr;
+use std::sync::atomic::{spin_loop_hint, AtomicU64, Ordering};
+use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use tun_tap::{Iface, Mode};
 use vm::{BootInfo, VirtualCPU, Vm, VmParameter};
+use vmm_sys_util::eventfd::EventFd;
 
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
 const KVM_32BIT_GAP_SIZE: usize = 768 << 20;
 const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
+
+struct UhyveNetwork {
+	reader: std::thread::JoinHandle<()>,
+	writer: std::thread::JoinHandle<()>,
+	tx: std::sync::mpsc::Sender<usize>,
+}
+
+impl UhyveNetwork {
+	pub fn new(eventfd: EventFd, name: String, start: usize) -> Self {
+		let iface = Arc::new(
+			Iface::without_packet_info(&name.to_owned(), Mode::Tap)
+				.expect("Unable to creat TUN/TAP device"),
+		);
+
+		let iface_writer = Arc::clone(&iface);
+		let iface_reader = Arc::clone(&iface);
+		let (tx, rx) = channel::<usize>();
+
+		let writer = thread::spawn(move || {
+			let tx_queue = unsafe {
+				&mut *((start + mem::size_of::<SharedQueue>()) as *mut u8 as *mut SharedQueue)
+			};
+			tx_queue.init();
+
+			loop {
+				let _value = rx.recv().expect("Failed to read from channel");
+
+				loop {
+					let written = tx_queue.written.load(Ordering::SeqCst);
+					let read = tx_queue.read.load(Ordering::SeqCst);
+					let distance = written - read;
+
+					if distance > 0 {
+						let idx = read % UHYVE_QUEUE_SIZE;
+						let len = unsafe { read_volatile(&tx_queue.inner[idx].len) } as usize;
+						let _ = iface_writer
+							.send(&mut tx_queue.inner[idx].data[0..len])
+							.expect("Send on TUN/TAP device failed!");
+						tx_queue.read.fetch_add(1, Ordering::SeqCst);
+					} else {
+						break;
+					}
+				}
+			}
+		});
+
+		let reader = thread::spawn(move || {
+			let rx_queue = unsafe { &mut *(start as *mut u8 as *mut SharedQueue) };
+			rx_queue.init();
+
+			loop {
+				let written = rx_queue.written.load(Ordering::SeqCst);
+				let read = rx_queue.read.load(Ordering::SeqCst);
+				let distance = written - read;
+
+				if distance < UHYVE_QUEUE_SIZE {
+					let idx = written % UHYVE_QUEUE_SIZE;
+					unsafe {
+						write_volatile(
+							&mut rx_queue.inner[idx].len,
+							iface_reader
+								.recv(&mut rx_queue.inner[idx].data)
+								.expect("Receive on TUN/TAP device failed!")
+								.try_into()
+								.unwrap(),
+						);
+					}
+					rx_queue.written.fetch_add(1, Ordering::SeqCst);
+
+					if written == rx_queue.read.load(Ordering::SeqCst) {
+						//debug!("Trigger Interrupt");
+						static IRQ_COUNTER: AtomicU64 = AtomicU64::new(0);
+						eventfd
+							.write(IRQ_COUNTER.fetch_add(1, Ordering::SeqCst))
+							.expect("Unable to trigger interrupt");
+					}
+				} else {
+					spin_loop_hint();
+				}
+			}
+		});
+
+		UhyveNetwork {
+			reader: reader,
+			writer: writer,
+			tx: tx.clone(),
+		}
+	}
+}
+
+impl Drop for UhyveNetwork {
+	fn drop(&mut self) {
+		debug!("Dropping network interface!");
+	}
+}
 
 pub struct Uhyve {
 	vm: VmFd,
@@ -35,6 +138,7 @@ pub struct Uhyve {
 	ip: Option<Ipv4Addr>,
 	gateway: Option<Ipv4Addr>,
 	mask: Option<Ipv4Addr>,
+	uhyve_device: Option<UhyveNetwork>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	dbg: Option<Arc<Mutex<DebugManager>>>,
 }
@@ -71,13 +175,6 @@ impl Uhyve {
 
 		let vm = KVM.create_vm().or_else(to_error)?;
 
-		let mut cap: kvm_enable_cap = Default::default();
-		cap.cap = KVM_CAP_SET_TSS_ADDR;
-		if vm.enable_cap(&cap).is_ok() {
-			debug!("Setting TSS address");
-			vm.set_tss_address(0xfffbd000).or_else(to_error)?;
-		}
-
 		let mem = MmapMemory::new(0, specs.mem_size, 0, specs.hugepage, specs.mergeable);
 
 		let sz = if specs.mem_size < KVM_32BIT_GAP_START {
@@ -86,7 +183,8 @@ impl Uhyve {
 			KVM_32BIT_GAP_START
 		};
 
-		let virtio_device: VirtioNetPciDevice = VirtioNetPciDevice::new();
+		// create virtio interface
+		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new()));
 
 		let kvm_mem = kvm_userspace_memory_region {
 			slot: 0,
@@ -112,11 +210,76 @@ impl Uhyve {
 			unsafe { vm.set_user_memory_region(kvm_mem) }.or_else(to_error)?;
 		}
 
-		let lock_dev = Arc::new(Mutex::new(virtio_device));
+		debug!("Initialize interrupt controller");
 
-		thread::spawn(|| {});
+		// create basic interrupt controller
+		vm.create_irq_chip().or_else(to_error)?;
 
-		let mut hyve = Uhyve {
+		// enable x2APIC support
+		let mut cap: kvm_enable_cap = Default::default();
+		cap.cap = KVM_CAP_X2APIC_API;
+		cap.flags = 0;
+		cap.args[0] =
+			(KVM_X2APIC_API_USE_32BIT_IDS | KVM_X2APIC_API_DISABLE_BROADCAST_QUIRK) as u64;
+		vm.enable_cap(&cap)
+			.expect("Unable to enable x2apic support");
+
+		// initialize IOAPIC with HermitCore's default settings
+		let mut irqchip = kvm_irqchip::default();
+		irqchip.chip_id = KVM_IRQCHIP_IOAPIC;
+		vm.get_irqchip(&mut irqchip)
+			.expect("Unable to determine IOAPIC");
+		unsafe {
+			for (i, redir) in irqchip.chip.ioapic.redirtbl.iter_mut().enumerate() {
+				redir.fields.vector = (0x20 + i).try_into().unwrap();
+				redir.fields.set_delivery_mode(0);
+				redir.fields.set_dest_mode(0);
+				redir.fields.set_delivery_status(0);
+				redir.fields.set_polarity(0);
+				redir.fields.set_remote_irr(0);
+				redir.fields.set_trig_mode(0);
+				if i != 2 {
+					redir.fields.set_mask(0);
+				} else {
+					redir.fields.set_mask(1);
+				}
+				redir.fields.dest_id = 0;
+			}
+		}
+		vm.set_irqchip(&irqchip)
+			.expect("Unable to configure IOAPIC");
+
+		// currently, we support only system, which provides the
+		// cpu feature TSC_DEADLINE
+		let mut cap: kvm_enable_cap = Default::default();
+		cap.cap = KVM_CAP_TSC_DEADLINE_TIMER;
+		cap.args[0] = 0;
+		if vm.enable_cap(&cap).is_ok() {
+			panic!("Processor feature \"tsc deadline\" isn't supported!")
+		}
+
+		let mut cap: kvm_enable_cap = Default::default();
+		cap.cap = KVM_CAP_IRQFD;
+		if vm.enable_cap(&cap).is_ok() {
+			panic!("The support of KVM_CAP_IRQFD is curently required");
+		}
+
+		let evtfd = EventFd::new(EFD_NONBLOCK).unwrap();
+		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET).or_else(to_error)?;
+		// create TUN/TAP device
+		let uhyve_device = match &specs.nic {
+			Some(nic) => {
+				debug!("Intialize network interface");
+				Some(UhyveNetwork::new(
+					evtfd,
+					nic.to_owned().to_string(),
+					mem.host_address() + SHAREDQUEUE_START,
+				))
+			}
+			_ => None,
+		};
+
+		let hyve = Uhyve {
 			vm: vm,
 			entry_point: 0,
 			mem: mem,
@@ -127,34 +290,14 @@ impl Uhyve {
 			ip: ip_addr,
 			gateway: gw_addr,
 			mask: mask,
-			virtio_device: lock_dev.clone(),
+			uhyve_device: uhyve_device,
+			virtio_device: virtio_device.clone(),
 			dbg: dbg.map(|g| Arc::new(Mutex::new(g))),
 		};
 
-		hyve.init()?;
+		hyve.init_guest_mem();
 
 		Ok(hyve)
-	}
-
-	fn init(&mut self) -> Result<()> {
-		self.init_guest_mem();
-
-		debug!("Initialize interrupt controller");
-
-		// create basic interrupt controller
-		self.vm.create_irq_chip().or_else(to_error)?;
-		let pit_config = kvm_pit_config::default();
-		self.vm.create_pit2(pit_config).or_else(to_error)?;
-
-		// currently, we support only system, which provides the
-		// cpu feature TSC_DEADLINE
-		let mut cap: kvm_enable_cap = Default::default();
-		cap.cap = KVM_CAP_TSC_DEADLINE_TIMER;
-		if self.vm.enable_cap(&cap).is_ok() {
-			panic!("Processor feature \"tsc deadline\" isn't supported!")
-		}
-
-		Ok(())
 	}
 }
 
@@ -197,6 +340,11 @@ impl Vm for Uhyve {
 
 	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>> {
 		let vm_start = self.mem.host_address() as usize;
+		let tx = match &self.uhyve_device {
+			Some(dev) => Some(dev.tx.clone()),
+			_ => None,
+		};
+
 		Ok(Box::new(UhyveCPU::new(
 			id,
 			self.path.clone(),
@@ -204,6 +352,7 @@ impl Vm for Uhyve {
 				.create_vcpu(id.try_into().unwrap())
 				.or_else(to_error)?,
 			vm_start,
+			tx,
 			self.virtio_device.clone(),
 			self.dbg.as_ref().cloned(),
 		)))

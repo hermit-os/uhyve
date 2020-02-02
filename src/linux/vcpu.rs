@@ -3,13 +3,11 @@ use debug_manager::DebugManager;
 use error::Error::*;
 use error::*;
 use kvm_bindings::*;
-use kvm_ioctls::{VcpuExit, VcpuFd, MAX_KVM_CPUID_ENTRIES};
+use kvm_ioctls::{VcpuExit, VcpuFd};
 use libc::ioctl;
 use linux::virtio::*;
 use linux::KVM;
 use paging::*;
-use std::fs::File;
-use std::io::Read;
 use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
 use vm::VirtualCPU;
@@ -27,6 +25,7 @@ pub struct UhyveCPU {
 	vcpu: VcpuFd,
 	vm_start: usize,
 	kernel_path: String,
+	tx: Option<std::sync::mpsc::Sender<usize>>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	pub dbg: Option<Arc<Mutex<DebugManager>>>,
 }
@@ -37,6 +36,7 @@ impl UhyveCPU {
 		kernel_path: String,
 		vcpu: VcpuFd,
 		vm_start: usize,
+		tx: Option<std::sync::mpsc::Sender<usize>>,
 		virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 		dbg: Option<Arc<Mutex<DebugManager>>>,
 	) -> UhyveCPU {
@@ -45,6 +45,7 @@ impl UhyveCPU {
 			vcpu: vcpu,
 			vm_start: vm_start,
 			kernel_path: kernel_path,
+			tx: tx,
 			virtio_device: virtio_device,
 			dbg: dbg,
 		}
@@ -54,7 +55,7 @@ impl UhyveCPU {
 		//debug!("Setup cpuid");
 
 		let mut kvm_cpuid = KVM
-			.get_supported_cpuid(MAX_KVM_CPUID_ENTRIES)
+			.get_supported_cpuid(KVM_MAX_MSR_ENTRIES)
 			.or_else(to_error)?;
 		let kvm_cpuid_entries = kvm_cpuid.as_mut_slice();
 		let i = kvm_cpuid_entries
@@ -125,6 +126,7 @@ impl UhyveCPU {
 		let msr_list = KVM.get_msr_index_list().or_else(to_error)?;
 
 		let mut msr_entries = msr_list
+			.as_slice()
 			.iter()
 			.map(|i| kvm_msr_entry {
 				index: *i,
@@ -137,10 +139,8 @@ impl UhyveCPU {
 		msr_entries[0].index = MSR_IA32_MISC_ENABLE;
 		msr_entries[0].data = 1;
 
-		let mut msrs: &mut kvm_msrs = unsafe { &mut *(msr_entries.as_ptr() as *mut kvm_msrs) };
-		msrs.nmsrs = 1;
-
-		self.vcpu.set_msrs(msrs).or_else(to_error)?;
+		let msrs = Msrs::from_entries(&mut msr_entries);
+		self.vcpu.set_msrs(&msrs).or_else(to_error)?;
 
 		Ok(())
 	}
@@ -361,30 +361,18 @@ impl VirtualCPU for UhyveCPU {
 							self.cmdval(self.host_address(data_addr))?;
 						}
 						UHYVE_PORT_NETINFO => {
-							let mut mac: [u8; 6] = [0; 6];
-							let mut urandom =
-								File::open("/dev/urandom").expect("Unable to open urandom");
-							urandom
-								.read_exact(&mut mac)
-								.expect("Unable to read random numbers");
-
-							mac[0] &= 0xfe; // creats a random MAC-address in the locally administered
-							mac[0] |= 0x02; // address range which can be used without conflict with other public devices
-
-							debug!("Create random MAC address {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-								mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							let netinfo_addr = unsafe {
-								std::slice::from_raw_parts_mut(
-									self.host_address(data_addr) as *mut u8,
-									6,
-								)
-							};
-							netinfo_addr[0..].clone_from_slice(&mac);
+							self.netinfo(self.host_address(data_addr))?;
 						}
-						//UHYVE_PORT_NETSTAT => {}
+						UHYVE_PORT_NETWRITE => {
+							match &self.tx {
+								Some(tx_channel) => tx_channel.send(1).unwrap(),
+								_ => {
+									debug!("Unable to wakeup thread");
+								}
+							};
+						}
 						UHYVE_PORT_EXIT => {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
@@ -453,7 +441,7 @@ impl VirtualCPU for UhyveCPU {
 						}
 
 						_ => {
-							info!("Unhandled IO exit: 0x{:x}", port);
+							panic!("Unhandled IO exit: 0x{:x}", port);
 						}
 					}
 				}

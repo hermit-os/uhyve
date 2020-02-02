@@ -8,6 +8,7 @@ use raw_cpuid::CpuId;
 use std;
 use std::fs::File;
 use std::io::Cursor;
+use std::io::Read;
 use std::net::Ipv4Addr;
 use std::ptr::write_volatile;
 use std::time::SystemTime;
@@ -394,6 +395,27 @@ pub trait VirtualCPU {
 				}
 			}
 		}
+
+		Ok(())
+	}
+
+	fn netinfo(&self, args_ptr: usize) -> Result<()> {
+		let mut mac: [u8; 6] = [0; 6];
+		let mut urandom = File::open("/dev/urandom").expect("Unable to open urandom");
+		urandom
+			.read_exact(&mut mac)
+			.expect("Unable to read random numbers");
+
+		mac[0] &= 0xfe; // creats a random MAC-address in the locally administered
+		mac[0] |= 0x02; // address range which can be used without conflict with other public devices
+
+		debug!(
+			"Create random MAC address {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+			mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+		);
+
+		let netinfo_addr = unsafe { std::slice::from_raw_parts_mut(args_ptr as *mut u8, 6) };
+		netinfo_addr[0..].clone_from_slice(&mac);
 
 		Ok(())
 	}

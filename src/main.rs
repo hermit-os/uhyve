@@ -7,12 +7,14 @@ extern crate nix;
 extern crate bitflags;
 #[macro_use]
 extern crate clap;
+extern crate tun_tap;
 #[macro_use]
 extern crate lazy_static;
 #[cfg(target_os = "linux")]
 extern crate kvm_bindings;
 #[cfg(target_os = "linux")]
 extern crate kvm_ioctls;
+extern crate vmm_sys_util;
 
 #[macro_use]
 extern crate log;
@@ -36,6 +38,7 @@ mod gdb_parser;
 #[cfg(target_os = "linux")]
 mod linux;
 mod paging;
+mod shared_queue;
 pub mod utils;
 mod vm;
 

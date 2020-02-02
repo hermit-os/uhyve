@@ -19,6 +19,10 @@ pub const EFER_LMA: u64 = (1 << 10); /* Long mode active (read-only) */
 pub const EFER_NXE: u64 = (1 << 11); /* PTE No-Execute bit enable */
 pub const COM_PORT: u16 = 0x3f8;
 pub const SHUTDOWN_PORT: u16 = 0xf4;
+pub const SHAREDQUEUE_START: usize = 0x80000;
+pub const UHYVE_NET_MTU: usize = 1500;
+pub const UHYVE_QUEUE_SIZE: usize = 8;
+pub const UHYVE_IRQ_NET: u32 = 11;
 
 /*
  * Intel long mode page directory/table entries
