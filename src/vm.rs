@@ -502,7 +502,7 @@ pub trait Vm {
 				PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
 			);
 
-			for i in 0..511 {
+			for i in 0..512 {
 				pde.entries[i].set(
 					i * LargePageSize::SIZE,
 					PageTableEntryFlags::PRESENT
