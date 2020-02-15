@@ -1,16 +1,18 @@
 use consts::*;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[repr(C)]
 pub struct QueueInner {
 	pub len: u16,
-	pub data: [u8; UHYVE_NET_MTU],
+	pub data: [u8; UHYVE_NET_MTU + 34],
 }
 
 #[repr(C)]
 pub struct SharedQueue {
 	pub read: AtomicUsize,
+	pad0: [u8; 64 - 8],
 	pub written: AtomicUsize,
+	pad1: [u8; 64 - 8],
 	pub inner: [QueueInner; UHYVE_QUEUE_SIZE],
 }
 

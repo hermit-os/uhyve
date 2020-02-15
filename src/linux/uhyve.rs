@@ -51,7 +51,8 @@ impl UhyveNetwork {
 
 		let writer = thread::spawn(move || {
 			let tx_queue = unsafe {
-				&mut *((start + mem::size_of::<SharedQueue>()) as *mut u8 as *mut SharedQueue)
+				&mut *((start + align_up!(mem::size_of::<SharedQueue>(), 64)) as *mut u8
+					as *mut SharedQueue)
 			};
 			tx_queue.init();
 

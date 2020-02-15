@@ -30,6 +30,9 @@ extern crate byteorder;
 extern crate gdb_protocol;
 extern crate rustc_serialize;
 
+#[macro_use]
+mod macros;
+
 pub mod arch;
 pub mod consts;
 mod debug_manager;
