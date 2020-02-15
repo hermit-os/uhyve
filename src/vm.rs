@@ -606,7 +606,7 @@ pub trait Vm {
 					write_volatile(&mut (*boot_info).base, header.paddr);
 					write_volatile(&mut (*boot_info).limit, vm_mem_length as u64); // memory size
 					write_volatile(&mut (*boot_info).possible_cpus, 1);
-					write_volatile(&mut (*boot_info).uhyve, 1);
+					write_volatile(&mut (*boot_info).uhyve, 0x3); 	// announce uhyve and pci support
 					write_volatile(&mut (*boot_info).current_boot_id, 0);
 					if self.verbose() {
 						write_volatile(&mut (*boot_info).uartport, UHYVE_UART_PORT);
