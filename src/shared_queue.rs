@@ -1,5 +1,5 @@
 use consts::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 
 #[repr(C)]
 pub struct QueueInner {
