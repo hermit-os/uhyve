@@ -14,6 +14,8 @@ pub enum Error {
 	Shutdown,
 	ParseMemory,
 	UnhandledExitReason,
+	InvalidMacAddress,
+	ParseIntError,
 }
 
 pub fn to_error<T>(err: kvm_ioctls::Error) -> Result<T> {
@@ -44,6 +46,8 @@ impl fmt::Display for Error {
 				"Couldn't parse the guest memory size from the environment"
 			),
 			Error::UnhandledExitReason => write!(f, "Unhandled exit reason"),
+			Error::InvalidMacAddress => write!(f, "Invalid MAC address"),
+			Error::ParseIntError => write!(f, "Unable to parse string"),
 		}
 	}
 }

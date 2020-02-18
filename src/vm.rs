@@ -401,13 +401,34 @@ pub trait VirtualCPU {
 
 	fn netinfo(&self, args_ptr: usize) -> Result<()> {
 		let mut mac: [u8; 6] = [0; 6];
-		let mut urandom = File::open("/dev/urandom").expect("Unable to open urandom");
-		urandom
-			.read_exact(&mut mac)
-			.expect("Unable to read random numbers");
 
-		mac[0] &= 0xfe; // creats a random MAC-address in the locally administered
-		mac[0] |= 0x02; // address range which can be used without conflict with other public devices
+		match &(*crate::MAC_ADDRESS.lock().unwrap()) {
+			Some(mac_str) => {
+				let mut nth = 0;
+				for byte in mac_str.split(|c| c == ':' || c == '-') {
+					if nth == 6 {
+						return Err(Error::InvalidMacAddress);
+					}
+
+					mac[nth] = u8::from_str_radix(byte, 16).map_err(|_| Error::ParseIntError)?;
+
+					nth += 1;
+				}
+
+				if nth != 6 {
+					return Err(Error::InvalidMacAddress);
+				}
+			}
+			_ => {
+				let mut urandom = File::open("/dev/urandom").expect("Unable to open urandom");
+				urandom
+					.read_exact(&mut mac)
+					.expect("Unable to read random numbers");
+
+				mac[0] &= 0xfe; // creats a random MAC-address in the locally administered
+				mac[0] |= 0x02; // address range which can be used without conflict with other public devices
+			}
+		};
 
 		debug!(
 			"Create random MAC address {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
@@ -416,6 +437,10 @@ pub trait VirtualCPU {
 
 		let netinfo_addr = unsafe { std::slice::from_raw_parts_mut(args_ptr as *mut u8, 6) };
 		netinfo_addr[0..].clone_from_slice(&mac);
+		*crate::MAC_ADDRESS.lock().unwrap() = Some(format!(
+			"{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+			mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+		));
 
 		Ok(())
 	}
@@ -606,7 +631,7 @@ pub trait Vm {
 					write_volatile(&mut (*boot_info).base, header.paddr);
 					write_volatile(&mut (*boot_info).limit, vm_mem_length as u64); // memory size
 					write_volatile(&mut (*boot_info).possible_cpus, 1);
-					write_volatile(&mut (*boot_info).uhyve, 0x3); 	// announce uhyve and pci support
+					write_volatile(&mut (*boot_info).uhyve, 0x3); // announce uhyve and pci support
 					write_volatile(&mut (*boot_info).current_boot_id, 0);
 					if self.verbose() {
 						write_volatile(&mut (*boot_info).uartport, UHYVE_UART_PORT);

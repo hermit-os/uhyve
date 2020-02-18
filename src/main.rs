@@ -48,11 +48,16 @@ mod vm;
 pub use arch::*;
 use clap::{App, Arg};
 use consts::*;
+use lazy_static::lazy_static;
 use std::env;
 use std::sync::atomic::spin_loop_hint;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use vm::*;
+
+lazy_static! {
+	static ref MAC_ADDRESS: Mutex<Option<String>> = { Mutex::new(None) };
+}
 
 fn main() {
 	env_logger::init();
@@ -137,6 +142,14 @@ fn main() {
 				.env("HERMIT_MASK"),
 		)
 		.arg(
+			Arg::with_name("MAC")
+				.long("mac")
+				.value_name("MAC")
+				.help("MAC address of the network interface")
+				.takes_value(true)
+				.env("HERMIT_MASK"),
+		)
+		.arg(
 			Arg::with_name("KERNEL")
 				.help("Sets path to the kernel")
 				.required(true)
@@ -166,6 +179,12 @@ fn main() {
 	let gateway = matches.value_of("GATEWAY").or(None);
 	let mask = matches.value_of("MASK").or(None);
 	let nic = matches.value_of("NETIF").or(None);
+
+	// determine and store MAC address
+	{
+		let mac = matches.value_of("MAC").or(None);
+		*MAC_ADDRESS.lock().unwrap() = mac.map(|s| s.to_string());
+	}
 
 	let mut mergeable: bool = utils::parse_bool("HERMIT_MERGEABLE", false);
 	if matches.is_present("MERGEABLE") {
