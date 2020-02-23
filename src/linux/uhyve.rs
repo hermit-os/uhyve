@@ -6,7 +6,6 @@ use debug_manager::DebugManager;
 use error::*;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
-use libc::EFD_NONBLOCK;
 use linux::vcpu::*;
 use linux::virtio::*;
 use linux::{MemoryRegion, KVM};
@@ -20,7 +19,7 @@ use std::os::raw::c_void;
 use std::ptr;
 use std::ptr::{read_volatile, write_volatile};
 use std::str::FromStr;
-use std::sync::atomic::{spin_loop_hint, AtomicU64, Ordering};
+use std::sync::atomic::spin_loop_hint;
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -39,7 +38,7 @@ struct UhyveNetwork {
 }
 
 impl UhyveNetwork {
-	pub fn new(eventfd: EventFd, name: String, start: usize) -> Self {
+	pub fn new(evtfd: EventFd, name: String, start: usize) -> Self {
 		let iface = Arc::new(
 			Iface::without_packet_info(&name.to_owned(), Mode::Tap)
 				.expect("Unable to creat TUN/TAP device"),
@@ -60,8 +59,8 @@ impl UhyveNetwork {
 				let _value = rx.recv().expect("Failed to read from channel");
 
 				loop {
-					let written = tx_queue.written.load(Ordering::SeqCst);
-					let read = tx_queue.read.load(Ordering::SeqCst);
+					let written = unsafe { read_volatile(&tx_queue.written) };
+					let read = unsafe { read_volatile(&tx_queue.read) };
 					let distance = written - read;
 
 					if distance > 0 {
@@ -70,7 +69,8 @@ impl UhyveNetwork {
 						let _ = iface_writer
 							.send(&mut tx_queue.inner[idx].data[0..len])
 							.expect("Send on TUN/TAP device failed!");
-						tx_queue.read.fetch_add(1, Ordering::SeqCst);
+
+						unsafe { write_volatile(&mut tx_queue.read, read + 1) };
 					} else {
 						break;
 					}
@@ -83,8 +83,8 @@ impl UhyveNetwork {
 			rx_queue.init();
 
 			loop {
-				let written = rx_queue.written.load(Ordering::SeqCst);
-				let read = rx_queue.read.load(Ordering::SeqCst);
+				let written = unsafe { read_volatile(&rx_queue.written) };
+				let read = unsafe { read_volatile(&rx_queue.read) };
 				let distance = written - read;
 
 				if distance < UHYVE_QUEUE_SIZE {
@@ -98,16 +98,10 @@ impl UhyveNetwork {
 								.try_into()
 								.unwrap(),
 						);
+						write_volatile(&mut rx_queue.written, written + 1);
 					}
-					rx_queue.written.fetch_add(1, Ordering::SeqCst);
 
-					if written == rx_queue.read.load(Ordering::SeqCst) {
-						//debug!("Trigger Interrupt");
-						static IRQ_COUNTER: AtomicU64 = AtomicU64::new(0);
-						eventfd
-							.write(IRQ_COUNTER.fetch_add(1, Ordering::SeqCst))
-							.expect("Unable to trigger interrupt");
-					}
+					evtfd.write(1).expect("Unable to trigger interrupt");
 				} else {
 					spin_loop_hint();
 				}
@@ -265,7 +259,7 @@ impl Uhyve {
 			panic!("The support of KVM_CAP_IRQFD is curently required");
 		}
 
-		let evtfd = EventFd::new(EFD_NONBLOCK).unwrap();
+		let evtfd = EventFd::new(0).unwrap();
 		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET).or_else(to_error)?;
 		// create TUN/TAP device
 		let uhyve_device = match &specs.nic {

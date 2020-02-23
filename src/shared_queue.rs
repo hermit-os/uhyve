@@ -1,5 +1,4 @@
 use consts::*;
-use std::sync::atomic::AtomicUsize;
 
 #[repr(C)]
 pub struct QueueInner {
@@ -9,17 +8,17 @@ pub struct QueueInner {
 
 #[repr(C)]
 pub struct SharedQueue {
-	pub read: AtomicUsize,
+	pub read: usize,
 	pad0: [u8; 64 - 8],
-	pub written: AtomicUsize,
+	pub written: usize,
 	pad1: [u8; 64 - 8],
 	pub inner: [QueueInner; UHYVE_QUEUE_SIZE],
 }
 
 impl SharedQueue {
 	pub fn init(&mut self) {
-		self.read = AtomicUsize::new(0);
-		self.written = AtomicUsize::new(0);
+		self.read = 0;
+		self.written = 0;
 
 		for i in self.inner.iter_mut() {
 			i.len = 0;
