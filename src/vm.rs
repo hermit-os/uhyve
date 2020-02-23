@@ -234,24 +234,26 @@ pub trait VirtualCPU {
 		syssize.envc = 0;
 
 		let mut counter: i32 = 0;
-		let mut kernel_pos: i32 = 0;
+		let mut separator_pos: i32 = 0;
 		let path = self.kernel_path();
-		let mut found_kernel = false;
+		let mut found_separator = false;
+		syssize.argsz[0] = path.len() as i32 + 1;
+
 		for argument in std::env::args() {
-			if !found_kernel {
-				if path == argument {
-					kernel_pos = counter;
-					found_kernel = true;
+			if !found_separator {
+				if argument == "--" {
+					separator_pos = counter + 1;
+					found_separator = true;
 				}
 			}
 
-			if found_kernel {
-				syssize.argsz[(counter - kernel_pos) as usize] = argument.len() as i32 + 1;
+			if found_separator &&  counter >= separator_pos {
+				syssize.argsz[(counter - separator_pos + 1) as usize] = argument.len() as i32 + 1;
 			}
 
 			counter += 1;
 		}
-		syssize.argc = counter - kernel_pos;
+		syssize.argc = counter - separator_pos + 1;
 
 		counter = 0;
 		for (key, value) in std::env::vars() {
@@ -268,21 +270,38 @@ pub trait VirtualCPU {
 
 		let mut counter: i32 = 0;
 		let argv = self.host_address(syscmdval.argv as usize);
-		let mut found_kernel = false;
-		let mut kernel_pos: i32 = 0;
-		let path = self.kernel_path();
+		let mut found_separator = false;
+		let mut separator_pos: i32 = 0;
+
+		// copy kernel path as first argument
+		{
+			let path = self.kernel_path();
+
+			let argvptr = unsafe {
+				self.host_address(
+					*(argv as *mut *mut u8) as usize,
+				)
+			};
+			let len = path.len();
+			let slice = unsafe { slice::from_raw_parts_mut(argvptr as *mut u8, len + 1) };
+
+			// Create string for environment variable
+			slice[0..len].copy_from_slice(path.as_bytes());
+			slice[len] = 0;
+		}
+
 		for argument in std::env::args() {
-			if !found_kernel {
-				if argument == path {
-					kernel_pos = counter;
-					found_kernel = true;
+			if !found_separator {
+				if argument == "--" {
+					separator_pos = counter + 1;
+					found_separator = true;
 				}
 			}
 
-			if found_kernel {
+			if found_separator &&  counter >= separator_pos {
 				let argvptr = unsafe {
 					self.host_address(
-						*((argv + (counter - kernel_pos) as usize * mem::size_of::<usize>())
+						*((argv + (counter - separator_pos + 1) as usize * mem::size_of::<usize>())
 							as *mut *mut u8) as usize,
 					)
 				};
