@@ -247,13 +247,17 @@ pub trait VirtualCPU {
 				}
 			}
 
-			if found_separator &&  counter >= separator_pos {
+			if found_separator && counter >= separator_pos {
 				syssize.argsz[(counter - separator_pos + 1) as usize] = argument.len() as i32 + 1;
 			}
 
 			counter += 1;
 		}
-		syssize.argc = counter - separator_pos + 1;
+		if found_separator && counter >= separator_pos {
+			syssize.argc = counter - separator_pos + 1;
+		} else {
+			syssize.argc = 1;
+		}
 
 		counter = 0;
 		for (key, value) in std::env::vars() {
@@ -277,11 +281,7 @@ pub trait VirtualCPU {
 		{
 			let path = self.kernel_path();
 
-			let argvptr = unsafe {
-				self.host_address(
-					*(argv as *mut *mut u8) as usize,
-				)
-			};
+			let argvptr = unsafe { self.host_address(*(argv as *mut *mut u8) as usize) };
 			let len = path.len();
 			let slice = unsafe { slice::from_raw_parts_mut(argvptr as *mut u8, len + 1) };
 
@@ -298,7 +298,7 @@ pub trait VirtualCPU {
 				}
 			}
 
-			if found_separator &&  counter >= separator_pos {
+			if found_separator && counter >= separator_pos {
 				let argvptr = unsafe {
 					self.host_address(
 						*((argv + (counter - separator_pos + 1) as usize * mem::size_of::<usize>())
