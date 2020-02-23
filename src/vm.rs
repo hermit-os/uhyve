@@ -365,7 +365,7 @@ pub trait VirtualCPU {
 				self.host_address(buffer) as *mut libc::c_void,
 				sysread.len,
 			);
-			if bytes_read > 0 {
+			if bytes_read >= 0 {
 				sysread.ret = bytes_read;
 			} else {
 				sysread.ret = -1;
