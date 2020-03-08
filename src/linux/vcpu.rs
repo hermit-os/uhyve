@@ -25,7 +25,7 @@ pub struct UhyveCPU {
 	vcpu: VcpuFd,
 	vm_start: usize,
 	kernel_path: String,
-	tx: Option<std::sync::mpsc::Sender<usize>>,
+	tx: Option<std::sync::mpsc::SyncSender<usize>>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	pub dbg: Option<Arc<Mutex<DebugManager>>>,
 }
@@ -36,7 +36,7 @@ impl UhyveCPU {
 		kernel_path: String,
 		vcpu: VcpuFd,
 		vm_start: usize,
-		tx: Option<std::sync::mpsc::Sender<usize>>,
+		tx: Option<std::sync::mpsc::SyncSender<usize>>,
 		virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 		dbg: Option<Arc<Mutex<DebugManager>>>,
 	) -> UhyveCPU {
@@ -368,9 +368,7 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_NETWRITE => {
 							match &self.tx {
 								Some(tx_channel) => tx_channel.send(1).unwrap(),
-								_ => {
-									debug!("Unable to wakeup thread");
-								}
+								_ => {}
 							};
 						}
 						UHYVE_PORT_EXIT => {

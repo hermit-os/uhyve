@@ -20,7 +20,7 @@ use std::ptr;
 use std::ptr::{read_volatile, write_volatile};
 use std::str::FromStr;
 use std::sync::atomic::spin_loop_hint;
-use std::sync::mpsc::channel;
+use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tun_tap::{Iface, Mode};
@@ -34,7 +34,7 @@ const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
 struct UhyveNetwork {
 	reader: std::thread::JoinHandle<()>,
 	writer: std::thread::JoinHandle<()>,
-	tx: std::sync::mpsc::Sender<usize>,
+	tx: std::sync::mpsc::SyncSender<usize>,
 }
 
 impl UhyveNetwork {
@@ -46,7 +46,7 @@ impl UhyveNetwork {
 
 		let iface_writer = Arc::clone(&iface);
 		let iface_reader = Arc::clone(&iface);
-		let (tx, rx) = channel::<usize>();
+		let (tx, rx) = sync_channel(1);
 
 		let writer = thread::spawn(move || {
 			let tx_queue = unsafe {
@@ -58,22 +58,18 @@ impl UhyveNetwork {
 			loop {
 				let _value = rx.recv().expect("Failed to read from channel");
 
-				loop {
-					let written = unsafe { read_volatile(&tx_queue.written) };
-					let read = unsafe { read_volatile(&tx_queue.read) };
-					let distance = written - read;
+				let written = unsafe { read_volatile(&tx_queue.written) };
+				let read = unsafe { read_volatile(&tx_queue.read) };
+				let distance = written - read;
 
-					if distance > 0 {
-						let idx = read % UHYVE_QUEUE_SIZE;
-						let len = unsafe { read_volatile(&tx_queue.inner[idx].len) } as usize;
-						let _ = iface_writer
-							.send(&mut tx_queue.inner[idx].data[0..len])
-							.expect("Send on TUN/TAP device failed!");
+				if distance > 0 {
+					let idx = read % UHYVE_QUEUE_SIZE;
+					let len = unsafe { read_volatile(&tx_queue.inner[idx].len) } as usize;
+					let _ = iface_writer
+						.send(&mut tx_queue.inner[idx].data[0..len])
+						.expect("Send on TUN/TAP device failed!");
 
-						unsafe { write_volatile(&mut tx_queue.read, read + 1) };
-					} else {
-						break;
-					}
+					unsafe { write_volatile(&mut tx_queue.read, read + 1) };
 				}
 			}
 		});
