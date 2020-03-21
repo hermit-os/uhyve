@@ -18,10 +18,10 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        rust: [stable]
+        rust: [nightly]
         include:
           - os: ubuntu-latest
-            rust: 'stable'
+            rust: 'nightly'
             components: 'rustfmt, clippy'
             targets: 'x86_64-unknown-linux-musl'
 
