@@ -11,7 +11,7 @@ on:
     - cron: '0 0 * * 6'
 
 jobs:
-  test:
+  build:
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -19,14 +19,6 @@ jobs:
         os: [ubuntu-latest]
         rust: [stable]
         include:
-          - os: macOS-latest
-            rust: 'stable'
-            components: 'rustfmt, clippy'
-            targets: 'x86_64-apple-darwin'
-          - os: windows-latest
-            rust: 'stable'
-            components: 'rustfmt, clippy'
-            targets: 'x86_64-pc-windows-msvc'
           - os: ubuntu-latest
             rust: 'stable'
             components: 'rustfmt, clippy'
