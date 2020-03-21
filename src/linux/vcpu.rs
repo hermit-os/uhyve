@@ -11,7 +11,7 @@ use paging::*;
 use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
 use vm::VirtualCPU;
-use x86::*;
+use x86::controlregs::*;
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
 const CPUID_TSC_DEADLINE: u32 = 1 << 24;
@@ -19,6 +19,10 @@ const CPUID_ENABLE_MSR: u32 = 1 << 5;
 const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 const PCI_CONFIG_DATA_PORT: u16 = 0xCFC;
 const PCI_CONFIG_ADDRESS_PORT: u16 = 0xCF8;
+const EFER_LME: u64 = 1 << 8; /* Long mode enable */
+const EFER_LMA: u64 = 1 << 10; /* Long mode active (read-only) */
+const EFER_NXE: u64 = 1 << 11; /* PTE No-Execute bit enable */
+
 
 pub struct UhyveCPU {
 	id: u32,
@@ -310,7 +314,7 @@ impl VirtualCPU for UhyveCPU {
 							let virtio_device = self.virtio_device.lock().unwrap();
 							virtio_device.handle_read(pci_addr & 0x3ff, addr);
 						} else {
-							unsafe { (*(addr.as_ptr() as *mut u32) = 0xffffffff) };
+							unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
 						}
 					}
 					PCI_CONFIG_ADDRESS_PORT => {}
@@ -414,7 +418,7 @@ impl VirtualCPU for UhyveCPU {
 							}
 						}
 						PCI_CONFIG_ADDRESS_PORT => {
-							pci_addr = unsafe { (*(addr.as_ptr() as *const u32)) };
+							pci_addr = unsafe { *(addr.as_ptr() as *const u32) };
 							pci_addr_set = true;
 						}
 						VIRTIO_PCI_STATUS => {

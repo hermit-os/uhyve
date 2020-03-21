@@ -20,6 +20,7 @@ extern crate vmm_sys_util;
 extern crate log;
 extern crate env_logger;
 extern crate raw_cpuid;
+extern crate x86;
 
 #[macro_use]
 extern crate nom;

@@ -17,7 +17,7 @@ use gdb_parser::{
 use linux::vcpu::UhyveCPU;
 use utils::get_max_subslice;
 use vm::VirtualCPU;
-use x86;
+use arch::x86;
 
 /// Debugging Stub for linux/x64
 /// Currently supported features:
