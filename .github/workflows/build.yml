@@ -11,8 +11,7 @@ on:
     - cron: '0 0 * * 6'
 
 jobs:
-  build:
-
+  test:
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -35,7 +34,7 @@ jobs:
 
 
     steps:
-    - uses: hecrj/setup-rust-action@v1.2.3
+    - uses: hecrj/setup-rust-action@v1.3.2
       with: 
          rust-version: ${{ matrix.rust }}
          components: ${{ matrix.components || '' }}
