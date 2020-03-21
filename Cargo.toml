@@ -12,8 +12,7 @@ description = """
 A hypervisor for RustyHermit
 """
 
-[badges]
-travis-ci = { repository = "hermitcore/uhyve" }
+exclude = ["./.github/workflows", ".gitignore", ".gitmodules"]
 
 [dependencies]
 log = "0.4"
