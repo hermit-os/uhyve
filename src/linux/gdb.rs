@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
 use std::slice;
 
+use arch::x86;
 use gdb_parser::{
 	Breakpoint, Error, FileData, Handler, Id, MemoryRegion, ProcessInfo, ProcessType, StopReason,
 	ThreadId, VCont, VContFeature, Watchpoint,
@@ -17,7 +18,6 @@ use gdb_parser::{
 use linux::vcpu::UhyveCPU;
 use utils::get_max_subslice;
 use vm::VirtualCPU;
-use arch::x86;
 
 /// Debugging Stub for linux/x64
 /// Currently supported features:

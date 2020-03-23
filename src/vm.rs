@@ -4,6 +4,7 @@ use elf::types::{ELFCLASS64, EM_X86_64, ET_EXEC, PT_LOAD, PT_TLS};
 use error::*;
 use libc;
 use memmap::Mmap;
+use nix::errno::errno;
 use raw_cpuid::CpuId;
 use std;
 use std::fs::File;
@@ -15,9 +16,12 @@ use std::time::SystemTime;
 use std::{fmt, mem, slice};
 
 use consts::*;
+#[cfg(target_os = "linux")]
 use debug_manager::DebugManager;
 #[cfg(target_os = "linux")]
 pub use linux::uhyve::*;
+#[cfg(target_os = "macos")]
+pub use macos::uhyve::*;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -409,8 +413,7 @@ pub trait VirtualCPU {
 				if step >= 0 {
 					bytes_written += step as usize;
 				} else {
-					let errloc = libc::__errno_location();
-					return Err(Error::OsError(*errloc as i32));
+					return Err(Error::OsError(errno()));
 				}
 			}
 		}
@@ -650,7 +653,10 @@ pub trait Vm {
 					write_volatile(&mut (*boot_info).base, header.paddr);
 					write_volatile(&mut (*boot_info).limit, vm_mem_length as u64); // memory size
 					write_volatile(&mut (*boot_info).possible_cpus, 1);
+					#[cfg(target_os = "linux")]
 					write_volatile(&mut (*boot_info).uhyve, 0x3); // announce uhyve and pci support
+					#[cfg(not(target_os = "linux"))]
+					write_volatile(&mut (*boot_info).uhyve, 0x1); // announce uhyve
 					write_volatile(&mut (*boot_info).current_boot_id, 0);
 					if self.verbose() {
 						write_volatile(&mut (*boot_info).uartport, UHYVE_UART_PORT);
@@ -675,10 +681,9 @@ pub trait Vm {
 
 					match cpuid.get_processor_frequency_info() {
 						Some(freqinfo) => {
-							write_volatile(
-								&mut (*boot_info).cpu_freq,
-								freqinfo.processor_base_frequency() as u32,
-							);
+							let freq = freqinfo.processor_base_frequency();
+							debug!("detect a cpu fequency of {} Mhz", freq);
+							write_volatile(&mut (*boot_info).cpu_freq, freq as u32);
 						}
 						None => info!("Unable to determine processor frequency!"),
 					}
@@ -700,11 +705,19 @@ pub trait Vm {
 	}
 }
 
+#[cfg(target_os = "linux")]
 pub fn create_vm(path: String, specs: &super::vm::VmParameter) -> Result<Uhyve> {
 	// If we are given a port, create new DebugManager.
 	let gdb = specs.gdbport.map(|port| DebugManager::new(port).unwrap());
 
 	let vm = Uhyve::new(path.clone(), &specs, gdb)?;
+
+	Ok(vm)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn create_vm(path: String, specs: &super::vm::VmParameter) -> Result<Uhyve> {
+	let vm = Uhyve::new(path.clone(), &specs)?;
 
 	Ok(vm)
 }

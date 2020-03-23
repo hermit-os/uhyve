@@ -442,12 +442,12 @@ fn query<'a>(i: &'a [u8]) -> IResult<&'a [u8], Query<'a>> {
 // wanted a u32, or should we provide different versions of this function with
 // extra checking?
 named!(hex_value<&[u8], u64>,
-	   map!(take_while1!(&nom::is_hex_digit),
-			|hex| {
-				let s = str::from_utf8(hex).unwrap();
-				let r = u64::from_str_radix(s, 16);
-				r.unwrap()
-			}));
+map!(take_while1!(&nom::is_hex_digit),
+	 |hex| {
+		 let s = str::from_utf8(hex).unwrap();
+		 let r = u64::from_str_radix(s, 16);
+		 r.unwrap()
+	 }));
 
 named!(hex_digit<&[u8], char>,
 	   one_of!("0123456789abcdefABCDEF"));
@@ -517,16 +517,16 @@ named!(parse_thread_id_element<&[u8], Id>,
 
 // Parse a thread-id.
 named!(parse_thread_id<&[u8], ThreadId>,
-	   alt_complete!(parse_thread_id_element => { |pid| ThreadId { pid: pid, tid: Id::Any } }
-					 | preceded!(tag!("p"),
-								 separated_pair!(parse_thread_id_element,
-												 tag!("."),
-												 parse_thread_id_element)) => {
-						 |pair: (Id, Id)| ThreadId { pid: pair.0, tid: pair.1 }
-					 }
-					 | preceded!(tag!("p"), parse_thread_id_element) => {
-						 |id: Id| ThreadId { pid: id, tid: Id::All }
-					 }));
+alt_complete!(parse_thread_id_element => { |pid| ThreadId { pid: pid, tid: Id::Any } }
+			  | preceded!(tag!("p"),
+						  separated_pair!(parse_thread_id_element,
+										  tag!("."),
+										  parse_thread_id_element)) => {
+				  |pair: (Id, Id)| ThreadId { pid: pair.0, tid: pair.1 }
+			  }
+			  | preceded!(tag!("p"), parse_thread_id_element) => {
+				  |id: Id| ThreadId { pid: id, tid: Id::All }
+			  }));
 
 // Parse the T packet.
 named!(parse_ping_thread<&[u8], ThreadId>,

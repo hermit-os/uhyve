@@ -16,10 +16,20 @@ pub enum Error {
 	UnhandledExitReason,
 	InvalidMacAddress,
 	ParseIntError,
+	#[cfg(target_os = "macos")]
+	Hypervisor(xhypervisor::Error),
 }
 
+#[cfg(target_os = "linux")]
 pub fn to_error<T>(err: kvm_ioctls::Error) -> Result<T> {
 	Err(Error::OsError(err.errno()))
+}
+
+#[cfg(target_os = "macos")]
+impl From<xhypervisor::Error> for Error {
+	fn from(err: xhypervisor::Error) -> Self {
+		Error::Hypervisor(err)
+	}
 }
 
 impl fmt::Display for Error {
@@ -48,6 +58,8 @@ impl fmt::Display for Error {
 			Error::UnhandledExitReason => write!(f, "Unhandled exit reason"),
 			Error::InvalidMacAddress => write!(f, "Invalid MAC address"),
 			Error::ParseIntError => write!(f, "Unable to parse string"),
+			#[cfg(target_os = "macos")]
+			Error::Hypervisor(ref err) => write!(f, "The hypervisor has failed: {:?}", err),
 		}
 	}
 }

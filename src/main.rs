@@ -1,3 +1,6 @@
+#![allow(unused_imports)]
+#![allow(unused_macros)]
+
 extern crate aligned_alloc;
 extern crate elf;
 extern crate libc;
@@ -7,6 +10,7 @@ extern crate nix;
 extern crate bitflags;
 #[macro_use]
 extern crate clap;
+#[cfg(target_os = "linux")]
 extern crate tun_tap;
 #[macro_use]
 extern crate lazy_static;
@@ -14,8 +18,12 @@ extern crate lazy_static;
 extern crate kvm_bindings;
 #[cfg(target_os = "linux")]
 extern crate kvm_ioctls;
+#[cfg(target_os = "linux")]
 extern crate vmm_sys_util;
+#[cfg(target_os = "macos")]
+extern crate xhypervisor;
 
+extern crate burst;
 #[macro_use]
 extern crate log;
 extern crate env_logger;
@@ -36,12 +44,17 @@ mod macros;
 
 pub mod arch;
 pub mod consts;
+#[cfg(target_os = "linux")]
 mod debug_manager;
 pub mod error;
+#[cfg(target_os = "linux")]
 mod gdb_parser;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
 mod paging;
+#[cfg(target_os = "linux")]
 mod shared_queue;
 pub mod utils;
 mod vm;
