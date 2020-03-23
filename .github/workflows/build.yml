@@ -16,9 +16,13 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest,macOS-latest]
         rust: [nightly]
         include:
+          - os: macOS-latest
+            rust: 'nightly'
+            components: 'rustfmt, clippy, rust-src'
+            targets: 'x86_64-apple-darwin'
           - os: ubuntu-latest
             rust: 'nightly'
             components: 'rustfmt, clippy'
