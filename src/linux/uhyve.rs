@@ -215,31 +215,6 @@ impl Uhyve {
 		vm.enable_cap(&cap)
 			.expect("Unable to enable x2apic support");
 
-		// initialize IOAPIC with HermitCore's default settings
-		let mut irqchip = kvm_irqchip::default();
-		irqchip.chip_id = KVM_IRQCHIP_IOAPIC;
-		vm.get_irqchip(&mut irqchip)
-			.expect("Unable to determine IOAPIC");
-		unsafe {
-			for (i, redir) in irqchip.chip.ioapic.redirtbl.iter_mut().enumerate() {
-				redir.fields.vector = (0x20 + i).try_into().unwrap();
-				redir.fields.set_delivery_mode(0);
-				redir.fields.set_dest_mode(0);
-				redir.fields.set_delivery_status(0);
-				redir.fields.set_polarity(0);
-				redir.fields.set_remote_irr(0);
-				redir.fields.set_trig_mode(0);
-				if i != 2 {
-					redir.fields.set_mask(0);
-				} else {
-					redir.fields.set_mask(1);
-				}
-				redir.fields.dest_id = 0;
-			}
-		}
-		vm.set_irqchip(&irqchip)
-			.expect("Unable to configure IOAPIC");
-
 		// currently, we support only system, which provides the
 		// cpu feature TSC_DEADLINE
 		let mut cap: kvm_enable_cap = Default::default();
