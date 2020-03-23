@@ -19,10 +19,6 @@ const CPUID_ENABLE_MSR: u32 = 1 << 5;
 const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 const PCI_CONFIG_DATA_PORT: u16 = 0xCFC;
 const PCI_CONFIG_ADDRESS_PORT: u16 = 0xCF8;
-const EFER_LME: u64 = 1 << 8; /* Long mode enable */
-const EFER_LMA: u64 = 1 << 10; /* Long mode active (read-only) */
-const EFER_NXE: u64 = 1 << 11; /* PTE No-Execute bit enable */
-
 
 pub struct UhyveCPU {
 	id: u32,
@@ -100,6 +96,17 @@ impl UhyveCPU {
 		kvm_cpuid_entries[i].ebx = id_reg_values[1];
 		kvm_cpuid_entries[i].ecx = id_reg_values[2];
 		kvm_cpuid_entries[i].edx = id_reg_values[3];
+
+		let i = kvm_cpuid_entries
+			.iter()
+			.position(|&r| r.function == 0x80000004)
+			.unwrap();
+
+		// create own processor string (third part)
+		kvm_cpuid_entries[i].eax = 0;
+		kvm_cpuid_entries[i].ebx = 0;
+		kvm_cpuid_entries[i].ecx = 0;
+		kvm_cpuid_entries[i].edx = 0;
 
 		let i = kvm_cpuid_entries
 			.iter()
