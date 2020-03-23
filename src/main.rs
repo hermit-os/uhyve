@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 #![allow(unused_macros)]
 
 extern crate aligned_alloc;
@@ -30,9 +29,12 @@ extern crate env_logger;
 extern crate raw_cpuid;
 extern crate x86;
 
+#[cfg(target_os = "linux")]
 #[macro_use]
 extern crate nom;
+#[cfg(target_os = "linux")]
 extern crate strum;
+#[cfg(target_os = "linux")]
 #[macro_use]
 extern crate strum_macros;
 extern crate byteorder;
