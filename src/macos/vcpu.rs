@@ -550,7 +550,7 @@ impl VirtualCPU for UhyveCPU {
 
 		debug!("Run vCPU {}", self.id);
 		loop {
-			if self.extint_pending == true {
+			/*if self.extint_pending == true {
 				let irq_info = self.vcpu.read_vmcs(VMCS_CTRL_VMENTRY_IRQ_INFO)?;
 				let flags = self.vcpu.read_register(&x86Reg::RFLAGS)?;
 				let ignore_irq = self.vcpu.read_vmcs(VMCS_GUEST_IGNORE_IRQ)?;
@@ -565,7 +565,7 @@ impl VirtualCPU for UhyveCPU {
 					self.vcpu.write_vmcs(VMCS_CTRL_VMENTRY_IRQ_INFO, info)?;
 					self.extint_pending = false;
 				}
-			}
+			}*/
 
 			self.vcpu.run()?;
 
