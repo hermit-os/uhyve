@@ -489,7 +489,8 @@ impl VirtualCPU for UhyveCPU {
 		self.setup_capabilities()?;
 		self.setup_msr()?;
 
-		self.vcpu.write_vmcs(VMCS_CTRL_EXC_BITMAP, (1 << 3) | (1 << 1))?;
+		self.vcpu
+			.write_vmcs(VMCS_CTRL_EXC_BITMAP, (1 << 3) | (1 << 1))?;
 		self.vcpu.write_vmcs(VMCS_CTRL_TPR_THRESHOLD, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_EIP, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_ESP, 0)?;

@@ -25,7 +25,11 @@ pub struct Uhyve {
 }
 
 impl Uhyve {
-	pub fn new(kernel_path: String, specs: &VmParameter, dbg: Option<DebugManager>) -> Result<Uhyve> {
+	pub fn new(
+		kernel_path: String,
+		specs: &VmParameter,
+		dbg: Option<DebugManager>,
+	) -> Result<Uhyve> {
 		let mem = unsafe {
 			libc::mmap(
 				std::ptr::null_mut(),

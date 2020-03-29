@@ -103,7 +103,10 @@ impl UhyveCPU {
 		single_step: bool,
 		hwbr: Option<&x86::HWBreakpoints>, /*&HashMap<usize, Breakpoint>*/
 	) -> Result<(), error::Error> {
-		debug!("xhypervisor: Enable guest debug. single_step:{}", single_step);
+		debug!(
+			"xhypervisor: Enable guest debug. single_step:{}",
+			single_step
+		);
 
 		debug!("Setting guestdbg");
 		let vcpu = self.get_vcpu();
@@ -116,10 +119,14 @@ impl UhyveCPU {
 		vcpu.write_register(&x86Reg::RFLAGS, rflags).unwrap();
 
 		if let Some(hwbr) = hwbr {
-			vcpu.write_register(&x86Reg::DR0,hwbr.get_addr(0).unwrap()).unwrap();
-			vcpu.write_register(&x86Reg::DR1,hwbr.get_addr(1).unwrap()).unwrap();
-			vcpu.write_register(&x86Reg::DR2,hwbr.get_addr(2).unwrap()).unwrap();
-			vcpu.write_register(&x86Reg::DR3,hwbr.get_addr(3).unwrap()).unwrap();
+			vcpu.write_register(&x86Reg::DR0, hwbr.get_addr(0).unwrap())
+				.unwrap();
+			vcpu.write_register(&x86Reg::DR1, hwbr.get_addr(1).unwrap())
+				.unwrap();
+			vcpu.write_register(&x86Reg::DR2, hwbr.get_addr(2).unwrap())
+				.unwrap();
+			vcpu.write_register(&x86Reg::DR3, hwbr.get_addr(3).unwrap())
+				.unwrap();
 			vcpu.write_register(&x86Reg::DR7, hwbr.get_dr7()).unwrap();
 		}
 
@@ -204,10 +211,7 @@ pub struct CmdHandler<'a> {
 }
 
 impl<'a> CmdHandler<'a> {
-	pub fn new(
-		cpu: &'a mut UhyveCPU,
-		state: &'a RefCell<State>,
-	) -> CmdHandler<'a> {
+	pub fn new(cpu: &'a mut UhyveCPU, state: &'a RefCell<State>) -> CmdHandler<'a> {
 		CmdHandler {
 			resume: RefCell::new(None),
 			current_cpu: RefCell::new(cpu),
@@ -626,7 +630,7 @@ impl Registers {
 	}
 
 	/// Saves a register struct (only where non-None values are) into xhypervisor.
-	pub fn to_xhypervisor(&self, vcpu: &vCPU)  {
+	pub fn to_xhypervisor(&self, vcpu: &vCPU) {
 		if let Some(r15) = self.r15 {
 			vcpu.write_register(&x86Reg::R15, r15).unwrap();
 		}
