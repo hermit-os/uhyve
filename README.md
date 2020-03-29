@@ -10,8 +10,41 @@ uhyve is small hypervisor to boot the library operating systems [RustyHermit](ht
 
 ## Requirements
 
-It is required to install the **nightly version** of the Rust toolchain on your Linux system.
+To build uhyve, it is required to install the **nightly version** of the Rust toolchain on your system.
 Please visit the [Rust website](https://www.rust-lang.org/) and follow the installation instructions.
+
+Currently, uhyve is mainly developed for Linux.
+The current version works also on macOS, but it has not been tested extensively and does not support all features of the Linux version.
+
+### Linux
+
+On Linux, uhyve depends on the virtualization solution [KVM](https://www.linux-kvm.org/page/Main_Page) (Kernel-based Virtual Machine).
+Please check, if the processor supports hardware virtualization like Intel VT-x (code name Vanderpool) and AMD-V (code name Pacifica).
+To check if your system supports one of these virtualization techniques, you can use the following command.
+The result greater than `0` shows that your processor supports hardware virtualization.
+
+```sh
+egrep -c '(vmx|svm)' /proc/cpuinfo
+```
+
+In addition, make sure that virtualization is enabled in the BIOS.
+
+### macOS
+Apple's *Command Line Tools* must be installed.
+The Command Line Tool package gives macOS terminal users many commonly used tools and compilers, that are usually found in default Linux installations.
+Following terminal command installs these tools without Apple's IDE Xcode:
+
+```sh
+$ xcode-select --install
+```
+
+Additionally, the included hypervisor bases on the [Hypervisor Framework](https://developer.apple.com/documentation/hypervisor) depending on OS X Yosemite (10.10) or newer.
+To verify if your processor is able to support this framework, run and expect the following in your Terminal:
+
+```sh
+$ sysctl kern.hv_support
+kern.hv_support: 1
+```
 
 ## Building
 The final step is to create a copy of the repository and to build the kernel:
@@ -26,10 +59,12 @@ $ # for a bare-metal target.
 $ cargo build
 ```
 
+## Running RustyHermit apps within uhyve
+
 Use the hypervisor to start the unikernel.
 
 ```sh
-$ ./uhyve /path_to_the_unikernel/hello_world
+$ uhyve /path_to_the_unikernel/hello_world
 ```
 
 There are two environment variables to modify the virtual machine:
@@ -47,6 +82,21 @@ Setting the environment variable `HERMIT_VERBOSE` to `1` makes the hypervisor pr
 ```bash
 $ HERMIT_VERBOSE=1 uhyve /path_to_the_unikernel/hello_world
 ```
+
+## Debugging of RustyHermit apps (unstable)
+
+Basic support of (single-core) applications is already integrated into uhyve.
+By specifying variable `HERMIT_GDB_PORT=port`, uhyve is working as gdbserver and is waiting on port `port` for a connection to a gdb.
+For instance, with the following command uhyve is waiting on port `6677` for a connection.
+
+```bash
+HERMIT_GDB_PORT=6677 uhyve /path_to_the_unikernel/hello_world
+```
+
+The repository [rusty-hermit](https://github.com/hermitcore/rusty-hermit) provides [example configuration files](https://github.com/hermitcore/rusty-hermit/tree/master/.vscode) to debug a RustyHermit application with Visual Code.
+In principle, if the IDE supports remote debugging with gdb, every IDE should be able to debug RustyHermit applications.
+
+![Debugging RustyHermit apps](img/vs_code.png)
 
 ## Licensing
 
