@@ -16,7 +16,6 @@ use std::time::SystemTime;
 use std::{fmt, mem, slice};
 
 use consts::*;
-#[cfg(target_os = "linux")]
 use debug_manager::DebugManager;
 #[cfg(target_os = "linux")]
 pub use linux::uhyve::*;
@@ -705,7 +704,7 @@ pub trait Vm {
 	}
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(not(target_os = "windows"))]
 pub fn create_vm(path: String, specs: &super::vm::VmParameter) -> Result<Uhyve> {
 	// If we are given a port, create new DebugManager.
 	let gdb = specs.gdbport.map(|port| DebugManager::new(port).unwrap());
@@ -715,7 +714,7 @@ pub fn create_vm(path: String, specs: &super::vm::VmParameter) -> Result<Uhyve> 
 	Ok(vm)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
 pub fn create_vm(path: String, specs: &super::vm::VmParameter) -> Result<Uhyve> {
 	let vm = Uhyve::new(path.clone(), &specs)?;
 

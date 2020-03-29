@@ -2,6 +2,7 @@
 
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use consts::*;
+use debug_manager::DebugManager;
 use error::*;
 use macos::ioapic::IoApic;
 use paging::*;
@@ -70,6 +71,7 @@ pub struct UhyveCPU {
 	vm_start: usize,
 	apic_base: u64,
 	ioapic: Arc<Mutex<IoApic>>,
+	pub dbg: Option<Arc<Mutex<DebugManager>>>,
 }
 
 impl UhyveCPU {
@@ -78,6 +80,7 @@ impl UhyveCPU {
 		kernel_path: String,
 		vm_start: usize,
 		ioapic: Arc<Mutex<IoApic>>,
+		dbg: Option<Arc<Mutex<DebugManager>>>,
 	) -> UhyveCPU {
 		UhyveCPU {
 			id: id,
@@ -87,6 +90,7 @@ impl UhyveCPU {
 			vm_start: vm_start,
 			apic_base: APIC_DEFAULT_BASE,
 			ioapic: ioapic,
+			dbg: dbg,
 		}
 	}
 
@@ -242,9 +246,6 @@ impl UhyveCPU {
 			"VM-Exit Controls 0x{:x}",
 			self.vcpu.read_vmcs(VMCS_CTRL_VMEXIT_CONTROLS)?
 		);
-
-		//let io_bitmaps = self.vcpu.read_vmcs(VMCS_CTRL_IO_BITMAP_A)?;
-		//info!("io_bitmaps 0x{:x}", io_bitmaps);
 
 		Ok(())
 	}
@@ -477,6 +478,10 @@ impl UhyveCPU {
 
 		Ok(())
 	}
+
+	pub fn get_vcpu(&self) -> &vCPU {
+		&self.vcpu
+	}
 }
 
 impl VirtualCPU for UhyveCPU {
@@ -484,7 +489,7 @@ impl VirtualCPU for UhyveCPU {
 		self.setup_capabilities()?;
 		self.setup_msr()?;
 
-		self.vcpu.write_vmcs(VMCS_CTRL_EXC_BITMAP, 0)?;
+		self.vcpu.write_vmcs(VMCS_CTRL_EXC_BITMAP, (1 << 3) | (1 << 1))?;
 		self.vcpu.write_vmcs(VMCS_CTRL_TPR_THRESHOLD, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_EIP, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_ESP, 0)?;
@@ -548,6 +553,11 @@ impl VirtualCPU for UhyveCPU {
 	fn run(&mut self) -> Result<()> {
 		//self.print_registers();
 
+		// Pause first CPU before first execution, so we have time to attach debugger
+		if self.id == 0 {
+			self.gdb_handle_exception(false);
+		}
+
 		debug!("Run vCPU {}", self.id);
 		loop {
 			/*if self.extint_pending == true {
@@ -574,10 +584,20 @@ impl VirtualCPU for UhyveCPU {
 
 			match reason {
 				vmx_exit::VMX_REASON_EXC_NMI => {
-					debug!("Receive exception or non-maskable interrupt!");
-					//self.print_registers();
+					let irq_info = self.vcpu.read_vmcs(VMCS_RO_VMEXIT_IRQ_INFO)?;
+					let irq_vec = irq_info & 0xFF;
+					//let irq_type = (irq_info >> 8) & 0xFF;
+					let valid = (irq_info & (1 << 31)) != 0;
+					let trap_or_breakpoint = (irq_vec == 3) || (irq_vec == 1);
 
-					return Err(Error::InternalError);
+					if valid && trap_or_breakpoint {
+						debug!("Handle breakpoint exception");
+						self.gdb_handle_exception(true);
+					} else {
+						debug!("Receive exception or non-maskable interrupt {}!", irq_vec);
+						//self.print_registers();
+						return Err(Error::InternalError);
+					}
 				}
 				vmx_exit::VMX_REASON_CPUID => {
 					self.emulate_cpuid(rip)?;

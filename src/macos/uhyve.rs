@@ -1,3 +1,4 @@
+use debug_manager::DebugManager;
 use error::*;
 use libc;
 use libc::c_void;
@@ -20,10 +21,11 @@ pub struct Uhyve {
 	boot_info: *const BootInfo,
 	ioapic: Arc<Mutex<IoApic>>,
 	verbose: bool,
+	dbg: Option<Arc<Mutex<DebugManager>>>,
 }
 
 impl Uhyve {
-	pub fn new(kernel_path: String, specs: &VmParameter) -> Result<Uhyve> {
+	pub fn new(kernel_path: String, specs: &VmParameter, dbg: Option<DebugManager>) -> Result<Uhyve> {
 		let mem = unsafe {
 			libc::mmap(
 				std::ptr::null_mut(),
@@ -63,6 +65,7 @@ impl Uhyve {
 			boot_info: ptr::null(),
 			ioapic: Arc::new(Mutex::new(IoApic::new())),
 			verbose: specs.verbose,
+			dbg: dbg.map(|g| Arc::new(Mutex::new(g))),
 		};
 
 		hyve.init_guest_mem();
@@ -102,6 +105,7 @@ impl Vm for Uhyve {
 			self.path.clone(),
 			self.guest_mem as usize,
 			self.ioapic.clone(),
+			self.dbg.as_ref().cloned(),
 		)))
 	}
 

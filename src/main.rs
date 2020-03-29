@@ -29,12 +29,9 @@ extern crate env_logger;
 extern crate raw_cpuid;
 extern crate x86;
 
-#[cfg(target_os = "linux")]
 #[macro_use]
 extern crate nom;
-#[cfg(target_os = "linux")]
 extern crate strum;
-#[cfg(target_os = "linux")]
 #[macro_use]
 extern crate strum_macros;
 extern crate byteorder;
@@ -46,10 +43,8 @@ mod macros;
 
 pub mod arch;
 pub mod consts;
-#[cfg(target_os = "linux")]
 mod debug_manager;
 pub mod error;
-#[cfg(target_os = "linux")]
 mod gdb_parser;
 #[cfg(target_os = "linux")]
 mod linux;

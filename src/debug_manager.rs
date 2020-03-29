@@ -28,6 +28,8 @@ use std::net::TcpStream;
 
 #[cfg(target_os = "linux")]
 use linux::gdb;
+#[cfg(target_os = "macos")]
+use macos::gdb;
 
 pub type State = gdb::State;
 
