@@ -17,10 +17,9 @@ use x86::Ring;
 use xhypervisor;
 use xhypervisor::consts::vmcs::*;
 use xhypervisor::consts::vmx_cap::{
-	CPU_BASED2_APIC_REG_VIRT, CPU_BASED2_RDTSCP, CPU_BASED_MONITOR,
-	CPU_BASED_MSR_BITMAPS, CPU_BASED_MWAIT, CPU_BASED_SECONDARY_CTLS, CPU_BASED_TPR_SHADOW,
-	CPU_BASED_TSC_OFFSET, PIN_BASED_INTR, PIN_BASED_NMI, PIN_BASED_VIRTUAL_NMI,
-	VMENTRY_GUEST_IA32E, VMENTRY_LOAD_EFER,
+	CPU_BASED2_APIC_REG_VIRT, CPU_BASED2_RDTSCP, CPU_BASED_MONITOR, CPU_BASED_MSR_BITMAPS,
+	CPU_BASED_MWAIT, CPU_BASED_SECONDARY_CTLS, CPU_BASED_TPR_SHADOW, CPU_BASED_TSC_OFFSET,
+	PIN_BASED_INTR, PIN_BASED_NMI, PIN_BASED_VIRTUAL_NMI, VMENTRY_GUEST_IA32E, VMENTRY_LOAD_EFER,
 };
 use xhypervisor::consts::vmx_exit;
 use xhypervisor::{read_vmx_cap, vCPU, x86Reg};
@@ -48,10 +47,7 @@ lazy_static! {
 		};
 	static ref CAP_PROCBASED2: u64 = {
 		let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::PROCBASED2).unwrap() };
-		cap2ctrl(
-			cap,
-			CPU_BASED2_RDTSCP | CPU_BASED2_APIC_REG_VIRT,
-		)
+		cap2ctrl(cap, CPU_BASED2_RDTSCP | CPU_BASED2_APIC_REG_VIRT)
 	};
 	static ref CAP_ENTRY: u64 = {
 		let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::ENTRY).unwrap() };
