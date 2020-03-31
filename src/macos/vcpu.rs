@@ -17,7 +17,7 @@ use x86::Ring;
 use xhypervisor;
 use xhypervisor::consts::vmcs::*;
 use xhypervisor::consts::vmx_cap::{
-	CPU_BASED2_APIC_REG_VIRT, CPU_BASED2_RDRAND, CPU_BASED2_RDTSCP, CPU_BASED_MONITOR,
+	CPU_BASED2_APIC_REG_VIRT, CPU_BASED2_RDTSCP, CPU_BASED_MONITOR,
 	CPU_BASED_MSR_BITMAPS, CPU_BASED_MWAIT, CPU_BASED_SECONDARY_CTLS, CPU_BASED_TPR_SHADOW,
 	CPU_BASED_TSC_OFFSET, PIN_BASED_INTR, PIN_BASED_NMI, PIN_BASED_VIRTUAL_NMI,
 	VMENTRY_GUEST_IA32E, VMENTRY_LOAD_EFER,
@@ -50,7 +50,7 @@ lazy_static! {
 		let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::PROCBASED2).unwrap() };
 		cap2ctrl(
 			cap,
-			CPU_BASED2_RDTSCP | CPU_BASED2_RDRAND | CPU_BASED2_APIC_REG_VIRT,
+			CPU_BASED2_RDTSCP | CPU_BASED2_APIC_REG_VIRT,
 		)
 	};
 	static ref CAP_ENTRY: u64 = {
@@ -633,6 +633,9 @@ impl VirtualCPU for UhyveCPU {
 					if gpa >= IOAPIC_BASE && gpa < IOAPIC_BASE + IOAPIC_SIZE {
 						self.emulate_ioapic(rip, gpa)?;
 					}
+				}
+				vmx_exit::VMX_REASON_RDRAND => {
+					debug!("Exit reason {} - VMX_REASON_RDRAND", reason);
 				}
 				vmx_exit::VMX_REASON_IO => {
 					let qualification = self.vcpu.read_vmcs(VMCS_RO_EXIT_QUALIFIC)?;
