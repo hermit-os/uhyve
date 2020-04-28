@@ -10,11 +10,11 @@ uhyve is small hypervisor to boot the library operating systems [RustyHermit](ht
 
 ## Installation
 
-To build uhyve, it is required to install the **nightly version** of the Rust toolchain on your system.
+An installation of the Rust toolchain is required.
 Please visit the [Rust website](https://www.rust-lang.org/) and follow the installation instructions.
+The project can then be installed with the following command:
 
 ```sh
-rustup default nightly #change the Rust Compiler Toolchain to 'nightly'
 cargo install uhyve # Install latest published version from crates.io
 ```
 
