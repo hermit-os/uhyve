@@ -695,7 +695,15 @@ pub trait Vm {
 							debug!("detect a cpu fequency of {} Mhz", freq);
 							write_volatile(&mut (*boot_info).cpu_freq, freq as u32);
 						}
-						None => info!("Unable to determine processor frequency!"),
+						None => {
+							// use cpu brand string as source
+							let freq = detect_freq_from_cpu_brand_string(&cpuid);
+							write_volatile(&mut (*boot_info).cpu_freq, freq as u32);
+						}
+					}
+
+					if (*boot_info).cpu_freq == 0 {
+						warn!("Unable to determine processor frequency");
 					}
 				}
 
