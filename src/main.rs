@@ -67,7 +67,7 @@ use std::thread;
 use vm::*;
 
 lazy_static! {
-	static ref MAC_ADDRESS: Mutex<Option<String>> = { Mutex::new(None) };
+	static ref MAC_ADDRESS: Mutex<Option<String>> = Mutex::new(None);
 }
 
 fn main() {
