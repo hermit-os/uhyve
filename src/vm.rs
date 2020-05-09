@@ -678,7 +678,9 @@ pub trait Vm {
 
 					let cpuid = CpuId::new();
 					let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
+						debug!("Failed to detect from cpuid");
 						detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
+							debug!("Failed to detect from hypervisor_info");
 							detect_freq_from_cpu_brand_string(&cpuid).unwrap_or(0)
 						})
 					});
@@ -716,8 +718,11 @@ fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
 }
 
 fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<u32, ()> {
+	debug!("Trying to detect CPU frequency via cpuid hypervisor info");
 	let hypervisor_info = cpuid.get_hypervisor_info().ok_or(())?;
+	debug!("cpuid detected hypervisor: {:?}", hypervisor_info.identify());
 	let freq = hypervisor_info.tsc_frequency().ok_or(())?;
+	debug!("cpuid detected frequency of {} Hz from hypervisor", freq);
 	let mhz: u32 = freq / 1000000u32;
 	if mhz > 0 {
 		Ok(mhz)
