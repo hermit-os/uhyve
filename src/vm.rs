@@ -677,31 +677,13 @@ pub trait Vm {
 					}
 
 					let cpuid = CpuId::new();
-
-					match cpuid.get_processor_frequency_info() {
-						Some(freqinfo) => {
-							let freq = {
-								let f = freqinfo.processor_base_frequency();
-
-								// do we have a valid frequency?
-								if f == 0 {
-									// use cpu brand string as source
-									detect_freq_from_cpu_brand_string(&cpuid)
-								} else {
-									f
-								}
-							};
-
-							debug!("detect a cpu fequency of {} Mhz", freq);
-							write_volatile(&mut (*boot_info).cpu_freq, freq as u32);
-						}
-						None => {
-							// use cpu brand string as source
-							let freq = detect_freq_from_cpu_brand_string(&cpuid);
-							write_volatile(&mut (*boot_info).cpu_freq, freq as u32);
-						}
-					}
-
+					let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
+						detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
+							detect_freq_from_cpu_brand_string(&cpuid).unwrap_or(0)
+						})
+					});
+					debug!("detected a cpu frequency of {} Mhz", mhz);
+					write_volatile(&mut (*boot_info).cpu_freq, mhz);
 					if (*boot_info).cpu_freq == 0 {
 						warn!("Unable to determine processor frequency");
 					}
@@ -723,34 +705,47 @@ pub trait Vm {
 	}
 }
 
-fn detect_freq_from_cpu_brand_string(cpuid: &CpuId) -> u16 {
-	let extended_function_info = cpuid
-		.get_extended_function_info()
-		.expect("CPUID Extended Function Info not available!");
-	let brand_string = extended_function_info
-		.processor_brand_string()
-		.expect("CPUID Brand String not available!");
+fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
+	let freq_info = cpuid.get_processor_frequency_info().ok_or(())?;
+	let mhz = freq_info.processor_base_frequency() as u32;
+	if mhz > 0 {
+		Ok(mhz)
+	} else {
+		Err(())
+	}
+}
 
-	match brand_string.find("GHz") {
-		Some(ghz_find) => {
-			let index = ghz_find - 4;
-			let thousand_char = brand_string.chars().nth(index).unwrap();
-			let decimal_char = brand_string.chars().nth(index + 1).unwrap();
-			let hundred_char = brand_string.chars().nth(index + 2).unwrap();
-			let ten_char = brand_string.chars().nth(index + 3).unwrap();
+fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<u32, ()> {
+	let hypervisor_info = cpuid.get_hypervisor_info().ok_or(())?;
+	let freq = hypervisor_info.tsc_frequency().ok_or(())?;
+	let mhz: u32 = freq / 1000000u32;
+	if mhz > 0 {
+		Ok(mhz)
+	} else {
+		Err(())
+	}
+}
 
-			if let (Some(thousand), '.', Some(hundred), Some(ten)) = (
-				thousand_char.to_digit(10),
-				decimal_char,
-				hundred_char.to_digit(10),
-				ten_char.to_digit(10),
-			) {
-				(thousand * 1000 + hundred * 100 + ten * 10) as u16
-			} else {
-				0
-			}
-		}
-		None => 0,
+fn detect_freq_from_cpu_brand_string(cpuid: &CpuId) -> std::result::Result<u32, ()> {
+	let extended_function_info = cpuid.get_extended_function_info().ok_or(())?;
+	let brand_string = extended_function_info.processor_brand_string().ok_or(())?;
+
+	let ghz_find = brand_string.find("GHz").ok_or(())?;
+	let index = ghz_find - 4;
+	let thousand_char = brand_string.chars().nth(index).unwrap();
+	let decimal_char = brand_string.chars().nth(index + 1).unwrap();
+	let hundred_char = brand_string.chars().nth(index + 2).unwrap();
+	let ten_char = brand_string.chars().nth(index + 3).unwrap();
+
+	if let (Some(thousand), '.', Some(hundred), Some(ten)) = (
+		thousand_char.to_digit(10),
+		decimal_char,
+		hundred_char.to_digit(10),
+		ten_char.to_digit(10),
+	) {
+		Ok((thousand * 1000 + hundred * 100 + ten * 10) as u32)
+	} else {
+		Err(())
 	}
 }
 
