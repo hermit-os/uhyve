@@ -27,6 +27,7 @@ extern crate burst;
 extern crate log;
 extern crate env_logger;
 extern crate raw_cpuid;
+extern crate regex;
 extern crate x86;
 
 #[macro_use]
