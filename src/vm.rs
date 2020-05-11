@@ -6,11 +6,13 @@ use libc;
 use memmap::Mmap;
 use nix::errno::errno;
 use raw_cpuid::CpuId;
+use regex::Regex;
 use std;
 use std::fs::File;
 use std::io::Cursor;
 use std::io::Read;
 use std::net::Ipv4Addr;
+use std::process::Command;
 use std::ptr::write_volatile;
 use std::time::SystemTime;
 use std::{fmt, mem, slice};
@@ -681,7 +683,10 @@ pub trait Vm {
 						debug!("Failed to detect from cpuid");
 						detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
 							debug!("Failed to detect from hypervisor_info");
-							detect_freq_from_cpu_brand_string(&cpuid).unwrap_or(0)
+							detect_freq_from_cpu_brand_string(&cpuid).unwrap_or_else(|_| {
+								debug!("Failed to detect from brand string");
+								get_cpu_frequency_from_os().unwrap_or(0)
+							})
 						})
 					});
 					debug!("detected a cpu frequency of {} Mhz", mhz);
@@ -720,7 +725,10 @@ fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
 fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<u32, ()> {
 	debug!("Trying to detect CPU frequency via cpuid hypervisor info");
 	let hypervisor_info = cpuid.get_hypervisor_info().ok_or(())?;
-	debug!("cpuid detected hypervisor: {:?}", hypervisor_info.identify());
+	debug!(
+		"cpuid detected hypervisor: {:?}",
+		hypervisor_info.identify()
+	);
 	let freq = hypervisor_info.tsc_frequency().ok_or(())?;
 	debug!("cpuid detected frequency of {} Hz from hypervisor", freq);
 	let mhz: u32 = freq / 1000000u32;
@@ -751,6 +759,64 @@ fn detect_freq_from_cpu_brand_string(cpuid: &CpuId) -> std::result::Result<u32, 
 		Ok((thousand * 1000 + hundred * 100 + ten * 10) as u32)
 	} else {
 		Err(())
+	}
+}
+#[cfg(target_os = "linux")]
+fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
+	let res_output = Command::new("lscpu").output();
+	if res_output.is_err() {
+		return Err(());
+	}
+	let output = res_output.unwrap();
+	if !output.status.success() {
+		return Err(());
+	}
+	let lscpu_res = std::string::String::from_utf8(output.stdout);
+	let regex_res = Regex::new(r"(?im:^CPU MHz:\s+(?P<frequency>\d+))");
+	if lscpu_res.is_err() || regex_res.is_err() {
+		return Err(());
+	}
+	let lscpu_str = lscpu_res.unwrap();
+	let re = regex_res.unwrap();
+	let freq_str_opt = re
+		.captures(&lscpu_str)
+		.and_then(|cap| cap.name("frequency"));
+	match freq_str_opt {
+		Some(freq_match) => {
+			let freq_res = freq_match.as_str().parse::<u32>();
+			if freq_res.is_err() {
+				return Err(());
+			}
+			let freq = freq_res.unwrap();
+			// Sanity check - ToDo: Use a named constant for upper limit of frequency
+			if freq > 0 && freq < 10000 {
+				Ok(freq)
+			} else {
+				Err(())
+			}
+		}
+		None => Err(()),
+	}
+}
+
+#[cfg(not(target_os = "linux"))]
+fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
+	//Not implemented yet for other systems
+	Err(())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[cfg(target_os = "linux")]
+	#[test]
+	fn test_get_cpu_frequency_from_os() {
+		let freq_res = get_cpu_frequency_from_os();
+		assert!(freq_res.is_ok());
+		let freq = freq_res.unwrap();
+		assert!(freq > 0);
+		assert!(freq < 10000); //More than 10Ghz is probably wrong
 	}
 }
 
