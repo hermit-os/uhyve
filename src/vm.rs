@@ -761,6 +761,7 @@ fn detect_freq_from_cpu_brand_string(cpuid: &CpuId) -> std::result::Result<u32, 
 		Err(())
 	}
 }
+
 #[cfg(target_os = "linux")]
 fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
 	let res_output = Command::new("lscpu").output();
