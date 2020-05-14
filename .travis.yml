@@ -1,0 +1,34 @@
+language: rust
+rust:
+  - nightly
+os: linux
+dist: bionic
+before_install:
+  - sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils
+  - sudo adduser $USER libvirt
+  - sudo adduser $USER kvm
+  - cargo install cargo-download
+  - rustup component add rust-src
+  - rustup component add llvm-tools-preview
+install:
+  - git clone https://github.com/hermitcore/rusty-hermit.git
+jobs:
+  include:
+    - stage: Test
+      script:
+        - cargo build
+        - cd rusty-hermit
+        - cargo build -Z build-std=std,core,alloc,panic_abort --target x86_64-unknown-hermit
+        - cd ..
+        # used to get terminal with new groups permissions while preserving own user
+        - sudo -E sudo -u $USER -E bash -c "HERMIT_VERBOSE=1 target/debug/uhyve rusty-hermit/target/x86_64-unknown-hermit/debug/rusty_demo"
+        - sudo -E sudo -u $USER -E bash -c "HERMIT_VERBOSE=1 HERMIT_CPUS=2 target/debug/uhyve rusty-hermit/target/x86_64-unknown-hermit/debug/rusty_demo"
+
+    -
+      script:
+        - cargo build --release
+        - cd rusty-hermit
+        - cargo build -Z build-std=std,core,alloc,panic_abort --target x86_64-unknown-hermit --release
+        - cd ..
+        - sudo -E sudo -u $USER -E bash -c "HERMIT_VERBOSE=1 target/release/uhyve rusty-hermit/target/x86_64-unknown-hermit/release/rusty_demo"
+        - sudo -E sudo -u $USER -E bash -c "HERMIT_VERBOSE=1 HERMIT_CPUS=2 target/release/uhyve rusty-hermit/target/x86_64-unknown-hermit/release/rusty_demo"
