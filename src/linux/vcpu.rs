@@ -299,7 +299,7 @@ impl VirtualCPU for UhyveCPU {
 			match exitreason {
 				VcpuExit::Hlt => {
 					debug!("Halt Exit");
-					break;
+					// currently, we ignore the hlt state
 				}
 				VcpuExit::Shutdown => {
 					self.print_registers();
