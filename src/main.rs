@@ -129,7 +129,7 @@ fn main() {
 				.takes_value(true)
 				.env("HERMIT_NETIF"),
 		)
-		.arg(
+		/*.arg(
 			Arg::with_name("IP")
 				.long("ip")
 				.value_name("IP")
@@ -160,7 +160,7 @@ fn main() {
 				.help("MAC address of the network interface")
 				.takes_value(true)
 				.env("HERMIT_MASK"),
-		)
+		)*/
 		.arg(
 			Arg::with_name("KERNEL")
 				.help("Sets path to the kernel")
@@ -187,10 +187,10 @@ fn main() {
 		.value_of("CPUS")
 		.map(|x| utils::parse_u32(&x).unwrap_or(1))
 		.unwrap_or(1);
-	let ip = matches.value_of("IP").or(None);
-	let gateway = matches.value_of("GATEWAY").or(None);
-	let mask = matches.value_of("MASK").or(None);
-	let nic = matches.value_of("NETIF").or(None);
+	let ip = None; //matches.value_of("IP").or(None);
+	let gateway = None; // matches.value_of("GATEWAY").or(None);
+	let mask = None; //matches.value_of("MASK").or(None);
+	let nic = None; //matches.value_of("NETIF").or(None);
 
 	// determine and store MAC address
 	{
