@@ -21,7 +21,7 @@ bitflags! {
 	/// See Intel Vol. 3A, Tables 4-14 through 4-19
 	pub struct PageTableEntryFlags: usize {
 		/// Set if this entry is valid and points to a page or table.
-		const PRESENT = 1 << 0;
+		const PRESENT = 1;
 
 		/// Set if memory referenced by this entry shall be writable.
 		const WRITABLE = 1 << 1;

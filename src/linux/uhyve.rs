@@ -40,8 +40,7 @@ struct UhyveNetwork {
 impl UhyveNetwork {
 	pub fn new(evtfd: EventFd, name: String, start: usize) -> Self {
 		let iface = Arc::new(
-			Iface::without_packet_info(&name.to_owned(), Mode::Tap)
-				.expect("Unable to creat TUN/TAP device"),
+			Iface::without_packet_info(&name, Mode::Tap).expect("Unable to creat TUN/TAP device"),
 		);
 
 		let iface_writer = Arc::clone(&iface);
@@ -66,7 +65,7 @@ impl UhyveNetwork {
 					let idx = read % UHYVE_QUEUE_SIZE;
 					let len = unsafe { read_volatile(&tx_queue.inner[idx].len) } as usize;
 					let _ = iface_writer
-						.send(&mut tx_queue.inner[idx].data[0..len])
+						.send(&tx_queue.inner[idx].data[0..len])
 						.expect("Send on TUN/TAP device failed!");
 
 					unsafe { write_volatile(&mut tx_queue.read, read + 1) };
@@ -104,11 +103,7 @@ impl UhyveNetwork {
 			}
 		});
 
-		UhyveNetwork {
-			reader: reader,
-			writer: writer,
-			tx: tx.clone(),
-		}
+		UhyveNetwork { reader, writer, tx }
 	}
 }
 
@@ -246,18 +241,18 @@ impl Uhyve {
 		};
 
 		let hyve = Uhyve {
-			vm: vm,
+			vm,
 			entry_point: 0,
-			mem: mem,
+			mem,
 			num_cpus: specs.num_cpus,
 			path: kernel_path,
 			boot_info: ptr::null(),
 			verbose: specs.verbose,
 			ip: ip_addr,
 			gateway: gw_addr,
-			mask: mask,
-			uhyve_device: uhyve_device,
-			virtio_device: virtio_device.clone(),
+			mask,
+			uhyve_device,
+			virtio_device,
 			dbg: dbg.map(|g| Arc::new(Mutex::new(g))),
 		};
 
@@ -393,8 +388,8 @@ impl MmapMemory {
 		}
 
 		MmapMemory {
-			flags: flags,
-			memory_size: memory_size,
+			flags,
+			memory_size,
 			guest_address: guest_address as usize,
 			host_address: host_address as usize,
 		}

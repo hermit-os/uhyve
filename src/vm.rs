@@ -598,7 +598,8 @@ pub trait Vm {
 			Some(ip) => {
 				write_volatile(&mut (*boot_info).hcip, ip.octets());
 			}
-			_ => {}
+
+			None => {}
 		}
 
 		// forward gateway address to kernel
@@ -606,7 +607,8 @@ pub trait Vm {
 			Some(gateway) => {
 				write_volatile(&mut (*boot_info).hcgateway, gateway.octets());
 			}
-			_ => {}
+
+			None => {}
 		}
 
 		// forward mask to kernel
@@ -614,7 +616,8 @@ pub trait Vm {
 			Some(mask) => {
 				write_volatile(&mut (*boot_info).hcmask, mask.octets());
 			}
-			_ => {}
+
+			None => {}
 		}
 
 		let mut pstart: Option<u64> = None;
@@ -675,7 +678,7 @@ pub trait Vm {
 
 					match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
 						Ok(n) => write_volatile(&mut (*boot_info).boot_gtod, n.as_secs() * 1000000),
-						Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+						Err(err) => panic!("SystemTime before UNIX EPOCH! Error: {}", err),
 					}
 
 					let cpuid = CpuId::new();
@@ -826,7 +829,7 @@ pub fn create_vm(path: String, specs: &super::vm::VmParameter) -> Result<Uhyve> 
 	// If we are given a port, create new DebugManager.
 	let gdb = specs.gdbport.map(|port| DebugManager::new(port).unwrap());
 
-	let vm = Uhyve::new(path.clone(), &specs, gdb)?;
+	let vm = Uhyve::new(path, &specs, gdb)?;
 
 	Ok(vm)
 }

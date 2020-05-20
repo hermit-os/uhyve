@@ -105,8 +105,8 @@ impl Virtqueue {
 	pub fn new(mem: *mut u8, queue_size: usize) -> Self {
 		unsafe {
 			let descriptor_table = mem as *mut VringDescriptor;
-			let available_ring_ptr = mem.offset(get_available_ring_offset() as isize);
-			let used_ring_ptr = mem.offset(get_used_ring_offset() as isize);
+			let available_ring_ptr = mem.add(get_available_ring_offset());
+			let used_ring_ptr = mem.add(get_used_ring_offset());
 			let available_ring = VringAvailable::new(available_ring_ptr);
 			let used_ring = VringUsed::new(used_ring_ptr);
 			Virtqueue {
