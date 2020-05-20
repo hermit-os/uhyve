@@ -127,7 +127,7 @@ impl VirtioNetPciDevice {
 
 	pub fn handle_notify_output(&mut self, dest: &[u8], cpu: &dyn VirtualCPU) {
 		let tx_num = read_u16!(dest, 0);
-		if tx_num == 1 && self.read_status_reg() & STATUS_DRIVER_OK == 1 {
+		if tx_num == 1 && self.read_status_reg() & STATUS_DRIVER_OK == STATUS_DRIVER_OK {
 			self.send_available_packets(cpu);
 		}
 	}
