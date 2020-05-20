@@ -149,16 +149,16 @@ impl<'a> VmParameter<'a> {
 		gdbport: Option<u32>,
 	) -> Self {
 		VmParameter {
-			mem_size: mem_size,
-			num_cpus: num_cpus,
-			verbose: verbose,
-			hugepage: hugepage,
-			mergeable: mergeable,
-			ip: ip,
-			gateway: gateway,
-			mask: mask,
-			nic: nic,
-			gdbport: gdbport,
+			mem_size,
+			num_cpus,
+			verbose,
+			hugepage,
+			mergeable,
+			ip,
+			gateway,
+			mask,
+			nic,
+			gdbport,
 		}
 	}
 }
@@ -245,11 +245,9 @@ pub trait VirtualCPU {
 		syssize.argsz[0] = path.len() as i32 + 1;
 
 		for argument in std::env::args() {
-			if !found_separator {
-				if argument == "--" {
-					separator_pos = counter + 1;
-					found_separator = true;
-				}
+			if !found_separator && argument == "--" {
+				separator_pos = counter + 1;
+				found_separator = true;
 			}
 
 			if found_separator && counter >= separator_pos {
@@ -296,11 +294,9 @@ pub trait VirtualCPU {
 		}
 
 		for argument in std::env::args() {
-			if !found_separator {
-				if argument == "--" {
-					separator_pos = counter + 1;
-					found_separator = true;
-				}
+			if !found_separator && argument == "--" {
+				separator_pos = counter + 1;
+				found_separator = true;
 			}
 
 			if found_separator && counter >= separator_pos {
@@ -522,9 +518,8 @@ pub trait Vm {
 			let gdt_entry: u64 = mem_addr as u64 + BOOT_GDT;
 
 			// initialize GDT
-			*((gdt_entry + 0 * mem::size_of::<*mut u64>() as u64) as *mut u64) =
-				create_gdt_entry(0, 0, 0);
-			*((gdt_entry + 1 * mem::size_of::<*mut u64>() as u64) as *mut u64) =
+			*((gdt_entry) as *mut u64) = create_gdt_entry(0, 0, 0);
+			*((gdt_entry + mem::size_of::<*mut u64>() as u64) as *mut u64) =
 				create_gdt_entry(0xA09B, 0, 0xFFFFF); /* code */
 			*((gdt_entry + 2 * mem::size_of::<*mut u64>() as u64) as *mut u64) =
 				create_gdt_entry(0xC093, 0, 0xFFFFF); /* data */
