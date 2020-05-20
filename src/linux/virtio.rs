@@ -292,9 +292,7 @@ impl VirtioNetPciDevice {
 	pub fn read_requested_features(&mut self, dest: &mut [u8]) {
 		if self.read_status_reg() == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
 			let bytes = self.requested_features.to_ne_bytes();
-			for i in 0..bytes.len() {
-				dest[i] = bytes[i];
-			}
+			dest[0..(bytes.len())].clone_from_slice(&bytes[..]);
 		}
 	}
 
@@ -312,9 +310,7 @@ impl VirtioNetPciDevice {
 
 	pub fn read_host_features(&self, dest: &mut [u8]) {
 		let bytes = HOST_FEATURES.to_ne_bytes();
-		for i in 0..bytes.len() {
-			dest[i] = bytes[i];
-		}
+		dest[0..(bytes.len())].clone_from_slice(&bytes[..]);
 	}
 
 	pub fn reset_interrupt(&mut self) {
