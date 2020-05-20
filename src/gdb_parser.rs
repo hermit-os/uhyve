@@ -1207,7 +1207,7 @@ impl<'a> From<Response<'a>> for Vec<u8> {
 			Response::Error(val) => format!("E{:02x}", val),
 			Response::String(s) => format!("{}", s),
 			Response::Output(s) => format!("O{}", s.as_bytes().to_hex()),
-			Response::Bytes(bytes) => bytes.to_hex().to_string(),
+			Response::Bytes(bytes) => bytes.to_hex(),
 			Response::File(data) => {
 				if data.0.is_empty() {
 					"l".into()
@@ -1919,7 +1919,7 @@ fn test_breakpoints() {
 			Command::InsertSoftwareBreakpoint(Breakpoint::new(
 				0x1ff,
 				2,
-				Some(vec!(bytecode!('0' as u8))),
+				Some(vec!(bytecode!(b'0'))),
 				None
 			))
 		)
@@ -1931,7 +1931,7 @@ fn test_breakpoints() {
 			Command::InsertHardwareBreakpoint(Breakpoint::new(
 				0x1ff,
 				2,
-				Some(vec!(bytecode!('0' as u8))),
+				Some(vec!(bytecode!(b'0'))),
 				None
 			))
 		)
@@ -1945,7 +1945,7 @@ fn test_breakpoints() {
 				0x1ff,
 				2,
 				None,
-				Some(vec!(bytecode!('z' as u8)))
+				Some(vec!(bytecode!(b'z')))
 			))
 		)
 	);
@@ -1957,7 +1957,7 @@ fn test_breakpoints() {
 				0x1ff,
 				2,
 				None,
-				Some(vec!(bytecode!('z' as u8)))
+				Some(vec!(bytecode!(b'z')))
 			))
 		)
 	);
@@ -1969,8 +1969,8 @@ fn test_breakpoints() {
 			Command::InsertSoftwareBreakpoint(Breakpoint::new(
 				0x1ff,
 				2,
-				Some(vec!(bytecode!('0' as u8))),
-				Some(vec!(bytecode!('a' as u8)))
+				Some(vec!(bytecode!(b'0'))),
+				Some(vec!(bytecode!(b'a')))
 			))
 		)
 	);
@@ -1981,8 +1981,8 @@ fn test_breakpoints() {
 			Command::InsertHardwareBreakpoint(Breakpoint::new(
 				0x1ff,
 				2,
-				Some(vec!(bytecode!('0' as u8))),
-				Some(vec!(bytecode!('a' as u8)))
+				Some(vec!(bytecode!(b'0'))),
+				Some(vec!(bytecode!(b'a')))
 			))
 		)
 	);
@@ -1992,41 +1992,35 @@ fn test_breakpoints() {
 fn test_cond_or_command_list() {
 	assert_eq!(
 		parse_condition_list(&b";X1,a"[..]),
-		Done(&b""[..], vec!(bytecode!('a' as u8)))
+		Done(&b""[..], vec!(bytecode!(b'a')))
 	);
 	assert_eq!(
 		parse_condition_list(&b";X2,ab"[..]),
-		Done(&b""[..], vec!(bytecode!('a' as u8, 'b' as u8)))
+		Done(&b""[..], vec!(bytecode!(b'a', b'b')))
 	);
 	assert_eq!(
 		parse_condition_list(&b";X1,zX1,y"[..]),
-		Done(&b""[..], vec!(bytecode!('z' as u8), bytecode!('y' as u8)))
+		Done(&b""[..], vec!(bytecode!(b'z'), bytecode!(b'y')))
 	);
 	assert_eq!(
 		parse_condition_list(&b";X1,zX10,yyyyyyyyyyyyyyyy"[..]),
-		Done(
-			&b""[..],
-			vec!(bytecode!('z' as u8), bytecode!['y' as u8; 16])
-		)
+		Done(&b""[..], vec!(bytecode!(b'z'), bytecode![b'y'; 16]))
 	);
 
 	assert_eq!(
 		parse_command_list(&b";cmdsX1,a"[..]),
-		Done(&b""[..], vec!(bytecode!('a' as u8)))
+		Done(&b""[..], vec!(bytecode!(b'a')))
 	);
 	assert_eq!(
 		parse_command_list(&b";cmdsX2,ab"[..]),
-		Done(&b""[..], vec!(bytecode!('a' as u8, 'b' as u8)))
+		Done(&b""[..], vec!(bytecode!(b'a', b'b')))
 	);
 	assert_eq!(
 		parse_command_list(&b";cmdsX1,zX1,y"[..]),
-		Done(&b""[..], vec!(bytecode!('z' as u8), bytecode!('y' as u8)))
+		Done(&b""[..], vec!(bytecode!(b'z'), bytecode!(b'y')))
 	);
 	assert_eq!(
 		parse_command_list(&b";cmdsX1,zX10,yyyyyyyyyyyyyyyy"[..]),
-		Done(
-			&b""[..],
-			vec!(bytecode!('z' as u8), bytecode!['y' as u8; 16])
-		)
+		Done(&b""[..], vec!(bytecode!(b'z'), bytecode![b'y'; 16]))
 	);
 }

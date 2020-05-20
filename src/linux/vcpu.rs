@@ -41,13 +41,13 @@ impl UhyveCPU {
 		dbg: Option<Arc<Mutex<DebugManager>>>,
 	) -> UhyveCPU {
 		UhyveCPU {
-			id: id,
-			vcpu: vcpu,
-			vm_start: vm_start,
-			kernel_path: kernel_path,
-			tx: tx,
-			virtio_device: virtio_device,
-			dbg: dbg,
+			id,
+			vcpu,
+			vm_start,
+			kernel_path,
+			tx,
+			virtio_device,
+			dbg,
 		}
 	}
 
@@ -150,7 +150,7 @@ impl UhyveCPU {
 		msr_entries[0].index = MSR_IA32_MISC_ENABLE;
 		msr_entries[0].data = 1;
 
-		let msrs = Msrs::from_entries(&mut msr_entries);
+		let msrs = Msrs::from_entries(&msr_entries);
 		self.vcpu.set_msrs(&msrs).or_else(to_error)?;
 
 		Ok(())
@@ -213,11 +213,11 @@ impl UhyveCPU {
 	}
 
 	fn show_dtable(name: &str, dtable: &kvm_dtable) {
-		print!("{}                 {:?}\n", name, dtable);
+		println!("{}                 {:?}", name, dtable);
 	}
 
 	fn show_segment(name: &str, seg: &kvm_segment) {
-		print!("{}       {:?}\n", name, seg);
+		println!("{}       {:?}", name, seg);
 	}
 
 	pub fn get_vcpu(&self) -> &VcpuFd {
@@ -270,7 +270,7 @@ impl VirtualCPU for UhyveCPU {
 
 		for _i in 0..4 {
 			let index = (addr >> page_bits) & ((1 << PAGE_MAP_BITS) - 1);
-			entry = unsafe { *page_table.offset(index as isize) & executable_disable_mask };
+			entry = unsafe { *page_table.add(index) & executable_disable_mask };
 
 			// bit 7 is set if this entry references a 1 GiB (PDPT) or 2 MiB (PDT) page.
 			if entry & PageTableEntryFlags::HUGE_PAGE.bits() != 0 {
@@ -379,7 +379,8 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_NETWRITE => {
 							match &self.tx {
 								Some(tx_channel) => tx_channel.send(1).unwrap(),
-								_ => {}
+
+								None => {}
 							};
 						}
 						UHYVE_PORT_EXIT => {
@@ -480,14 +481,16 @@ impl VirtualCPU for UhyveCPU {
 		let regs = self.vcpu.get_regs().unwrap();
 		let sregs = self.vcpu.get_sregs().unwrap();
 
-		print!("\nDump state of CPU {}\n", self.id);
-		print!("\nRegisters:\n");
-		print!("----------\n");
-		print!("{:?}{:?}", regs, sregs);
+		println!();
+		println!("Dump state of CPU {}", self.id);
+		println!();
+		println!("Registers:");
+		println!("----------");
+		println!("{:?}{:?}", regs, sregs);
 
-		print!("\nSegment registers:\n");
-		print!("------------------\n");
-		print!("register  selector  base              limit     type  p dpl db s l g avl\n");
+		println!("Segment registers:");
+		println!("------------------");
+		println!("register  selector  base              limit     type  p dpl db s l g avl");
 		UhyveCPU::show_segment("cs ", &sregs.cs);
 		UhyveCPU::show_segment("ss ", &sregs.ss);
 		UhyveCPU::show_segment("ds ", &sregs.ds);
@@ -499,10 +502,11 @@ impl VirtualCPU for UhyveCPU {
 		UhyveCPU::show_dtable("gdt", &sregs.gdt);
 		UhyveCPU::show_dtable("idt", &sregs.idt);
 
-		print!("\nAPIC:\n");
-		print!("-----\n");
-		print!(
-			"efer: {:016x}  apic base: {:016x}\n",
+		println!();
+		println!("\nAPIC:");
+		println!("-----");
+		println!(
+			"efer: {:016x}  apic base: {:016x}",
 			sregs.efer, sregs.apic_base
 		);
 	}

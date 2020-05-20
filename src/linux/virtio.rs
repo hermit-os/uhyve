@@ -47,8 +47,8 @@ pub const VIRTIO_PCI_LINK_STATUS_MSIX_OFF: u16 = ETHARP_HWADDR_LEN + VIRTIO_PCI_
 const HOST_FEATURES: u32 = (1 << VIRTIO_NET_F_STATUS) | (1 << VIRTIO_NET_F_MAC);
 
 pub trait PciDevice {
-	fn handle_read(&self, address: u32, dest: &mut [u8]) -> ();
-	fn handle_write(&mut self, address: u32, src: &[u8]) -> ();
+	fn handle_read(&self, address: u32, dest: &mut [u8]);
+	fn handle_write(&mut self, address: u32, src: &[u8]);
 }
 
 type PciRegisters = [u8; 0x40];
@@ -323,17 +323,15 @@ impl VirtioNetPciDevice {
 }
 
 impl PciDevice for VirtioNetPciDevice {
-	fn handle_read(&self, address: u32, dest: &mut [u8]) -> () {
+	fn handle_read(&self, address: u32, dest: &mut [u8]) {
 		for i in 0..dest.len() {
 			dest[i] = self.registers[(address as usize) + i];
 		}
-		()
 	}
 
-	fn handle_write(&mut self, address: u32, dest: &[u8]) -> () {
+	fn handle_write(&mut self, address: u32, dest: &[u8]) {
 		for (i, var) in dest.iter().enumerate() {
 			self.registers[(address as usize) + i] = *var;
 		}
-		()
 	}
 }
