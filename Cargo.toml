@@ -17,6 +17,14 @@ exclude = ["/img/*", "./.github/workflows", ".gitignore", ".gitmodules", ".gitat
 [badges]
 travis-ci = { repository = "hermitcore/uhyve", branch = "master" }
 
+[lib]
+name = "uhyvelib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "uhyve"
+path = "src/main.rs"
+
 [dependencies]
 log = "0.4"
 env_logger = "0.5"
@@ -58,3 +66,10 @@ version = "0.1.2"
 [target.'cfg(target_arch = "x86_64")'.dependencies.x86]
 version = "0.*"
 default-features = false
+
+[dev-dependencies]
+criterion = "0.3.2"
+
+[[bench]]
+name = "benchmarks"
+harness = false
