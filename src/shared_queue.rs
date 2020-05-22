@@ -1,4 +1,4 @@
-use consts::*;
+use crate::consts::*;
 
 #[repr(C)]
 pub struct QueueInner {

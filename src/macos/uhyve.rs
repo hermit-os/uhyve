@@ -1,15 +1,15 @@
-use debug_manager::DebugManager;
-use error::*;
+use crate::debug_manager::DebugManager;
+use crate::error::*;
+use crate::macos::ioapic::IoApic;
+use crate::macos::vcpu::*;
+use crate::vm::{BootInfo, VirtualCPU, Vm, VmParameter};
 use libc;
 use libc::c_void;
-use macos::ioapic::IoApic;
-use macos::vcpu::*;
 use std;
 use std::net::Ipv4Addr;
 use std::ptr;
 use std::ptr::read_volatile;
 use std::sync::{Arc, Mutex};
-use vm::{BootInfo, VirtualCPU, Vm, VmParameter};
 use xhypervisor::{create_vm, map_mem, unmap_mem, MemPerm};
 
 pub struct Uhyve {

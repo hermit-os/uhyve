@@ -1,11 +1,11 @@
-use linux::virtqueue::*;
+use crate::linux::virtqueue::*;
+use crate::vm::VirtualCPU;
 use std::fmt;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
 use std::sync::Mutex;
 use std::vec::Vec;
 use tun_tap::*;
-use vm::VirtualCPU;
 extern crate virtio_bindings;
 use self::virtio_bindings::bindings::virtio_net::*;
 extern crate mac_address;

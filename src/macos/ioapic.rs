@@ -1,4 +1,4 @@
-use error::*;
+use crate::error::*;
 
 /// Number of redirection table entries
 const REDIR_ENTRIES: usize = 24;

@@ -1,4 +1,4 @@
-use consts::PAGE_SIZE;
+use crate::consts::PAGE_SIZE;
 use std::marker::PhantomData;
 use std::mem;
 use std::mem::size_of;

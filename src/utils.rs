@@ -1,4 +1,4 @@
-use error::*;
+use crate::error::*;
 use std::env;
 
 pub fn parse_mem(mem: &str) -> Result<usize> {

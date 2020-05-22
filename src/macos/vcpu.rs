@@ -1,14 +1,14 @@
 #![allow(non_snake_case)]
 
+use crate::consts::*;
+use crate::debug_manager::DebugManager;
+use crate::error::*;
+use crate::macos::ioapic::IoApic;
+use crate::paging::*;
+use crate::vm::VirtualCPU;
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
-use consts::*;
-use debug_manager::DebugManager;
-use error::*;
-use macos::ioapic::IoApic;
-use paging::*;
 use std;
 use std::sync::{Arc, Mutex};
-use vm::VirtualCPU;
 use x86::controlregs::*;
 use x86::cpuid::*;
 use x86::msr::*;

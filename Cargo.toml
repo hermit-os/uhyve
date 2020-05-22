@@ -7,6 +7,7 @@ keywords = ["hypervisor", "unikernel"]
 repository = "https://github.com/hermitcore/uhyve"
 categories = ["os"]
 readme = "README.md"
+edition = "2018"
 
 description = """
 A hypervisor for RustyHermit
