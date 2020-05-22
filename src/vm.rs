@@ -1,5 +1,4 @@
 use super::paging::*;
-use crate::error::*;
 use elf;
 use elf::types::{ELFCLASS64, EM_X86_64, ET_EXEC, PT_LOAD, PT_TLS};
 use libc;
@@ -19,6 +18,7 @@ use std::{fmt, mem, slice};
 
 use crate::consts::*;
 use crate::debug_manager::DebugManager;
+use crate::error::*;
 #[cfg(target_os = "linux")]
 pub use crate::linux::uhyve::*;
 #[cfg(target_os = "macos")]
@@ -634,6 +634,11 @@ pub trait Vm {
 					header.paddr, header.filesz, header.offset
 				);
 
+				if vm_start + header.memsz as usize > vm_mem_length {
+					error!("Guest memory size isn't large enough");
+					return Err(Error::NotEnoughMemory);
+				}
+
 				let vm_slice = std::slice::from_raw_parts_mut(vm_mem, vm_mem_length);
 				vm_slice[vm_start..vm_end].copy_from_slice(&kernel_file[kernel_start..kernel_end]);
 				for i in &mut vm_slice[vm_end..vm_end + (header.memsz - header.filesz) as usize] {
@@ -806,6 +811,9 @@ fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
 
 #[cfg(test)]
 mod tests {
+	#[cfg(target_os = "linux")]
+	use crate::linux::tests::has_vm_support;
+
 	use super::*;
 
 	#[cfg(target_os = "linux")]
@@ -816,6 +824,65 @@ mod tests {
 		let freq = freq_res.unwrap();
 		assert!(freq > 0);
 		assert!(freq < 10000); //More than 10Ghz is probably wrong
+	}
+
+	#[cfg(target_os = "linux")]
+	#[test]
+	fn test_vm_load_min_size_1024() {
+		if has_vm_support() == false {
+			return;
+		}
+
+		let path =
+			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
+		let vm = create_vm(
+			path,
+			&VmParameter::new(
+				1024,
+				1,
+				false,
+				true,
+				false,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+			),
+		);
+		assert_eq!(vm.is_err(), true);
+	}
+
+	#[cfg(target_os = "linux")]
+	#[test]
+	fn test_vm_load_min_size_102400() {
+		if has_vm_support() == false {
+			return;
+		}
+
+		let path =
+			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
+		let mut vm = create_vm(
+			path,
+			&VmParameter::new(
+				102400,
+				1,
+				false,
+				true,
+				false,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+			),
+		)
+		.expect("Unable to create VM");
+		unsafe {
+			let res = vm.load_kernel();
+
+			assert_eq!(res.is_err(), true);
+		}
 	}
 }
 
