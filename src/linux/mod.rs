@@ -8,7 +8,6 @@ use kvm_ioctls::Kvm;
 
 lazy_static! {
 	static ref KVM: Kvm = Kvm::new().unwrap();
-	static ref KVM_TEST: bool = Kvm::new().is_ok();
 }
 
 trait MemoryRegion {
@@ -18,6 +17,15 @@ trait MemoryRegion {
 	fn host_address(&self) -> usize;
 }
 
-pub fn has_vm_support() -> bool {
-	*KVM_TEST
+#[cfg(test)]
+pub mod tests {
+	use super::*;
+
+	lazy_static! {
+		static ref KVM_TEST: bool = Kvm::new().is_ok();
+	}
+
+	pub fn has_vm_support() -> bool {
+		*KVM_TEST
+	}
 }

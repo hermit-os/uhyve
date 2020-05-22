@@ -20,11 +20,7 @@ use crate::consts::*;
 use crate::debug_manager::DebugManager;
 use crate::error::*;
 #[cfg(target_os = "linux")]
-use crate::linux::has_vm_support;
-#[cfg(target_os = "linux")]
 pub use crate::linux::uhyve::*;
-#[cfg(target_os = "macos")]
-use crate::macos::has_vm_support;
 #[cfg(target_os = "macos")]
 pub use crate::macos::uhyve::*;
 
@@ -815,6 +811,9 @@ fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
 
 #[cfg(test)]
 mod tests {
+	#[cfg(target_os = "linux")]
+	use crate::linux::tests::has_vm_support;
+
 	use super::*;
 
 	#[cfg(target_os = "linux")]
@@ -827,6 +826,8 @@ mod tests {
 		assert!(freq < 10000); //More than 10Ghz is probably wrong
 	}
 
+	
+	#[cfg(target_os = "linux")]
 	#[test]
 	fn test_vm_load_min_size_1024() {
 		if has_vm_support() == false {
@@ -853,6 +854,7 @@ mod tests {
 		assert_eq!(vm.is_err(), true);
 	}
 
+	#[cfg(target_os = "linux")]
 	#[test]
 	fn test_vm_load_min_size_102400() {
 		if has_vm_support() == false {
