@@ -826,7 +826,6 @@ mod tests {
 		assert!(freq < 10000); //More than 10Ghz is probably wrong
 	}
 
-	
 	#[cfg(target_os = "linux")]
 	#[test]
 	fn test_vm_load_min_size_1024() {
