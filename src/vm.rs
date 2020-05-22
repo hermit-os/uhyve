@@ -1,19 +1,20 @@
 use super::paging::*;
+#[cfg(target_arch = "x86_64")]
+use core::arch::x86_64::_rdtsc as rdtsc;
 use elf;
 use elf::types::{ELFCLASS64, EM_X86_64, ET_EXEC, PT_LOAD, PT_TLS};
 use libc;
 use memmap::Mmap;
 use nix::errno::errno;
 use raw_cpuid::CpuId;
-use regex::Regex;
 use std;
+use std::convert::TryInto;
 use std::fs::File;
 use std::io::Cursor;
 use std::io::Read;
 use std::net::Ipv4Addr;
-use std::process::Command;
 use std::ptr::write_volatile;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 use std::{fmt, mem, slice};
 
 use crate::consts::*;
@@ -23,6 +24,8 @@ use crate::error::*;
 pub use crate::linux::uhyve::*;
 #[cfg(target_os = "macos")]
 pub use crate::macos::uhyve::*;
+
+const MHZ_TO_HZ: u64 = 1000000;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -686,10 +689,7 @@ pub trait Vm {
 						debug!("Failed to detect from cpuid");
 						detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
 							debug!("Failed to detect from hypervisor_info");
-							detect_freq_from_cpu_brand_string(&cpuid).unwrap_or_else(|_| {
-								debug!("Failed to detect from brand string");
-								get_cpu_frequency_from_os().unwrap_or(0)
-							})
+							get_cpu_frequency_from_os().unwrap_or(0)
 						})
 					});
 					debug!("detected a cpu frequency of {} Mhz", mhz);
@@ -716,10 +716,33 @@ pub trait Vm {
 }
 
 fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
-	let freq_info = cpuid.get_processor_frequency_info().ok_or(())?;
-	let mhz = freq_info.processor_base_frequency() as u32;
-	if mhz > 0 {
-		Ok(mhz)
+	let tsc_frequency_hz = cpuid.get_tsc_info().map(|tinfo| {
+		if tinfo.nominal_frequency() != 0 {
+			tinfo.tsc_frequency()
+		} else if tinfo.numerator() != 0 && tinfo.denominator() != 0 {
+			// Skylake and Kabylake don't report the crystal clock, approximate with base frequency:
+			cpuid
+				.get_processor_frequency_info()
+				.map(|pinfo| pinfo.processor_base_frequency() as u64 * MHZ_TO_HZ)
+				.map(|cpu_base_freq_hz| {
+					let crystal_hz =
+						cpu_base_freq_hz * tinfo.denominator() as u64 / tinfo.numerator() as u64;
+					crystal_hz * tinfo.numerator() as u64 / tinfo.denominator() as u64
+				})
+		} else {
+			None
+		}
+	});
+
+	let hz = match tsc_frequency_hz {
+		Some(x) => x.unwrap_or(0),
+		None => {
+			return Err(());
+		}
+	};
+
+	if hz > 0 {
+		Ok((hz / MHZ_TO_HZ).try_into().unwrap())
 	} else {
 		Err(())
 	}
@@ -734,7 +757,7 @@ fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<
 	);
 	let freq = hypervisor_info.tsc_frequency().ok_or(())?;
 	debug!("cpuid detected frequency of {} Hz from hypervisor", freq);
-	let mhz: u32 = freq / 1000000u32;
+	let mhz: u32 = freq / MHZ_TO_HZ as u32;
 	if mhz > 0 {
 		Ok(mhz)
 	} else {
@@ -742,86 +765,35 @@ fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<
 	}
 }
 
-fn detect_freq_from_cpu_brand_string(cpuid: &CpuId) -> std::result::Result<u32, ()> {
-	let extended_function_info = cpuid.get_extended_function_info().ok_or(())?;
-	let brand_string = extended_function_info.processor_brand_string().ok_or(())?;
-
-	let ghz_find = brand_string.find("GHz").ok_or(())?;
-	let index = ghz_find - 4;
-	let thousand_char = brand_string.chars().nth(index).unwrap();
-	let decimal_char = brand_string.chars().nth(index + 1).unwrap();
-	let hundred_char = brand_string.chars().nth(index + 2).unwrap();
-	let ten_char = brand_string.chars().nth(index + 3).unwrap();
-
-	if let (Some(thousand), '.', Some(hundred), Some(ten)) = (
-		thousand_char.to_digit(10),
-		decimal_char,
-		hundred_char.to_digit(10),
-		ten_char.to_digit(10),
-	) {
-		Ok((thousand * 1000 + hundred * 100 + ten * 10) as u32)
+fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
+	// Determine TSC frequency by measuring it (loop for a second, record ticks)
+	let one_second = Duration::from_secs(1);
+	let now = Instant::now();
+	let start = unsafe { rdtsc() };
+	if start > 0 {
+		loop {
+			if now.elapsed() >= one_second {
+				break;
+			}
+		}
+		let end = unsafe { rdtsc() };
+		Ok(((end - start) / MHZ_TO_HZ).try_into().unwrap())
 	} else {
 		Err(())
 	}
 }
 
-#[cfg(target_os = "linux")]
-fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
-	let res_output = Command::new("lscpu").output();
-	if res_output.is_err() {
-		return Err(());
-	}
-	let output = res_output.unwrap();
-	if !output.status.success() {
-		return Err(());
-	}
-	let lscpu_res = std::string::String::from_utf8(output.stdout);
-	let regex_res = Regex::new(r"(?im:^CPU MHz:\s+(?P<frequency>\d+))");
-	if lscpu_res.is_err() || regex_res.is_err() {
-		return Err(());
-	}
-	let lscpu_str = lscpu_res.unwrap();
-	let re = regex_res.unwrap();
-	let freq_str_opt = re
-		.captures(&lscpu_str)
-		.and_then(|cap| cap.name("frequency"));
-	match freq_str_opt {
-		Some(freq_match) => {
-			let freq_res = freq_match.as_str().parse::<u32>();
-			if freq_res.is_err() {
-				return Err(());
-			}
-			let freq = freq_res.unwrap();
-			// Sanity check - ToDo: Use a named constant for upper limit of frequency
-			if freq > 0 && freq < 10000 {
-				Ok(freq)
-			} else {
-				Err(())
-			}
-		}
-		None => Err(()),
-	}
-}
-
-#[cfg(not(target_os = "linux"))]
-fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
-	//Not implemented yet for other systems
-	Err(())
-}
-
 #[cfg(test)]
 mod tests {
-	const MHZ_TO_HZ: u64 = 1000000;
 	const KHZ_TO_HZ: u64 = 1000;
 
 	#[cfg(target_os = "linux")]
 	use crate::linux::tests::has_vm_support;
-	#[cfg(target_arch = "x86_64")]
-	use core::arch::x86_64::_rdtsc as rdtsc;
-	use std::time;
 
 	use super::*;
 
+	// test is derived from
+	// https://github.com/gz/rust-cpuid/blob/master/examples/tsc_frequency.rs
 	#[test]
 	fn test_detect_freq_from_cpuid() {
 		let cpuid = CpuId::new();
@@ -878,8 +850,8 @@ mod tests {
 			});
 
 			// Determine TSC frequency by measuring it (loop for a second, record ticks)
-			let one_second = time::Duration::from_secs(1);
-			let now = time::Instant::now();
+			let one_second = Duration::from_secs(1);
+			let now = Instant::now();
 			let start = unsafe { rdtsc() };
 			if start > 0 {
 				loop {
