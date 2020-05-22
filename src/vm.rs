@@ -1,7 +1,7 @@
 use super::paging::*;
+use crate::error::*;
 use elf;
 use elf::types::{ELFCLASS64, EM_X86_64, ET_EXEC, PT_LOAD, PT_TLS};
-use error::*;
 use libc;
 use memmap::Mmap;
 use nix::errno::errno;
@@ -17,12 +17,12 @@ use std::ptr::write_volatile;
 use std::time::SystemTime;
 use std::{fmt, mem, slice};
 
-use consts::*;
-use debug_manager::DebugManager;
+use crate::consts::*;
+use crate::debug_manager::DebugManager;
 #[cfg(target_os = "linux")]
-pub use linux::uhyve::*;
+pub use crate::linux::uhyve::*;
 #[cfg(target_os = "macos")]
-pub use macos::uhyve::*;
+pub use crate::macos::uhyve::*;
 
 #[repr(C)]
 #[derive(Clone, Copy)]

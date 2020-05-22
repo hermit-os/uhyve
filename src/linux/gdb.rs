@@ -1,5 +1,4 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use error::{self, Error::OsError};
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
 use libc::ioctl;
@@ -10,14 +9,15 @@ use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
 use std::slice;
 
-use arch::x86;
-use gdb_parser::{
+use crate::arch::x86;
+use crate::error::{self, Error::OsError};
+use crate::gdb_parser::{
 	Breakpoint, Error, FileData, Handler, Id, MemoryRegion, ProcessInfo, ProcessType, StopReason,
 	ThreadId, VCont, VContFeature, Watchpoint,
 };
-use linux::vcpu::UhyveCPU;
-use utils::get_max_subslice;
-use vm::VirtualCPU;
+use crate::linux::vcpu::UhyveCPU;
+use crate::utils::get_max_subslice;
+use crate::vm::VirtualCPU;
 
 /// Debugging Stub for linux/x64
 /// Currently supported features:

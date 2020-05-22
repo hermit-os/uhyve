@@ -1,16 +1,17 @@
 //! This file contains the entry point to the Hypervisor. The Uhyve utilizes KVM to
 //! create a Virtual Machine and load the kernel.
 
-use consts::*;
-use debug_manager::DebugManager;
-use error::*;
+use crate::consts::*;
+use crate::debug_manager::DebugManager;
+use crate::error::*;
+use crate::linux::vcpu::*;
+use crate::linux::virtio::*;
+use crate::linux::{MemoryRegion, KVM};
+use crate::shared_queue::*;
+use crate::vm::{BootInfo, VirtualCPU, Vm, VmParameter};
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
-use linux::vcpu::*;
-use linux::virtio::*;
-use linux::{MemoryRegion, KVM};
 use nix::sys::mman::*;
-use shared_queue::*;
 use std;
 use std::convert::TryInto;
 use std::mem;
@@ -24,7 +25,6 @@ use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tun_tap::{Iface, Mode};
-use vm::{BootInfo, VirtualCPU, Vm, VmParameter};
 use vmm_sys_util::eventfd::EventFd;
 
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;

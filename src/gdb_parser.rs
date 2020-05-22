@@ -923,7 +923,7 @@ pub trait Handler {
 	/// (typically ASCII characters), to be interpreted by the server
 	/// in any way it likes.  The result is output to send back to the
 	/// client.  This is used to implement gdb's `monitor` command.
-	fn invoke(&self, &[u8]) -> Result<String, Error> {
+	fn invoke(&self, _: &[u8]) -> Result<String, Error> {
 		Err(Error::Unimplemented)
 	}
 

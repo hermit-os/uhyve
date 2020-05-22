@@ -1,5 +1,5 @@
-use gdb_parser::{self, handle_packet, Handler, Response, StopReason, VCont};
-use gdb_protocol::{
+use crate::gdb_parser::{self, handle_packet, Handler, Response, StopReason, VCont};
+use crate::gdb_protocol::{
 	io::GdbServer,
 	packet::{CheckedPacket, Kind},
 };
@@ -27,9 +27,9 @@ use std::net::TcpStream;
 ///
 
 #[cfg(target_os = "linux")]
-use linux::gdb;
+use crate::linux::gdb;
 #[cfg(target_os = "macos")]
-use macos::gdb;
+use crate::macos::gdb;
 
 pub type State = gdb::State;
 

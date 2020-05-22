@@ -1,20 +1,20 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use error;
 use rustc_serialize::hex::ToHex;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::slice;
 
-use arch::x86;
-use gdb_parser::{
+use crate::arch::x86;
+use crate::error;
+use crate::gdb_parser::{
 	Breakpoint, Error, FileData, Handler, Id, MemoryRegion, ProcessInfo, ProcessType, StopReason,
 	ThreadId, VCont, VContFeature, Watchpoint,
 };
-use macos::vcpu::UhyveCPU;
-use utils::get_max_subslice;
-use vm::VirtualCPU;
-use x86::bits64::rflags::RFlags;
+use crate::macos::vcpu::UhyveCPU;
+use crate::utils::get_max_subslice;
+use crate::vm::VirtualCPU;
+use crate::x86::bits64::rflags::RFlags;
 use xhypervisor::{vCPU, x86Reg};
 
 /// Debugging Stub for linux/x64

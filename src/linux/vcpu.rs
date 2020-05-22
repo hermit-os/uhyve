@@ -1,16 +1,16 @@
-use consts::*;
-use debug_manager::DebugManager;
-use error::Error::*;
-use error::*;
+use crate::consts::*;
+use crate::debug_manager::DebugManager;
+use crate::error::Error::*;
+use crate::error::*;
+use crate::linux::virtio::*;
+use crate::linux::KVM;
+use crate::paging::*;
+use crate::vm::VirtualCPU;
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
 use libc::ioctl;
-use linux::virtio::*;
-use linux::KVM;
-use paging::*;
 use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
-use vm::VirtualCPU;
 use x86::controlregs::*;
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
