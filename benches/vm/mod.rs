@@ -3,7 +3,7 @@ extern crate criterion;
 use criterion::{criterion_group, Criterion};
 
 extern crate uhyvelib;
-use vm::uhyvelib::vm::Vm;
+use crate::vm::uhyvelib::vm::Vm;
 
 pub fn load_vm_hello_world(c: &mut Criterion) {
 	let path = env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
