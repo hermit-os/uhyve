@@ -822,6 +822,60 @@ mod tests {
 		assert!(freq > 0);
 		assert!(freq < 10000); //More than 10Ghz is probably wrong
 	}
+
+	#[test]
+	fn test_vm_load_min_size_1024() {
+		let path =
+			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
+		let mut vm = create_vm(
+			path,
+			&VmParameter::new(
+				1024,
+				1,
+				false,
+				true,
+				false,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+			),
+		)
+		.expect("Unable to create VM");
+		unsafe {
+			let res = vm.load_kernel();
+
+			assert_eq!(res.is_err(), true);
+		}
+	}
+
+	#[test]
+	fn test_vm_load_min_size_102400() {
+		let path =
+			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
+		let mut vm = create_vm(
+			path,
+			&VmParameter::new(
+				102400,
+				1,
+				false,
+				true,
+				false,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+			),
+		)
+		.expect("Unable to create VM");
+		unsafe {
+			let res = vm.load_kernel();
+
+			assert_eq!(res.is_err(), true);
+		}
+	}
 }
 
 #[cfg(not(target_os = "windows"))]
