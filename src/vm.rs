@@ -1,5 +1,4 @@
 use super::paging::*;
-use crate::error::*;
 use elf;
 use elf::types::{ELFCLASS64, EM_X86_64, ET_EXEC, PT_LOAD, PT_TLS};
 use libc;
@@ -19,6 +18,7 @@ use std::{fmt, mem, slice};
 
 use crate::consts::*;
 use crate::debug_manager::DebugManager;
+use crate::error::*;
 #[cfg(target_os = "linux")]
 pub use crate::linux::uhyve::*;
 #[cfg(target_os = "macos")]
@@ -633,6 +633,11 @@ pub trait Vm {
 					"Load segment with start addr 0x{:x} and size 0x{:x}, offset 0x{:x}",
 					header.paddr, header.filesz, header.offset
 				);
+
+				if vm_start + header.memsz as usize > vm_mem_length {
+					error!("Guest memory size isn't large enough");
+					return Err(Error::NotEnoughMemory);
+				}
 
 				let vm_slice = std::slice::from_raw_parts_mut(vm_mem, vm_mem_length);
 				vm_slice[vm_start..vm_end].copy_from_slice(&kernel_file[kernel_start..kernel_end]);
