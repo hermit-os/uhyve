@@ -17,7 +17,6 @@ trait MemoryRegion {
 	fn host_address(&self) -> usize;
 }
 
-#[cfg(test)]
 pub fn has_vm_support() -> bool {
 	let kvm = Kvm::new();
 	kvm.is_ok()
