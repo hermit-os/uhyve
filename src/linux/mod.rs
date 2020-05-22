@@ -16,3 +16,8 @@ trait MemoryRegion {
 	fn guest_address(&self) -> usize;
 	fn host_address(&self) -> usize;
 }
+
+pub fn has_vm_support() -> bool {
+	let kvm = Kvm::new();
+	kvm.is_ok()
+}

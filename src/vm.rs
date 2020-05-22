@@ -21,8 +21,12 @@ use crate::debug_manager::DebugManager;
 use crate::error::*;
 #[cfg(target_os = "linux")]
 pub use crate::linux::uhyve::*;
+#[cfg(target_os = "linux")]
+use crate::linux::has_vm_support;
 #[cfg(target_os = "macos")]
 pub use crate::macos::uhyve::*;
+#[cfg(target_os = "macos")]
+use crate::macos::has_vm_support;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -825,6 +829,10 @@ mod tests {
 
 	#[test]
 	fn test_vm_load_min_size_1024() {
+		if has_vm_support() == false {
+			return;
+		}
+
 		let path =
 			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
 		let vm = create_vm(
@@ -847,6 +855,10 @@ mod tests {
 
 	#[test]
 	fn test_vm_load_min_size_102400() {
+		if has_vm_support() == false {
+			return;
+		}
+
 		let path =
 			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
 		let mut vm = create_vm(
