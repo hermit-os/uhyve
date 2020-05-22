@@ -19,6 +19,10 @@ jobs:
   include:
     - stage: Test
       script:
+        - cargo test
+
+    -
+      script:
         - cargo build
         - cd rusty-hermit
         - cargo build -Z build-std=std,core,alloc,panic_abort --target x86_64-unknown-hermit
