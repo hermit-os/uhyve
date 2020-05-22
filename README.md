@@ -1,7 +1,7 @@
 # uhyve - A minimal hypervisor for RustyHermit
 
 [![crates.io](https://img.shields.io/crates/v/uhyve.svg)](https://crates.io/crates/uhyve)
-![Actions Status](https://github.com/hermitcore/uhyve/workflows/Build/badge.svg)
+![Actions Status](https://github.com/hermitcore/uhyve/workflows/Test/badge.svg)
 [![Build Status](https://travis-ci.com/hermitcore/uhyve.svg?branch=master)](https://travis-ci.com/hermitcore/uhyve)
 [![Slack Status](https://radiant-ridge-95061.herokuapp.com/badge.svg)](https://radiant-ridge-95061.herokuapp.com)
 
