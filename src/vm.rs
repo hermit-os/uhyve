@@ -26,6 +26,7 @@ pub use crate::linux::uhyve::*;
 pub use crate::macos::uhyve::*;
 
 const MHZ_TO_HZ: u64 = 1000000;
+const KHZ_TO_HZ: u64 = 1000;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -755,9 +756,9 @@ fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<
 		"cpuid detected hypervisor: {:?}",
 		hypervisor_info.identify()
 	);
-	let freq = hypervisor_info.tsc_frequency().ok_or(())?;
-	debug!("cpuid detected frequency of {} Hz from hypervisor", freq);
-	let mhz: u32 = freq / MHZ_TO_HZ as u32;
+	let hz = hypervisor_info.tsc_frequency().ok_or(())? as u64 * KHZ_TO_HZ;
+	debug!("cpuid detected frequency of {} Hz from hypervisor", hz);
+	let mhz: u32 = (hz / MHZ_TO_HZ).try_into().unwrap();
 	if mhz > 0 {
 		Ok(mhz)
 	} else {
@@ -785,8 +786,6 @@ fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
 
 #[cfg(test)]
 mod tests {
-	const KHZ_TO_HZ: u64 = 1000;
-
 	#[cfg(target_os = "linux")]
 	use crate::linux::tests::has_vm_support;
 
