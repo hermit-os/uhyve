@@ -12,6 +12,7 @@ before_install:
   - rustup component add llvm-tools-preview
 install:
   - git clone https://github.com/hermitcore/rusty-hermit.git
+  - cd rusry-hermit && git submodule update --init --recursive && cd ..
   - cd rusty-hermit && echo "rusty-hermit at commit $(git rev-parse HEAD)" && cd ..
   - rustc --version
   - cargo --version
