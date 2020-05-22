@@ -19,7 +19,7 @@ jobs:
   include:
     - stage: Test
       script:
-        - cargo test
+        - cargo test -- --nocapture
 
     -
       script:
