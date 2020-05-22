@@ -20,13 +20,13 @@ use crate::consts::*;
 use crate::debug_manager::DebugManager;
 use crate::error::*;
 #[cfg(target_os = "linux")]
-pub use crate::linux::uhyve::*;
-#[cfg(target_os = "linux")]
 use crate::linux::has_vm_support;
-#[cfg(target_os = "macos")]
-pub use crate::macos::uhyve::*;
+#[cfg(target_os = "linux")]
+pub use crate::linux::uhyve::*;
 #[cfg(target_os = "macos")]
 use crate::macos::has_vm_support;
+#[cfg(target_os = "macos")]
+pub use crate::macos::uhyve::*;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
