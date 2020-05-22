@@ -8,6 +8,7 @@ use kvm_ioctls::Kvm;
 
 lazy_static! {
 	static ref KVM: Kvm = Kvm::new().unwrap();
+	static ref KVM_TEST: bool = Kvm::new().is_ok();
 }
 
 trait MemoryRegion {
@@ -18,6 +19,5 @@ trait MemoryRegion {
 }
 
 pub fn has_vm_support() -> bool {
-	let kvm = Kvm::new();
-	kvm.is_ok()
+	*KVM_TEST
 }
