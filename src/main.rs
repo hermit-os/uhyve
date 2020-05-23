@@ -221,21 +221,22 @@ fn main() {
 				.map(|p| p.parse::<u32>().expect("Could not parse gdb port"))
 		});
 
-	let mut vm = create_vm(
-		path.to_string(),
-		&VmParameter::new(
-			mem_size, num_cpus, verbose, hugepage, mergeable, ip, gateway, mask, nic, gdbport,
-		),
-	)
-	.expect("Unable to create VM");
+	// create and initialize the VM
+	let vm = Arc::new({
+		let mut vm = create_vm(
+			path.to_string(),
+			&VmParameter::new(
+				mem_size, num_cpus, verbose, hugepage, mergeable, ip, gateway, mask, nic, gdbport,
+			),
+		)
+		.expect("Unable to create VM");
+		unsafe {
+			vm.load_kernel().expect("Unabled to load the kernel");
+		}
+		vm
+	});
+
 	let num_cpus = vm.num_cpus();
-
-	// load kernel into the memory of the VM
-	unsafe {
-		vm.load_kernel().unwrap();
-	}
-
-	let vm = Arc::new(vm);
 	let threads: Vec<_> = (0..num_cpus)
 		.map(|tid| {
 			let vm = vm.clone();
