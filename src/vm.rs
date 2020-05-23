@@ -717,6 +717,8 @@ pub trait Vm {
 }
 
 fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
+	debug!("Trying to detect CPU frequency via cpuid tsc info");
+
 	let has_invariant_tsc = cpuid
 		.get_extended_function_info()
 		.map_or(false, |efinfo| efinfo.has_invariant_tsc());
@@ -749,6 +751,7 @@ fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
 		}
 	};
 
+	debug!("cpuid detected frequency of {} Hz", hz);
 	if hz > 0 {
 		Ok((hz / MHZ_TO_HZ).try_into().unwrap())
 	} else {
@@ -880,7 +883,6 @@ mod tests {
 		}
 	}
 
-	#[cfg(target_os = "linux")]
 	#[test]
 	fn test_get_cpu_frequency_from_os() {
 		let freq_res = get_cpu_frequency_from_os();
