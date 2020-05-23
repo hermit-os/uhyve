@@ -727,9 +727,9 @@ fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
 	}
 
 	let tsc_frequency_hz = cpuid.get_tsc_info().map(|tinfo| {
-		if tinfo.nominal_frequency() != 0 {
+		if tinfo.tsc_frequency().is_some() {
 			tinfo.tsc_frequency()
-		} else if tinfo.numerator() != 0 && tinfo.denominator() != 0 {
+		} else {
 			// Skylake and Kabylake don't report the crystal clock, approximate with base frequency:
 			cpuid
 				.get_processor_frequency_info()
@@ -739,8 +739,6 @@ fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
 						cpu_base_freq_hz * tinfo.denominator() as u64 / tinfo.numerator() as u64;
 					crystal_hz * tinfo.numerator() as u64 / tinfo.denominator() as u64
 				})
-		} else {
-			None
 		}
 	});
 
@@ -813,9 +811,9 @@ mod tests {
 			.map_or(false, |efinfo| efinfo.has_invariant_tsc());
 
 		let tsc_frequency_hz = cpuid.get_tsc_info().map(|tinfo| {
-			if tinfo.nominal_frequency() != 0 {
+			if tinfo.tsc_frequency().is_some() {
 				tinfo.tsc_frequency()
-			} else if tinfo.numerator() != 0 && tinfo.denominator() != 0 {
+			} else {
 				// Skylake and Kabylake don't report the crystal clock, approximate with base frequency:
 				cpuid
 					.get_processor_frequency_info()
@@ -825,8 +823,6 @@ mod tests {
 							/ tinfo.numerator() as u64;
 						crystal_hz * tinfo.numerator() as u64 / tinfo.denominator() as u64
 					})
-			} else {
-				None
 			}
 		});
 
