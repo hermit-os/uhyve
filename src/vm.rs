@@ -1,27 +1,31 @@
 use super::paging::*;
-use crate::error::*;
+#[cfg(target_arch = "x86_64")]
+use core::arch::x86_64::_rdtsc as rdtsc;
 use elf;
 use elf::types::{ELFCLASS64, EM_X86_64, ET_EXEC, PT_LOAD, PT_TLS};
 use libc;
 use memmap::Mmap;
 use nix::errno::errno;
 use raw_cpuid::CpuId;
-use regex::Regex;
+use std::convert::TryInto;
 use std::fs::File;
 use std::io::Cursor;
 use std::io::Read;
 use std::net::Ipv4Addr;
-use std::process::Command;
 use std::ptr::write;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 use std::{fmt, mem, slice};
 
 use crate::consts::*;
 use crate::debug_manager::DebugManager;
+use crate::error::*;
 #[cfg(target_os = "linux")]
 pub use crate::linux::uhyve::*;
 #[cfg(target_os = "macos")]
 pub use crate::macos::uhyve::*;
+
+const MHZ_TO_HZ: u64 = 1000000;
+const KHZ_TO_HZ: u64 = 1000;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -633,6 +637,11 @@ pub trait Vm {
 					header.paddr, header.filesz, header.offset
 				);
 
+				if vm_start + header.memsz as usize > vm_mem_length {
+					error!("Guest memory size isn't large enough");
+					return Err(Error::NotEnoughMemory);
+				}
+
 				let vm_slice = std::slice::from_raw_parts_mut(vm_mem, vm_mem_length);
 				vm_slice[vm_start..vm_end].copy_from_slice(&kernel_file[kernel_start..kernel_end]);
 				for i in &mut vm_slice[vm_end..vm_end + (header.memsz - header.filesz) as usize] {
@@ -680,10 +689,7 @@ pub trait Vm {
 						debug!("Failed to detect from cpuid");
 						detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
 							debug!("Failed to detect from hypervisor_info");
-							detect_freq_from_cpu_brand_string(&cpuid).unwrap_or_else(|_| {
-								debug!("Failed to detect from brand string");
-								get_cpu_frequency_from_os().unwrap_or(0)
-							})
+							get_cpu_frequency_from_os().unwrap_or(0)
 						})
 					});
 					debug!("detected a cpu frequency of {} Mhz", mhz);
@@ -710,25 +716,54 @@ pub trait Vm {
 }
 
 fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
-	let freq_info = cpuid.get_processor_frequency_info().ok_or(())?;
-	let mhz = freq_info.processor_base_frequency() as u32;
-	if mhz > 0 {
-		Ok(mhz)
+	debug!("Trying to detect CPU frequency by tsc info");
+
+	let has_invariant_tsc = cpuid
+		.get_extended_function_info()
+		.map_or(false, |efinfo| efinfo.has_invariant_tsc());
+	if !has_invariant_tsc {
+		warn!("TSC frequency varies with speed-stepping")
+	}
+
+	let tsc_frequency_hz = cpuid.get_tsc_info().map(|tinfo| {
+		if tinfo.tsc_frequency().is_some() {
+			tinfo.tsc_frequency()
+		} else {
+			// Skylake and Kabylake don't report the crystal clock, approximate with base frequency:
+			cpuid
+				.get_processor_frequency_info()
+				.map(|pinfo| pinfo.processor_base_frequency() as u64 * MHZ_TO_HZ)
+				.map(|cpu_base_freq_hz| {
+					let crystal_hz =
+						cpu_base_freq_hz * tinfo.denominator() as u64 / tinfo.numerator() as u64;
+					crystal_hz * tinfo.numerator() as u64 / tinfo.denominator() as u64
+				})
+		}
+	});
+
+	let hz = match tsc_frequency_hz {
+		Some(x) => x.unwrap_or(0),
+		None => {
+			return Err(());
+		}
+	};
+
+	if hz > 0 {
+		Ok((hz / MHZ_TO_HZ).try_into().unwrap())
 	} else {
 		Err(())
 	}
 }
 
 fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<u32, ()> {
-	debug!("Trying to detect CPU frequency via cpuid hypervisor info");
+	debug!("Trying to detect CPU frequency by hypervisor info");
 	let hypervisor_info = cpuid.get_hypervisor_info().ok_or(())?;
 	debug!(
 		"cpuid detected hypervisor: {:?}",
 		hypervisor_info.identify()
 	);
-	let freq = hypervisor_info.tsc_frequency().ok_or(())?;
-	debug!("cpuid detected frequency of {} Hz from hypervisor", freq);
-	let mhz: u32 = freq / 1000000u32;
+	let hz = hypervisor_info.tsc_frequency().ok_or(())? as u64 * KHZ_TO_HZ;
+	let mhz: u32 = (hz / MHZ_TO_HZ).try_into().unwrap();
 	if mhz > 0 {
 		Ok(mhz)
 	} else {
@@ -736,78 +771,111 @@ fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<
 	}
 }
 
-fn detect_freq_from_cpu_brand_string(cpuid: &CpuId) -> std::result::Result<u32, ()> {
-	let extended_function_info = cpuid.get_extended_function_info().ok_or(())?;
-	let brand_string = extended_function_info.processor_brand_string().ok_or(())?;
-
-	let ghz_find = brand_string.find("GHz").ok_or(())?;
-	let index = ghz_find - 4;
-	let thousand_char = brand_string.chars().nth(index).unwrap();
-	let decimal_char = brand_string.chars().nth(index + 1).unwrap();
-	let hundred_char = brand_string.chars().nth(index + 2).unwrap();
-	let ten_char = brand_string.chars().nth(index + 3).unwrap();
-
-	if let (Some(thousand), '.', Some(hundred), Some(ten)) = (
-		thousand_char.to_digit(10),
-		decimal_char,
-		hundred_char.to_digit(10),
-		ten_char.to_digit(10),
-	) {
-		Ok((thousand * 1000 + hundred * 100 + ten * 10) as u32)
+fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
+	// Determine TSC frequency by measuring it (loop for a second, record ticks)
+	let duration = Duration::from_millis(10);
+	let now = Instant::now();
+	let start = unsafe { rdtsc() };
+	if start > 0 {
+		loop {
+			if now.elapsed() >= duration {
+				break;
+			}
+		}
+		let end = unsafe { rdtsc() };
+		Ok((((end - start) * 100) / MHZ_TO_HZ).try_into().unwrap())
 	} else {
 		Err(())
 	}
 }
 
-#[cfg(target_os = "linux")]
-fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
-	let res_output = Command::new("lscpu").output();
-	if res_output.is_err() {
-		return Err(());
-	}
-	let output = res_output.unwrap();
-	if !output.status.success() {
-		return Err(());
-	}
-	let lscpu_res = std::string::String::from_utf8(output.stdout);
-	let regex_res = Regex::new(r"(?im:^CPU MHz:\s+(?P<frequency>\d+))");
-	if lscpu_res.is_err() || regex_res.is_err() {
-		return Err(());
-	}
-	let lscpu_str = lscpu_res.unwrap();
-	let re = regex_res.unwrap();
-	let freq_str_opt = re
-		.captures(&lscpu_str)
-		.and_then(|cap| cap.name("frequency"));
-	match freq_str_opt {
-		Some(freq_match) => {
-			let freq_res = freq_match.as_str().parse::<u32>();
-			if freq_res.is_err() {
-				return Err(());
-			}
-			let freq = freq_res.unwrap();
-			// Sanity check - ToDo: Use a named constant for upper limit of frequency
-			if freq > 0 && freq < 10000 {
-				Ok(freq)
-			} else {
-				Err(())
-			}
-		}
-		None => Err(()),
-	}
-}
-
-#[cfg(not(target_os = "linux"))]
-fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
-	//Not implemented yet for other systems
-	Err(())
-}
-
 #[cfg(test)]
 mod tests {
+	#[cfg(target_os = "linux")]
+	use crate::linux::tests::has_vm_support;
+
 	use super::*;
 
-	#[cfg(target_os = "linux")]
+	// test is derived from
+	// https://github.com/gz/rust-cpuid/blob/master/examples/tsc_frequency.rs
+	#[test]
+	fn test_detect_freq_from_cpuid() {
+		let cpuid = CpuId::new();
+		let has_tsc = cpuid
+			.get_feature_info()
+			.map_or(false, |finfo| finfo.has_tsc());
+
+		let has_invariant_tsc = cpuid
+			.get_extended_function_info()
+			.map_or(false, |efinfo| efinfo.has_invariant_tsc());
+
+		let tsc_frequency_hz = cpuid.get_tsc_info().map(|tinfo| {
+			if tinfo.tsc_frequency().is_some() {
+				tinfo.tsc_frequency()
+			} else {
+				// Skylake and Kabylake don't report the crystal clock, approximate with base frequency:
+				cpuid
+					.get_processor_frequency_info()
+					.map(|pinfo| pinfo.processor_base_frequency() as u64 * MHZ_TO_HZ)
+					.map(|cpu_base_freq_hz| {
+						let crystal_hz = cpu_base_freq_hz * tinfo.denominator() as u64
+							/ tinfo.numerator() as u64;
+						crystal_hz * tinfo.numerator() as u64 / tinfo.denominator() as u64
+					})
+			}
+		});
+
+		if has_tsc {
+			// Try to figure out TSC frequency with CPUID
+			println!(
+				"TSC Frequency is: {} ({})",
+				match tsc_frequency_hz {
+					Some(x) => format!("{} Hz", x.unwrap_or(0)),
+					None => String::from("unknown"),
+				},
+				if has_invariant_tsc {
+					"invariant"
+				} else {
+					"TSC frequency varies with speed-stepping"
+				}
+			);
+
+			// Check if we run in a VM and the hypervisor can give us the TSC frequency
+			cpuid.get_hypervisor_info().map(|hv| {
+				hv.tsc_frequency().map(|tsc_khz| {
+					let virtual_tsc_frequency_hz = tsc_khz as u64 * KHZ_TO_HZ;
+					println!(
+						"Hypervisor reports TSC Frequency at: {} Hz",
+						virtual_tsc_frequency_hz
+					);
+				})
+			});
+
+			// Determine TSC frequency by measuring it (loop for a second, record ticks)
+			let one_second = Duration::from_secs(1);
+			let now = Instant::now();
+			let start = unsafe { rdtsc() };
+			if start > 0 {
+				loop {
+					if now.elapsed() >= one_second {
+						break;
+					}
+				}
+				let end = unsafe { rdtsc() };
+				println!(
+					"Empirical measurement of TSC frequency was: {} Hz",
+					(end - start)
+				);
+			} else {
+				println!("Don't have rdtsc on stable!");
+				assert!(true);
+			}
+		} else {
+			println!("System does not have a TSC.");
+			assert!(true);
+		}
+	}
+
 	#[test]
 	fn test_get_cpu_frequency_from_os() {
 		let freq_res = get_cpu_frequency_from_os();
@@ -815,6 +883,65 @@ mod tests {
 		let freq = freq_res.unwrap();
 		assert!(freq > 0);
 		assert!(freq < 10000); //More than 10Ghz is probably wrong
+	}
+
+	#[cfg(target_os = "linux")]
+	#[test]
+	fn test_vm_load_min_size_1024() {
+		if has_vm_support() == false {
+			return;
+		}
+
+		let path =
+			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
+		let vm = create_vm(
+			path,
+			&VmParameter::new(
+				1024,
+				1,
+				false,
+				true,
+				false,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+			),
+		);
+		assert_eq!(vm.is_err(), true);
+	}
+
+	#[cfg(target_os = "linux")]
+	#[test]
+	fn test_vm_load_min_size_102400() {
+		if has_vm_support() == false {
+			return;
+		}
+
+		let path =
+			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
+		let mut vm = create_vm(
+			path,
+			&VmParameter::new(
+				102400,
+				1,
+				false,
+				true,
+				false,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+				std::option::Option::None,
+			),
+		)
+		.expect("Unable to create VM");
+		unsafe {
+			let res = vm.load_kernel();
+
+			assert_eq!(res.is_err(), true);
+		}
 	}
 }
 

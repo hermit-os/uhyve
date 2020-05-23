@@ -1,3 +1,4 @@
+pub const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
 pub const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
 pub const PAGE_SIZE: usize = 0x1000;
 pub const GDT_KERNEL_CODE: u16 = 1;
