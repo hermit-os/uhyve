@@ -717,7 +717,7 @@ pub trait Vm {
 }
 
 fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
-	debug!("Trying to detect CPU frequency via cpuid tsc info");
+	debug!("Trying to detect CPU frequency by tsc info");
 
 	let has_invariant_tsc = cpuid
 		.get_extended_function_info()
@@ -751,7 +751,6 @@ fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
 		}
 	};
 
-	debug!("cpuid detected frequency of {} Hz", hz);
 	if hz > 0 {
 		Ok((hz / MHZ_TO_HZ).try_into().unwrap())
 	} else {
@@ -760,14 +759,13 @@ fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
 }
 
 fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<u32, ()> {
-	debug!("Trying to detect CPU frequency via cpuid hypervisor info");
+	debug!("Trying to detect CPU frequency by hypervisor info");
 	let hypervisor_info = cpuid.get_hypervisor_info().ok_or(())?;
 	debug!(
 		"cpuid detected hypervisor: {:?}",
 		hypervisor_info.identify()
 	);
 	let hz = hypervisor_info.tsc_frequency().ok_or(())? as u64 * KHZ_TO_HZ;
-	debug!("cpuid detected frequency of {} Hz from hypervisor", hz);
 	let mhz: u32 = (hz / MHZ_TO_HZ).try_into().unwrap();
 	if mhz > 0 {
 		Ok(mhz)
