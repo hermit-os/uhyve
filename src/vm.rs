@@ -717,6 +717,13 @@ pub trait Vm {
 }
 
 fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
+	let has_invariant_tsc = cpuid
+			.get_extended_function_info()
+			.map_or(false, |efinfo| efinfo.has_invariant_tsc());
+	if !has_invariant_tsc {
+		warn!("TSC frequency varies with speed-stepping")
+	}
+
 	let tsc_frequency_hz = cpuid.get_tsc_info().map(|tinfo| {
 		if tinfo.nominal_frequency() != 0 {
 			tinfo.tsc_frequency()
