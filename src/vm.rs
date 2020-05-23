@@ -868,11 +868,11 @@ mod tests {
 				);
 			} else {
 				println!("Don't have rdtsc on stable!");
-				assert!(true);
+				assert!(false);
 			}
 		} else {
 			println!("System does not have a TSC.");
-			assert!(true);
+			assert!(false);
 		}
 	}
 
