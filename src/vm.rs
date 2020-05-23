@@ -7,7 +7,6 @@ use memmap::Mmap;
 use nix::errno::errno;
 use raw_cpuid::CpuId;
 use regex::Regex;
-use std;
 use std::fs::File;
 use std::io::Cursor;
 use std::io::Read;
