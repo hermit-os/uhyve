@@ -774,17 +774,17 @@ fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<
 
 fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
 	// Determine TSC frequency by measuring it (loop for a second, record ticks)
-	let one_second = Duration::from_secs(1);
+	let duration = Duration::from_millis(10);
 	let now = Instant::now();
 	let start = unsafe { rdtsc() };
 	if start > 0 {
 		loop {
-			if now.elapsed() >= one_second {
+			if now.elapsed() >= duration {
 				break;
 			}
 		}
 		let end = unsafe { rdtsc() };
-		Ok(((end - start) / MHZ_TO_HZ).try_into().unwrap())
+		Ok((((end - start) * 100) / MHZ_TO_HZ).try_into().unwrap())
 	} else {
 		Err(())
 	}
