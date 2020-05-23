@@ -532,7 +532,7 @@ alt_complete!(parse_thread_id_element => { |pid| ThreadId { pid: pid, tid: Id::A
 named!(parse_ping_thread<&[u8], ThreadId>,
 	   preceded!(tag!("T"), parse_thread_id));
 
-fn v_command<'a>(i: &'a [u8]) -> IResult<&'a [u8], Command<'a>> {
+fn v_command(i: &[u8]) -> IResult<&[u8], Command> {
 	alt_complete!(i,
 	tag!("vCtrlC") => { |_| Command::CtrlC }
 	| preceded!(tag!("vCont"),

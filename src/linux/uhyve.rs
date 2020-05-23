@@ -12,7 +12,6 @@ use crate::vm::{BootInfo, VirtualCPU, Vm, VmParameter};
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use nix::sys::mman::*;
-use std;
 use std::convert::TryInto;
 use std::mem;
 use std::net::Ipv4Addr;
@@ -32,7 +31,9 @@ const KVM_32BIT_GAP_SIZE: usize = 768 << 20;
 const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
 
 struct UhyveNetwork {
+	#[allow(dead_code)]
 	reader: std::thread::JoinHandle<()>,
+	#[allow(dead_code)]
 	writer: std::thread::JoinHandle<()>,
 	tx: std::sync::mpsc::SyncSender<usize>,
 }

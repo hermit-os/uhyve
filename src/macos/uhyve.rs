@@ -5,7 +5,6 @@ use crate::macos::vcpu::*;
 use crate::vm::{BootInfo, VirtualCPU, Vm, VmParameter};
 use libc;
 use libc::c_void;
-use std;
 use std::net::Ipv4Addr;
 use std::ptr;
 use std::ptr::read_volatile;

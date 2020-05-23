@@ -167,7 +167,7 @@ struct HWBreakpoint {
 }
 
 impl State {
-	pub fn new() -> Self {
+	pub(crate) fn new() -> Self {
 		Self {
 			breakpoints: HashMap::new(),
 			breakpoints_hw: HashMap::new(),

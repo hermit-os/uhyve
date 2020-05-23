@@ -7,13 +7,12 @@ use libc;
 use memmap::Mmap;
 use nix::errno::errno;
 use raw_cpuid::CpuId;
-use std;
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::Cursor;
 use std::io::Read;
 use std::net::Ipv4Addr;
-use std::ptr::write_volatile;
+use std::ptr::write;
 use std::time::{Duration, Instant, SystemTime};
 use std::{fmt, mem, slice};
 
@@ -595,7 +594,7 @@ pub trait Vm {
 		// forward IP address to kernel
 		match self.get_ip() {
 			Some(ip) => {
-				write_volatile(&mut (*boot_info).hcip, ip.octets());
+				write(&mut (*boot_info).hcip, ip.octets());
 			}
 
 			None => {}
@@ -604,7 +603,7 @@ pub trait Vm {
 		// forward gateway address to kernel
 		match self.get_gateway() {
 			Some(gateway) => {
-				write_volatile(&mut (*boot_info).hcgateway, gateway.octets());
+				write(&mut (*boot_info).hcgateway, gateway.octets());
 			}
 
 			None => {}
@@ -613,7 +612,7 @@ pub trait Vm {
 		// forward mask to kernel
 		match self.get_mask() {
 			Some(mask) => {
-				write_volatile(&mut (*boot_info).hcmask, mask.octets());
+				write(&mut (*boot_info).hcmask, mask.octets());
 			}
 
 			None => {}
@@ -623,9 +622,9 @@ pub trait Vm {
 
 		for header in file_elf.phdrs {
 			if header.progtype == PT_TLS {
-				write_volatile(&mut (*boot_info).tls_start, header.paddr);
-				write_volatile(&mut (*boot_info).tls_filesz, header.filesz);
-				write_volatile(&mut (*boot_info).tls_memsz, header.memsz);
+				write(&mut (*boot_info).tls_start, header.paddr);
+				write(&mut (*boot_info).tls_filesz, header.filesz);
+				write(&mut (*boot_info).tls_memsz, header.memsz);
 			} else if header.progtype == PT_LOAD {
 				let vm_start = header.paddr as usize;
 				let vm_end = vm_start + header.filesz as usize;
@@ -658,30 +657,30 @@ pub trait Vm {
 					debug!("Set HermitCore header at 0x{:x}", BOOT_INFO_ADDR as usize);
 					self.set_boot_info(boot_info);
 
-					write_volatile(&mut (*boot_info).base, header.paddr);
-					write_volatile(&mut (*boot_info).limit, vm_mem_length as u64); // memory size
-					write_volatile(&mut (*boot_info).possible_cpus, 1);
+					write(&mut (*boot_info).base, header.paddr);
+					write(&mut (*boot_info).limit, vm_mem_length as u64); // memory size
+					write(&mut (*boot_info).possible_cpus, 1);
 					#[cfg(target_os = "linux")]
-					write_volatile(&mut (*boot_info).uhyve, 0x3); // announce uhyve and pci support
+					write(&mut (*boot_info).uhyve, 0x3); // announce uhyve and pci support
 					#[cfg(not(target_os = "linux"))]
-					write_volatile(&mut (*boot_info).uhyve, 0x1); // announce uhyve
-					write_volatile(&mut (*boot_info).current_boot_id, 0);
+					write(&mut (*boot_info).uhyve, 0x1); // announce uhyve
+					write(&mut (*boot_info).current_boot_id, 0);
 					if self.verbose() {
-						write_volatile(&mut (*boot_info).uartport, UHYVE_UART_PORT);
+						write(&mut (*boot_info).uartport, UHYVE_UART_PORT);
 					} else {
-						write_volatile(&mut (*boot_info).uartport, 0);
+						write(&mut (*boot_info).uartport, 0);
 					}
 
 					debug!("Set stack base to 0x{:x}", header.paddr - KERNEL_STACK_SIZE);
-					write_volatile(
+					write(
 						&mut (*boot_info).current_stack_address,
 						header.paddr - KERNEL_STACK_SIZE,
 					);
 
-					write_volatile(&mut (*boot_info).host_logical_addr, vm_mem.offset(0) as u64);
+					write(&mut (*boot_info).host_logical_addr, vm_mem.offset(0) as u64);
 
 					match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-						Ok(n) => write_volatile(&mut (*boot_info).boot_gtod, n.as_secs() * 1000000),
+						Ok(n) => write(&mut (*boot_info).boot_gtod, n.as_secs() * 1000000),
 						Err(err) => panic!("SystemTime before UNIX EPOCH! Error: {}", err),
 					}
 
@@ -694,7 +693,7 @@ pub trait Vm {
 						})
 					});
 					debug!("detected a cpu frequency of {} Mhz", mhz);
-					write_volatile(&mut (*boot_info).cpu_freq, mhz);
+					write(&mut (*boot_info).cpu_freq, mhz);
 					if (*boot_info).cpu_freq == 0 {
 						warn!("Unable to determine processor frequency");
 					}
@@ -702,7 +701,7 @@ pub trait Vm {
 
 				// store total kernel size
 				let start = pstart.unwrap();
-				write_volatile(
+				write(
 					&mut (*boot_info).image_size,
 					header.paddr + header.memsz - start,
 				);
