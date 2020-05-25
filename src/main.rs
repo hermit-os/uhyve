@@ -75,7 +75,7 @@ fn main() {
 
 	let matches = App::new("uhyve")
 		.version(crate_version!())
-		.author("Stefan Lankes <slankes@eonerc.rwth-aachen.de>")
+		.author(crate_authors!("\n"))
 		.about("A minimal hypervisor for RustyHermit")
 		.arg(
 			Arg::with_name("VERBOSE")
