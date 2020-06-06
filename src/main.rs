@@ -1,31 +1,22 @@
 #[macro_use]
-extern crate lazy_static;
-
-#[macro_use]
 extern crate log;
 
 #[macro_use]
 extern crate clap;
 
-pub mod error;
-
-use lazy_static::lazy_static;
 use std::env;
 use std::sync::atomic::spin_loop_hint;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 
-use uhyvelib::consts::DEFAULT_GUEST_SIZE; // TODO move to binary crate?
-use uhyvelib::consts::MINIMAL_GUEST_SIZE; // TODO move to binary crate?
+use uhyvelib::utils;
 use uhyvelib::vm::Vm;
 use uhyvelib::vm::VmParameter;
-use uhyvelib::*;
 
 use clap::{App, Arg};
 
-lazy_static! {
-	static ref MAC_ADDRESS: Mutex<Option<String>> = Mutex::new(None);
-}
+const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
+const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
 
 fn main() {
 	env_logger::init();
@@ -155,12 +146,6 @@ fn main() {
 	let gateway = None; // matches.value_of("GATEWAY").or(None);
 	let mask = None; //matches.value_of("MASK").or(None);
 	let nic = None; //matches.value_of("NETIF").or(None);
-
-	// determine and store MAC address
-	{
-		let mac = matches.value_of("MAC").or(None);
-		*MAC_ADDRESS.lock().unwrap() = mac.map(|s| s.to_string());
-	}
 
 	let mut mergeable: bool = utils::parse_bool("HERMIT_MERGEABLE", false);
 	if matches.is_present("MERGEABLE") {

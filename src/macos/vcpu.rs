@@ -667,17 +667,6 @@ impl VirtualCPU for UhyveCPU {
 							self.cmdval(self.host_address(data_addr as usize))?;
 							self.vcpu.write_register(&x86Reg::RIP, rip + len)?;
 						}
-						/*UHYVE_PORT_NETINFO => {
-							let data_addr: usize =
-								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.netinfo(self.host_address(data_addr))?;
-						}
-						UHYVE_PORT_NETWRITE => {
-							match &self.tx {
-								Some(tx_channel) => tx_channel.send(1).unwrap(),
-								_ => {}
-							};
-						}*/
 						UHYVE_PORT_EXIT => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&x86Reg::RAX)? & 0xFFFFFFFF;

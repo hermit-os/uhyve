@@ -55,5 +55,3 @@ pub mod utils;
 pub mod vm;
 
 pub use arch::*;
-use lazy_static::lazy_static;
-use std::sync::Mutex;

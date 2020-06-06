@@ -371,11 +371,6 @@ impl VirtualCPU for UhyveCPU {
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
 							self.cmdval(self.host_address(data_addr))?;
 						}
-						UHYVE_PORT_NETINFO => {
-							let data_addr: usize =
-								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.netinfo(self.host_address(data_addr))?;
-						}
 						UHYVE_PORT_NETWRITE => {
 							match &self.tx {
 								Some(tx_channel) => tx_channel.send(1).unwrap(),
