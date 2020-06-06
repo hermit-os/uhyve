@@ -1,70 +1,27 @@
-#![allow(unused_macros)]
-
-extern crate aligned_alloc;
-extern crate elf;
-extern crate libc;
-extern crate memmap;
-extern crate nix;
-#[macro_use]
-extern crate bitflags;
-#[macro_use]
-extern crate clap;
-#[cfg(target_os = "linux")]
-extern crate tun_tap;
 #[macro_use]
 extern crate lazy_static;
-#[cfg(target_os = "linux")]
-extern crate kvm_bindings;
-#[cfg(target_os = "linux")]
-extern crate kvm_ioctls;
-#[cfg(target_os = "linux")]
-extern crate vmm_sys_util;
-#[cfg(target_os = "macos")]
-extern crate xhypervisor;
 
-extern crate burst;
 #[macro_use]
 extern crate log;
-extern crate env_logger;
-extern crate raw_cpuid;
-extern crate x86;
 
 #[macro_use]
-extern crate nom;
-extern crate strum;
-#[macro_use]
-extern crate strum_macros;
-extern crate byteorder;
-extern crate gdb_protocol;
-extern crate rustc_serialize;
+extern crate clap;
 
-#[macro_use]
-mod macros;
-
-pub mod arch;
-pub mod consts;
-mod debug_manager;
 pub mod error;
-mod gdb_parser;
-#[cfg(target_os = "linux")]
-mod linux;
-#[cfg(target_os = "macos")]
-mod macos;
-mod paging;
-#[cfg(target_os = "linux")]
-mod shared_queue;
-pub mod utils;
-mod vm;
 
-pub use arch::*;
-use clap::{App, Arg};
-use consts::*;
 use lazy_static::lazy_static;
 use std::env;
 use std::sync::atomic::spin_loop_hint;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use vm::*;
+
+use uhyvelib::consts::DEFAULT_GUEST_SIZE; // TODO move to binary crate?
+use uhyvelib::consts::MINIMAL_GUEST_SIZE; // TODO move to binary crate?
+use uhyvelib::vm::Vm;
+use uhyvelib::vm::VmParameter;
+use uhyvelib::*;
+
+use clap::{App, Arg};
 
 lazy_static! {
 	static ref MAC_ADDRESS: Mutex<Option<String>> = Mutex::new(None);
@@ -230,7 +187,7 @@ fn main() {
 
 	// create and initialize the VM
 	let vm = Arc::new({
-		let mut vm = create_vm(
+		let mut vm = uhyvelib::vm::create_vm(
 			path.to_string(),
 			&VmParameter::new(
 				mem_size, num_cpus, verbose, hugepage, mergeable, ip, gateway, mask, nic, gdbport,
