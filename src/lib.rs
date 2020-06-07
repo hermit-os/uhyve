@@ -7,8 +7,6 @@ extern crate memmap;
 extern crate nix;
 #[macro_use]
 extern crate bitflags;
-#[macro_use]
-extern crate clap;
 #[cfg(target_os = "linux")]
 extern crate tun_tap;
 #[macro_use]
@@ -57,9 +55,3 @@ pub mod utils;
 pub mod vm;
 
 pub use arch::*;
-use lazy_static::lazy_static;
-use std::sync::Mutex;
-
-lazy_static! {
-	static ref MAC_ADDRESS: Mutex<Option<String>> = Mutex::new(None);
-}

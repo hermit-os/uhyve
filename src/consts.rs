@@ -1,5 +1,3 @@
-pub const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
-pub const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
 pub const PAGE_SIZE: usize = 0x1000;
 pub const GDT_KERNEL_CODE: u16 = 1;
 pub const GDT_KERNEL_DATA: u16 = 2;
@@ -36,7 +34,6 @@ pub const UHYVE_PORT_EXIT: u16 = 0x540;
 pub const UHYVE_PORT_LSEEK: u16 = 0x580;
 
 // Networkports
-pub const UHYVE_PORT_NETINFO: u16 = 0x600;
 pub const UHYVE_PORT_NETWRITE: u16 = 0x640;
 pub const UHYVE_PORT_NETREAD: u16 = 0x680;
 pub const UHYVE_PORT_NETSTAT: u16 = 0x700;
