@@ -135,15 +135,9 @@ impl VirtioNetPciDevice {
 	// Sends packets using the tun_tap crate, subject to change
 	fn send_available_packets(&mut self, cpu: &dyn VirtualCPU) {
 		let tx_queue = &mut self.virt_queues[TX_QUEUE];
-		let mut iter = tx_queue.avail_iter();
 		let mut send_indices = Vec::new();
-		loop {
-			match iter.next() {
-				Some(index) => {
-					send_indices.push(index);
-				}
-				None => break,
-			}
+		for index in tx_queue.avail_iter() {
+			send_indices.push(index);
 		}
 		for index in send_indices {
 			let desc = unsafe { tx_queue.get_descriptor(index) };

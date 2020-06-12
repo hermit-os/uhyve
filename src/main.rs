@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::thread;
 
 use uhyvelib::utils;
+use uhyvelib::vm;
 use uhyvelib::vm::Vm;
-use uhyvelib::vm::VmParameter;
 
 use clap::{App, Arg};
 
@@ -172,9 +172,9 @@ fn main() {
 
 	// create and initialize the VM
 	let vm = Arc::new({
-		let mut vm = uhyvelib::vm::create_vm(
+		let mut vm = vm::create_vm(
 			path.to_string(),
-			&VmParameter::new(
+			&vm::VmParameter::new(
 				mem_size, num_cpus, verbose, hugepage, mergeable, ip, gateway, mask, nic, gdbport,
 			),
 		)
