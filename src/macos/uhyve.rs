@@ -2,7 +2,7 @@ use crate::debug_manager::DebugManager;
 use crate::error::*;
 use crate::macos::ioapic::IoApic;
 use crate::macos::vcpu::*;
-use crate::vm::{BootInfo, VirtualCPU, Vm, VmParameter};
+use crate::vm::{BootInfo, Parameter, VirtualCPU, Vm};
 use libc;
 use libc::c_void;
 use std::net::Ipv4Addr;
@@ -24,11 +24,7 @@ pub struct Uhyve {
 }
 
 impl Uhyve {
-	pub fn new(
-		kernel_path: String,
-		specs: &VmParameter,
-		dbg: Option<DebugManager>,
-	) -> Result<Uhyve> {
+	pub fn new(kernel_path: String, specs: &Parameter, dbg: Option<DebugManager>) -> Result<Uhyve> {
 		let mem = unsafe {
 			libc::mmap(
 				std::ptr::null_mut(),

@@ -8,7 +8,7 @@ use crate::linux::vcpu::*;
 use crate::linux::virtio::*;
 use crate::linux::{MemoryRegion, KVM};
 use crate::shared_queue::*;
-use crate::vm::{BootInfo, VirtualCPU, Vm, VmParameter};
+use crate::vm::{BootInfo, Parameter, VirtualCPU, Vm};
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use nix::sys::mman::*;
@@ -131,11 +131,7 @@ pub struct Uhyve {
 }
 
 impl Uhyve {
-	pub fn new(
-		kernel_path: String,
-		specs: &VmParameter,
-		dbg: Option<DebugManager>,
-	) -> Result<Uhyve> {
+	pub fn new(kernel_path: String, specs: &Parameter, dbg: Option<DebugManager>) -> Result<Uhyve> {
 		// parse string to get IP address
 		let ip_addr = match &specs.ip {
 			Some(addr_str) => {

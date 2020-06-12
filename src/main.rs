@@ -174,7 +174,7 @@ fn main() {
 	let vm = Arc::new({
 		let mut vm = vm::create_vm(
 			path.to_string(),
-			&vm::VmParameter::new(
+			&vm::Parameter::new(
 				mem_size, num_cpus, verbose, hugepage, mergeable, ip, gateway, mask, nic, gdbport,
 			),
 		)
