@@ -9,7 +9,7 @@ pub fn load_vm_hello_world(c: &mut Criterion) {
 	let path = env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
 	let mut vm = uhyvelib::vm::create_vm(
 		path,
-		&uhyvelib::vm::VmParameter::new(
+		&uhyvelib::vm::Parameter::new(
 			1024 * 100000,
 			1,
 			false,

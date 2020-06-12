@@ -122,7 +122,7 @@ impl fmt::Debug for BootInfo {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct VmParameter<'a> {
+pub struct Parameter<'a> {
 	pub mem_size: usize,
 	pub num_cpus: u32,
 	pub verbose: bool,
@@ -135,7 +135,7 @@ pub struct VmParameter<'a> {
 	pub gdbport: Option<u32>,
 }
 
-impl<'a> VmParameter<'a> {
+impl<'a> Parameter<'a> {
 	pub fn new(
 		mem_size: usize,
 		num_cpus: u32,
@@ -148,7 +148,7 @@ impl<'a> VmParameter<'a> {
 		nic: Option<&'a str>,
 		gdbport: Option<u32>,
 	) -> Self {
-		VmParameter {
+		Parameter {
 			mem_size,
 			num_cpus,
 			verbose,
@@ -833,7 +833,7 @@ mod tests {
 			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
 		let vm = create_vm(
 			path,
-			&VmParameter::new(
+			&Parameter::new(
 				1024,
 				1,
 				false,
@@ -860,7 +860,7 @@ mod tests {
 			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
 		let mut vm = create_vm(
 			path,
-			&VmParameter::new(
+			&Parameter::new(
 				102400,
 				1,
 				false,
@@ -883,7 +883,7 @@ mod tests {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn create_vm(path: String, specs: &super::vm::VmParameter) -> Result<Uhyve> {
+pub fn create_vm(path: String, specs: &super::vm::Parameter) -> Result<Uhyve> {
 	// If we are given a port, create new DebugManager.
 	let gdb = specs.gdbport.map(|port| DebugManager::new(port).unwrap());
 
@@ -893,7 +893,7 @@ pub fn create_vm(path: String, specs: &super::vm::VmParameter) -> Result<Uhyve> 
 }
 
 #[cfg(target_os = "windows")]
-pub fn create_vm(path: String, specs: &super::vm::VmParameter) -> Result<Uhyve> {
+pub fn create_vm(path: String, specs: &super::vm::Parameter) -> Result<Uhyve> {
 	let vm = Uhyve::new(path.clone(), &specs)?;
 
 	Ok(vm)
