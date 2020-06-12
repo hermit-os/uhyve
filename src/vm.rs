@@ -543,30 +543,18 @@ pub trait Vm {
 		*boot_info = BootInfo::new();
 
 		// forward IP address to kernel
-		match self.get_ip() {
-			Some(ip) => {
-				write(&mut (*boot_info).hcip, ip.octets());
-			}
-
-			None => {}
+		if let Some(ip) = self.get_ip() {
+			write(&mut (*boot_info).hcip, ip.octets());
 		}
 
 		// forward gateway address to kernel
-		match self.get_gateway() {
-			Some(gateway) => {
-				write(&mut (*boot_info).hcgateway, gateway.octets());
-			}
-
-			None => {}
+		if let Some(gateway) = self.get_gateway() {
+			write(&mut (*boot_info).hcgateway, gateway.octets());
 		}
 
 		// forward mask to kernel
-		match self.get_mask() {
-			Some(mask) => {
-				write(&mut (*boot_info).hcmask, mask.octets());
-			}
-
-			None => {}
+		if let Some(mask) = self.get_mask() {
+			write(&mut (*boot_info).hcmask, mask.octets());
 		}
 
 		let mut pstart: Option<u64> = None;
@@ -818,12 +806,10 @@ mod tests {
 					(end - start)
 				);
 			} else {
-				println!("Don't have rdtsc on stable!");
-				assert!(false);
+				panic!("Don't have rdtsc on stable!");
 			}
 		} else {
-			println!("System does not have a TSC.");
-			assert!(false);
+			panic!("System does not have a TSC.");
 		}
 	}
 
@@ -839,7 +825,7 @@ mod tests {
 	#[cfg(target_os = "linux")]
 	#[test]
 	fn test_vm_load_min_size_1024() {
-		if has_vm_support() == false {
+		if !has_vm_support() {
 			return;
 		}
 
@@ -866,7 +852,7 @@ mod tests {
 	#[cfg(target_os = "linux")]
 	#[test]
 	fn test_vm_load_min_size_102400() {
-		if has_vm_support() == false {
+		if !has_vm_support() {
 			return;
 		}
 

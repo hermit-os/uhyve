@@ -517,7 +517,7 @@ named!(parse_thread_id_element<&[u8], Id>,
 
 // Parse a thread-id.
 named!(parse_thread_id<&[u8], ThreadId>,
-alt_complete!(parse_thread_id_element => { |pid| ThreadId { pid: pid, tid: Id::Any } }
+alt_complete!(parse_thread_id_element => { |pid| ThreadId { pid, tid: Id::Any } }
 			  | preceded!(tag!("p"),
 						  separated_pair!(parse_thread_id_element,
 										  tag!("."),
@@ -653,7 +653,7 @@ named!(parse_cond_and_command_list<&[u8], (Option<Vec<Bytecode>>,
 				 cmd_list: maybe_command_list >>
 				 (cond_list, cmd_list)));
 
-fn parse_z_packet<'a>(i: &'a [u8]) -> IResult<&'a [u8], Command<'a>> {
+fn parse_z_packet(i: &[u8]) -> IResult<&[u8], Command> {
 	let (rest, (action, type_, addr, kind)) = try_parse!(
 		i,
 		do_parse!(
@@ -670,12 +670,7 @@ fn parse_z_packet<'a>(i: &'a [u8]) -> IResult<&'a [u8], Command<'a>> {
 		ZAction::Remove => Done(rest, remove_command(type_, addr, kind)),
 	};
 
-	fn insert_command<'a>(
-		rest: &'a [u8],
-		type_: ZType,
-		addr: u64,
-		kind: u64,
-	) -> IResult<&'a [u8], Command<'a>> {
+	fn insert_command(rest: &[u8], type_: ZType, addr: u64, kind: u64) -> IResult<&[u8], Command> {
 		match type_ {
 			// Software and hardware breakpoints both permit optional condition
 			// lists and commands that are evaluated on the target when
@@ -720,7 +715,7 @@ fn parse_z_packet<'a>(i: &'a [u8]) -> IResult<&'a [u8], Command<'a>> {
 	}
 }
 
-fn command<'a>(i: &'a [u8]) -> IResult<&'a [u8], Command<'a>> {
+fn command(i: &[u8]) -> IResult<&[u8], Command> {
 	alt!(i,
 		 tag!("!") => { |_|   Command::EnableExtendedMode }
 		 | tag!("?") => { |_| Command::TargetHaltReason }
@@ -1295,7 +1290,7 @@ impl<'a> From<Response<'a>> for Vec<u8> {
 
 fn handle_supported_features<'a, H>(
 	handler: &H,
-	_features: &Vec<GDBFeatureSupported<'a>>,
+	_features: &[GDBFeatureSupported<'a>],
 ) -> Response<'static>
 where
 	H: Handler,
