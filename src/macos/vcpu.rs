@@ -8,6 +8,7 @@ use crate::paging::*;
 use crate::vm::VirtualCPU;
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use lazy_static::lazy_static;
+use log::{debug, error, trace};
 use std::sync::{Arc, Mutex};
 use x86::controlregs::*;
 use x86::cpuid::*;

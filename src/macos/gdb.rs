@@ -1,9 +1,12 @@
+use ::x86::bits64::rflags::RFlags;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use log::{debug, error};
 use rustc_serialize::hex::ToHex;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::slice;
+use xhypervisor::{vCPU, x86Reg};
 
 use crate::arch::x86;
 use crate::error;
@@ -14,8 +17,6 @@ use crate::gdb_parser::{
 use crate::macos::vcpu::UhyveCPU;
 use crate::utils::get_max_subslice;
 use crate::vm::VirtualCPU;
-use crate::x86::bits64::rflags::RFlags;
-use xhypervisor::{vCPU, x86Reg};
 
 /// Debugging Stub for linux/x64
 /// Currently supported features:
