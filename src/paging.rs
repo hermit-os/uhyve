@@ -15,6 +15,8 @@ pub const PAGE_BITS: usize = 12;
 /// Number of bits of the index in each table (PML4, PDPT, PDT, PGT).
 pub const PAGE_MAP_BITS: usize = 9;
 
+use bitflags::bitflags;
+
 bitflags! {
 	/// Possible flags for an entry in either table (PML4, PDPT, PDT, PGT)
 	///

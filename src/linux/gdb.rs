@@ -18,6 +18,7 @@ use crate::gdb_parser::{
 use crate::linux::vcpu::UhyveCPU;
 use crate::utils::get_max_subslice;
 use crate::vm::VirtualCPU;
+use log::{debug, error, info};
 
 /// Debugging Stub for linux/x64
 /// Currently supported features:

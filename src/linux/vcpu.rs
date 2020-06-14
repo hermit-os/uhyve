@@ -9,6 +9,7 @@ use crate::vm::VirtualCPU;
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
 use libc::ioctl;
+use log::{debug, error, info};
 use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
 use x86::controlregs::*;

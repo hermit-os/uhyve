@@ -5,6 +5,7 @@ pub mod virtio;
 pub mod virtqueue;
 
 use kvm_ioctls::Kvm;
+use lazy_static::lazy_static;
 
 lazy_static! {
 	static ref KVM: Kvm = Kvm::new().unwrap();

@@ -2,6 +2,7 @@ use super::paging::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::_rdtsc as rdtsc;
 use elf::types::{ELFCLASS64, EM_X86_64, ET_EXEC, PT_LOAD, PT_TLS};
+use log::{debug, error, warn};
 use memmap::Mmap;
 use nix::errno::errno;
 use raw_cpuid::CpuId;
