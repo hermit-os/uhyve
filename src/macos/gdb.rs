@@ -82,14 +82,14 @@ impl UhyveCPU {
 		};
 	}
 
-	pub unsafe fn read_mem(&self, guest_addr: usize, len: usize) -> &[u8] {
+	unsafe fn read_mem(&self, guest_addr: usize, len: usize) -> &[u8] {
 		let phys = self.virt_to_phys(guest_addr);
 		let host = self.host_address(phys);
 
 		slice::from_raw_parts(host as *mut u8, len)
 	}
 
-	pub unsafe fn write_mem(&self, guest_addr: usize, data: &[u8]) {
+	unsafe fn write_mem(&self, guest_addr: usize, data: &[u8]) {
 		let phys = self.virt_to_phys(guest_addr);
 		let host = self.host_address(phys);
 
