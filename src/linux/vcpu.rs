@@ -321,7 +321,10 @@ impl VirtualCPU for UhyveCPU {
 							let virtio_device = self.virtio_device.lock().unwrap();
 							virtio_device.handle_read(pci_addr & 0x3ff, addr);
 						} else {
-							unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
+							#[allow(clippy::cast_ptr_alignment)]
+							unsafe {
+								*(addr.as_ptr() as *mut u32) = 0xffffffff
+							};
 						}
 					}
 					PCI_CONFIG_ADDRESS_PORT => {}
@@ -355,6 +358,7 @@ impl VirtualCPU for UhyveCPU {
 				},
 				VcpuExit::IoOut(port, addr) => {
 					match port {
+						#![allow(clippy::cast_ptr_alignment)]
 						SHUTDOWN_PORT => {
 							return Ok(());
 						}
