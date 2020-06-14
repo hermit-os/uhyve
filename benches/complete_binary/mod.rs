@@ -4,7 +4,6 @@ use criterion::{criterion_group, Criterion};
 
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::Duration;
 
 pub fn run_hello_world(c: &mut Criterion) {
 	let uhyve_path = env!("CARGO_MANIFEST_DIR").to_string() + &"/target/release/uhyve".to_string();
