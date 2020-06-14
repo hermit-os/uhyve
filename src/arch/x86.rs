@@ -1,4 +1,6 @@
 /// Describe Hardware Break/Watchpoints in a format easily convertible into raw addrs and bits in Dr7 register
+use log::error;
+
 #[derive(Copy, Clone)]
 pub struct HWBreakpoint {
 	pub addr: u64,

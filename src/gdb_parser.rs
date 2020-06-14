@@ -18,14 +18,21 @@
 //#![allow(dead_code)]
 
 use gdb_protocol::io::BUF_SIZE;
+use log::{debug, info, trace};
 use nom::IResult::*;
+use nom::{
+	alt, alt_complete, call, complete, do_parse, error_position, flat_map, is_not, is_not_s, many0,
+	many1, map, map_res, named, one_of, opt, preceded, separated_list, separated_list_complete,
+	separated_nonempty_list, separated_nonempty_list_complete, separated_pair, tag, take,
+	take_till, take_while1, try_parse, tuple, tuple_parser,
+};
 use nom::{IResult, Needed};
+use rustc_serialize::hex::ToHex;
 use std::borrow::Cow;
 use std::convert::From;
 use std::ops::Range;
 use std::str::{self, FromStr};
-
-use rustc_serialize::hex::ToHex;
+use strum_macros::EnumString;
 
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone, Debug, EnumString, PartialEq)]

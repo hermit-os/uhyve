@@ -11,6 +11,7 @@ use crate::shared_queue::*;
 use crate::vm::{BootInfo, Parameter, VirtualCPU, Vm};
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
+use log::debug;
 use nix::sys::mman::*;
 use std::convert::TryInto;
 use std::mem;
