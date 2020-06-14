@@ -539,6 +539,7 @@ pub trait Vm {
 		let kernel_file = file.as_ref();
 
 		// create default bootinfo
+		#[allow(clippy::cast_ptr_alignment)]
 		let boot_info = vm_mem.offset(BOOT_INFO_ADDR as isize) as *mut BootInfo;
 		*boot_info = BootInfo::new();
 

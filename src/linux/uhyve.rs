@@ -50,6 +50,7 @@ impl UhyveNetwork {
 
 		let writer = thread::spawn(move || {
 			let tx_queue = unsafe {
+				#[allow(clippy::cast_ptr_alignment)]
 				&mut *((start + align_up!(mem::size_of::<SharedQueue>(), 64)) as *mut u8
 					as *mut SharedQueue)
 			};
@@ -75,7 +76,10 @@ impl UhyveNetwork {
 		});
 
 		let reader = thread::spawn(move || {
-			let rx_queue = unsafe { &mut *(start as *mut u8 as *mut SharedQueue) };
+			let rx_queue = unsafe {
+				#[allow(clippy::cast_ptr_alignment)]
+				&mut *(start as *mut u8 as *mut SharedQueue)
+			};
 			rx_queue.init();
 
 			loop {

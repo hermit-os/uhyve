@@ -258,7 +258,10 @@ impl VirtioNetPciDevice {
 	}
 
 	pub fn write_selected_queue(&mut self, dest: &[u8]) {
-		self.selected_queue_num = unsafe { *(dest.as_ptr() as *const u16) };
+		self.selected_queue_num = unsafe {
+			#[allow(clippy::cast_ptr_alignment)]
+			*(dest.as_ptr() as *const u16)
+		};
 	}
 
 	// Register virtqueue
@@ -268,7 +271,10 @@ impl VirtioNetPciDevice {
 			&& status & STATUS_DRIVER_OK == 0
 			&& self.selected_queue_num as usize == self.virt_queues.len()
 		{
-			let gpa = unsafe { *(dest.as_ptr() as *const usize) };
+			let gpa = unsafe {
+				#[allow(clippy::cast_ptr_alignment)]
+				*(dest.as_ptr() as *const usize)
+			};
 			let hva = (*vcpu).host_address(gpa) as *mut u8;
 			let queue = Virtqueue::new(hva, QUEUE_LIMIT);
 			self.virt_queues.push(queue);
@@ -277,7 +283,10 @@ impl VirtioNetPciDevice {
 
 	pub fn write_requested_features(&mut self, dest: &[u8]) {
 		if self.read_status_reg() == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
-			let requested_features = unsafe { *(dest.as_ptr() as *const u32) };
+			let requested_features = unsafe {
+				#[allow(clippy::cast_ptr_alignment)]
+				*(dest.as_ptr() as *const u32)
+			};
 			self.requested_features =
 				(self.requested_features | requested_features) & HOST_FEATURES;
 		}
