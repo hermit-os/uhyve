@@ -1,14 +1,15 @@
 use super::paging::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::_rdtsc as rdtsc;
-use elf::types::{ELFCLASS64, EM_X86_64, ET_EXEC, PT_LOAD, PT_TLS};
+use goblin::elf;
+use goblin::elf64::header::{EM_X86_64, ET_DYN};
+use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
+use goblin::elf64::reloc::*;
 use log::{debug, error, warn};
-use memmap::Mmap;
 use nix::errno::errno;
 use raw_cpuid::CpuId;
 use std::convert::TryInto;
-use std::fs::File;
-use std::io::Cursor;
+use std::fs;
 use std::net::Ipv4Addr;
 use std::ptr::write;
 use std::time::{Duration, Instant, SystemTime};
@@ -95,6 +96,9 @@ impl fmt::Debug for BootInfo {
 		writeln!(f, "version 0x{:x}", self.version)?;
 		writeln!(f, "base 0x{:x}", self.base)?;
 		writeln!(f, "limit 0x{:x}", self.limit)?;
+		writeln!(f, "tls_start 0x{:x}", self.tls_start)?;
+		writeln!(f, "tls_filesz 0x{:x}", self.tls_filesz)?;
+		writeln!(f, "tls_memsz 0x{:x}", self.tls_memsz)?;
 		writeln!(f, "image_size 0x{:x}", self.image_size)?;
 		writeln!(
 			f,
@@ -514,30 +518,30 @@ pub trait Vm {
 	unsafe fn load_kernel(&mut self) -> Result<()> {
 		debug!("Load kernel from {}", self.kernel_path());
 
-		// open the file in read only
-		let kernel_file = File::open(self.kernel_path())
+		let buffer = fs::read(self.kernel_path())
 			.map_err(|_| Error::InvalidFile(self.kernel_path().into()))?;
-		let file =
-			Mmap::map(&kernel_file).map_err(|_| Error::InvalidFile(self.kernel_path().into()))?;
+		let elf =
+			elf::Elf::parse(&buffer).map_err(|_| Error::InvalidFile(self.kernel_path().into()))?;
 
-		// parse the header with ELF module
-		let file_elf = {
-			let mut data = Cursor::new(file.as_ref());
-
-			elf::File::open_stream(&mut data)
-				.map_err(|_| Error::InvalidFile(self.kernel_path().into()))
-		}?;
-
-		if file_elf.ehdr.class != ELFCLASS64
-			|| file_elf.ehdr.elftype != ET_EXEC
-			|| file_elf.ehdr.machine != EM_X86_64
-		{
+		if elf.libraries.len() > 0 {
+			warn!(
+				"Error: file depends on following libraries: {:?}",
+				elf.libraries
+			);
 			return Err(Error::InvalidFile(self.kernel_path().into()));
 		}
 
-		// acquire the slices of the user memory and kernel file
+		// Verify that this module is a HermitCore ELF executable.
+		if elf.header.e_type != ET_DYN {
+			return Err(Error::InvalidFile(self.kernel_path().into()));
+		}
+
+		if elf.header.e_machine != EM_X86_64 {
+			return Err(Error::InvalidFile(self.kernel_path().into()));
+		}
+
+		// acquire the slices of the user memory
 		let (vm_mem, vm_mem_length) = self.guest_mem();
-		let kernel_file = file.as_ref();
 
 		// create default bootinfo
 		#[allow(clippy::cast_ptr_alignment)]
@@ -559,96 +563,113 @@ pub trait Vm {
 			write(&mut (*boot_info).hcmask, mask.octets());
 		}
 
-		let mut pstart: Option<u64> = None;
+		// TODO: should be a random start address
+		let start_address: u64 = 0x400000;
+		self.set_entry_point(start_address + elf.entry);
+		debug!("ELF entry point at 0x{:x}", start_address + elf.entry);
 
-		for header in file_elf.phdrs {
-			if header.progtype == PT_TLS {
-				write(&mut (*boot_info).tls_start, header.paddr);
-				write(&mut (*boot_info).tls_filesz, header.filesz);
-				write(&mut (*boot_info).tls_memsz, header.memsz);
-			} else if header.progtype == PT_LOAD {
-				let vm_start = header.paddr as usize;
-				let vm_end = vm_start + header.filesz as usize;
+		debug!("Set HermitCore header at 0x{:x}", BOOT_INFO_ADDR as usize);
+		self.set_boot_info(boot_info);
 
-				let kernel_start = header.offset as usize;
-				let kernel_end = kernel_start + header.filesz as usize;
+		write(&mut (*boot_info).base, start_address);
+		write(&mut (*boot_info).limit, vm_mem_length as u64); // memory size
+		write(&mut (*boot_info).possible_cpus, 1);
+		#[cfg(target_os = "linux")]
+		write(&mut (*boot_info).uhyve, 0x3); // announce uhyve and pci support
+		#[cfg(not(target_os = "linux"))]
+		write(&mut (*boot_info).uhyve, 0x1); // announce uhyve
+		write(&mut (*boot_info).current_boot_id, 0);
+		if self.verbose() {
+			write(&mut (*boot_info).uartport, UHYVE_UART_PORT);
+		} else {
+			write(&mut (*boot_info).uartport, 0);
+		}
+
+		debug!(
+			"Set stack base to 0x{:x}",
+			start_address - KERNEL_STACK_SIZE
+		);
+		write(
+			&mut (*boot_info).current_stack_address,
+			start_address - KERNEL_STACK_SIZE,
+		);
+
+		write(&mut (*boot_info).host_logical_addr, vm_mem.offset(0) as u64);
+
+		match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+			Ok(n) => write(&mut (*boot_info).boot_gtod, n.as_secs() * 1000000),
+			Err(err) => panic!("SystemTime before UNIX EPOCH! Error: {}", err),
+		}
+
+		let cpuid = CpuId::new();
+		let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
+			debug!("Failed to detect from cpuid");
+			detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
+				debug!("Failed to detect from hypervisor_info");
+				get_cpu_frequency_from_os().unwrap_or(0)
+			})
+		});
+		debug!("detected a cpu frequency of {} Mhz", mhz);
+		write(&mut (*boot_info).cpu_freq, mhz);
+		if (*boot_info).cpu_freq == 0 {
+			warn!("Unable to determine processor frequency");
+		}
+
+		// load application
+		for program_header in &elf.program_headers {
+			if program_header.p_type == PT_LOAD {
+				let vm_start = (start_address + program_header.p_vaddr) as usize;
+				let vm_end = vm_start + program_header.p_filesz as usize;
+				let kernel_start = program_header.p_offset as usize;
+				let kernel_end = kernel_start + program_header.p_filesz as usize;
 
 				debug!(
 					"Load segment with start addr 0x{:x} and size 0x{:x}, offset 0x{:x}",
-					header.paddr, header.filesz, header.offset
+					program_header.p_vaddr, program_header.p_filesz, program_header.p_offset
 				);
 
-				if vm_start + header.memsz as usize > vm_mem_length {
+				if vm_start + program_header.p_memsz as usize > vm_mem_length {
 					error!("Guest memory size isn't large enough");
 					return Err(Error::NotEnoughMemory);
 				}
 
 				let vm_slice = std::slice::from_raw_parts_mut(vm_mem, vm_mem_length);
-				vm_slice[vm_start..vm_end].copy_from_slice(&kernel_file[kernel_start..kernel_end]);
-				for i in &mut vm_slice[vm_end..vm_end + (header.memsz - header.filesz) as usize] {
+				vm_slice[vm_start..vm_end].copy_from_slice(&buffer[kernel_start..kernel_end]);
+				for i in &mut vm_slice
+					[vm_end..vm_end + (program_header.p_memsz - program_header.p_filesz) as usize]
+				{
 					*i = 0
 				}
 
-				if pstart.is_none() {
-					self.set_entry_point(file_elf.ehdr.entry);
-					debug!("ELF entry point at 0x{:x}", file_elf.ehdr.entry);
-
-					pstart = Some(header.paddr as u64);
-
-					debug!("Set HermitCore header at 0x{:x}", BOOT_INFO_ADDR as usize);
-					self.set_boot_info(boot_info);
-
-					write(&mut (*boot_info).base, header.paddr);
-					write(&mut (*boot_info).limit, vm_mem_length as u64); // memory size
-					write(&mut (*boot_info).possible_cpus, 1);
-					#[cfg(target_os = "linux")]
-					write(&mut (*boot_info).uhyve, 0x3); // announce uhyve and pci support
-					#[cfg(not(target_os = "linux"))]
-					write(&mut (*boot_info).uhyve, 0x1); // announce uhyve
-					write(&mut (*boot_info).current_boot_id, 0);
-					if self.verbose() {
-						write(&mut (*boot_info).uartport, UHYVE_UART_PORT);
-					} else {
-						write(&mut (*boot_info).uartport, 0);
-					}
-
-					debug!("Set stack base to 0x{:x}", header.paddr - KERNEL_STACK_SIZE);
-					write(
-						&mut (*boot_info).current_stack_address,
-						header.paddr - KERNEL_STACK_SIZE,
-					);
-
-					write(&mut (*boot_info).host_logical_addr, vm_mem.offset(0) as u64);
-
-					match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-						Ok(n) => write(&mut (*boot_info).boot_gtod, n.as_secs() * 1000000),
-						Err(err) => panic!("SystemTime before UNIX EPOCH! Error: {}", err),
-					}
-
-					let cpuid = CpuId::new();
-					let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
-						debug!("Failed to detect from cpuid");
-						detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
-							debug!("Failed to detect from hypervisor_info");
-							get_cpu_frequency_from_os().unwrap_or(0)
-						})
-					});
-					debug!("detected a cpu frequency of {} Mhz", mhz);
-					write(&mut (*boot_info).cpu_freq, mhz);
-					if (*boot_info).cpu_freq == 0 {
-						warn!("Unable to determine processor frequency");
-					}
-				}
-
 				// store total kernel size
-				let start = pstart.unwrap();
 				write(
 					&mut (*boot_info).image_size,
-					header.paddr + header.memsz - start,
+					program_header.p_vaddr + program_header.p_memsz,
 				);
-				//debug!("Kernel header: {:?}", *boot_info);
+			} else if program_header.p_type == PT_TLS {
+				write(
+					&mut (*boot_info).tls_start,
+					start_address + program_header.p_vaddr,
+				);
+				write(&mut (*boot_info).tls_filesz, program_header.p_filesz);
+				write(&mut (*boot_info).tls_memsz, program_header.p_memsz);
 			}
 		}
+
+		// relocate entries (strings, copy-data, etc.) with an addend
+		for rela in &elf.dynrelas {
+			match rela.r_type {
+				R_X86_64_RELATIVE => {
+					let offset = (vm_mem as u64 + start_address + rela.r_offset) as *mut u64;
+					*offset = (start_address as i64 + rela.r_addend.unwrap_or(0)) as u64;
+				}
+				_ => {
+					debug!("Unsupported relocation type {}", rela.r_type);
+				}
+			}
+		}
+
+		// debug!("Boot header: {:?}", *boot_info);
 
 		debug!("Kernel loaded");
 
