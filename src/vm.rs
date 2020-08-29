@@ -1,3 +1,5 @@
+use rayon::prelude::*;
+
 use super::paging::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::_rdtsc as rdtsc;
@@ -615,59 +617,74 @@ pub trait Vm {
 			warn!("Unable to determine processor frequency");
 		}
 
-		// load application
-		for program_header in &elf.program_headers {
-			if program_header.p_type == PT_LOAD {
-				let vm_start = (start_address + program_header.p_vaddr) as usize;
-				let vm_end = vm_start + program_header.p_filesz as usize;
-				let kernel_start = program_header.p_offset as usize;
-				let kernel_end = kernel_start + program_header.p_filesz as usize;
+		{
+			let len = elf.program_headers.len();
 
-				debug!(
-					"Load segment with start addr 0x{:x} and size 0x{:x}, offset 0x{:x}",
-					program_header.p_vaddr, program_header.p_filesz, program_header.p_offset
-				);
+			// store total kernel size
+			write(
+				&mut (*boot_info).image_size,
+				elf.program_headers[len - 1].p_vaddr + elf.program_headers[len - 1].p_memsz,
+			);
 
-				if vm_start + program_header.p_memsz as usize > vm_mem_length {
-					error!("Guest memory size isn't large enough");
-					return Err(Error::NotEnoughMemory);
-				}
-
-				let vm_slice = std::slice::from_raw_parts_mut(vm_mem, vm_mem_length);
-				vm_slice[vm_start..vm_end].copy_from_slice(&buffer[kernel_start..kernel_end]);
-				for i in &mut vm_slice
-					[vm_end..vm_end + (program_header.p_memsz - program_header.p_filesz) as usize]
-				{
-					*i = 0
-				}
-
-				// store total kernel size
-				write(
-					&mut (*boot_info).image_size,
-					program_header.p_vaddr + program_header.p_memsz,
-				);
-			} else if program_header.p_type == PT_TLS {
-				write(
-					&mut (*boot_info).tls_start,
-					start_address + program_header.p_vaddr,
-				);
-				write(&mut (*boot_info).tls_filesz, program_header.p_filesz);
-				write(&mut (*boot_info).tls_memsz, program_header.p_memsz);
+			// determine TLS section
+			if let Some(tls) = elf
+				.program_headers
+				.iter()
+				.find(|&program_header| program_header.p_type == PT_TLS)
+			{
+				write(&mut (*boot_info).tls_start, start_address + tls.p_vaddr);
+				write(&mut (*boot_info).tls_filesz, tls.p_filesz);
+				write(&mut (*boot_info).tls_memsz, tls.p_memsz);
 			}
 		}
 
+		// load application
+		let vm_start = vm_mem as u64;
+		elf.program_headers
+			.iter()
+			.par_bridge()
+			.for_each(|program_header| match program_header.p_type {
+				PT_LOAD => {
+					let region_start = (start_address + program_header.p_vaddr) as usize;
+					let region_end = region_start + program_header.p_filesz as usize;
+					let kernel_start = program_header.p_offset as usize;
+					let kernel_end = kernel_start + program_header.p_filesz as usize;
+
+					debug!(
+						"Load segment with start addr 0x{:x} and size 0x{:x}, offset 0x{:x}",
+						program_header.p_vaddr, program_header.p_filesz, program_header.p_offset
+					);
+
+					if region_start + program_header.p_memsz as usize > vm_mem_length {
+						panic!("Guest memory size isn't large enough");
+					}
+
+					let vm_slice =
+						std::slice::from_raw_parts_mut(vm_start as *mut u8, vm_mem_length);
+					vm_slice[region_start..region_end]
+						.copy_from_slice(&buffer[kernel_start..kernel_end]);
+					for i in &mut vm_slice[region_end
+						..region_end + (program_header.p_memsz - program_header.p_filesz) as usize]
+					{
+						*i = 0
+					}
+				}
+				_ => {}
+			});
+
 		// relocate entries (strings, copy-data, etc.) with an addend
-		for rela in &elf.dynrelas {
-			match rela.r_type {
+		elf.dynrelas
+			.iter()
+			.par_bridge()
+			.for_each(|rela| match rela.r_type {
 				R_X86_64_RELATIVE => {
-					let offset = (vm_mem as u64 + start_address + rela.r_offset) as *mut u64;
+					let offset = (vm_start + start_address + rela.r_offset) as *mut u64;
 					*offset = (start_address as i64 + rela.r_addend.unwrap_or(0)) as u64;
 				}
 				_ => {
 					debug!("Unsupported relocation type {}", rela.r_type);
 				}
-			}
-		}
+			});
 
 		// debug!("Boot header: {:?}", *boot_info);
 
