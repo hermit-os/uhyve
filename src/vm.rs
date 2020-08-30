@@ -7,7 +7,7 @@ use goblin::elf;
 use goblin::elf64::header::{EM_X86_64, ET_DYN};
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
 use goblin::elf64::reloc::*;
-use log::{debug, error, warn};
+use log::{debug, warn};
 use nix::errno::errno;
 use raw_cpuid::CpuId;
 use std::convert::TryInto;
@@ -617,25 +617,29 @@ pub trait Vm {
 			warn!("Unable to determine processor frequency");
 		}
 
+		// determine image size
+		elf.program_headers
+			.iter()
+			.for_each(|program_header| match program_header.p_type {
+				PT_LOAD => {
+					write(
+						&mut (*boot_info).image_size,
+						program_header.p_vaddr + program_header.p_memsz,
+					);
+				}
+				_ => {}
+			});
+
+		// determine TLS section
+		if let Some(tls) = elf
+			.program_headers
+			.iter()
+			.find(|&program_header| program_header.p_type == PT_TLS)
 		{
-			let len = elf.program_headers.len();
-
-			// store total kernel size
-			write(
-				&mut (*boot_info).image_size,
-				elf.program_headers[len - 1].p_vaddr + elf.program_headers[len - 1].p_memsz,
-			);
-
-			// determine TLS section
-			if let Some(tls) = elf
-				.program_headers
-				.iter()
-				.find(|&program_header| program_header.p_type == PT_TLS)
-			{
-				write(&mut (*boot_info).tls_start, start_address + tls.p_vaddr);
-				write(&mut (*boot_info).tls_filesz, tls.p_filesz);
-				write(&mut (*boot_info).tls_memsz, tls.p_memsz);
-			}
+			debug!("Found TLS section with size {}", tls.p_memsz);
+			write(&mut (*boot_info).tls_start, start_address + tls.p_vaddr);
+			write(&mut (*boot_info).tls_filesz, tls.p_filesz);
+			write(&mut (*boot_info).tls_memsz, tls.p_memsz);
 		}
 
 		// load application
