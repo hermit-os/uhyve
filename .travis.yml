@@ -36,7 +36,7 @@ jobs:
       script:
         - cargo build --release
         - cd rusty-hermit
-        - cargo build -Z build-std=std,core,alloc,panic_abort --target x86_64-unknown-hermit --release
+        - RUSTFLAGS="-Clinker-plugin-lto" cargo build -Z build-std=std,core,alloc,panic_abort --target x86_64-unknown-hermit --release
         - cd ..
         - sudo -E sudo -u $USER -E bash -c "HERMIT_VERBOSE=1 target/release/uhyve rusty-hermit/target/x86_64-unknown-hermit/release/rusty_demo"
         - sudo -E sudo -u $USER -E bash -c "HERMIT_VERBOSE=1 HERMIT_CPUS=2 target/release/uhyve rusty-hermit/target/x86_64-unknown-hermit/release/rusty_demo"
