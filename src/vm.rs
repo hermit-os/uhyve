@@ -627,20 +627,18 @@ pub trait Vm {
 						program_header.p_vaddr + program_header.p_memsz,
 					);
 				}
+				PT_TLS => {
+					// determine TLS section
+					debug!("Found TLS section with size {}", program_header.p_memsz);
+					write(
+						&mut (*boot_info).tls_start,
+						start_address + program_header.p_vaddr,
+					);
+					write(&mut (*boot_info).tls_filesz, program_header.p_filesz);
+					write(&mut (*boot_info).tls_memsz, program_header.p_memsz);
+				}
 				_ => {}
 			});
-
-		// determine TLS section
-		if let Some(tls) = elf
-			.program_headers
-			.iter()
-			.find(|&program_header| program_header.p_type == PT_TLS)
-		{
-			debug!("Found TLS section with size {}", tls.p_memsz);
-			write(&mut (*boot_info).tls_start, start_address + tls.p_vaddr);
-			write(&mut (*boot_info).tls_filesz, tls.p_filesz);
-			write(&mut (*boot_info).tls_memsz, tls.p_memsz);
-		}
 
 		// load application
 		let vm_start = vm_mem as u64;
