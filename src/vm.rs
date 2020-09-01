@@ -5,7 +5,7 @@ use goblin::elf;
 use goblin::elf64::header::{EM_X86_64, ET_DYN};
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
 use goblin::elf64::reloc::*;
-use log::{debug, warn};
+use log::{debug, error, warn};
 use nix::errno::errno;
 use raw_cpuid::CpuId;
 use std::convert::TryInto;
@@ -632,7 +632,7 @@ pub trait Vm {
 		let vm_slice = std::slice::from_raw_parts_mut(vm_mem, vm_mem_length);
 		elf.program_headers
 			.iter()
-			.for_each(|program_header| match program_header.p_type {
+			.try_for_each(|program_header| match program_header.p_type {
 				PT_LOAD => {
 					let region_start = (start_address + program_header.p_vaddr) as usize;
 					let region_end = region_start + program_header.p_filesz as usize;
@@ -645,7 +645,8 @@ pub trait Vm {
 					);
 
 					if region_start + program_header.p_memsz as usize > vm_mem_length {
-						panic!("Guest memory size isn't large enough");
+						error!("Guest memory size isn't large enough");
+						return Err(Error::NotEnoughMemory);
 					}
 
 					vm_slice[region_start..region_end]
@@ -660,6 +661,8 @@ pub trait Vm {
 						&mut (*boot_info).image_size,
 						program_header.p_vaddr + program_header.p_memsz,
 					);
+
+					Ok(())
 				}
 				PT_TLS => {
 					// determine TLS section
@@ -670,22 +673,22 @@ pub trait Vm {
 					);
 					write(&mut (*boot_info).tls_filesz, program_header.p_filesz);
 					write(&mut (*boot_info).tls_memsz, program_header.p_memsz);
+
+					Ok(())
 				}
-				_ => {}
-			});
+				_ => Ok(()),
+			})?;
 
 		// relocate entries (strings, copy-data, etc.) with an addend
-		elf.dynrelas
-			.iter()
-			.for_each(|rela| match rela.r_type {
-				R_X86_64_RELATIVE => {
-					let offset = (vm_mem as u64 + start_address + rela.r_offset) as *mut u64;
-					*offset = (start_address as i64 + rela.r_addend.unwrap_or(0)) as u64;
-				}
-				_ => {
-					debug!("Unsupported relocation type {}", rela.r_type);
-				}
-			});
+		elf.dynrelas.iter().for_each(|rela| match rela.r_type {
+			R_X86_64_RELATIVE => {
+				let offset = (vm_mem as u64 + start_address + rela.r_offset) as *mut u64;
+				*offset = (start_address as i64 + rela.r_addend.unwrap_or(0)) as u64;
+			}
+			_ => {
+				debug!("Unsupported relocation type {}", rela.r_type);
+			}
+		});
 
 		// debug!("Boot header: {:?}", *boot_info);
 
