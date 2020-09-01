@@ -45,7 +45,6 @@ strum = "0.8.0"
 strum_macros = "0.8.0"
 gdb-protocol = "0.1"
 burst = "0.0.2"
-rayon = "1.4"
 
 [dependencies.goblin]
 version = "0.2"

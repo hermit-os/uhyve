@@ -1194,7 +1194,6 @@ dependencies = [
  "nix 0.18.0",
  "nom",
  "raw-cpuid",
- "rayon",
  "rustc-serialize",
  "strum",
  "strum_macros",
