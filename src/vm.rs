@@ -210,14 +210,15 @@ struct SysExit {
 	arg: i32,
 }
 
-const MAX_ARGC_ENVC: usize = 128;
+const MAX_ARGC: usize = 128;
+const MAX_ENVC: usize = 128;
 
 #[repr(C, packed)]
 struct SysCmdsize {
 	argc: i32,
-	argsz: [i32; MAX_ARGC_ENVC],
+	argsz: [i32; MAX_ARGC],
 	envc: i32,
-	envsz: [i32; MAX_ARGC_ENVC],
+	envsz: [i32; MAX_ENVC],
 }
 
 #[repr(C, packed)]
@@ -263,6 +264,7 @@ pub trait VirtualCPU {
 
 			counter += 1;
 		}
+
 		if found_separator && counter >= separator_pos {
 			syssize.argc = counter - separator_pos + 1;
 		} else {
@@ -271,10 +273,16 @@ pub trait VirtualCPU {
 
 		counter = 0;
 		for (key, value) in std::env::vars() {
-			syssize.envsz[counter as usize] = (key.len() + value.len()) as i32 + 2;
-			counter += 1;
+			if counter < MAX_ENVC.try_into().unwrap() {
+				syssize.envsz[counter as usize] = (key.len() + value.len()) as i32 + 2;
+				counter += 1;
+			}
 		}
 		syssize.envc = counter;
+
+		if counter >= MAX_ENVC.try_into().unwrap() {
+			warn!("Environment is too large!");
+		}
 
 		Ok(())
 	}
@@ -327,20 +335,22 @@ pub trait VirtualCPU {
 		counter = 0;
 		let envp = self.host_address(syscmdval.envp as usize);
 		for (key, value) in std::env::vars() {
-			let envptr = unsafe {
-				self.host_address(
-					*((envp + counter as usize * mem::size_of::<usize>()) as *mut *mut u8) as usize,
-				)
-			};
-			let len = key.len() + value.len();
-			let slice = unsafe { slice::from_raw_parts_mut(envptr as *mut u8, len + 2) };
+			if counter < MAX_ENVC.try_into().unwrap() {
+				let envptr = unsafe {
+					self.host_address(
+						*((envp + counter as usize * mem::size_of::<usize>()) as *mut *mut u8) as usize,
+					)
+				};
+				let len = key.len() + value.len();
+				let slice = unsafe { slice::from_raw_parts_mut(envptr as *mut u8, len + 2) };
 
-			// Create string for environment variable
-			slice[0..key.len()].copy_from_slice(key.as_bytes());
-			slice[key.len()..(key.len() + 1)].copy_from_slice(&"=".to_string().as_bytes());
-			slice[(key.len() + 1)..(len + 1)].copy_from_slice(value.as_bytes());
-			slice[len + 1] = 0;
-			counter += 1;
+				// Create string for environment variable
+				slice[0..key.len()].copy_from_slice(key.as_bytes());
+				slice[key.len()..(key.len() + 1)].copy_from_slice(&"=".to_string().as_bytes());
+				slice[(key.len() + 1)..(len + 1)].copy_from_slice(value.as_bytes());
+				slice[len + 1] = 0;
+				counter += 1;
+			}
 		}
 
 		Ok(())
