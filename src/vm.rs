@@ -338,7 +338,8 @@ pub trait VirtualCPU {
 			if counter < MAX_ENVC.try_into().unwrap() {
 				let envptr = unsafe {
 					self.host_address(
-						*((envp + counter as usize * mem::size_of::<usize>()) as *mut *mut u8) as usize,
+						*((envp + counter as usize * mem::size_of::<usize>()) as *mut *mut u8)
+							as usize,
 					)
 				};
 				let len = key.len() + value.len();
