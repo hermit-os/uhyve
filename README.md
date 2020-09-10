@@ -108,6 +108,10 @@ The repository [rusty-hermit](https://github.com/hermitcore/rusty-hermit) provid
 
 ![Debugging RustyHermit apps](img/vs_code.png)
 
+## Known issues
+
+ * Uhyve isn't able to pass more than 128 environment variables to the unikernel
+
 ## Licensing
 
 Licensed under either of

@@ -210,7 +210,9 @@ struct SysExit {
 	arg: i32,
 }
 
+// FIXME: Do not use a fix number of arguments
 const MAX_ARGC: usize = 128;
+// FIXME: Do not use a fix number of environment variables
 const MAX_ENVC: usize = 128;
 
 #[repr(C, packed)]
