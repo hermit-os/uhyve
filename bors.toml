@@ -2,7 +2,7 @@ status = [
   "Build (ubuntu-latest, nightly)",
   "Build (macOS-latest, nightly)",
   "Format (ubuntu-latest, nightly)",
-  "Format (macOS-latest, nightly)",
+  #"Format (macOS-latest, nightly)",
   "Test (ubuntu-latest, nightly)",
   "Test (macOS-latest, nightly)",
   "continuous-integration/travis-ci/push"
