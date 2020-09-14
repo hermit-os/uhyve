@@ -1,14 +1,16 @@
 name: Check format
 
 on:
-  push:
   pull_request:
+  push:
     branches:
       - master
+      - staging
+      - trying
 
 jobs:
   build:
-
+    name: Format
     runs-on: ${{ matrix.os }}
 
     strategy:

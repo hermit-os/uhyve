@@ -1,15 +1,18 @@
 name: Build
 
 on:
-  push:
   pull_request:
+  push:
     branches:
       - master
+      - staging
+      - trying
   schedule:
     - cron: '0 0 * * 6'
 
 jobs:
   build:
+    name: Build
     runs-on: ${{ matrix.os }}
 
     strategy:
