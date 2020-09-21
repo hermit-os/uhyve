@@ -65,6 +65,7 @@ version = ">=0.2.1"
 
 [target.'cfg(target_os = "linux")'.dependencies.tun-tap]
 version = "0.1.2"
+default-features = false
 
 [target.'cfg(target_arch = "x86_64")'.dependencies.x86]
 version = "0.*"
