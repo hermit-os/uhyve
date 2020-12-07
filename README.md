@@ -36,7 +36,7 @@ If the following command gives you some output, you are ready to go!
 lsmod | grep kvm
 ```
 
-**NOTE:** If in case the above steps don't work, you will need to check your BIOS settings and enable virtualization there. This is very rare occurence and nowadays comes enabled with all the changes in the modern computer devices but sometimes if you have done dual-boot on your device, then the virtualization may have been disabled which you will have to turn on.
+**NOTE:** If in case the above steps don't work, make sure to check in your BIOS settings that virtualization is enabled there.
 
 ### macOS
 
