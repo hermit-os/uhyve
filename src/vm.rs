@@ -544,8 +544,6 @@ pub trait Vm {
 			return Err(Error::InvalidFile(self.kernel_path().into()));
 		}
 
-		// Verify that this module is a HermitCore ELF executable.
-
 		let is_dyn = elf.header.e_type == ET_DYN;
 
 		if elf.header.e_machine != EM_X86_64 {
