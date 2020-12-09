@@ -36,6 +36,8 @@ If the following command gives you some output, you are ready to go!
 lsmod | grep kvm
 ```
 
+**NOTE:** If in case the above steps don't work, make sure to check in your BIOS settings that virtualization is enabled there.
+
 ### macOS
 
 **Disclaimer:** Currently, uhyve is mainly developed for Linux.
