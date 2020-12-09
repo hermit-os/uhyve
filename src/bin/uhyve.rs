@@ -23,6 +23,8 @@ fn main() {
 
 	let matches = App::new("uhyve")
 		.version(crate_version!())
+		.setting(clap::AppSettings::TrailingVarArg)
+		.setting(clap::AppSettings::AllowLeadingHyphen)
 		.author(crate_authors!("\n"))
 		.about("A minimal hypervisor for RustyHermit")
 		.arg(
