@@ -635,6 +635,7 @@ pub trait Vm {
 
 		// load kernel and determine image size
 		let vm_slice = std::slice::from_raw_parts_mut(vm_mem, vm_mem_length);
+		let mut image_size = 0;
 		elf.program_headers
 			.iter()
 			.try_for_each(|program_header| match program_header.p_type {
@@ -666,9 +667,14 @@ pub trait Vm {
 						*i = 0
 					}
 
+					image_size = if is_dyn {
+						program_header.p_vaddr + program_header.p_memsz
+					} else {
+						image_size + program_header.p_memsz
+					};
 					write(
 						&mut (*boot_info).image_size,
-						program_header.p_vaddr + program_header.p_memsz,
+						image_size,
 					);
 
 					Ok(())
