@@ -545,6 +545,9 @@ pub trait Vm {
 		}
 
 		let is_dyn = elf.header.e_type == ET_DYN;
+		if is_dyn {
+			debug!("ELF file is a shared object file");
+		}
 
 		if elf.header.e_machine != EM_X86_64 {
 			return Err(Error::InvalidFile(self.kernel_path().into()));
