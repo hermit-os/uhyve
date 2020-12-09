@@ -79,7 +79,7 @@ macro_rules! write_u16 {
 	($registers:expr, $address:expr, $value:expr) => {
 		$registers[$address] = ($value & 0xFF) as u8;
 		$registers[$address + 1] = (($value >> 8) & 0xFF) as u8;
-			()
+		()
 	};
 }
 
@@ -99,7 +99,7 @@ macro_rules! write_u32 {
 		$registers[$address + 1] = (($value >> 8) & 0xFF) as u8;
 		$registers[$address + 2] = (($value >> 16) & 0xFF) as u8;
 		$registers[$address + 3] = (($value >> 24) & 0xFF) as u8;
-			()
+		()
 	};
 }
 
