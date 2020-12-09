@@ -180,7 +180,7 @@ fn main() {
 				mem_size, num_cpus, verbose, hugepage, mergeable, ip, gateway, mask, nic, gdbport,
 			),
 		)
-		.expect("Unable to create VM");
+		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?");
 		unsafe {
 			vm.load_kernel().expect("Unabled to load the kernel");
 		}
