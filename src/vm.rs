@@ -673,10 +673,7 @@ pub trait Vm {
 					} else {
 						image_size + program_header.p_memsz
 					};
-					write(
-						&mut (*boot_info).image_size,
-						image_size,
-					);
+					write(&mut (*boot_info).image_size, image_size);
 
 					Ok(())
 				}
