@@ -544,9 +544,9 @@ pub trait Vm {
 			return Err(Error::InvalidFile(self.kernel_path().into()));
 		}
 
-		// Verify that this module is a HermitCore ELF executable.
-		if elf.header.e_type != ET_DYN {
-			return Err(Error::InvalidFile(self.kernel_path().into()));
+		let is_dyn = elf.header.e_type == ET_DYN;
+		if is_dyn {
+			debug!("ELF file is a shared object file");
 		}
 
 		if elf.header.e_machine != EM_X86_64 {
@@ -576,10 +576,16 @@ pub trait Vm {
 			write(&mut (*boot_info).hcmask, mask.octets());
 		}
 
-		// TODO: should be a random start address
-		let start_address: u64 = 0x400000;
-		self.set_entry_point(start_address + elf.entry);
-		debug!("ELF entry point at 0x{:x}", start_address + elf.entry);
+		let (start_address, elf_entry) = if is_dyn {
+			// TODO: should be a random start address, if we have a relocatable executable
+			(0x400000u64, 0x400000u64 + elf.entry)
+		} else {
+			// default location of a non-relocatable binary
+			(0x800000u64, elf.entry)
+		};
+
+		self.set_entry_point(elf_entry);
+		debug!("ELF entry point at 0x{:x}", elf_entry);
 
 		debug!("Set HermitCore header at 0x{:x}", BOOT_INFO_ADDR as usize);
 		self.set_boot_info(boot_info);
@@ -630,11 +636,16 @@ pub trait Vm {
 
 		// load kernel and determine image size
 		let vm_slice = std::slice::from_raw_parts_mut(vm_mem, vm_mem_length);
+		let mut image_size = 0;
 		elf.program_headers
 			.iter()
 			.try_for_each(|program_header| match program_header.p_type {
 				PT_LOAD => {
-					let region_start = (start_address + program_header.p_vaddr) as usize;
+					let region_start = if is_dyn {
+						(start_address + program_header.p_vaddr) as usize
+					} else {
+						program_header.p_vaddr as usize
+					};
 					let region_end = region_start + program_header.p_filesz as usize;
 					let kernel_start = program_header.p_offset as usize;
 					let kernel_end = kernel_start + program_header.p_filesz as usize;
@@ -657,20 +668,25 @@ pub trait Vm {
 						*i = 0
 					}
 
-					write(
-						&mut (*boot_info).image_size,
-						program_header.p_vaddr + program_header.p_memsz,
-					);
+					image_size = if is_dyn {
+						program_header.p_vaddr + program_header.p_memsz
+					} else {
+						image_size + program_header.p_memsz
+					};
+					write(&mut (*boot_info).image_size, image_size);
 
 					Ok(())
 				}
 				PT_TLS => {
 					// determine TLS section
 					debug!("Found TLS section with size {}", program_header.p_memsz);
-					write(
-						&mut (*boot_info).tls_start,
-						start_address + program_header.p_vaddr,
-					);
+					let tls_start = if is_dyn {
+						start_address + program_header.p_vaddr
+					} else {
+						program_header.p_vaddr
+					};
+
+					write(&mut (*boot_info).tls_start, tls_start);
 					write(&mut (*boot_info).tls_filesz, program_header.p_filesz);
 					write(&mut (*boot_info).tls_memsz, program_header.p_memsz);
 

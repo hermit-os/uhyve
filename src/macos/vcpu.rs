@@ -597,6 +597,11 @@ impl VirtualCPU for UhyveCPU {
 						return Err(Error::InternalError);
 					}
 				}
+				vmx_exit::VMX_REASON_TRIPLE_FAULT => {
+					error!("Triple fault! System crashed!");
+					self.print_registers();
+					return Err(Error::UnhandledExitReason);
+				}
 				vmx_exit::VMX_REASON_CPUID => {
 					self.emulate_cpuid(rip)?;
 				}
