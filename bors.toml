@@ -5,7 +5,6 @@ status = [
   #"Format (macOS-latest, nightly)",
   "Test (ubuntu-latest, nightly)",
   "Test (macOS-latest, nightly)",
-  "continuous-integration/travis-ci/push"
 ]
 delete_merged_branches = true
 timeout_sec = 7200
