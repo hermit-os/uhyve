@@ -27,52 +27,52 @@ name = "uhyve"
 path = "src/bin/uhyve.rs"
 
 [dependencies]
-log = "0.4"
-env_logger = "0.7"
-aligned_alloc = "0.1"
-lazy_static = "1.4"
-clap = "2"
-raw-cpuid = "8.1"
-bitflags = "1.2"
-libc = "0.2"
-nix = "0.18"
-virtio-bindings = { version = "0.1", features = ["virtio-v4_14_0"]}
-mac_address = "1.0.*"
-rustc-serialize = "0.3"
-byteorder = "1"
-nom = "3.2.0"
-strum = "0.8.0"
-strum_macros = "0.8.0"
-gdb-protocol = "0.1"
+log = "0.4.11"
+env_logger = "0.8.2"
+aligned_alloc = "0.1.3"
+lazy_static = "1.4.0"
+clap = "2.33.3"
+raw-cpuid = "8.1.2"
+bitflags = "1.2.1"
+libc = "0.2.81"
+nix = "0.19.1"
+virtio-bindings = { version = "0.1.0", features = ["virtio-v4_14_0"]}
+mac_address = "1.1.1"
+rustc-serialize = "0.3.24"
+byteorder = "1.3.4"
+nom = "3.2.1"
+strum = "0.20.0"
+strum_macros = "0.20.1"
+gdb-protocol = "0.1.0"
 burst = "0.0.2"
 
 [dependencies.goblin]
-version = "0.2"
+version = "0.3.0"
 default-features = false
 features = ["elf64", "elf32", "endian_fd", "std"]
 
 [target.'cfg(target_os = "macos")'.dependencies.xhypervisor]
-version = "0.0.*"
+version = "0.0.12"
 
 [target.'cfg(target_os = "linux")'.dependencies.kvm-ioctls]
-version = "0.5.*"
+version = "0.6.0"
 
 [target.'cfg(target_os = "linux")'.dependencies.kvm-bindings]
-version = "0.*"
+version = "0.3.0"
 
 [target.'cfg(target_os = "linux")'.dependencies.vmm-sys-util]
-version = ">=0.2.1"
+version = "0.7.0"
 
 [target.'cfg(target_os = "linux")'.dependencies.tun-tap]
 version = "0.1.2"
 default-features = false
 
 [target.'cfg(target_arch = "x86_64")'.dependencies.x86]
-version = "0.*"
+version = "0.34.0"
 default-features = false
 
 [dev-dependencies]
-criterion = "0.3.2"
+criterion = "0.3.3"
 
 [[bench]]
 name = "benchmarks"
