@@ -204,9 +204,11 @@ impl Uhyve {
 		vm.create_irq_chip().or_else(to_error)?;
 
 		// enable x2APIC support
-		let mut cap: kvm_enable_cap = Default::default();
-		cap.cap = KVM_CAP_X2APIC_API;
-		cap.flags = 0;
+		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+			cap: KVM_CAP_X2APIC_API,
+			flags: 0,
+			..Default::default()
+		};
 		cap.args[0] =
 			(KVM_X2APIC_API_USE_32BIT_IDS | KVM_X2APIC_API_DISABLE_BROADCAST_QUIRK) as u64;
 		vm.enable_cap(&cap)
@@ -214,15 +216,19 @@ impl Uhyve {
 
 		// currently, we support only system, which provides the
 		// cpu feature TSC_DEADLINE
-		let mut cap: kvm_enable_cap = Default::default();
-		cap.cap = KVM_CAP_TSC_DEADLINE_TIMER;
+		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+			cap: KVM_CAP_TSC_DEADLINE_TIMER,
+			..Default::default()
+		};
 		cap.args[0] = 0;
 		if vm.enable_cap(&cap).is_ok() {
 			panic!("Processor feature \"tsc deadline\" isn't supported!")
 		}
 
-		let mut cap: kvm_enable_cap = Default::default();
-		cap.cap = KVM_CAP_IRQFD;
+		let cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+			cap: KVM_CAP_IRQFD,
+			..Default::default()
+		};
 		if vm.enable_cap(&cap).is_ok() {
 			panic!("The support of KVM_CAP_IRQFD is curently required");
 		}
