@@ -154,8 +154,7 @@ fn main() {
 		mergeable = true;
 	}
 	// per default we use huge page to improve the performace
-	// => negate the result of parse_bool
-	let mut hugepage: bool = !utils::parse_bool("HERMIT_HUGEPAGE", false);
+	let mut hugepage: bool = utils::parse_bool("HERMIT_HUGEPAGE", true);
 	if matches.is_present("DISABLE_HUGEPAGE") {
 		hugepage = false;
 	}
