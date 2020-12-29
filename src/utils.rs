@@ -22,9 +22,19 @@ pub fn parse_u32(s: &str) -> Result<u32> {
 	s.parse::<u32>().map_err(|_| Error::ParseMemory)
 }
 
+/// Helper function for `parse_bool`
+fn parse_bool_str(name: &str) -> Option<bool> {
+	match name {
+	    "True"  | "true"  | "Yes" | "yes" => Some(true),
+	    "False" | "false" | "No"  | "no"  => Some(false),
+	    _ => None,
+	}
+}
+
 pub fn parse_bool(name: &str, default: bool) -> bool {
 	env::var(name)
-		.map(|x| x.parse::<i32>().unwrap_or(default as i32) != 0)
+		.map(|x| parse_bool_str(x.as_ref())
+			.unwrap_or(x.parse::<i32>().unwrap_or(default as i32) != 0))
 		.unwrap_or(default)
 }
 
