@@ -153,8 +153,12 @@ fn main() {
 	if matches.is_present("MERGEABLE") {
 		mergeable = true;
 	}
-	// per default we use huge page to improve the performace
-	let mut hugepage: bool = utils::parse_bool("HERMIT_HUGEPAGE", true);
+	// per default we use huge page to improve the performace,
+	// if the kernel supports transparent hugepages
+	let hugepage_default = utils::transparent_hugepages_available().unwrap_or(true);
+	println!("Default hugepages set to: {}", hugepage_default);
+	// HERMIT_HUGEPAGES overrides the default we detected.
+	let mut hugepage: bool = utils::parse_bool("HERMIT_HUGEPAGE", hugepage_default);
 	if matches.is_present("DISABLE_HUGEPAGE") {
 		hugepage = false;
 	}

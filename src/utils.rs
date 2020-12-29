@@ -1,5 +1,6 @@
 use crate::error::*;
 use std::env;
+use log::debug;
 
 pub fn parse_mem(mem: &str) -> Result<usize> {
 	let (num, postfix): (String, String) = mem.chars().partition(|&x| x.is_numeric());
@@ -45,5 +46,34 @@ pub fn get_max_subslice(s: &str, offset: usize, length: usize) -> &str {
 		&large[0..length]
 	} else {
 		large
+	}
+}
+
+/// Checks if the kernel provides support for transparent huge pages
+/// If `/sys/kernel/mm/transparent_hugepage/enabled` does not exist
+/// then we assume there is no support.
+/// If there is an error when reading the file or interpreting the
+/// contents we return an Err and let the caller decide
+pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
+	let transp_hugepage_enabled = std::path::Path::new("/sys/kernel/mm/transparent_hugepage/enabled");
+	if ! transp_hugepage_enabled.is_file() {
+		debug!("`{}` does not exist. Assuming Hugepages are not available", transp_hugepage_enabled.display());
+		Ok(false)
+	} else {
+		let str_res = std::fs::read_to_string(transp_hugepage_enabled);
+		if str_res.is_err() {
+			debug!("transparent_hugepages_available: Error reading string: {:?}", str_res.unwrap_err());
+			Err(())
+		}else{
+			match str_res.unwrap().trim() {
+				"[always] madvise never" => Ok(true),
+				"always [madvise] never" => Ok(true),
+				"always madvise [never]" => Ok(false),
+				s => {debug!("Could not interpret contents of {}: {}",
+					transp_hugepage_enabled.display(), s); 
+					Err(())},
+			}
+		}
+		
 	}
 }
