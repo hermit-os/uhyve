@@ -34,7 +34,7 @@ fn main() {
 				.help("Print also kernel messages"),
 		)
 		.arg(
-			Arg::with_name("HUGEPAGE")
+			Arg::with_name("DISABLE_HUGEPAGE")
 				.long("disable-hugepages")
 				.help("Disable the usage of huge pages"),
 		)
@@ -154,10 +154,10 @@ fn main() {
 		mergeable = true;
 	}
 	// per default we use huge page to improve the performace
-	// => negate the result of parase_bool
+	// => negate the result of parse_bool
 	let mut hugepage: bool = !utils::parse_bool("HERMIT_HUGEPAGE", false);
-	if matches.is_present("HUGEPAGE") {
-		hugepage = true;
+	if matches.is_present("DISABLE_HUGEPAGE") {
+		hugepage = false;
 	}
 	let mut verbose: bool = utils::parse_bool("HERMIT_VERBOSE", false);
 	if matches.is_present("VERBOSE") {
