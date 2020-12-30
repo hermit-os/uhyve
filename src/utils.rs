@@ -25,9 +25,9 @@ pub fn parse_u32(s: &str) -> Result<u32> {
 
 /// Helper function for `parse_bool`
 fn parse_bool_str(name: &str) -> Option<bool> {
-	match name {
-		"True" | "true" | "Yes" | "yes" => Some(true),
-		"False" | "false" | "No" | "no" => Some(false),
+	match name.to_ascii_lowercase().as_ref() {
+		"true" | "yes" => Some(true),
+		"false" | "no" => Some(false),
 		_ => None,
 	}
 }
