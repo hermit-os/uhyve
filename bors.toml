@@ -2,9 +2,9 @@ status = [
   "Build (ubuntu-latest, nightly)",
   "Build (macOS-latest, nightly)",
   "Format (ubuntu-latest, nightly)",
-  #"Format (macOS-latest, nightly)",
   "Test (ubuntu-latest, nightly)",
   "Test (macOS-latest, nightly)",
+  "ci/gitlab/git.rwth-aachen.de",
 ]
 delete_merged_branches = true
 timeout_sec = 7200
