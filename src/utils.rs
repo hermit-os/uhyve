@@ -1,6 +1,6 @@
 use crate::error::*;
-use std::env;
 use log::debug;
+use std::env;
 
 pub fn parse_mem(mem: &str) -> Result<usize> {
 	let (num, postfix): (String, String) = mem.chars().partition(|&x| x.is_numeric());
@@ -26,16 +26,17 @@ pub fn parse_u32(s: &str) -> Result<u32> {
 /// Helper function for `parse_bool`
 fn parse_bool_str(name: &str) -> Option<bool> {
 	match name {
-	    "True"  | "true"  | "Yes" | "yes" => Some(true),
-	    "False" | "false" | "No"  | "no"  => Some(false),
-	    _ => None,
+		"True" | "true" | "Yes" | "yes" => Some(true),
+		"False" | "false" | "No" | "no" => Some(false),
+		_ => None,
 	}
 }
 
 pub fn parse_bool(name: &str, default: bool) -> bool {
 	env::var(name)
-		.map(|x| parse_bool_str(x.as_ref())
-			.unwrap_or(x.parse::<i32>().unwrap_or(default as i32) != 0))
+		.map(|x| {
+			parse_bool_str(x.as_ref()).unwrap_or(x.parse::<i32>().unwrap_or(default as i32) != 0)
+		})
 		.unwrap_or(default)
 }
 
@@ -55,25 +56,36 @@ pub fn get_max_subslice(s: &str, offset: usize, length: usize) -> &str {
 /// If there is an error when reading the file or interpreting the
 /// contents we return an Err and let the caller decide
 pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
-	let transp_hugepage_enabled = std::path::Path::new("/sys/kernel/mm/transparent_hugepage/enabled");
-	if ! transp_hugepage_enabled.is_file() {
-		debug!("`{}` does not exist. Assuming Hugepages are not available", transp_hugepage_enabled.display());
+	let transp_hugepage_enabled =
+		std::path::Path::new("/sys/kernel/mm/transparent_hugepage/enabled");
+	if !transp_hugepage_enabled.is_file() {
+		debug!(
+			"`{}` does not exist. Assuming Hugepages are not available",
+			transp_hugepage_enabled.display()
+		);
 		Ok(false)
 	} else {
 		let str_res = std::fs::read_to_string(transp_hugepage_enabled);
 		if str_res.is_err() {
-			debug!("transparent_hugepages_available: Error reading string: {:?}", str_res.unwrap_err());
+			debug!(
+				"transparent_hugepages_available: Error reading string: {:?}",
+				str_res.unwrap_err()
+			);
 			Err(())
-		}else{
+		} else {
 			match str_res.unwrap().trim() {
 				"[always] madvise never" => Ok(true),
 				"always [madvise] never" => Ok(true),
 				"always madvise [never]" => Ok(false),
-				s => {debug!("Could not interpret contents of {}: {}",
-					transp_hugepage_enabled.display(), s); 
-					Err(())},
+				s => {
+					debug!(
+						"Could not interpret contents of {}: {}",
+						transp_hugepage_enabled.display(),
+						s
+					);
+					Err(())
+				}
 			}
 		}
-		
 	}
 }
