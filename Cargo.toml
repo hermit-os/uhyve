@@ -13,10 +13,7 @@ description = """
 A hypervisor for RustyHermit
 """
 
-exclude = ["/img/*", "./benches/*", "./benches_data/*", "./.github/workflows", "bors.toml", ".travis.yml", ".gitignore", ".gitmodules", ".gitattributes"]
-
-[badges]
-travis-ci = { repository = "hermitcore/uhyve", branch = "master" }
+exclude = ["/img/*", "./benches/*", "./benches_data/*", "./.github/workflows", "bors.toml", ".gitlab-ci.yml", "Dockerfile", ".gitignore", ".gitmodules", ".gitattributes"]
 
 [lib]
 name = "uhyvelib"
