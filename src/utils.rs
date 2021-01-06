@@ -55,6 +55,7 @@ pub fn get_max_subslice(s: &str, offset: usize, length: usize) -> &str {
 /// then we assume there is no support.
 /// If there is an error when reading the file or interpreting the
 /// contents we return an Err and let the caller decide
+#[cfg(target_os = "linux")]
 pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
 	let transp_hugepage_enabled =
 		std::path::Path::new("/sys/kernel/mm/transparent_hugepage/enabled");
@@ -88,4 +89,10 @@ pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
 			}
 		}
 	}
+}
+
+/// On macos this always returns true
+#[cfg(target_os = "macos")]
+pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
+	Ok(true)
 }
