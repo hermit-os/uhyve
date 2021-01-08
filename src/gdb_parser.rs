@@ -21,7 +21,7 @@ use gdb_protocol::io::BUF_SIZE;
 use log::{debug, info, trace};
 use nom::IResult::*;
 use nom::{
-	alt, alt_complete, call, complete, do_parse, error_position, flat_map, is_not, is_not_s, many0,
+	alt, alt_complete, call, complete, do_parse, error_position, flat_map, is_not, many0,
 	many1, map, map_res, named, one_of, opt, preceded, separated_list, separated_list_complete,
 	separated_nonempty_list, separated_nonempty_list_complete, separated_pair, tag, take,
 	take_till, take_while1, try_parse, tuple, tuple_parser,
@@ -340,7 +340,7 @@ enum Command<'a> {
 
 named!(
 	gdbfeature<Known>,
-	map!(map_res!(is_not_s!(";="), str::from_utf8), |s| {
+	map!(map_res!(is_not!(";="), str::from_utf8), |s| {
 		match GDBFeature::from_str(s) {
 			Ok(f) => Known::Yes(f),
 			Err(_) => Known::No(s),
@@ -386,7 +386,7 @@ named!(q_search_memory<&[u8], (u64, u64, Vec<u8>)>,
 named!(q_read_feature<&[u8], (&str, u64, u64)>,
 	   complete!(do_parse!(
 		   tag!("qXfer:features:read:") >>
-		   filename: map!(is_not_s!(":"), |s| std::str::from_utf8(s).unwrap()) >>
+		   filename: map!(is_not!(":"), |s| std::str::from_utf8(s).unwrap()) >>
 		   tag!(":") >>
 		   offset: hex_value >>
 		   tag!(",") >>
