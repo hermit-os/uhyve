@@ -19,6 +19,7 @@
 
 use gdb_protocol::io::BUF_SIZE;
 use log::{debug, info, trace};
+use nom::types::CompleteByteSlice;
 use nom::Err;
 use nom::{
 	alt, alt_complete, call, complete, do_parse, error_position, flat_map, is_not, many0,
@@ -455,6 +456,10 @@ map!(take_while1!(&nom::is_hex_digit),
 		 let r = u64::from_str_radix(s, 16);
 		 r.unwrap()
 	 }));
+
+named!(bstr_to_hex_subbstr<CompleteByteSlice, CompleteByteSlice>,
+	take_while1!(nom::is_hex_digit)
+);
 
 named!(hex_digit<&[u8], char>,
 	   one_of!("0123456789abcdefABCDEF"));
@@ -1546,6 +1551,28 @@ fn test_query() {
 				),
 			])
 		))
+	);
+}
+
+#[test]
+fn test_bstr_to_hex_subbstr() {
+	let res = bstr_to_hex_subbstr(CompleteByteSlice(&b"fakml4a"[..]));
+	assert!(res.is_ok());
+	assert_eq!(res.unwrap().1, &b"fa"[..]);
+
+	assert_eq!(
+		bstr_to_hex_subbstr(CompleteByteSlice(&b"ZA"[..]))
+			.unwrap_err()
+			.into_error_kind(),
+		nom::ErrorKind::TakeWhile1
+	);
+	assert_eq!(
+		bstr_to_hex_subbstr(CompleteByteSlice(&b"AA"[..])),
+		Ok((&b"AA"[..], &b"AA"[..]))
+	);
+	assert_eq!(
+		bstr_to_hex_subbstr(CompleteByteSlice(&b"A"[..])),
+		Ok((&b"A"[..], &b"A"[..]))
 	);
 }
 
