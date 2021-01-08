@@ -31,7 +31,7 @@ lazy_static = "1.4.0"
 clap = "2.33.3"
 raw-cpuid = "8.1.2"
 bitflags = "1.2.1"
-libc = "0.2.81"
+libc = "0.2.82"
 nix = "0.19.1"
 virtio-bindings = { version = "0.1.0", features = ["virtio-v4_14_0"]}
 mac_address = "1.1.1"
