@@ -15,7 +15,7 @@ use uhyvelib::vm::Vm;
 
 use clap::{App, Arg};
 use core_affinity::CoreId;
-use uhyvelib::utils::{parse_cpu_affinity, parse_u32_range};
+use uhyvelib::utils::{filter_cpu_affinity, parse_cpu_affinity, parse_u32_range};
 
 const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
 const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
@@ -167,9 +167,24 @@ fn main() {
 			.unwrap()
 			.into_iter()
 			.collect();
-		Some(
-			parse_cpu_affinity(args, num_cpus).expect("Invalid parameters for option CPU_AFFINITY"),
-		)
+
+		// According to https://github.com/Elzair/core_affinity_rs/issues/3
+		// on linux this gives a list of CPUs the process is allowed to run on
+		// (as opposed to all CPUs available on the system as the docs suggest)
+		let parsed_affinity =
+			parse_cpu_affinity(args).expect("Invalid parameters passed for CPU_AFFINITY");
+		let core_ids = core_affinity::get_core_ids()
+			.expect("Dependency core_affinity failed to find any available CPUs");
+		let filtered_core_ids = filter_cpu_affinity(core_ids, parsed_affinity);
+		if num_cpus as usize != filtered_core_ids.len() {
+			panic!(
+				"Uhyve was specified to use {} CPUs, but only the following CPUs from the CPU mask \
+				are available: {:?}",
+				num_cpus,
+				filtered_core_ids
+			);
+		}
+		Some(filtered_core_ids)
 	} else {
 		None
 	};

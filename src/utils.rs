@@ -1,4 +1,5 @@
 use crate::error::*;
+use core_affinity::CoreId;
 use std::env;
 
 pub fn parse_mem(mem: &str) -> Result<usize> {
@@ -34,7 +35,6 @@ pub fn parse_u32(s: &str) -> Result<u32> {
 /// assert_eq!(range, [5, 6, 7]);
 /// # Ok::<(), uhyvelib::error::Error>(())
 ///  ```
-/// FIXME: this doesn't actually have to be a range, could also be single value
 pub fn parse_u32_range(s: &str) -> Result<Vec<u32>> {
 	let split: Vec<&str> = s.split('-').collect();
 	if split.len() == 1 {
@@ -65,35 +65,44 @@ pub fn get_max_subslice(s: &str, offset: usize, length: usize) -> &str {
 	}
 }
 
+/// Filter available to only contain the subset of CPUs specified in affinity
+pub fn filter_cpu_affinity(available: Vec<CoreId>, affinity: Vec<u32>) -> Vec<CoreId> {
+	let filtered_cpu_affinity: Vec<core_affinity::CoreId> = available
+		.into_iter()
+		.filter(|core_id| affinity.contains(&(core_id.id as u32)))
+		.collect();
+	filtered_cpu_affinity
+}
+
 /// This is a helper function to parse the arguments passed via the commandline argument
 /// --cpu_affinity
-/// FIXME move filtering to seperate function, to make tests cleaner
-pub fn parse_cpu_affinity(args: Vec<&str>, num_cpus: u32) -> Result<Vec<core_affinity::CoreId>> {
-	let mut affinity_params: Vec<u32> = Vec::new();
-	let _ = args
-		.into_iter()
-		.map(|s| parse_u32_range(s))
-		.map(|range| affinity_params.extend(range.expect("Invalid parameters for CPU_AFFINITY")));
-	affinity_params.sort();
-	affinity_params.dedup();
-	let affinity_params = affinity_params;
-
-	// According to https://github.com/Elzair/core_affinity_rs/issues/3
-	// on linux this gives a list of CPUs the process is allowed to run on
-	// (as opposed to all CPUs available on the system as the docs suggest)
-	let core_ids = core_affinity::get_core_ids().ok_or_else(|| Error::InternalError)?;
-	// Filter core_ids to contain only the CPUs specified by CPU_AFFINITY
-	let filtered_cpu_affinity: Vec<core_affinity::CoreId> = core_ids
-		.into_iter()
-		.filter(|core_id| affinity_params.contains(&(core_id.id as u32)))
-		.collect();
-	if filtered_cpu_affinity.len() == num_cpus as usize {
-		Ok(filtered_cpu_affinity)
+/// It returns the parsed Result sorted and deduplicated
+/// If any of the strings in args was not able to parsed Err is returned
+/// Valid strings are all positive numbers representable with an u32
+/// as well as inclusive ranges where all numbers are representable as an u32
+/// Example:
+/// ```rust
+/// # use uhyvelib::utils::parse_cpu_affinity;
+/// let a =  parse_cpu_affinity(vec!["5", "2-3", "8-9"]);
+/// assert_eq!(a.unwrap(), vec![2,3,5,8,9]);
+/// ```
+pub fn parse_cpu_affinity(args: Vec<&str>) -> Result<Vec<u32>> {
+	let mut affinity: Vec<u32> = Vec::new();
+	// res is Err if any single parse_u32_range(s) returned Err
+	let parsed_affinity: Result<Vec<Vec<u32>>> =
+		args.into_iter().map(|s| parse_u32_range(s)).collect();
+	if parsed_affinity.is_err() {
+		return Err(parsed_affinity.unwrap_err());
 	} else {
-		Err(Error::InvalidArgument(String::from(
-			"When specifying the CPU affinity, a valid affinity must be specified for \
-		 				   every CPU that uhyve spawns",
-		)))
+		// Merge Vec of Vecs into single Vector affinity
+		for vec in parsed_affinity.unwrap().into_iter() {
+			affinity.extend(vec);
+		}
+
+		affinity.sort();
+		affinity.dedup();
+		let affinity = affinity;
+		Ok(affinity)
 	}
 }
 
@@ -108,6 +117,7 @@ mod tests {
 		assert_eq!(parse_u32_range(str).unwrap(), [0]);
 		let str = "52364-52365";
 		assert_eq!(parse_u32_range(str).unwrap(), [52364, 52365]);
+		assert_eq!(parse_u32_range("10").unwrap(), [10]);
 	}
 
 	#[test]
@@ -115,5 +125,37 @@ mod tests {
 	fn test_parse_u32_range_invalid() {
 		let str = "-3";
 		parse_u32_range(str).unwrap();
+	}
+
+	#[test]
+	fn test_parse_cpu_affinity() {
+		assert_eq!(
+			parse_cpu_affinity(vec!["10", "5", "325642", "1", "11"]).unwrap(),
+			[1, 5, 10, 11, 325642]
+		);
+		assert_eq!(
+			parse_cpu_affinity(vec!["8-10", "5", "3", "7-9"]).unwrap(),
+			[3, 5, 7, 8, 9, 10]
+		)
+	}
+
+	#[test]
+	fn test_parse_cpu_affinity_invalid() {
+		assert!(parse_cpu_affinity(vec!["-1-2"]).is_err());
+		assert!(parse_cpu_affinity(vec!["-2"]).is_err());
+		let too_large = u64::from(u32::max_value()) + 1;
+		assert!(parse_cpu_affinity(vec![too_large.to_string().as_ref()]).is_err());
+	}
+
+	#[test]
+	fn test_filter_cpu_affinity() {
+		let vec = vec![CoreId { id: 2 }, CoreId { id: 7 }, CoreId { id: 13 }];
+		let res = filter_cpu_affinity(vec, vec![7]);
+		assert_eq!(res.len(), 1);
+		assert_eq!(res[0].id, 7);
+		let res = filter_cpu_affinity(vec![CoreId { id: 2 }], vec![]);
+		assert_eq!(res.len(), 0);
+		let res = filter_cpu_affinity(vec![CoreId { id: 2 }], vec![0, 1, 3, 9, 22, 724]);
+		assert_eq!(res.len(), 0);
 	}
 }
