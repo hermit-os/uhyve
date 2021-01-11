@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Important note: This currently requires $CODECOV_TOKEN to be set before calling this
+# Important note: This currently requires $UHYVE_CODECOV_TOKEN to be set before calling this
 # I'm ti
 exit_with_error() {
     echo "Error: $*"
@@ -62,7 +62,7 @@ cargo profdata -- merge -sparse uhyve-*.profraw -o uhyve.profdata \
 grcov "$DIR" --source-dir "$DIR" \
     --binary-path "$DIR/target/debug" \
     --output-type coveralls \
-    --token "$CODECOV_TOKEN" > coveralls.json \
+    --token "$UHYVE_CODECOV_TOKEN" > coveralls.json \
  || exit_with_error "grcov did not successfully generate a coverage report"
 
 # Todo: make this whole part optional, since we might be only interested in coveralls report
