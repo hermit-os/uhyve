@@ -18,6 +18,11 @@ pub fn parse_mem(mem: &str) -> Result<usize> {
 	Ok(num * factor)
 }
 
+/// Example:
+/// ```rust
+/// # use uhyvelib::utils::parse_u32;
+/// assert_eq!(parse_u32("15").unwrap(), 15);
+/// ```
 pub fn parse_u32(s: &str) -> Result<u32> {
 	s.parse::<u32>().map_err(|_| Error::ParseMemory)
 }
