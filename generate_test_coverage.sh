@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Important note: This currently requires $UHYVE_CODECOV_TOKEN to be set before calling this
-# I'm ti
+
 exit_with_error() {
     echo "Error: $*"
     exit 1
 }
 # from https://stackoverflow.com/a/246128
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+UHYVE_CODECOV_TOKEN="${UHYVE_CODECOV_TOKEN:-dummytoken}"    # Set dummy token, if no token passed (for grcov)
 
 if ! command -v rustup &>/dev/null; then
     echo "Error: rustup could not be found! Exiting"
