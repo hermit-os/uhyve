@@ -45,10 +45,11 @@ cargo clean
 echo "Running cargo test. This may take a while."
 
 # Run tests and collect information about the filenames of the executables in json format
+# The RUSTC_WRAPPER adds the coverage specific flags to our crate executables (which are not doc tests)
 TEST_JSON_OUTPUT="$(
-    RUSTFLAGS="-Zinstrument-coverage -Clink-dead-code" \
         RUSTDOCFLAGS="-Zinstrument-coverage -Zunstable-options --persist-doctests  target/debug/doctestbins" \
         LLVM_PROFILE_FILE="uhyve-%m.profraw" \
+        RUSTC_WRAPPER="$DIR/coverage_rustcwrapper.sh" \
         cargo test --message-format=json
 )"
 if [ $? != 0 ]; then
