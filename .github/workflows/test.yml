@@ -47,8 +47,11 @@ jobs:
          cargo test -- --nocapture
     - name: Generate Test coverage
       run: |
-        UHYVE_CODECOV_TOKEN="dummy" ./generate_test_coverage.sh
-        bash <(curl -s https://codecov.io/bash) -f ./coveralls.json
+        ./generate_test_coverage.sh
+        bash <(curl -s https://codecov.io/bash) -f 
+    - uses: codecov/codecov-action@v1
+      with:
+        files: ./coveralls.json
 
   build:
     name: Build
