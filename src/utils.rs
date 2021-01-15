@@ -31,7 +31,7 @@ fn parse_bool_str(value: &str) -> Option<bool> {
 		"true" | "yes" => Some(true),
 		"false" | "no" => Some(false),
 		_ => None,
-  }
+	}
 }
 
 /// Returns a Vec of u32 as specified in the inclusive range s
