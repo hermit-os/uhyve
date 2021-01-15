@@ -14,6 +14,8 @@ use uhyvelib::vm;
 use uhyvelib::vm::Vm;
 
 use clap::{App, Arg};
+use core_affinity::CoreId;
+use uhyvelib::utils::{filter_cpu_affinity, parse_cpu_affinity, parse_u32_range};
 
 const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
 const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
@@ -60,6 +62,19 @@ fn main() {
 				.help("Number of guest processors")
 				.takes_value(true)
 				.env("HERMIT_CPUS"),
+		)
+		.arg(
+			Arg::with_name("CPU_AFFINITY")
+				.short("a")
+				.long("affinity")
+				.value_name("cpulist")
+				.help("CPU Affinity of guest CPUs on Host")
+				.long_help(
+					"A list of CPUs delimited by commas onto which
+					 the virtual CPUs should be bound. This may improve 
+					performance.
+					",
+				),
 		)
 		.arg(
 			Arg::with_name("GDB_PORT")
@@ -144,6 +159,35 @@ fn main() {
 		.value_of("CPUS")
 		.map(|x| utils::parse_u32(&x).unwrap_or(1))
 		.unwrap_or(1);
+
+	let set_cpu_affinity = matches.is_present("CPU_AFFINITY");
+	let cpu_affinity: Option<Vec<core_affinity::CoreId>> = if set_cpu_affinity {
+		let args: Vec<&str> = matches
+			.values_of("CPU_AFFINITY")
+			.unwrap()
+			.into_iter()
+			.collect();
+
+		// According to https://github.com/Elzair/core_affinity_rs/issues/3
+		// on linux this gives a list of CPUs the process is allowed to run on
+		// (as opposed to all CPUs available on the system as the docs suggest)
+		let parsed_affinity =
+			parse_cpu_affinity(args).expect("Invalid parameters passed for CPU_AFFINITY");
+		let core_ids = core_affinity::get_core_ids()
+			.expect("Dependency core_affinity failed to find any available CPUs");
+		let filtered_core_ids = filter_cpu_affinity(core_ids, parsed_affinity);
+		if num_cpus as usize != filtered_core_ids.len() {
+			panic!(
+				"Uhyve was specified to use {} CPUs, but only the following CPUs from the CPU mask \
+				are available: {:?}",
+				num_cpus,
+				filtered_core_ids
+			);
+		}
+		Some(filtered_core_ids)
+	} else {
+		None
+	};
 	let ip = None; //matches.value_of("IP").or(None);
 	let gateway = None; // matches.value_of("GATEWAY").or(None);
 	let mask = None; //matches.value_of("MASK").or(None);
@@ -195,9 +239,21 @@ fn main() {
 		.map(|tid| {
 			let vm = vm.clone();
 
+			let local_cpu_affinity: Option<CoreId> = match &cpu_affinity {
+				Some(vec) => vec.get(tid as usize).cloned(),
+				None => None,
+			};
+
 			// create thread for each CPU
 			thread::spawn(move || {
 				debug!("Create thread for CPU {}", tid);
+				match local_cpu_affinity {
+					Some(core_id) => {
+						debug!("Trying to pin thread {} to CPU {}", tid, core_id.id);
+						core_affinity::set_for_current(core_id); // This does not return an error if it fails :(
+					}
+					None => debug!("No affinity specified, not binding thread"),
+				}
 
 				let mut cpu = vm.create_cpu(tid).unwrap();
 				cpu.init(vm.get_entry_point()).unwrap();

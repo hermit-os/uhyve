@@ -16,6 +16,8 @@ pub enum Error {
 	UnhandledExitReason,
 	InvalidMacAddress,
 	ParseIntError,
+	ParseRangeError,
+	InvalidArgument(String),
 	#[cfg(target_os = "macos")]
 	Hypervisor(xhypervisor::Error),
 }
@@ -58,6 +60,8 @@ impl fmt::Display for Error {
 			Error::UnhandledExitReason => write!(f, "Unhandled exit reason"),
 			Error::InvalidMacAddress => write!(f, "Invalid MAC address"),
 			Error::ParseIntError => write!(f, "Unable to parse string"),
+			Error::ParseRangeError => write!(f, "Unable to parse string range"),
+			Error::InvalidArgument(ref arg) => write!(f, "Invalid argument passed: {}", arg),
 			#[cfg(target_os = "macos")]
 			Error::Hypervisor(ref err) => write!(f, "The hypervisor has failed: {:?}", err),
 		}
