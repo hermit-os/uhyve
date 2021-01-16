@@ -1,5 +1,7 @@
 use crate::error::*;
+
 use core_affinity::CoreId;
+use log::debug;
 use std::env;
 
 pub fn parse_mem(mem: &str) -> Result<usize> {
@@ -21,6 +23,15 @@ pub fn parse_mem(mem: &str) -> Result<usize> {
 
 pub fn parse_u32(s: &str) -> Result<u32> {
 	s.parse::<u32>().map_err(|_| Error::ParseMemory)
+}
+
+/// Helper function for `parse_bool`
+fn parse_bool_str(value: &str) -> Option<bool> {
+	match value.to_ascii_lowercase().as_ref() {
+		"true" | "yes" => Some(true),
+		"false" | "no" => Some(false),
+		_ => None,
+	}
 }
 
 /// Returns a Vec of u32 as specified in the inclusive range s
@@ -51,7 +62,9 @@ pub fn parse_u32_range(s: &str) -> Result<Vec<u32>> {
 
 pub fn parse_bool(name: &str, default: bool) -> bool {
 	env::var(name)
-		.map(|x| x.parse::<i32>().unwrap_or(default as i32) != 0)
+		.map(|x| {
+			parse_bool_str(x.as_ref()).unwrap_or(x.parse::<i32>().unwrap_or(default as i32) != 0)
+		})
 		.unwrap_or(default)
 }
 
@@ -63,6 +76,53 @@ pub fn get_max_subslice(s: &str, offset: usize, length: usize) -> &str {
 	} else {
 		large
 	}
+}
+
+/// Checks if the kernel provides support for transparent huge pages
+/// If `/sys/kernel/mm/transparent_hugepage/enabled` does not exist
+/// then we assume there is no support.
+/// If there is an error when reading the file or interpreting the
+/// contents we return an Err and let the caller decide
+#[cfg(target_os = "linux")]
+pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
+	let transp_hugepage_enabled =
+		std::path::Path::new("/sys/kernel/mm/transparent_hugepage/enabled");
+	if !transp_hugepage_enabled.is_file() {
+		debug!(
+			"`{}` does not exist. Assuming Hugepages are not available",
+			transp_hugepage_enabled.display()
+		);
+		Ok(false)
+	} else {
+		let str_res = std::fs::read_to_string(transp_hugepage_enabled);
+		if str_res.is_err() {
+			debug!(
+				"transparent_hugepages_available: Error reading string: {:?}",
+				str_res.unwrap_err()
+			);
+			Err(())
+		} else {
+			match str_res.unwrap().trim() {
+				"[always] madvise never" => Ok(true),
+				"always [madvise] never" => Ok(true),
+				"always madvise [never]" => Ok(false),
+				s => {
+					debug!(
+						"Could not interpret contents of {}: {}",
+						transp_hugepage_enabled.display(),
+						s
+					);
+					Err(())
+				}
+			}
+		}
+	}
+}
+
+/// On macos this always returns true
+#[cfg(target_os = "macos")]
+pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
+	Ok(true)
 }
 
 /// Filter available to only contain the subset of CPUs specified in affinity
