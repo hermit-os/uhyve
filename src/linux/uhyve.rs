@@ -238,7 +238,9 @@ impl Uhyve {
 			flags: 0,
 			..Default::default()
 		};
-		cap.args[0] = KVM_X86_DISABLE_EXITS_PAUSE.into();
+		cap.args[0] =
+			(KVM_X86_DISABLE_EXITS_PAUSE | KVM_X86_DISABLE_EXITS_MWAIT | KVM_X86_DISABLE_EXITS_HLT)
+				.into();
 		vm.enable_cap(&cap)
 			.expect("Unable to disable exists due pause instructions");
 
