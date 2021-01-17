@@ -1,6 +1,8 @@
 use crate::error::*;
 
 use core_affinity::CoreId;
+#[cfg(target_os = "linux")]
+use log::debug;
 use std::env;
 
 pub fn parse_mem(mem: &str) -> Result<usize> {
