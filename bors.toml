@@ -1,7 +1,7 @@
 status = [
   "Build (ubuntu-latest, nightly)",
   "Build (macOS-latest, nightly)",
-  "Format (ubuntu-latest, nightly)",
+  "Format check (ubuntu-latest, nightly)",
   "Test (ubuntu-latest, nightly)",
   "Test (macOS-latest, nightly)",
   "ci/gitlab/git.rwth-aachen.de",
