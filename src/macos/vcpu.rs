@@ -443,6 +443,18 @@ impl UhyveCPU {
 							OperandType::REG_EBP => {
 								self.vcpu.read_register(&x86Reg::RBP)? & 0xFFFFFFFF
 							}
+							OperandType::REG_EAX => {
+								self.vcpu.read_register(&x86Reg::RAX)? & 0xFFFFFFFF
+							}
+							OperandType::REG_EBX => {
+								self.vcpu.read_register(&x86Reg::RBX)? & 0xFFFFFFFF
+							}
+							OperandType::REG_ECX => {
+								self.vcpu.read_register(&x86Reg::RCX)? & 0xFFFFFFFF
+							}
+							OperandType::REG_EDX => {
+								self.vcpu.read_register(&x86Reg::RDX)? & 0xFFFFFFFF
+							}
 							_ => {
 								error!("IO-APIC write failed: {:?}", instr.operands);
 								return Err(Error::InternalError);
@@ -456,11 +468,29 @@ impl UhyveCPU {
 					}
 
 					if read {
+						let value = self.ioapic.lock().unwrap().read(address - IOAPIC_BASE)?;
+
 						match instr.operands[0].operand {
+							OperandType::REG_EDI => {
+								self.vcpu.write_register(&x86Reg::RDI, value)?;
+							}
+							OperandType::REG_ESI => {
+								self.vcpu.write_register(&x86Reg::RSI, value)?;
+							}
+							OperandType::REG_EBP => {
+								self.vcpu.write_register(&x86Reg::RBP, value)?;
+							}
 							OperandType::REG_EAX => {
-								let value =
-									self.ioapic.lock().unwrap().read(address - IOAPIC_BASE)?;
 								self.vcpu.write_register(&x86Reg::RAX, value)?;
+							}
+							OperandType::REG_EBX => {
+								self.vcpu.write_register(&x86Reg::RBX, value)?;
+							}
+							OperandType::REG_ECX => {
+								self.vcpu.write_register(&x86Reg::RCX, value)?;
+							}
+							OperandType::REG_EDX => {
+								self.vcpu.write_register(&x86Reg::RDX, value)?;
 							}
 							_ => {
 								error!("IO-APIC read failed: {:?}", instr.operands);
