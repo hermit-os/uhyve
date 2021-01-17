@@ -1,7 +1,6 @@
 use crate::error::*;
 
 use core_affinity::CoreId;
-use log::debug;
 use std::env;
 
 pub fn parse_mem(mem: &str) -> Result<usize> {
@@ -167,6 +166,7 @@ pub fn parse_cpu_affinity(args: Vec<&str>) -> Result<Vec<u32>> {
 }
 
 mod tests {
+	#[cfg(test)]
 	use crate::utils::*;
 
 	#[test]
