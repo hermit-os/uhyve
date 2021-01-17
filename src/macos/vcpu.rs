@@ -431,7 +431,6 @@ impl UhyveCPU {
 		if let Ok(instr) = disassemble_64(code, rip as usize, code.len()) {
 			match instr.operation {
 				InstructionOperation::MOV => {
-					//info!("operands {:?}", instr.operands);
 					if write {
 						let val = match instr.operands[1].operand {
 							OperandType::IMM => instr.operands[1].immediate as u64,
@@ -441,7 +440,11 @@ impl UhyveCPU {
 							OperandType::REG_ESI => {
 								self.vcpu.read_register(&x86Reg::RSI)? & 0xFFFFFFFF
 							}
+							OperandType::REG_EBP => {
+								self.vcpu.read_register(&x86Reg::RBP)? & 0xFFFFFFFF
+							}
 							_ => {
+								error!("IO-APIC write failed: {:?}", instr.operands);
 								return Err(Error::InternalError);
 							}
 						};
@@ -460,12 +463,14 @@ impl UhyveCPU {
 								self.vcpu.write_register(&x86Reg::RAX, value)?;
 							}
 							_ => {
+								error!("IO-APIC read failed: {:?}", instr.operands);
 								return Err(Error::InternalError);
 							}
 						}
 					}
 				}
 				_ => {
+					error!("IO-APIC Emulation failed");
 					return Err(Error::InternalError);
 				}
 			}
