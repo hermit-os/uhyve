@@ -15,7 +15,7 @@ use uhyvelib::vm::Vm;
 
 use clap::{App, Arg};
 use core_affinity::CoreId;
-use uhyvelib::utils::{filter_cpu_affinity, parse_cpu_affinity, parse_u32_range};
+use uhyvelib::utils::{filter_cpu_affinity, parse_cpu_affinity};
 
 const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
 const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;

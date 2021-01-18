@@ -1,6 +1,7 @@
 use crate::error::*;
 
 use core_affinity::CoreId;
+#[cfg(target_os = "linux")]
 use log::debug;
 use std::env;
 
@@ -167,6 +168,7 @@ pub fn parse_cpu_affinity(args: Vec<&str>) -> Result<Vec<u32>> {
 }
 
 mod tests {
+	#[cfg(test)]
 	use crate::utils::*;
 
 	#[test]
