@@ -57,7 +57,7 @@ sysctl kern.hv_support
 
 The output `kern.hv_support: 1` indicates virtualization support.
 
-At least on Big Sur, all process must have the [com.apple.security.hypervisor](https://developer.apple.com/documentation/Hypervisor) entitlement to use Hypervisor API.
+Startinhg with Big Sur, all processes using the Hypervisor API must have the [com.apple.security.hypervisor](https://developer.apple.com/documentation/Hypervisor) entitlement and therefor must be signed.
 
 ## Building from source
 
@@ -71,14 +71,13 @@ cargo build --release
 
 ## Signing uhyve to run on macOS Big Sur
 
-To allow the access to Apple's Hypervisor Framework, the hypervisor must be signed.
-With the following command, it is possible to self-sign uhyve.
+`uhyve` can be self-signed with the following command.
 
 ```sh
 codesign -s - --entitlements app.entitlements --force path_to_uhyve/uhyve
 ```
 
-Where the file `app.entitlements` has following content:
+The file `app.entitlements` must have following content:
 
 ```sh
 <?xml version="1.0" encoding="UTF-8"?>
@@ -91,7 +90,7 @@ Where the file `app.entitlements` has following content:
 </plist>
 ```
 
-See also [Apple's documentation](https://developer.apple.com/documentation/bundleresources/entitlements/com_apple_security_hypervisor)
+For further details have a look at [Apple's documentation](https://developer.apple.com/documentation/bundleresources/entitlements/com_apple_security_hypervisor).
 
 ## Running RustyHermit apps within uhyve
 
