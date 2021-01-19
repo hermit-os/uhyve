@@ -45,7 +45,7 @@ burst = "0.0.2"
 core_affinity = "0.5.10"
 
 [dependencies.goblin]
-version = "0.3.0"
+version = "0.3.1"
 default-features = false
 features = ["elf64", "elf32", "endian_fd", "std"]
 
