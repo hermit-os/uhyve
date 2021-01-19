@@ -576,6 +576,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b181ba2dcf07aaccad5448e8ead58db5b742cf85dfe035e2227f137a539a189"
 
 [[package]]
+name = "rftrace"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa2ee2d77e97cb948eb4576a5b7908aac75c02afa337c99aa34b9cef0346bedd"
+
+[[package]]
+name = "rftrace-frontend"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "419a5a276d688261074e7356d4061628dca7b0987f9422eeed4c66ecc128639a"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "rustc-serialize"
 version = "0.3.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -788,6 +803,8 @@ dependencies = [
  "nix",
  "nom",
  "raw-cpuid",
+ "rftrace",
+ "rftrace-frontend",
  "rustc-serialize",
  "strum",
  "strum_macros",

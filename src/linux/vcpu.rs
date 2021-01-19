@@ -285,7 +285,7 @@ impl VirtualCPU for UhyveCPU {
 		(entry & ((!0usize) << PAGE_BITS)) | (addr & !((!0usize) << PAGE_BITS))
 	}
 
-	fn run(&mut self) -> Result<()> {
+	fn run(&mut self) -> Result<Option<i32>> {
 		//self.print_registers();
 
 		// Pause first CPU before first execution, so we have time to attach debugger
@@ -361,7 +361,7 @@ impl VirtualCPU for UhyveCPU {
 					match port {
 						#![allow(clippy::cast_ptr_alignment)]
 						SHUTDOWN_PORT => {
-							return Ok(());
+							return Ok(None);
 						}
 						UHYVE_UART_PORT => {
 							self.uart(String::from_utf8_lossy(&addr).to_string())?;
@@ -386,7 +386,7 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_EXIT => {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.exit(self.host_address(data_addr));
+							return Ok(Some(self.exit(self.host_address(data_addr))));
 						}
 						UHYVE_PORT_OPEN => {
 							let data_addr: usize =
@@ -474,7 +474,7 @@ impl VirtualCPU for UhyveCPU {
 			}
 		}
 
-		Ok(())
+		Ok(None)
 	}
 
 	fn print_registers(&self) {
