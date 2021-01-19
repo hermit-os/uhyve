@@ -583,7 +583,7 @@ impl VirtualCPU for UhyveCPU {
 		(entry & ((!0usize) << PAGE_BITS)) | (addr & !((!0usize) << PAGE_BITS))
 	}
 
-	fn run(&mut self) -> Result<()> {
+	fn run(&mut self) -> Result<Option<i32>> {
 		//self.print_registers();
 
 		// Pause first CPU before first execution, so we have time to attach debugger
@@ -687,7 +687,7 @@ impl VirtualCPU for UhyveCPU {
 
 					match port {
 						SHUTDOWN_PORT => {
-							return Ok(());
+							return Ok(None);
 						}
 						UHYVE_UART_PORT => {
 							let al = (self.vcpu.read_register(&x86Reg::RAX)? & 0xFF) as u8;
@@ -712,7 +712,7 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_EXIT => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&x86Reg::RAX)? & 0xFFFFFFFF;
-							self.exit(self.host_address(data_addr as usize));
+							return Ok(Some(self.exit(self.host_address(data_addr as usize))));
 						}
 						UHYVE_PORT_OPEN => {
 							let data_addr: u64 =
@@ -763,6 +763,8 @@ impl VirtualCPU for UhyveCPU {
 				}
 			}
 		}
+
+		Ok(None)
 	}
 
 	fn print_registers(&self) {

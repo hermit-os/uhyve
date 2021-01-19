@@ -4,6 +4,11 @@ extern crate log;
 #[macro_use]
 extern crate clap;
 
+#[cfg(feature = "instrument")]
+extern crate rftrace;
+#[cfg(feature = "instrument")]
+extern crate rftrace_frontend;
+
 use std::env;
 use std::sync::atomic::spin_loop_hint;
 use std::sync::Arc;
@@ -20,7 +25,14 @@ use uhyvelib::utils::{filter_cpu_affinity, parse_cpu_affinity};
 const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
 const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
 
+// Note that we end main with `std::process::exit` to set the return value and
+// as a result destructors are not run and cleanup may not happen.
 fn main() {
+	#[cfg(feature = "instrument")]
+	let events = rftrace_frontend::init(1000000, true);
+	#[cfg(feature = "instrument")]
+	rftrace_frontend::enable();
+
 	env_logger::init();
 
 	let matches = App::new("uhyve")
@@ -245,7 +257,7 @@ fn main() {
 			};
 
 			// create thread for each CPU
-			thread::spawn(move || {
+			thread::spawn(move || -> Option<i32> {
 				debug!("Create thread for CPU {}", tid);
 				match local_cpu_affinity {
 					Some(core_id) => {
@@ -267,16 +279,34 @@ fn main() {
 				// jump into the VM and excute code of the guest
 				let result = cpu.run();
 				match result {
-					Ok(()) => {}
 					Err(x) => {
 						error!("CPU {} crashes! {}", tid, x);
+						None
 					}
+					Ok(exit_code) => exit_code,
 				}
 			})
 		})
 		.collect();
 
+	let mut exit_code: Option<i32> = None;
 	for t in threads {
-		t.join().unwrap();
+		let exit_code_tid = t.join().unwrap();
+
+		if exit_code_tid.is_some() {
+			if exit_code.is_some() {
+				debug!("Found multiple exit code. Taking the laste one");
+			}
+			exit_code = exit_code_tid;
+		}
+	}
+
+	#[cfg(feature = "instrument")]
+	rftrace_frontend::dump_full_uftrace(events, "uhyve_trace", "uhyve", true)
+		.expect("Saving trace failed");
+
+	match exit_code {
+		Some(a) => std::process::exit(a),
+		None => std::process::exit(0),
 	}
 }

@@ -78,3 +78,6 @@ jobs:
     - name: Build
       run:
          cargo build
+    - name: Build with instrument feature
+      run:
+         cargo clean && RUSTFLAGS="-Z instrument-mcount" cargo build
