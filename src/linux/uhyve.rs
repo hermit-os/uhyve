@@ -14,13 +14,13 @@ use kvm_ioctls::VmFd;
 use log::debug;
 use nix::sys::mman::*;
 use std::convert::TryInto;
+use std::hint;
 use std::mem;
 use std::net::Ipv4Addr;
 use std::os::raw::c_void;
 use std::ptr;
 use std::ptr::{read_volatile, write_volatile};
 use std::str::FromStr;
-use std::sync::atomic::spin_loop_hint;
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -104,7 +104,7 @@ impl UhyveNetwork {
 
 					evtfd.write(1).expect("Unable to trigger interrupt");
 				} else {
-					spin_loop_hint();
+					hint::spin_loop();
 				}
 			}
 		});
