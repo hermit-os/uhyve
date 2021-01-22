@@ -281,7 +281,12 @@ fn main() {
 				match result {
 					Err(x) => {
 						error!("CPU {} crashes! {}", tid, x);
-						None
+
+						#[cfg(feature = "instrument")]
+						rftrace_frontend::dump_full_uftrace(events, "uhyve_trace", "uhyve", true)
+							.expect("Saving trace failed");
+
+						std::process::exit(libc::EXIT_FAILURE);
 					}
 					Ok(exit_code) => {
 						if let Some(code) = exit_code {
