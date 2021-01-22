@@ -286,8 +286,13 @@ fn main() {
 					Ok(exit_code) => {
 						if let Some(code) = exit_code {
 							#[cfg(feature = "instrument")]
-							rftrace_frontend::dump_full_uftrace(events, "uhyve_trace", "uhyve", true)
-								.expect("Saving trace failed");
+							rftrace_frontend::dump_full_uftrace(
+								events,
+								"uhyve_trace",
+								"uhyve",
+								true,
+							)
+							.expect("Saving trace failed");
 
 							std::process::exit(code);
 						}
