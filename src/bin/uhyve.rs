@@ -283,30 +283,27 @@ fn main() {
 						error!("CPU {} crashes! {}", tid, x);
 						None
 					}
-					Ok(exit_code) => exit_code,
+					Ok(exit_code) => {
+						if let Some(code) = exit_code {
+							#[cfg(feature = "instrument")]
+							rftrace_frontend::dump_full_uftrace(events, "uhyve_trace", "uhyve", true)
+								.expect("Saving trace failed");
+
+							std::process::exit(code);
+						}
+
+						exit_code
+					}
 				}
 			})
 		})
 		.collect();
 
-	let mut exit_code: Option<i32> = None;
 	for t in threads {
-		let exit_code_tid = t.join().unwrap();
-
-		if exit_code_tid.is_some() {
-			if exit_code.is_some() {
-				debug!("Found multiple exit code. Taking the laste one");
-			}
-			exit_code = exit_code_tid;
-		}
+		t.join().unwrap();
 	}
 
 	#[cfg(feature = "instrument")]
 	rftrace_frontend::dump_full_uftrace(events, "uhyve_trace", "uhyve", true)
 		.expect("Saving trace failed");
-
-	match exit_code {
-		Some(a) => std::process::exit(a),
-		None => std::process::exit(0),
-	}
 }
