@@ -536,7 +536,7 @@ pub trait Vm {
 		let elf =
 			elf::Elf::parse(&buffer).map_err(|_| Error::InvalidFile(self.kernel_path().into()))?;
 
-		if elf.libraries.len() > 0 {
+		if !elf.libraries.is_empty() {
 			warn!(
 				"Error: file depends on following libraries: {:?}",
 				elf.libraries

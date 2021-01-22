@@ -10,12 +10,12 @@ pub fn parse_mem(mem: &str) -> Result<usize> {
 	let num = num.parse::<usize>().map_err(|_| Error::ParseMemory)?;
 
 	let factor = match postfix.as_str() {
-		"E" | "e" => 1 << 60 as usize,
-		"P" | "p" => 1 << 50 as usize,
-		"T" | "t" => 1 << 40 as usize,
-		"G" | "g" => 1 << 30 as usize,
-		"M" | "m" => 1 << 20 as usize,
-		"K" | "k" => 1 << 10 as usize,
+		"E" | "e" => 1 << 60,
+		"P" | "p" => 1 << 50,
+		"T" | "t" => 1 << 40,
+		"G" | "g" => 1 << 30,
+		"M" | "m" => 1 << 20,
+		"K" | "k" => 1 << 10,
 		_ => return Err(Error::ParseMemory),
 	};
 
@@ -152,18 +152,19 @@ pub fn parse_cpu_affinity(args: Vec<&str>) -> Result<Vec<u32>> {
 	// res is Err if any single parse_u32_range(s) returned Err
 	let parsed_affinity: Result<Vec<Vec<u32>>> =
 		args.into_iter().map(|s| parse_u32_range(s)).collect();
-	if parsed_affinity.is_err() {
-		return Err(parsed_affinity.unwrap_err());
-	} else {
-		// Merge Vec of Vecs into single Vector affinity
-		for vec in parsed_affinity.unwrap().into_iter() {
-			affinity.extend(vec);
-		}
+	match parsed_affinity {
+		Err(e) => Err(e),
 
-		affinity.sort();
-		affinity.dedup();
-		let affinity = affinity;
-		Ok(affinity)
+		Ok(v) => {
+			for vec in v {
+				affinity.extend(vec);
+			}
+
+			affinity.sort_unstable();
+			affinity.dedup();
+			let affinity = affinity;
+			Ok(affinity)
+		}
 	}
 }
 

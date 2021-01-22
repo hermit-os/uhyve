@@ -106,9 +106,9 @@ macro_rules! write_u32 {
 impl VirtioNetPciDevice {
 	pub const fn new() -> VirtioNetPciDevice {
 		let mut registers: PciRegisters = [0; 0x40];
-		write_u16!(registers, VENDOR_ID_REGISTER, 0x1AF4 as u16);
-		write_u16!(registers, DEVICE_ID_REGISTER, 0x1000 as u16);
-		write_u16!(registers, CLASS_REGISTER + 2, 0x0200 as u16);
+		write_u16!(registers, VENDOR_ID_REGISTER, 0x1AF4);
+		write_u16!(registers, DEVICE_ID_REGISTER, 0x1000);
+		write_u16!(registers, CLASS_REGISTER + 2, 0x0200);
 		write_u16!(registers, BAR0_REGISTER, IOBASE as u16);
 		registers[STATUS_REGISTER as usize] = STATUS_DRIVER_NEEDS_RESET;
 		let virt_queues: Vec<Virtqueue> = Vec::new();
