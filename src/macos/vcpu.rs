@@ -763,8 +763,6 @@ impl VirtualCPU for UhyveCPU {
 				}
 			}
 		}
-
-		Ok(None)
 	}
 
 	fn print_registers(&self) {

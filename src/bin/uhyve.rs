@@ -10,7 +10,7 @@ extern crate rftrace;
 extern crate rftrace_frontend;
 
 use std::env;
-use std::sync::atomic::spin_loop_hint;
+use std::hint;
 use std::sync::Arc;
 use std::thread;
 
@@ -273,7 +273,7 @@ fn main() {
 				// only one core is able to enter startup code
 				// => the wait for the predecessor core
 				while tid != vm.cpu_online() {
-					spin_loop_hint();
+					hint::spin_loop();
 				}
 
 				// jump into the VM and excute code of the guest
