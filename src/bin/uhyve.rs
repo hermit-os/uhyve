@@ -1,6 +1,5 @@
 #[macro_use]
 extern crate log;
-
 #[macro_use]
 extern crate clap;
 
@@ -29,9 +28,18 @@ const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
 // as a result destructors are not run and cleanup may not happen.
 fn main() {
 	#[cfg(feature = "instrument")]
-	let events = rftrace_frontend::init(1000000, true);
-	#[cfg(feature = "instrument")]
-	rftrace_frontend::enable();
+	{
+		let events = Box::new(rftrace_frontend::init(1000000, true));
+		rftrace_frontend::enable();
+		let exit_closure = || {
+			rftrace_frontend::dump_full_uftrace(*events, "uhyve_trace", "uhyve", true)
+				.expect("Saving trace failed");
+		};
+
+		unsafe {
+			libc::atexit(std::mem::transmute(exit_closure));
+		}
+	}
 
 	env_logger::init();
 
@@ -283,30 +291,19 @@ fn main() {
 						error!("CPU {} crashes! {}", tid, x);
 						None
 					}
-					Ok(exit_code) => exit_code,
+					Ok(exit_code) => {
+						if let Some(code) = exit_code {
+							std::process::exit(code);
+						}
+
+						None
+					}
 				}
 			})
 		})
 		.collect();
 
-	let mut exit_code: Option<i32> = None;
 	for t in threads {
-		let exit_code_tid = t.join().unwrap();
-
-		if exit_code_tid.is_some() {
-			if exit_code.is_some() {
-				debug!("Found multiple exit code. Taking the laste one");
-			}
-			exit_code = exit_code_tid;
-		}
-	}
-
-	#[cfg(feature = "instrument")]
-	rftrace_frontend::dump_full_uftrace(events, "uhyve_trace", "uhyve", true)
-		.expect("Saving trace failed");
-
-	match exit_code {
-		Some(a) => std::process::exit(a),
-		None => std::process::exit(0),
+		t.join().unwrap();
 	}
 }
