@@ -289,14 +289,14 @@ fn main() {
 				match result {
 					Err(x) => {
 						error!("CPU {} crashes! {}", tid, x);
-						std::process::exit(libc::EXIT_FAILURE);
+						None
 					}
 					Ok(exit_code) => {
 						if let Some(code) = exit_code {
 							std::process::exit(code);
-						} else {
-							std::process::exit(libc::EXIT_FAILURE);
 						}
+
+						None
 					}
 				}
 			})
