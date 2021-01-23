@@ -1,4 +1,3 @@
 coverage:
   status:
-    project:
-      patch: off
+    patch: off
