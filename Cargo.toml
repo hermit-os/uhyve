@@ -77,7 +77,7 @@ version = "0.35.0"
 default-features = false
 
 [dev-dependencies]
-criterion = "0.3.3"
+criterion = "0.3.4"
 
 [[bench]]
 name = "benchmarks"
