@@ -19,10 +19,25 @@ use uhyvelib::vm::Vm;
 
 use clap::{App, Arg};
 use core_affinity::CoreId;
+#[cfg(feature = "instrument")]
+use rftrace_frontend::Events;
 use uhyvelib::utils::{filter_cpu_affinity, parse_cpu_affinity};
 
 const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
 const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
+
+#[cfg(feature = "instrument")]
+static mut EVENTS: Option<Box<&mut Events>> = None;
+
+#[cfg(feature = "instrument")]
+extern "C" fn dump_trace() {
+	unsafe {
+		if let Some(ref mut e) = EVENTS {
+			rftrace_frontend::dump_full_uftrace(&mut *e, "uhyve_trace", "uhyve", true)
+				.expect("Saving trace failed");
+		}
+	}
+}
 
 // Note that we end main with `std::process::exit` to set the return value and
 // as a result destructors are not run and cleanup may not happen.
@@ -31,13 +46,10 @@ fn main() {
 	{
 		let events = Box::new(rftrace_frontend::init(1000000, true));
 		rftrace_frontend::enable();
-		let exit_closure = || {
-			rftrace_frontend::dump_full_uftrace(*events, "uhyve_trace", "uhyve", true)
-				.expect("Saving trace failed");
-		};
 
 		unsafe {
-			libc::atexit(std::mem::transmute(exit_closure));
+			EVENTS = Some(events);
+			libc::atexit(dump_trace);
 		}
 	}
 
