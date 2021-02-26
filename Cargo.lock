@@ -366,18 +366,18 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f1c07667561c3d12d77342baf28ca5d0f8c3ea2160778485640ec84a4571da2"
 dependencies = [
- "vmm-sys-util",
+ "vmm-sys-util 0.7.0",
 ]
 
 [[package]]
 name = "kvm-ioctls"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "158d15da895bddca8223fa31dc9e8b9317bdc2fbc4635dea8dd575fc40dae37f"
+checksum = "5c23a352d6371d3d651e2103abd6479b245cb0f19e9cc94ea55e9b53da9b5069"
 dependencies = [
  "kvm-bindings",
  "libc",
- "vmm-sys-util",
+ "vmm-sys-util 0.8.0",
 ]
 
 [[package]]
@@ -841,7 +841,7 @@ dependencies = [
  "strum_macros",
  "tun-tap",
  "virtio-bindings",
- "vmm-sys-util",
+ "vmm-sys-util 0.7.0",
  "x86",
  "xhypervisor",
 ]
@@ -881,6 +881,16 @@ name = "vmm-sys-util"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1cdd1d72e262bbfb014de65ada24c1ac50e10a2e3b1e8ec052df188c2ee5dfa"
+dependencies = [
+ "bitflags",
+ "libc",
+]
+
+[[package]]
+name = "vmm-sys-util"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01cf11afbc4ebc0d5c7a7748a77d19e2042677fc15faa2f4ccccb27c18a60605"
 dependencies = [
  "bitflags",
  "libc",
