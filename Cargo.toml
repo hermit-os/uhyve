@@ -41,7 +41,7 @@ virtio-bindings = { version = "0.1.0", features = ["virtio-v4_14_0"]}
 mac_address = "1.1.1"
 rustc-serialize = "0.3.24"
 byteorder = "1.4.3"
-nom = "3.2.1"
+nom = "6.1.2"
 strum = "0.20.0"
 strum_macros = "0.20.1"
 gdb-protocol = "0.1.0"
