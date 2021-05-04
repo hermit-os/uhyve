@@ -234,11 +234,17 @@ struct SysUnlink {
 }
 
 pub trait VirtualCPU {
+	/// Initialize the cpu to start running the code ad entry_point.
 	fn init(&mut self, entry_point: u64) -> Result<()>;
+	/// Start the execution of the CPU. The function will run until it crashes (`Err`) or terminate with an exit code (`Ok`).
 	fn run(&mut self) -> Result<Option<i32>>;
+	/// Prints the VCPU's registers to stdout.
 	fn print_registers(&self);
+	/// Translates an address from the VM's physical space into the hosts virtual space.
 	fn host_address(&self, addr: usize) -> usize;
+	/// Looks up the guests pagetable and translates a guest's virtual address to a guest's physical address.
 	fn virt_to_phys(&self, addr: usize) -> usize;
+	/// Returns the (host) path of the kernel binary.
 	fn kernel_path(&self) -> String;
 
 	fn cmdsize(&self, args_ptr: usize) -> Result<()> {
@@ -287,6 +293,7 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Copies the arguments end environment of the application into the VM's memory.
 	fn cmdval(&self, args_ptr: usize) -> Result<()> {
 		let syscmdval = unsafe { &*(args_ptr as *const SysCmdval) };
 
@@ -308,6 +315,7 @@ pub trait VirtualCPU {
 			slice[len] = 0;
 		}
 
+		// Copy the application arguments into the vm memory
 		for argument in std::env::args() {
 			if !found_separator && argument == "--" {
 				separator_pos = counter + 1;
@@ -332,6 +340,7 @@ pub trait VirtualCPU {
 			counter += 1;
 		}
 
+		// Copy the environment variables into the vm memory
 		counter = 0;
 		let envp = self.host_address(syscmdval.envp as usize);
 		for (key, value) in std::env::vars() {
@@ -357,6 +366,8 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// unlink delets a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
+	/// TODO: UNSAFE AS *%@#. It has to be checked that the VM is allowed to unlink that file!
 	fn unlink(&self, args_ptr: usize) -> Result<()> {
 		unsafe {
 			let sysunlink = &mut *(args_ptr as *mut SysUnlink);
@@ -366,11 +377,13 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Reads the exit code from an VM and returns it
 	fn exit(&self, args_ptr: usize) -> i32 {
 		let sysexit = unsafe { &*(args_ptr as *const SysExit) };
 		sysexit.arg
 	}
 
+	/// Handles an open syscall by opening a file on the host.
 	fn open(&self, args_ptr: usize) -> Result<()> {
 		unsafe {
 			let sysopen = &mut *(args_ptr as *mut SysOpen);
@@ -384,6 +397,7 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Handles an close syscall by closing the file on the host.
 	fn close(&self, args_ptr: usize) -> Result<()> {
 		unsafe {
 			let sysclose = &mut *(args_ptr as *mut SysClose);
@@ -393,6 +407,7 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Handles an read syscall on the host.
 	fn read(&self, args_ptr: usize) -> Result<()> {
 		unsafe {
 			let sysread = &mut *(args_ptr as *mut SysRead);
@@ -413,6 +428,7 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Handles an write syscall on the host.
 	fn write(&self, args_ptr: usize) -> Result<()> {
 		let syswrite = unsafe { &*(args_ptr as *const SysWrite) };
 		let mut bytes_written: usize = 0;
@@ -436,6 +452,7 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Handles an write syscall on the host.
 	fn lseek(&self, args_ptr: usize) -> Result<()> {
 		unsafe {
 			let syslseek = &mut *(args_ptr as *mut SysLseek);
@@ -446,6 +463,7 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Handles an UART syscall by writing to stdout.
 	fn uart(&self, message: String) -> Result<()> {
 		print!("{}", message);
 		//io::stdout().flush().ok().expect("Could not flush stdout");
@@ -464,8 +482,11 @@ fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {
 }
 
 pub trait Vm {
+	/// Returns the number of cores for the vm.
 	fn num_cpus(&self) -> u32;
+	/// Returns a pointer to the address of the guest memory and the size of the memory in bytes.
 	fn guest_mem(&self) -> (*mut u8, usize);
+	/// Sets the elf entry point.
 	fn set_entry_point(&mut self, entry: u64);
 	fn get_entry_point(&self) -> u64;
 	fn kernel_path(&self) -> &str;
