@@ -359,7 +359,7 @@ impl VirtualCPU for UhyveCPU {
 				},
 				VcpuExit::IoOut(port, addr) => {
 					match port {
-						#![allow(clippy::cast_ptr_alignment)]
+						#[allow(clippy::cast_ptr_alignment)]
 						SHUTDOWN_PORT => {
 							return Ok(None);
 						}
