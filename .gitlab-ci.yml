@@ -52,7 +52,7 @@ test:demo:
      - cd -
      - cd $CI_BUILDS_DIR/rusty-hermit
      - cargo build -p rusty_demo
-     - RUSTFLAGS="-Clinker-plugin-lto" cargo build -p rusty_demo --release
+     - cargo build -p rusty_demo --release
      - cd -
      - RUST_LOG=debug target/debug/uhyve -v -c 1 $CI_BUILDS_DIR/rusty-hermit/target/x86_64-unknown-hermit/debug/rusty_demo
      - RUST_LOG=debug target/debug/uhyve -v -c 2 $CI_BUILDS_DIR/rusty-hermit/target/x86_64-unknown-hermit/debug/rusty_demo
