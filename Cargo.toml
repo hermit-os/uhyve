@@ -60,13 +60,13 @@ features = ["elf64", "elf32", "endian_fd", "std"]
 version = "0.0.12"
 
 [target.'cfg(target_os = "linux")'.dependencies.kvm-ioctls]
-version = "0.6.0"
+version = "0.8.0"
 
 [target.'cfg(target_os = "linux")'.dependencies.kvm-bindings]
-version = "0.3.0"
+version = "0.4.0"
 
 [target.'cfg(target_os = "linux")'.dependencies.vmm-sys-util]
-version = "0.7.0"
+version = "0.8.0"
 
 [target.'cfg(target_os = "linux")'.dependencies.tun-tap]
 version = "0.1.2"
