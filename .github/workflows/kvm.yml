@@ -29,3 +29,10 @@ jobs:
     - name: Build (release)
       run:
          cargo build --release
+    - name: KVM tests (debug)
+      shell: bash
+      run: |
+         lscpu
+         kvm-ok
+         echo $PWD
+
