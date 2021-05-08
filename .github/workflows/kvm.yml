@@ -10,7 +10,7 @@ on:
 
 jobs:
   kvm:
-    name: Test
+    name: KVM Tests
     runs-on: [self-hosted]
 
     steps:
