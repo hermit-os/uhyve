@@ -23,15 +23,15 @@ jobs:
          submodules: true
     - name: Check Cargo availability
       run: cargo --version
-    - name: Clean workspace
-      shell: bash
-      run: |
-         cd $RUNNER_WORKSPACE
-         cd ..
-         rm -r *
     - name: Build
       run:
          cargo build
     - name: Build
       run:
          cargo build --release
+    - name: Clean working directory
+      shell: bash
+      run: |
+         cd $RUNNER_WORKSPACE
+         cd ..
+         rm -r *
