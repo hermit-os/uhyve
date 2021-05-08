@@ -56,7 +56,7 @@ impl UhyveCPU {
 		//debug!("Setup cpuid");
 
 		let mut kvm_cpuid = KVM
-			.get_supported_cpuid(KVM_MAX_MSR_ENTRIES)
+			.get_supported_cpuid(KVM_MAX_CPUID_ENTRIES)
 			.or_else(to_error)?;
 		let kvm_cpuid_entries = kvm_cpuid.as_mut_slice();
 		let i = kvm_cpuid_entries
@@ -151,7 +151,8 @@ impl UhyveCPU {
 		msr_entries[0].index = MSR_IA32_MISC_ENABLE;
 		msr_entries[0].data = 1;
 
-		let msrs = Msrs::from_entries(&msr_entries);
+		let msrs = Msrs::from_entries(&msr_entries)
+			.expect("Unable to create initial values for the machine specific registers");
 		self.vcpu.set_msrs(&msrs).or_else(to_error)?;
 
 		Ok(())
