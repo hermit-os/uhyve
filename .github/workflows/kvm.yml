@@ -26,3 +26,12 @@ jobs:
     - name: Build
       run:
          cargo build
+    - name: Build
+      run:
+         cargo build --release
+    - name: Clean working directory
+      shell: bash
+      run: |
+         cd $RUNNER_WORKSPACE
+         cd ..
+         rm -r *
