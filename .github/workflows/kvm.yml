@@ -17,8 +17,8 @@ jobs:
       shell: bash
       run: |
          cd $RUNNER_WORKSPACE
-         cd ..
-         rm -rf uhyve*
+         rm -rf *
+         cd -
     - uses: hecrj/setup-rust-action@v1
       with: 
          rust-version: nightly
