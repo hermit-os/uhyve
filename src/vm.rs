@@ -11,6 +11,8 @@ use raw_cpuid::CpuId;
 use std::convert::TryInto;
 use std::io::Write;
 use std::net::Ipv4Addr;
+use std::os::unix::ffi::OsStrExt;
+use std::path::PathBuf;
 use std::ptr::write;
 use std::time::{Duration, Instant, SystemTime};
 use std::{fmt, mem, slice};
@@ -246,7 +248,7 @@ pub trait VirtualCPU {
 	/// Looks up the guests pagetable and translates a guest's virtual address to a guest's physical address.
 	fn virt_to_phys(&self, addr: usize) -> usize;
 	/// Returns the (host) path of the kernel binary.
-	fn kernel_path(&self) -> String;
+	fn kernel_path(&self) -> PathBuf;
 
 	fn cmdsize(&self, args_ptr: usize) -> Result<()> {
 		let syssize = unsafe { &mut *(args_ptr as *mut SysCmdsize) };
@@ -257,7 +259,7 @@ pub trait VirtualCPU {
 		let mut separator_pos: i32 = 0;
 		let path = self.kernel_path();
 		let mut found_separator = false;
-		syssize.argsz[0] = path.len() as i32 + 1;
+		syssize.argsz[0] = path.as_os_str().len() as i32 + 1;
 
 		for argument in std::env::args() {
 			if !found_separator && argument == "--" {
@@ -305,7 +307,7 @@ pub trait VirtualCPU {
 
 		// copy kernel path as first argument
 		{
-			let path = self.kernel_path();
+			let path = self.kernel_path().into_os_string();
 
 			let argvptr = unsafe { self.host_address(*(argv as *mut *mut u8) as usize) };
 			let len = path.len();
@@ -487,7 +489,7 @@ pub trait Vm {
 	/// Sets the elf entry point.
 	fn set_entry_point(&mut self, entry: u64);
 	fn get_entry_point(&self) -> u64;
-	fn kernel_path(&self) -> &str;
+	fn kernel_path(&self) -> PathBuf;
 	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>>;
 	fn set_boot_info(&mut self, header: *const BootInfo);
 	fn cpu_online(&self) -> u32;
@@ -548,7 +550,7 @@ pub trait Vm {
 	}
 
 	unsafe fn load_kernel(&mut self) -> Result<()> {
-		debug!("Load kernel from {}", self.kernel_path());
+		debug!("Load kernel from {}", self.kernel_path().display());
 
 		let buffer = fs::read(self.kernel_path())
 			.map_err(|_| Error::InvalidFile(self.kernel_path().into()))?;
@@ -908,8 +910,9 @@ mod tests {
 			return;
 		}
 
-		let path =
-			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
+		let mut path = PathBuf::new();
+		path.push(env!("CARGO_MANIFEST_DIR"));
+		path.push("/benches_data/hello_world");
 		let vm = create_vm(
 			path,
 			&Parameter::new(
@@ -935,8 +938,9 @@ mod tests {
 			return;
 		}
 
-		let path =
-			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
+		let mut path = PathBuf::new();
+		path.push(env!("CARGO_MANIFEST_DIR"));
+		path.push("/benches_data/hello_world");
 		let mut vm = create_vm(
 			path,
 			&Parameter::new(
@@ -962,7 +966,7 @@ mod tests {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn create_vm(path: String, specs: &super::vm::Parameter) -> Result<Uhyve> {
+pub fn create_vm(path: PathBuf, specs: &super::vm::Parameter) -> Result<Uhyve> {
 	// If we are given a port, create new DebugManager.
 	let gdb = specs.gdbport.map(|port| DebugManager::new(port).unwrap());
 
@@ -972,7 +976,7 @@ pub fn create_vm(path: String, specs: &super::vm::Parameter) -> Result<Uhyve> {
 }
 
 #[cfg(target_os = "windows")]
-pub fn create_vm(path: String, specs: &super::vm::Parameter) -> Result<Uhyve> {
+pub fn create_vm(path: PathBuf, specs: &super::vm::Parameter) -> Result<Uhyve> {
 	let vm = Uhyve::new(path.clone(), &specs)?;
 
 	Ok(vm)

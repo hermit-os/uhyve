@@ -18,6 +18,7 @@ use std::hint;
 use std::mem;
 use std::net::Ipv4Addr;
 use std::os::raw::c_void;
+use std::path::PathBuf;
 use std::ptr;
 use std::ptr::{read_volatile, write_volatile};
 use std::str::FromStr;
@@ -124,7 +125,7 @@ pub struct Uhyve {
 	entry_point: u64,
 	mem: MmapMemory,
 	num_cpus: u32,
-	path: String,
+	path: PathBuf,
 	boot_info: *const BootInfo,
 	verbose: bool,
 	ip: Option<Ipv4Addr>,
@@ -136,7 +137,11 @@ pub struct Uhyve {
 }
 
 impl Uhyve {
-	pub fn new(kernel_path: String, specs: &Parameter, dbg: Option<DebugManager>) -> Result<Uhyve> {
+	pub fn new(
+		kernel_path: PathBuf,
+		specs: &Parameter,
+		dbg: Option<DebugManager>,
+	) -> Result<Uhyve> {
 		// parse string to get IP address
 		let ip_addr = match &specs.ip {
 			Some(addr_str) => {
@@ -314,8 +319,8 @@ impl Vm for Uhyve {
 		(self.mem.host_address() as *mut u8, self.mem.memory_size())
 	}
 
-	fn kernel_path(&self) -> &str {
-		&self.path
+	fn kernel_path(&self) -> PathBuf {
+		self.path.clone()
 	}
 
 	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>> {
