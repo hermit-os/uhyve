@@ -9,16 +9,14 @@ extern crate clap;
 extern crate rftrace_frontend;
 
 use std::env;
-use std::hint;
-use std::sync::Arc;
-use std::thread;
+use std::path::PathBuf;
+use std::str::FromStr;
 
+use uhyvelib::uhyve_run;
 use uhyvelib::utils;
 use uhyvelib::vm;
-use uhyvelib::vm::Vm;
 
 use clap::{App, Arg};
-use core_affinity::CoreId;
 #[cfg(feature = "instrument")]
 use rftrace_frontend::Events;
 use uhyvelib::utils::{filter_cpu_affinity, parse_cpu_affinity};
@@ -251,80 +249,17 @@ fn main() {
 				.map(|p| p.parse::<u32>().expect("Could not parse gdb port"))
 		});
 
-	// create and initialize the VM
-	let vm = Arc::new({
-		let mut vm = vm::create_vm(
-			path.to_string(),
-			&vm::Parameter {
-				mem_size,
-				num_cpus,
-				verbose,
-				hugepage,
-				mergeable,
-				ip,
-				gateway,
-				mask,
-				nic,
-				gdbport,
-			},
-		)
-		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?");
-		unsafe {
-			vm.load_kernel().expect("Unabled to load the kernel");
-		}
-		vm
-	});
-
-	let num_cpus = vm.num_cpus();
-	let threads: Vec<_> = (0..num_cpus)
-		.map(|tid| {
-			let vm = vm.clone();
-
-			let local_cpu_affinity: Option<CoreId> = match &cpu_affinity {
-				Some(vec) => vec.get(tid as usize).cloned(),
-				None => None,
-			};
-
-			// create thread for each CPU
-			thread::spawn(move || -> Option<i32> {
-				debug!("Create thread for CPU {}", tid);
-				match local_cpu_affinity {
-					Some(core_id) => {
-						debug!("Trying to pin thread {} to CPU {}", tid, core_id.id);
-						core_affinity::set_for_current(core_id); // This does not return an error if it fails :(
-					}
-					None => debug!("No affinity specified, not binding thread"),
-				}
-
-				let mut cpu = vm.create_cpu(tid).unwrap();
-				cpu.init(vm.get_entry_point()).unwrap();
-
-				// only one core is able to enter startup code
-				// => the wait for the predecessor core
-				while tid != vm.cpu_online() {
-					hint::spin_loop();
-				}
-
-				// jump into the VM and excute code of the guest
-				let result = cpu.run();
-				match result {
-					Err(x) => {
-						error!("CPU {} crashes! {}", tid, x);
-						None
-					}
-					Ok(exit_code) => {
-						if let Some(code) = exit_code {
-							std::process::exit(code);
-						}
-
-						None
-					}
-				}
-			})
-		})
-		.collect();
-
-	for t in threads {
-		t.join().unwrap();
-	}
+	let params = vm::Parameter {
+		mem_size,
+		num_cpus,
+		verbose,
+		hugepage,
+		mergeable,
+		ip,
+		gateway,
+		mask,
+		nic,
+		gdbport,
+	};
+	uhyve_run(path, &params, cpu_affinity);
 }
