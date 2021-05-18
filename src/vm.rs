@@ -531,17 +531,16 @@ pub trait Vm {
 	unsafe fn load_kernel(&mut self) -> Result<()> {
 		debug!("Load kernel from {}", self.kernel_path().display());
 
-		let buffer = fs::read(self.kernel_path())
-			.map_err(|_| Error::InvalidFile(self.kernel_path().into()))?;
-		let elf =
-			elf::Elf::parse(&buffer).map_err(|_| Error::InvalidFile(self.kernel_path().into()))?;
+		let buffer =
+			fs::read(self.kernel_path()).map_err(|_| Error::InvalidFile(self.kernel_path()))?;
+		let elf = elf::Elf::parse(&buffer).map_err(|_| Error::InvalidFile(self.kernel_path()))?;
 
 		if !elf.libraries.is_empty() {
 			warn!(
 				"Error: file depends on following libraries: {:?}",
 				elf.libraries
 			);
-			return Err(Error::InvalidFile(self.kernel_path().into()));
+			return Err(Error::InvalidFile(self.kernel_path()));
 		}
 
 		let is_dyn = elf.header.e_type == ET_DYN;
@@ -550,7 +549,7 @@ pub trait Vm {
 		}
 
 		if elf.header.e_machine != EM_X86_64 {
-			return Err(Error::InvalidFile(self.kernel_path().into()));
+			return Err(Error::InvalidFile(self.kernel_path()));
 		}
 
 		// acquire the slices of the user memory

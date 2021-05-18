@@ -264,5 +264,6 @@ fn main() {
 		nic,
 		gdbport,
 	};
-	uhyve_run(path, &params, cpu_affinity);
+	let ret_val = uhyve_run(path, &params, cpu_affinity);
+	std::process::exit(ret_val);
 }
