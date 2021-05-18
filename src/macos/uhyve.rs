@@ -7,6 +7,7 @@ use libc;
 use libc::c_void;
 use log::{debug, error};
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 use std::ptr;
 use std::ptr::read_volatile;
 use std::sync::{Arc, Mutex};
@@ -17,7 +18,7 @@ pub struct Uhyve {
 	mem_size: usize,
 	guest_mem: *mut c_void,
 	num_cpus: u32,
-	path: String,
+	path: PathBuf,
 	boot_info: *const BootInfo,
 	ioapic: Arc<Mutex<IoApic>>,
 	verbose: bool,
@@ -26,7 +27,7 @@ pub struct Uhyve {
 
 impl Uhyve {
 	pub fn new(
-		kernel_path: String,
+		kernel_path: PathBuf,
 		specs: &Parameter<'_>,
 		dbg: Option<DebugManager>,
 	) -> Result<Uhyve> {
@@ -99,8 +100,8 @@ impl Vm for Uhyve {
 		(self.guest_mem as *mut u8, self.mem_size)
 	}
 
-	fn kernel_path(&self) -> &str {
-		&self.path
+	fn kernel_path(&self) -> PathBuf {
+		self.path.clone()
 	}
 
 	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>> {

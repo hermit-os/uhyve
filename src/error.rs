@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::{fmt, result};
 
 pub type Result<T> = result::Result<T, Error>;
@@ -7,7 +8,7 @@ pub enum Error {
 	FileMissing,
 	InternalError,
 	OsError(i32),
-	InvalidFile(String),
+	InvalidFile(PathBuf),
 	NotEnoughMemory,
 	MissingFrequency,
 	UnknownExitReason,
@@ -41,7 +42,11 @@ impl fmt::Display for Error {
 			Error::InternalError => write!(f, "An internal error has occurred, please report."),
 			Error::OsError(ref err) => write!(f, "Error from OS: {}", err),
 			Error::InvalidFile(ref file) => {
-				write!(f, "The file {} was not found or is invalid.", file)
+				write!(
+					f,
+					"The file {} was not found or is invalid.",
+					file.display()
+				)
 			}
 			Error::NotEnoughMemory => write!(
 				f,

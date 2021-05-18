@@ -170,9 +170,12 @@ fn main() {
 		)
 		.get_matches();
 
-	let path = matches
-		.value_of("KERNEL")
-		.expect("Expect path to the kernel!");
+	let path = PathBuf::from_str(
+		matches
+			.value_of("KERNEL")
+			.expect("Expect path to the kernel!"),
+	)
+	.expect("Invalid kernel path");
 	let mem_size: usize = matches
 		.value_of("MEM")
 		.map(|x| {
