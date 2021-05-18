@@ -28,6 +28,7 @@ use core_affinity::CoreId;
 use std::hint;
 use std::sync::Arc;
 use std::thread;
+use std::path::PathBuf;
 use vm::Vm;
 
 /// Creates a uhyve vm and runs the binary given by `path` in it.
@@ -39,7 +40,7 @@ pub fn uhyve_run(
 ) {
 	// create and initialize the VM
 	let vm = Arc::new({
-		let mut vm = vm::create_vm(path.to_string(), vm_params)
+		let mut vm = vm::create_vm(path, vm_params)
 			.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?");
 		unsafe {
 			vm.load_kernel().expect("Unabled to load the kernel");
