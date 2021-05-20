@@ -43,8 +43,9 @@ jobs:
     - name: Check Cargo availability
       run: cargo --version
     - name: Test
-      run:
-         cargo test -- --nocapture
+      run: |
+         cargo test --lib -- --nocapture
+         cargo test --doc -- --nocapture
     - name: Generate Test coverage
       run: |
         ./generate_test_coverage.sh
