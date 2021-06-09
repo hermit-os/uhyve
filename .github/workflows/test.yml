@@ -32,7 +32,7 @@ jobs:
 
     steps:
     - uses: hecrj/setup-rust-action@v1
-      with: 
+      with:
          rust-version: ${{ matrix.rust }}
          components: ${{ matrix.components || '' }}
          targets: ${{ matrix.targets || '' }}
@@ -45,10 +45,12 @@ jobs:
     - name: Test
       run:
          cargo test -- --nocapture
+
     - name: Generate Test coverage
-      run: |
-        ./generate_test_coverage.sh
-        bash <(curl -s https://codecov.io/bash) -f 
+      uses: actions-rs/tarpaulin@v0.1
+      with:
+        version: 'latest'
+        args: '--verbose --all-features --workspace --timeout 120 --out Xml --exclude-files="target"'
     - uses: codecov/codecov-action@v1.5.0
       with:
         files: ./coveralls.json
