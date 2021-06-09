@@ -34,3 +34,6 @@ jobs:
         uses: actions/checkout@v2
       - name: Check Formatting
         run: cargo fmt -- --check
+      - name: Check Integration Test Formatting
+        working-directory: ./tests/test-kernels
+        run: cargo fmt -- --check
