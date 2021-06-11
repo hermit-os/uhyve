@@ -73,7 +73,7 @@ version = "0.1.2"
 default-features = false
 
 [target.'cfg(target_arch = "x86_64")'.dependencies.x86]
-version = "0.39.0"
+version = "0.40.0"
 default-features = false
 
 [dev-dependencies]
