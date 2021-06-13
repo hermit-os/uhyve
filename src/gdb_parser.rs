@@ -621,7 +621,7 @@ named!(parse_condition_list<&[u8], Vec<Bytecode>>,
 				 list: many1!(parse_cond_or_command_expression) >>
 				 (list)));
 
-fn maybe_condition_list<'a>(i: &'a [u8]) -> IResult<&'a [u8], Option<Vec<Bytecode>>> {
+fn maybe_condition_list(i: &[u8]) -> IResult<&[u8], Option<Vec<Bytecode>>> {
 	// An Incomplete here really means "not enough input to match a
 	// condition list", and that's OK.  An Error is *probably* that the
 	// input contains a command list rather than a condition list; the
@@ -644,7 +644,7 @@ named!(parse_command_list<&[u8], Vec<Bytecode>>,
 									 many1!(parse_cond_or_command_expression)) >>
 				 (list)));
 
-fn maybe_command_list<'a>(i: &'a [u8]) -> IResult<&'a [u8], Option<Vec<Bytecode>>> {
+fn maybe_command_list(i: &[u8]) -> IResult<&[u8], Option<Vec<Bytecode>>> {
 	// An Incomplete here really means "not enough input to match a
 	// command list", and that's OK.
 	match parse_command_list(i) {

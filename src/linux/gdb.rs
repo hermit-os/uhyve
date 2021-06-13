@@ -37,7 +37,7 @@ const INT3: &[u8] = &[0xcc];
 impl UhyveCPU {
 	/// Called on Trap. Creates Handler.
 	/// Enter gdb-event-loop until gdb tells us to continue. Set singlestep mode if necessary and return
-	pub fn gdb_handle_exception<'a>(&mut self, signal: Option<VcpuExit<'a>>) {
+	pub fn gdb_handle_exception(&mut self, signal: Option<VcpuExit<'_>>) {
 		debug!("Handling debug exception!");
 		if let Some(dbg) = &mut self.dbg {
 			let dbgarc = dbg.clone();
