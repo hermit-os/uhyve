@@ -83,6 +83,7 @@ impl HWBreakpoints {
 	}
 }
 
+#[allow(clippy::unusual_byte_groupings)]
 #[test]
 fn test_hwbreakpoints_dr7() {
 	let br = HWBreakpoints([
