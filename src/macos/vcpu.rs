@@ -316,7 +316,7 @@ impl UhyveCPU {
 
 				if extended_features {
 					// disable SGX support
-					rbx = rbx & !(1 << 2);
+					rbx &= !(1 << 2);
 				}
 
 				self.vcpu.write_register(&x86Reg::RAX, rax)?;
