@@ -255,9 +255,18 @@ fn main() {
 	let vm = Arc::new({
 		let mut vm = vm::create_vm(
 			path.to_string(),
-			&vm::Parameter::new(
-				mem_size, num_cpus, verbose, hugepage, mergeable, ip, gateway, mask, nic, gdbport,
-			),
+			&vm::Parameter {
+				mem_size,
+				num_cpus,
+				verbose,
+				hugepage,
+				mergeable,
+				ip,
+				gateway,
+				mask,
+				nic,
+				gdbport,
+			},
 		)
 		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?");
 		unsafe {

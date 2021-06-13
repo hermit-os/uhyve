@@ -146,34 +146,6 @@ pub struct Parameter<'a> {
 	pub gdbport: Option<u32>,
 }
 
-impl<'a> Parameter<'a> {
-	pub fn new(
-		mem_size: usize,
-		num_cpus: u32,
-		verbose: bool,
-		hugepage: bool,
-		mergeable: bool,
-		ip: Option<&'a str>,
-		gateway: Option<&'a str>,
-		mask: Option<&'a str>,
-		nic: Option<&'a str>,
-		gdbport: Option<u32>,
-	) -> Self {
-		Parameter {
-			mem_size,
-			num_cpus,
-			verbose,
-			hugepage,
-			mergeable,
-			ip,
-			gateway,
-			mask,
-			nic,
-			gdbport,
-		}
-	}
-}
-
 #[repr(C, packed)]
 struct SysWrite {
 	fd: i32,
@@ -900,18 +872,18 @@ mod tests {
 			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
 		let vm = create_vm(
 			path,
-			&Parameter::new(
-				1024,
-				1,
-				false,
-				true,
-				false,
-				std::option::Option::None,
-				std::option::Option::None,
-				std::option::Option::None,
-				std::option::Option::None,
-				std::option::Option::None,
-			),
+			&Parameter {
+				mem_size: 1024,
+				num_cpus: 1,
+				verbose: false,
+				hugepage: true,
+				mergeable: false,
+				ip: None,
+				gateway: None,
+				mask: None,
+				nic: None,
+				gdbport: None,
+			},
 		);
 		assert_eq!(vm.is_err(), true);
 	}
@@ -927,18 +899,18 @@ mod tests {
 			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
 		let mut vm = create_vm(
 			path,
-			&Parameter::new(
-				102400,
-				1,
-				false,
-				true,
-				false,
-				std::option::Option::None,
-				std::option::Option::None,
-				std::option::Option::None,
-				std::option::Option::None,
-				std::option::Option::None,
-			),
+			&Parameter {
+				mem_size: 102400,
+				num_cpus: 1,
+				verbose: false,
+				hugepage: true,
+				mergeable: false,
+				ip: None,
+				gateway: None,
+				mask: None,
+				nic: None,
+				gdbport: None,
+			},
 		)
 		.expect("Unable to create VM");
 		unsafe {
