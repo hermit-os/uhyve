@@ -63,7 +63,6 @@ lazy_static! {
 pub struct UhyveCPU {
 	id: u32,
 	kernel_path: String,
-	extint_pending: bool,
 	vcpu: vCPU,
 	vm_start: usize,
 	apic_base: u64,
@@ -82,7 +81,6 @@ impl UhyveCPU {
 		UhyveCPU {
 			id: id,
 			kernel_path,
-			extint_pending: false,
 			vcpu: vCPU::new().unwrap(),
 			vm_start: vm_start,
 			apic_base: APIC_DEFAULT_BASE,
@@ -651,8 +649,6 @@ impl VirtualCPU for UhyveCPU {
 				}
 				vmx_exit::VMX_REASON_IRQ => {
 					trace!("Exit reason {} - External interrupt", reason);
-
-					self.extint_pending = true;
 				}
 				vmx_exit::VMX_REASON_VMENTRY_GUEST => {
 					error!(
