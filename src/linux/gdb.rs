@@ -714,9 +714,8 @@ impl Registers {
 
 	/// take the serialized register set send by gdb and decodes it into a register structure.
 	/// uses little endian, order as specified by gdb arch i386:x86-64
-	pub fn decode(raw: &[u8]) -> Self {
+	pub fn decode(mut raw: &[u8]) -> Self {
 		let mut registers = Registers::default();
-		let mut raw = raw.clone();
 
 		registers.rax = raw.read_u64::<LittleEndian>().ok();
 		registers.rbx = raw.read_u64::<LittleEndian>().ok();
