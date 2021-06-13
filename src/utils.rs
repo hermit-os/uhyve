@@ -3,10 +3,7 @@ use crate::error::*;
 use core_affinity::CoreId;
 #[cfg(target_os = "linux")]
 use log::debug;
-use std::{
-	env,
-	io::{self, ErrorKind},
-};
+use std::{env, io};
 
 pub fn parse_mem(mem: &str) -> Result<usize> {
 	let (num, postfix): (String, String) = mem.chars().partition(|&x| x.is_numeric());
@@ -114,7 +111,7 @@ pub fn transparent_hugepages_available() -> io::Result<bool> {
 						transp_hugepage_enabled.display(),
 						s
 					);
-					Err(ErrorKind::InvalidData.into())
+					Err(io::ErrorKind::InvalidData.into())
 				}
 			},
 			Err(err) => {
