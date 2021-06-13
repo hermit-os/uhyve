@@ -1178,7 +1178,7 @@ fn get_thread_id(thread_id: ThreadId) -> String {
 	tid.push_str(".");*/
 	match thread_id.tid {
 		Id::All => tid.push_str("-1"),
-		Id::Any => tid.push_str("0"),
+		Id::Any => tid.push('0'),
 		Id::Id(num) => tid.push_str(&format!("{:x}", num)),
 	};
 	tid
@@ -1189,7 +1189,7 @@ fn get_process_info(p: &ProcessInfo) -> String {
 	out.push_str("pid:");
 	match p.pid {
 		Id::All => out.push_str("-1"),
-		Id::Any => out.push_str("0"),
+		Id::Any => out.push('0'),
 		Id::Id(num) => out.push_str(&format!("{:x}", num)),
 	};
 	out.push_str(&format!("name:{}", p.name));
@@ -1263,11 +1263,11 @@ impl<'a> From<Response<'a>> for Vec<u8> {
 				if threads.is_empty() {
 					"l".into()
 				} else {
-					rsp.push_str("m");
+					rsp.push('m');
 					for (i, &id) in threads.iter().enumerate() {
 						// Write separator
 						if i != 0 {
-							rsp.push_str(",");
+							rsp.push(',');
 						}
 						rsp.push_str(&get_thread_id(id));
 					}
@@ -1278,11 +1278,11 @@ impl<'a> From<Response<'a>> for Vec<u8> {
 				if procs.is_empty() {
 					"E00".into() // lldb spec just says error Exx where xx is hex
 				} else {
-					rsp.push_str("m");
+					rsp.push('m');
 					for (i, p) in procs.iter().enumerate() {
 						// Write separator
 						if i != 0 {
-							rsp.push_str(",");
+							rsp.push(',');
 						}
 						rsp.push_str(&get_process_info(p));
 					}
