@@ -567,7 +567,7 @@ impl VirtualCPU for UhyveCPU {
 
 		for _i in 0..4 {
 			let index = (addr >> page_bits) & ((1 << PAGE_MAP_BITS) - 1);
-			entry = unsafe { *page_table.offset(index as isize) & executable_disable_mask };
+			entry = unsafe { *page_table.add(index) & executable_disable_mask };
 
 			// bit 7 is set if this entry references a 1 GiB (PDPT) or 2 MiB (PDT) page.
 			if entry & PageTableEntryFlags::HUGE_PAGE.bits() != 0 {
