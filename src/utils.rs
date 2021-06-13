@@ -100,15 +100,8 @@ pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
 		);
 		Ok(false)
 	} else {
-		let str_res = std::fs::read_to_string(transp_hugepage_enabled);
-		if str_res.is_err() {
-			debug!(
-				"transparent_hugepages_available: Error reading string: {:?}",
-				str_res.unwrap_err()
-			);
-			Err(())
-		} else {
-			match str_res.unwrap().trim() {
+		match std::fs::read_to_string(transp_hugepage_enabled) {
+			Ok(s) => match s.trim() {
 				"[always] madvise never" => Ok(true),
 				"always [madvise] never" => Ok(true),
 				"always madvise [never]" => Ok(false),
@@ -120,6 +113,13 @@ pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
 					);
 					Err(())
 				}
+			},
+			Err(err) => {
+				debug!(
+					"transparent_hugepages_available: Error reading string: {:?}",
+					err
+				);
+				Err(())
 			}
 		}
 	}
