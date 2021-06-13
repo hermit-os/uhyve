@@ -130,7 +130,7 @@ impl Virtqueue {
 		&mut *self.descriptor_table.offset(index as isize)
 	}
 
-	pub fn avail_iter(&mut self) -> AvailIter {
+	pub fn avail_iter(&mut self) -> AvailIter<'_> {
 		AvailIter {
 			available_ring: &self.available_ring,
 			last_seen_available: &mut self.last_seen_available,

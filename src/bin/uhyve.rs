@@ -1,10 +1,10 @@
+#![warn(rust_2018_idioms)]
+
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate clap;
 
-#[cfg(feature = "instrument")]
-extern crate rftrace;
 #[cfg(feature = "instrument")]
 extern crate rftrace_frontend;
 

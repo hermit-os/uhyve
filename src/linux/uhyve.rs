@@ -136,7 +136,11 @@ pub struct Uhyve {
 }
 
 impl Uhyve {
-	pub fn new(kernel_path: String, specs: &Parameter, dbg: Option<DebugManager>) -> Result<Uhyve> {
+	pub fn new(
+		kernel_path: String,
+		specs: &Parameter<'_>,
+		dbg: Option<DebugManager>,
+	) -> Result<Uhyve> {
 		// parse string to get IP address
 		let ip_addr = specs
 			.ip

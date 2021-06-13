@@ -98,7 +98,7 @@ impl Default for BootInfo {
 }
 
 impl fmt::Debug for BootInfo {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		writeln!(f, "magic_number 0x{:x}", self.magic_number)?;
 		writeln!(f, "version 0x{:x}", self.version)?;
 		writeln!(f, "base 0x{:x}", self.base)?;
@@ -920,7 +920,7 @@ mod tests {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn create_vm(path: String, specs: &super::vm::Parameter) -> Result<Uhyve> {
+pub fn create_vm(path: String, specs: &super::vm::Parameter<'_>) -> Result<Uhyve> {
 	// If we are given a port, create new DebugManager.
 	let gdb = specs.gdbport.map(|port| DebugManager::new(port).unwrap());
 

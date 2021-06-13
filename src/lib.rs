@@ -1,16 +1,6 @@
+#![warn(rust_2018_idioms)]
 #![allow(unused_macros)]
 #![allow(clippy::missing_safety_doc)]
-
-#[cfg(target_os = "linux")]
-extern crate kvm_bindings;
-#[cfg(target_os = "linux")]
-extern crate kvm_ioctls;
-#[cfg(target_os = "linux")]
-extern crate tun_tap;
-#[cfg(target_os = "linux")]
-extern crate vmm_sys_util;
-#[cfg(target_os = "macos")]
-extern crate xhypervisor;
 
 #[macro_use]
 mod macros;

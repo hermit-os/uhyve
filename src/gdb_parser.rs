@@ -339,7 +339,7 @@ enum Command<'a> {
 }
 
 named!(
-	gdbfeature<Known>,
+	gdbfeature<Known<'_>>,
 	map!(map_res!(is_not_s!(";="), str::from_utf8), |s| {
 		match GDBFeature::from_str(s) {
 			Ok(f) => Known::Yes(f),
@@ -539,7 +539,7 @@ alt_complete!(parse_thread_id_element => { |pid| ThreadId { pid, tid: Id::Any } 
 named!(parse_ping_thread<&[u8], ThreadId>,
 	   preceded!(tag!("T"), parse_thread_id));
 
-fn v_command(i: &[u8]) -> IResult<&[u8], Command> {
+fn v_command(i: &[u8]) -> IResult<&[u8], Command<'_>> {
 	alt_complete!(i,
 	tag!("vCtrlC") => { |_| Command::CtrlC }
 	| preceded!(tag!("vCont"),
@@ -660,7 +660,7 @@ named!(parse_cond_and_command_list<&[u8], (Option<Vec<Bytecode>>,
 				 cmd_list: maybe_command_list >>
 				 (cond_list, cmd_list)));
 
-fn parse_z_packet(i: &[u8]) -> IResult<&[u8], Command> {
+fn parse_z_packet(i: &[u8]) -> IResult<&[u8], Command<'_>> {
 	let (rest, (action, type_, addr, kind)) = try_parse!(
 		i,
 		do_parse!(
@@ -677,7 +677,12 @@ fn parse_z_packet(i: &[u8]) -> IResult<&[u8], Command> {
 		ZAction::Remove => Done(rest, remove_command(type_, addr, kind)),
 	};
 
-	fn insert_command(rest: &[u8], type_: ZType, addr: u64, kind: u64) -> IResult<&[u8], Command> {
+	fn insert_command(
+		rest: &[u8],
+		type_: ZType,
+		addr: u64,
+		kind: u64,
+	) -> IResult<&[u8], Command<'_>> {
 		match type_ {
 			// Software and hardware breakpoints both permit optional condition
 			// lists and commands that are evaluated on the target when
@@ -722,7 +727,7 @@ fn parse_z_packet(i: &[u8]) -> IResult<&[u8], Command> {
 	}
 }
 
-fn command(i: &[u8]) -> IResult<&[u8], Command> {
+fn command(i: &[u8]) -> IResult<&[u8], Command<'_>> {
 	alt!(i,
 		 tag!("!") => { |_|   Command::EnableExtendedMode }
 		 | tag!("?") => { |_| Command::TargetHaltReason }
@@ -1143,7 +1148,7 @@ impl<'a> From<StopReason> for Response<'a> {
 
 impl<'a> From<String> for Response<'a> {
 	fn from(reason: String) -> Self {
-		Response::String(Cow::Owned(reason) as Cow<str>)
+		Response::String(Cow::Owned(reason) as Cow<'_, str>)
 	}
 }
 
@@ -1199,7 +1204,7 @@ fn get_process_info(p: &ProcessInfo) -> String {
 
 /// get a byte vector we can send to remote from a response
 impl<'a> From<Response<'a>> for Vec<u8> {
-	fn from(response: Response) -> Vec<u8> {
+	fn from(response: Response<'_>) -> Vec<u8> {
 		trace!("Response: {:?}", response);
 
 		let mut rsp = String::new();
@@ -1313,7 +1318,7 @@ where
 	];
 	let mut new_features = handler.query_supported_features();
 	features.append(&mut new_features);
-	Response::String(Cow::Owned(features.join(";")) as Cow<str>)
+	Response::String(Cow::Owned(features.join(";")) as Cow<'_, str>)
 }
 
 /// Handle a single packet `data` with `handler` and return response
