@@ -1,4 +1,5 @@
 #![allow(unused_macros)]
+#![allow(clippy::missing_safety_doc)]
 
 #[cfg(target_os = "linux")]
 extern crate kvm_bindings;
