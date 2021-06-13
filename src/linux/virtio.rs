@@ -277,7 +277,7 @@ impl VirtioNetPciDevice {
 				*(dest.as_ptr() as *const usize)
 			};
 			let hva = (*vcpu).host_address(gpa) as *mut u8;
-			let queue = Virtqueue::new(hva, QUEUE_LIMIT);
+			let queue = unsafe { Virtqueue::new(hva, QUEUE_LIMIT) };
 			self.virt_queues.push(queue);
 		}
 	}
