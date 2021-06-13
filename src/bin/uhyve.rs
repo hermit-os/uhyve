@@ -27,7 +27,7 @@ const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
 const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
 
 #[cfg(feature = "instrument")]
-static mut EVENTS: Option<Box<&mut Events>> = None;
+static mut EVENTS: Option<&mut Events> = None;
 
 #[cfg(feature = "instrument")]
 extern "C" fn dump_trace() {
@@ -44,7 +44,7 @@ extern "C" fn dump_trace() {
 fn main() {
 	#[cfg(feature = "instrument")]
 	{
-		let events = Box::new(rftrace_frontend::init(1000000, true));
+		let events = rftrace_frontend::init(1000000, true);
 		rftrace_frontend::enable();
 
 		unsafe {
