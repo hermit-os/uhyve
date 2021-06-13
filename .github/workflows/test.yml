@@ -50,7 +50,7 @@ jobs:
          cargo test --doc -- --nocapture
     - name: Generate Test coverage
       run: |
-        ./generate_test_coverage.sh
+        ./generate_test_coverage.sh --no-kvm-tests
         bash <(curl -s https://codecov.io/bash) -f 
     - uses: codecov/codecov-action@v1
       with:

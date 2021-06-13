@@ -8,6 +8,12 @@ exit_with_error() {
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 UHYVE_CODECOV_TOKEN="${UHYVE_CODECOV_TOKEN:-dummytoken}"    # Set dummy token, if no token passed (for grcov)
 
+if [[ $1 = "--no-kvm-tests" ]]; then
+    echo "Tests requiring KVM (Integration Tests) will be skipped."
+    echo "As a side effect this will also skip doc tests for now"
+    INTEGRATION_TEST_OPTIONAL_ARG="--lib"
+fi
+
 if ! command -v rustup &>/dev/null; then
     echo "Error: rustup could not be found! Exiting"
     exit 1
@@ -50,11 +56,20 @@ TEST_JSON_OUTPUT="$(
         RUSTDOCFLAGS="-Zinstrument-coverage -Zunstable-options --persist-doctests  target/debug/doctestbins" \
         LLVM_PROFILE_FILE="uhyve-%m.profraw" \
         RUSTC_WRAPPER="$DIR/coverage_rustcwrapper.sh" \
-        cargo test --message-format=json
+        cargo test --message-format=json $INTEGRATION_TEST_OPTIONAL_ARG
 )"
+
 if [ $? != 0 ]; then
     exit_with_error "Coverage run of cargo test failed." "$TEST_JSON_OUTPUT"
 fi
+
+# Run doc tests seperatly if cargo test is called with INTEGRATION_TEST_OPTIONAL_ARG (--lib)
+if [ $INTEGRATION_TEST_OPTIONAL_ARG ]; then
+    RUSTDOCFLAGS="-Zinstrument-coverage -Zunstable-options --persist-doctests  target/debug/doctestbins" \
+    cargo test --doc -- --nocapture
+fi
+
+
 echo "Finished cargo test successfully"
 cargo profdata -- merge -sparse uhyve-*.profraw -o uhyve.profdata \
     || exit_with_error "Failed to merge raw profiling data"
