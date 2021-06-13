@@ -457,7 +457,7 @@ impl<'a> Handler for CmdHandler<'a> {
 	/// At most apply one action per thread. GDB likes to send default action for other threads,
 	/// even if it knows only about 1: "vCont;s:1;c" (step thread 1, continue others)
 	fn vcont(&self, actions: Vec<(VCont, Option<ThreadId>)>) -> Result<StopReason, Error> {
-		for (cmd, id) in &actions {
+		actions.into_iter().take(1).for_each(|(cmd, id)| {
 			let _id = id.unwrap_or(ThreadId {
 				pid: Id::All,
 				tid: Id::All,
@@ -469,12 +469,10 @@ impl<'a> Handler for CmdHandler<'a> {
 				(_, Id::Id(tid)) if tid != self.tracee.pid() => continue,
 				(_, _) => (),
 			}*/
-			debug!("vcont: {:?}", *cmd);
+			debug!("vcont: {:?}", cmd);
 			// need to clone, since std::ops::Range<T: Copy> should probably also be Copy, but it isn't.
-			self.continue_execution(cmd.clone());
-
-			break;
-		}
+			self.continue_execution(cmd);
+		});
 
 		// this reason should not matter, since we dont send it when continuing.
 		Ok(StopReason::Signal(0))
