@@ -324,9 +324,7 @@ impl VirtioNetPciDevice {
 
 impl PciDevice for VirtioNetPciDevice {
 	fn handle_read(&self, address: u32, dest: &mut [u8]) {
-		for i in 0..dest.len() {
-			dest[i] = self.registers[(address as usize) + i];
-		}
+		dest.copy_from_slice(&self.registers[address as usize..][..dest.len()]);
 	}
 
 	fn handle_write(&mut self, address: u32, dest: &[u8]) {
