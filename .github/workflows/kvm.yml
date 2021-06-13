@@ -76,3 +76,8 @@ jobs:
       run: cargo --version
     - name: Integration Tests
       run: cargo test --test '*'
+    - name: Integration Tests code coverage
+      run: ./generate_test_coverage.sh --only-kvm-tests
+    - uses: codecov/codecov-action@v1
+      with:
+        files: ./coveralls.json

@@ -10,8 +10,12 @@ UHYVE_CODECOV_TOKEN="${UHYVE_CODECOV_TOKEN:-dummytoken}"    # Set dummy token, i
 
 if [[ $1 = "--no-kvm-tests" ]]; then
     echo "Tests requiring KVM (Integration Tests) will be skipped."
-    echo "As a side effect this will also skip doc tests for now"
     INTEGRATION_TEST_OPTIONAL_ARG="--lib"
+fi
+
+if [[ $1 = "--only-kvm-tests" ]]; then
+    echo "Only executing integration tests."
+    INTEGRATION_TEST_OPTIONAL_ARG="--tests '*'"
 fi
 
 if ! command -v rustup &>/dev/null; then
@@ -64,7 +68,7 @@ if [ $? != 0 ]; then
 fi
 
 # Run doc tests seperatly if cargo test is called with INTEGRATION_TEST_OPTIONAL_ARG (--lib)
-if [ $INTEGRATION_TEST_OPTIONAL_ARG ]; then
+if [ "$INTEGRATION_TEST_OPTIONAL_ARG" = "--lib" ]; then
     RUSTDOCFLAGS="-Zinstrument-coverage -Zunstable-options --persist-doctests  target/debug/doctestbins" \
     cargo test --doc -- --nocapture
 fi
@@ -80,6 +84,11 @@ grcov "$DIR" --source-dir "$DIR" \
     --output-type coveralls \
     --token "$UHYVE_CODECOV_TOKEN" > coveralls.json \
  || exit_with_error "grcov did not successfully generate a coverage report"
+
+
+if [ "$INTEGRATION_TEST_OPTIONAL_ARG" = "--tests '*'" ]; then
+     exit 0     # We  didn't run all tests so everything below this will fail. So just skip it for now
+fi
 
 # Todo: make this whole part optional, since we might be only interested in coveralls report
 # Remove non JSON parts. Assumes all json lines start with '{' (valid for cargo output as of now)
