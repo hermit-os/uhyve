@@ -598,34 +598,32 @@ pub struct Registers {
 impl Registers {
 	/// Loads the register set from xhypervisor into the register struct
 	pub fn from_xhypervisor(vcpu: &vCPU) -> Self {
-		let mut registers = Registers::default();
-
-		registers.r15 = Some(vcpu.read_register(&x86Reg::R15).unwrap());
-		registers.r14 = Some(vcpu.read_register(&x86Reg::R14).unwrap());
-		registers.r13 = Some(vcpu.read_register(&x86Reg::R13).unwrap());
-		registers.r12 = Some(vcpu.read_register(&x86Reg::R12).unwrap());
-		registers.r11 = Some(vcpu.read_register(&x86Reg::R11).unwrap());
-		registers.r10 = Some(vcpu.read_register(&x86Reg::R10).unwrap());
-		registers.r9 = Some(vcpu.read_register(&x86Reg::R9).unwrap());
-		registers.r8 = Some(vcpu.read_register(&x86Reg::R8).unwrap());
-		registers.rax = Some(vcpu.read_register(&x86Reg::RAX).unwrap());
-		registers.rbx = Some(vcpu.read_register(&x86Reg::RBX).unwrap());
-		registers.rcx = Some(vcpu.read_register(&x86Reg::RCX).unwrap());
-		registers.rdx = Some(vcpu.read_register(&x86Reg::RDX).unwrap());
-		registers.rsi = Some(vcpu.read_register(&x86Reg::RSI).unwrap());
-		registers.rdi = Some(vcpu.read_register(&x86Reg::RDI).unwrap());
-		registers.rsp = Some(vcpu.read_register(&x86Reg::RSP).unwrap());
-		registers.rbp = Some(vcpu.read_register(&x86Reg::RBP).unwrap());
-		registers.rip = Some(vcpu.read_register(&x86Reg::RIP).unwrap());
-		registers.eflags = Some(vcpu.read_register(&x86Reg::RFLAGS).unwrap() as u32);
-		registers.cs = Some(vcpu.read_register(&x86Reg::CS).unwrap() as u32);
-		registers.ss = Some(vcpu.read_register(&x86Reg::SS).unwrap() as u32);
-		registers.ds = Some(vcpu.read_register(&x86Reg::DS).unwrap() as u32);
-		registers.es = Some(vcpu.read_register(&x86Reg::ES).unwrap() as u32);
-		registers.fs = Some(vcpu.read_register(&x86Reg::FS).unwrap() as u32);
-		registers.gs = Some(vcpu.read_register(&x86Reg::GS).unwrap() as u32);
-
-		registers
+		Self {
+			r15: Some(vcpu.read_register(&x86Reg::R15).unwrap()),
+			r14: Some(vcpu.read_register(&x86Reg::R14).unwrap()),
+			r13: Some(vcpu.read_register(&x86Reg::R13).unwrap()),
+			r12: Some(vcpu.read_register(&x86Reg::R12).unwrap()),
+			r11: Some(vcpu.read_register(&x86Reg::R11).unwrap()),
+			r10: Some(vcpu.read_register(&x86Reg::R10).unwrap()),
+			r9: Some(vcpu.read_register(&x86Reg::R9).unwrap()),
+			r8: Some(vcpu.read_register(&x86Reg::R8).unwrap()),
+			rax: Some(vcpu.read_register(&x86Reg::RAX).unwrap()),
+			rbx: Some(vcpu.read_register(&x86Reg::RBX).unwrap()),
+			rcx: Some(vcpu.read_register(&x86Reg::RCX).unwrap()),
+			rdx: Some(vcpu.read_register(&x86Reg::RDX).unwrap()),
+			rsi: Some(vcpu.read_register(&x86Reg::RSI).unwrap()),
+			rdi: Some(vcpu.read_register(&x86Reg::RDI).unwrap()),
+			rsp: Some(vcpu.read_register(&x86Reg::RSP).unwrap()),
+			rbp: Some(vcpu.read_register(&x86Reg::RBP).unwrap()),
+			rip: Some(vcpu.read_register(&x86Reg::RIP).unwrap()),
+			eflags: Some(vcpu.read_register(&x86Reg::RFLAGS).unwrap() as u32),
+			cs: Some(vcpu.read_register(&x86Reg::CS).unwrap() as u32),
+			ss: Some(vcpu.read_register(&x86Reg::SS).unwrap() as u32),
+			ds: Some(vcpu.read_register(&x86Reg::DS).unwrap() as u32),
+			es: Some(vcpu.read_register(&x86Reg::ES).unwrap() as u32),
+			fs: Some(vcpu.read_register(&x86Reg::FS).unwrap() as u32),
+			gs: Some(vcpu.read_register(&x86Reg::GS).unwrap() as u32),
+		}
 	}
 
 	/// Saves a register struct (only where non-None values are) into xhypervisor.
@@ -707,35 +705,32 @@ impl Registers {
 	/// take the serialized register set send by gdb and decodes it into a register structure.
 	/// uses little endian, order as specified by gdb arch i386:x86-64
 	pub fn decode(mut raw: &[u8]) -> Self {
-		let mut registers = Registers::default();
-
-		registers.rax = raw.read_u64::<LittleEndian>().ok();
-		registers.rbx = raw.read_u64::<LittleEndian>().ok();
-		registers.rcx = raw.read_u64::<LittleEndian>().ok();
-		registers.rdx = raw.read_u64::<LittleEndian>().ok();
-		registers.rsi = raw.read_u64::<LittleEndian>().ok();
-		registers.rdi = raw.read_u64::<LittleEndian>().ok();
-		registers.rbp = raw.read_u64::<LittleEndian>().ok();
-		registers.rsp = raw.read_u64::<LittleEndian>().ok();
-		registers.r8 = raw.read_u64::<LittleEndian>().ok();
-		registers.r9 = raw.read_u64::<LittleEndian>().ok();
-		registers.r10 = raw.read_u64::<LittleEndian>().ok();
-		registers.r11 = raw.read_u64::<LittleEndian>().ok();
-		registers.r12 = raw.read_u64::<LittleEndian>().ok();
-		registers.r13 = raw.read_u64::<LittleEndian>().ok();
-		registers.r14 = raw.read_u64::<LittleEndian>().ok();
-		registers.r15 = raw.read_u64::<LittleEndian>().ok();
-		registers.rip = raw.read_u64::<LittleEndian>().ok();
-
-		registers.eflags = raw.read_u32::<LittleEndian>().ok();
-		registers.cs = raw.read_u32::<LittleEndian>().ok();
-		registers.ss = raw.read_u32::<LittleEndian>().ok();
-		registers.ds = raw.read_u32::<LittleEndian>().ok();
-		registers.es = raw.read_u32::<LittleEndian>().ok();
-		registers.fs = raw.read_u32::<LittleEndian>().ok();
-		registers.gs = raw.read_u32::<LittleEndian>().ok();
-
-		registers
+		Self {
+			rax: raw.read_u64::<LittleEndian>().ok(),
+			rbx: raw.read_u64::<LittleEndian>().ok(),
+			rcx: raw.read_u64::<LittleEndian>().ok(),
+			rdx: raw.read_u64::<LittleEndian>().ok(),
+			rsi: raw.read_u64::<LittleEndian>().ok(),
+			rdi: raw.read_u64::<LittleEndian>().ok(),
+			rbp: raw.read_u64::<LittleEndian>().ok(),
+			rsp: raw.read_u64::<LittleEndian>().ok(),
+			r8: raw.read_u64::<LittleEndian>().ok(),
+			r9: raw.read_u64::<LittleEndian>().ok(),
+			r10: raw.read_u64::<LittleEndian>().ok(),
+			r11: raw.read_u64::<LittleEndian>().ok(),
+			r12: raw.read_u64::<LittleEndian>().ok(),
+			r13: raw.read_u64::<LittleEndian>().ok(),
+			r14: raw.read_u64::<LittleEndian>().ok(),
+			r15: raw.read_u64::<LittleEndian>().ok(),
+			rip: raw.read_u64::<LittleEndian>().ok(),
+			eflags: raw.read_u32::<LittleEndian>().ok(),
+			cs: raw.read_u32::<LittleEndian>().ok(),
+			ss: raw.read_u32::<LittleEndian>().ok(),
+			ds: raw.read_u32::<LittleEndian>().ok(),
+			es: raw.read_u32::<LittleEndian>().ok(),
+			fs: raw.read_u32::<LittleEndian>().ok(),
+			gs: raw.read_u32::<LittleEndian>().ok(),
+		}
 	}
 
 	/// take the register set and encode it as a u8-vector by concatenating the values
