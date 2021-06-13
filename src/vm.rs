@@ -90,6 +90,12 @@ impl BootInfo {
 	}
 }
 
+impl Default for BootInfo {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl fmt::Debug for BootInfo {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		writeln!(f, "magic_number 0x{:x}", self.magic_number)?;
