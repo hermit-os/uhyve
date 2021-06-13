@@ -3,7 +3,7 @@ use crate::error::*;
 use core_affinity::CoreId;
 #[cfg(target_os = "linux")]
 use log::debug;
-use std::env;
+use std::{env, io};
 
 pub fn parse_mem(mem: &str) -> Result<usize> {
 	let (num, postfix): (String, String) = mem.chars().partition(|&x| x.is_numeric());
@@ -90,7 +90,7 @@ pub fn get_max_subslice(s: &str, offset: usize, length: usize) -> &str {
 /// If there is an error when reading the file or interpreting the
 /// contents we return an Err and let the caller decide
 #[cfg(target_os = "linux")]
-pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
+pub fn transparent_hugepages_available() -> io::Result<bool> {
 	let transp_hugepage_enabled =
 		std::path::Path::new("/sys/kernel/mm/transparent_hugepage/enabled");
 	if !transp_hugepage_enabled.is_file() {
@@ -111,7 +111,7 @@ pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
 						transp_hugepage_enabled.display(),
 						s
 					);
-					Err(())
+					Err(io::ErrorKind::InvalidData.into())
 				}
 			},
 			Err(err) => {
@@ -119,7 +119,7 @@ pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
 					"transparent_hugepages_available: Error reading string: {:?}",
 					err
 				);
-				Err(())
+				Err(err)
 			}
 		}
 	}
@@ -127,7 +127,7 @@ pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
 
 /// On macos this always returns true
 #[cfg(target_os = "macos")]
-pub fn transparent_hugepages_available() -> std::result::Result<bool, ()> {
+pub fn transparent_hugepages_available() -> io::Result<bool> {
 	Ok(true)
 }
 
