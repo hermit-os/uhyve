@@ -676,7 +676,7 @@ impl VirtualCPU for UhyveCPU {
 					let len = self.vcpu.read_vmcs(VMCS_RO_VMEXIT_INSTR_LEN)?;
 					let port: u16 = ((qualification >> 16) & 0xFFFF) as u16;
 
-					if input == true {
+					if input {
 						error!("Invalid I/O operation");
 						return Err(Error::InternalError);
 					}
