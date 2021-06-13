@@ -79,13 +79,13 @@ impl UhyveCPU {
 		dbg: Option<Arc<Mutex<DebugManager>>>,
 	) -> UhyveCPU {
 		UhyveCPU {
-			id: id,
+			id,
 			kernel_path,
 			vcpu: vCPU::new().unwrap(),
-			vm_start: vm_start,
+			vm_start,
 			apic_base: APIC_DEFAULT_BASE,
-			ioapic: ioapic,
-			dbg: dbg,
+			ioapic,
+			dbg,
 		}
 	}
 
