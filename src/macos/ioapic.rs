@@ -67,3 +67,9 @@ impl IoApic {
 		}
 	}
 }
+
+impl Default for IoApic {
+	fn default() -> Self {
+		Self::new()
+	}
+}

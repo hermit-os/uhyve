@@ -135,6 +135,7 @@ impl UhyveCPU {
 	}
 }
 
+#[derive(Default)]
 pub struct State {
 	breakpoints: HashMap<usize, SWBreakpoint>,
 	breakpoints_hw: HashMap<usize, HWBreakpoint>,
@@ -162,10 +163,7 @@ struct HWBreakpoint {
 
 impl State {
 	pub fn new() -> Self {
-		Self {
-			breakpoints: HashMap::new(),
-			breakpoints_hw: HashMap::new(),
-		}
+		Self::default()
 	}
 
 	pub fn get_hardware_breakpoints(&self) -> Option<x86::HWBreakpoints> {
