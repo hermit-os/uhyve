@@ -49,7 +49,7 @@ impl<T> Vring<T> {
 		}
 	}
 
-	pub fn ring_elem(&self, index: u16) -> &mut T {
+	pub fn ring_elem(&mut self, index: u16) -> &mut T {
 		let elem_size = mem::size_of::<T>() as u16;
 		unsafe { &mut *(self.mem.offset((4 + index * elem_size) as isize) as *mut T) }
 	}
@@ -128,7 +128,7 @@ impl Virtqueue {
 		}
 	}
 
-	pub unsafe fn get_descriptor(&self, index: u16) -> &mut VringDescriptor {
+	pub unsafe fn get_descriptor(&mut self, index: u16) -> &mut VringDescriptor {
 		&mut *self.descriptor_table.offset(index as isize)
 	}
 
