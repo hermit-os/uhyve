@@ -178,7 +178,7 @@ fn main() {
 	let mem_size: usize = matches
 		.value_of("MEM")
 		.map(|x| {
-			let mem = utils::parse_mem(&x).unwrap_or(DEFAULT_GUEST_SIZE);
+			let mem = utils::parse_mem(x).unwrap_or(DEFAULT_GUEST_SIZE);
 			if mem < MINIMAL_GUEST_SIZE {
 				warn!("Resize guest memory to {} MByte", DEFAULT_GUEST_SIZE >> 20);
 				DEFAULT_GUEST_SIZE
@@ -189,7 +189,7 @@ fn main() {
 		.unwrap_or(DEFAULT_GUEST_SIZE);
 	let num_cpus: u32 = matches
 		.value_of("CPUS")
-		.map(|x| utils::parse_u32(&x).unwrap_or(1))
+		.map(|x| utils::parse_u32(x).unwrap_or(1))
 		.unwrap_or(1);
 
 	let set_cpu_affinity = matches.is_present("CPU_AFFINITY");

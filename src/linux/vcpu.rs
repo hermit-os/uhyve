@@ -365,7 +365,7 @@ impl VirtualCPU for UhyveCPU {
 							return Ok(None);
 						}
 						UHYVE_UART_PORT => {
-							self.uart(String::from_utf8_lossy(&addr).to_string())?;
+							self.uart(String::from_utf8_lossy(addr).to_string())?;
 						}
 						UHYVE_PORT_CMDSIZE => {
 							let data_addr: usize =
