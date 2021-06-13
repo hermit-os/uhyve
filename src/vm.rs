@@ -190,6 +190,7 @@ struct SysClose {
 	ret: i32,
 }
 
+#[repr(C, packed)]
 struct SysOpen {
 	name: *const u8,
 	flags: i32,
