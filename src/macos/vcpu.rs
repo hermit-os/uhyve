@@ -663,7 +663,7 @@ impl VirtualCPU for UhyveCPU {
 					let gpa = self.vcpu.read_vmcs(VMCS_GUEST_PHYSICAL_ADDRESS)?;
 					trace!("Exit reason {} - EPT violation at 0x{:x}", reason, gpa);
 
-					if gpa >= IOAPIC_BASE && gpa < IOAPIC_BASE + IOAPIC_SIZE {
+					if (IOAPIC_BASE..IOAPIC_BASE + IOAPIC_SIZE).contains(&gpa) {
 						self.emulate_ioapic(rip, gpa)?;
 					}
 				}
