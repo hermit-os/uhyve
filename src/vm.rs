@@ -349,7 +349,7 @@ pub trait VirtualCPU {
 
 				// Create string for environment variable
 				slice[0..key.len()].copy_from_slice(key.as_bytes());
-				slice[key.len()..(key.len() + 1)].copy_from_slice(&"=".to_string().as_bytes());
+				slice[key.len()..(key.len() + 1)].copy_from_slice("=".to_string().as_bytes());
 				slice[(key.len() + 1)..(len + 1)].copy_from_slice(value.as_bytes());
 				slice[len + 1] = 0;
 				counter += 1;
@@ -946,7 +946,7 @@ pub fn create_vm(path: String, specs: &super::vm::Parameter) -> Result<Uhyve> {
 	// If we are given a port, create new DebugManager.
 	let gdb = specs.gdbport.map(|port| DebugManager::new(port).unwrap());
 
-	let vm = Uhyve::new(path, &specs, gdb)?;
+	let vm = Uhyve::new(path, specs, gdb)?;
 
 	Ok(vm)
 }
