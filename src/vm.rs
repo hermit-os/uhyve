@@ -885,7 +885,7 @@ mod tests {
 				gdbport: None,
 			},
 		);
-		assert_eq!(vm.is_err(), true);
+		assert!(vm.is_err());
 	}
 
 	#[cfg(target_os = "linux")]
@@ -916,7 +916,7 @@ mod tests {
 		unsafe {
 			let res = vm.load_kernel();
 
-			assert_eq!(res.is_err(), true);
+			assert!(res.is_err());
 		}
 	}
 }
