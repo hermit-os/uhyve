@@ -9,11 +9,12 @@ use log::{debug, error, warn};
 use nix::errno::errno;
 use raw_cpuid::CpuId;
 use std::convert::TryInto;
-use std::fs;
+use std::io::Write;
 use std::net::Ipv4Addr;
 use std::ptr::write;
 use std::time::{Duration, Instant, SystemTime};
 use std::{fmt, mem, slice};
+use std::{fs, io};
 
 use crate::consts::*;
 use crate::debug_manager::DebugManager;
@@ -446,11 +447,8 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
-	fn uart(&self, message: String) -> Result<()> {
-		print!("{}", message);
-		//io::stdout().flush().ok().expect("Could not flush stdout");
-
-		Ok(())
+	fn uart(&self, buf: &[u8]) -> io::Result<()> {
+		io::stdout().write_all(buf)
 	}
 }
 

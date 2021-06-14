@@ -691,10 +691,8 @@ impl VirtualCPU for UhyveCPU {
 						}
 						UHYVE_UART_PORT => {
 							let al = (self.vcpu.read_register(&x86Reg::RAX)? & 0xFF) as u8;
-							let mut msg = vec![];
-							msg.push(al);
 
-							self.uart(std::str::from_utf8(&msg).unwrap().to_string())?;
+							self.uart(&[al]).unwrap();
 							self.vcpu.write_register(&x86Reg::RIP, rip + len)?;
 						}
 						UHYVE_PORT_CMDSIZE => {
