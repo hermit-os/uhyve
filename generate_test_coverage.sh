@@ -59,15 +59,6 @@ if ! command -v rustup &>/dev/null; then
 fi
 # Implicitly assumes that cargo is there if rustup is available
 
-if ! rustfilt --version &>/dev/null; then
-    echo "rustfilt not found. It is required for demangling function names"
-    echo "Attempting to install rustfilt via cargo"
-    # shellcheck disable=SC2015
-    cargo install rustfilt \
-    && rustfilt --version &>/dev/null \
-    || exit_with_error "Failed to install rustfilt"
-fi
-
 if [ "$SKIP_TEST" = false ]; then
     # Test coverage requires clean build, so that everything is instrumented
     cargo clean
