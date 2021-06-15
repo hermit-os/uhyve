@@ -2,7 +2,7 @@
 
 # fucking bash. TODO: rewrite the whole file in a sane language
 # From https://stackoverflow.com/a/14203146/6551168
-POSITIONAL=()
+CARGO_ARGS=()
 SKIP_TEST=false
 while [[ $# -gt 0 ]]; do
     key="$1"
@@ -20,30 +20,22 @@ while [[ $# -gt 0 ]]; do
         PROFILE_ONLY=true
         shift # past argument
         ;;
-        --cargo-args)
-        CUSTOM_CARGO_ARGS="$2"
-        shift # past argument
-        shift # past value
-        ;;
         --help)
-        echo "usage: ./generate_test_coverage.sh [ARGS]"
+        echo "usage: ./generate_test_coverage.sh [ARGS] [CARGO_ARGS]"
         echo "ARGS:"
         echo "   --print-coverage   : generate textual coverage report. Requires \`cargo cov\`"
         echo "   --profile-only     : don't run grcov but only generate the profraw files"
-        echo "   --cargo-args 'arg' : pass custom arguments to cargo test"
         echo "   --skip-tests       : skip the testrun and only generate the report from the existing uhyve-*.profraw files"
+        echo "CARGO_ARGS: All other arguments are passed to cargo test"
         exit 0
         shift # past argument
         ;;
-        *)    # unknown option
-            echo "unknown option \"$1\". Ignoring it..."
-        POSITIONAL+=("$1") # save it in an array for later
+        *)    # cargo argument
+        CARGO_ARGS+=("$1") # save it in an array for later
         shift # past argument
         ;;
     esac
 done
-set -- "${POSITIONAL[@]}" # restore positional parameters
-
 
 exit_with_error() {
     echo "Error: $*"
@@ -70,7 +62,7 @@ if [ "$SKIP_TEST" = false ]; then
             RUSTDOCFLAGS="-Zinstrument-coverage -Zunstable-options --persist-doctests  target/debug/doctestbins" \
             LLVM_PROFILE_FILE="uhyve-%m.profraw" \
             RUSTC_WRAPPER="$DIR/coverage_rustcwrapper.sh" \
-            cargo test --message-format=json $CUSTOM_CARGO_ARGS
+            cargo test --message-format=json "${CARGO_ARGS[@]}"
     )"
     if [ $? != 0 ]; then
         exit_with_error "Coverage run of cargo test failed." "$TEST_JSON_OUTPUT"
