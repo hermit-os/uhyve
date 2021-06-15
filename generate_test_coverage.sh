@@ -3,6 +3,7 @@
 # fucking bash. TODO: rewrite the whole file in a sane language
 # From https://stackoverflow.com/a/14203146/6551168
 POSITIONAL=()
+SKIP_TEST=false
 while [[ $# -gt 0 ]]; do
     key="$1"
 
@@ -10,6 +11,10 @@ while [[ $# -gt 0 ]]; do
         --print-coverage)
         PRINT_COVERAGE=true
         shift # past argument
+        ;;
+        --skip-tests)
+        SKIP_TEST=true
+        shift # past value
         ;;
         --profile-only)
         PROFILE_ONLY=true
@@ -26,6 +31,7 @@ while [[ $# -gt 0 ]]; do
         echo "   --print-coverage   : generate textual coverage report. Requires \`cargo cov\`"
         echo "   --profile-only     : don't run grcov but only generate the profraw files"
         echo "   --cargo-args 'arg' : pass custom arguments to cargo test"
+        echo "   --skip-tests       : skip the testrun and only generate the report from the existing uhyve-*.profraw files"
         exit 0
         shift # past argument
         ;;
@@ -71,20 +77,23 @@ if ! rustfilt --version &>/dev/null; then
     || exit_with_error "Failed to install rustfilt"
 fi
 
-# Test coverage requires clean build, so that everything is instrumented
-cargo clean
-echo "Running cargo test. This may take a while."
+if [ "$SKIP_TEST" = false ]; then
+    # Test coverage requires clean build, so that everything is instrumented
+    cargo clean
+    echo "Running cargo test. This may take a while."
 
-# Run tests and collect information about the filenames of the executables in json format
-# The RUSTC_WRAPPER adds the coverage specific flags to our crate executables (which are not doc tests)
-TEST_JSON_OUTPUT="$(
-        RUSTDOCFLAGS="-Zinstrument-coverage -Zunstable-options --persist-doctests  target/debug/doctestbins" \
-        LLVM_PROFILE_FILE="uhyve-%m.profraw" \
-        RUSTC_WRAPPER="$DIR/coverage_rustcwrapper.sh" \
-        cargo test --message-format=json $CUSTOM_CARGO_ARGS
-)"
-if [ $? != 0 ]; then
-    exit_with_error "Coverage run of cargo test failed." "$TEST_JSON_OUTPUT"
+    # Run tests and collect information about the filenames of the executables in json format
+    # The RUSTC_WRAPPER adds the coverage specific flags to our crate executables (which are not doc tests)
+    TEST_JSON_OUTPUT="$(
+            RUSTDOCFLAGS="-Zinstrument-coverage -Zunstable-options --persist-doctests  target/debug/doctestbins" \
+            LLVM_PROFILE_FILE="uhyve-%m.profraw" \
+            RUSTC_WRAPPER="$DIR/coverage_rustcwrapper.sh" \
+            cargo test --message-format=json $CUSTOM_CARGO_ARGS
+    )"
+    if [ $? != 0 ]; then
+        exit_with_error "Coverage run of cargo test failed." "$TEST_JSON_OUTPUT"
+    fi
+    echo "Finished cargo test successfully"
 fi
 echo "Finished cargo test successfully"
 cargo profdata -- merge -sparse uhyve-*.profraw -o uhyve.profdata \
