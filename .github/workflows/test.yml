@@ -15,6 +15,7 @@ jobs:
     name: Test
     runs-on: ${{ matrix.os }}
 
+    needs: kernel-tests
     strategy:
       matrix:
         os: [ubuntu-latest,macOS-latest]
@@ -46,7 +47,16 @@ jobs:
       run: |
          cargo test --lib -- --nocapture
          cargo test --doc -- --nocapture
-    - name: Generate Test coverage
+         ls -lh *.profraw
+
+    - name: Download KVM run coverage results
+      uses: actions/download-artifact@v2
+      with:
+        name: kvm_coverage_files
+    - name: teststep
+      run: |
+         ls -lh *.profraw
+    - name: Generate unit test coverage
       run: |
         ./generate_test_coverage.sh --print-coverage
         bash <(curl -s https://codecov.io/bash) -f
@@ -93,3 +103,44 @@ jobs:
     - name: Compile, but don't run benchmarks
       run:
          cargo bench --no-run
+
+  kernel-tests:
+    name: Rusty-Hermit Kernel Tests
+    runs-on: [self-hosted]
+
+    steps:
+    - uses: hecrj/setup-rust-action@v1
+      with:
+         rust-version: nightly
+         components: 'rustfmt, clippy'
+         targets: 'x86_64-unknown-linux-gnu'
+    - uses: actions/checkout@v2.3.4
+      with:
+         submodules: true
+    - name: Check Cargo availability
+      run: cargo --version
+    - name: Integration Tests
+      run: cargo test --test '*'
+    - name: Generate integration test coverage
+      run: |
+        ./generate_test_coverage.sh --print-coverage --test '*'
+    - name: Upload coverage artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: kvm_coverage_files
+        path: uhyve*.profraw
+
+  #coverage:
+    #name: Create Coverage
+    #runs-on: ubuntu-latest
+    #steps:
+    #- uses: actions/checkout@v2.3.4
+      #with:
+         #submodules: true
+    #- name: Generate and upload total coverage
+      #run: |
+        #./generate_test_coverage.sh --print-coverage --skip-test
+        #bash <(curl -s https://codecov.io/bash) -f
+    #- uses: codecov/codecov-action@v1.5.0
+      #with:
+        #files: ./coveralls.json
