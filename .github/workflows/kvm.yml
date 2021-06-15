@@ -37,6 +37,7 @@ jobs:
          kvm-ok
          cd $GITHUB_WORKSPACE
          cd ..
+         rm -rf rusty-hermit
          git clone --recurse-submodules https://github.com/hermitcore/rusty-hermit.git
     - name: KVM tests (debug)
       shell: bash
@@ -52,9 +53,3 @@ jobs:
          cd ../rusty-hermit
          cargo build -p rusty_demo --release
          RUST_LOG=debug $GITHUB_WORKSPACE/target/release/uhyve -v -c 1 target/x86_64-unknown-hermit/release/rusty_demo
-    - name: Cleanup environment
-      shell: bash
-      run: |
-         cd $GITHUB_WORKSPACE
-         cd ..
-         rm -rf rusty-hermit
