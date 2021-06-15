@@ -12,7 +12,7 @@ on:
 
 jobs:
   test:
-    name: Test
+    name: Cargo tests
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -46,13 +46,6 @@ jobs:
       run: |
          cargo test --lib -- --nocapture
          cargo test --doc -- --nocapture
-    - name: Generate Test coverage
-      run: |
-        ./generate_test_coverage.sh --print-coverage
-        bash <(curl -s https://codecov.io/bash) -f
-    - uses: codecov/codecov-action@v1.5.2
-      with:
-        files: ./coveralls.json
 
   build:
     name: Build
@@ -75,7 +68,7 @@ jobs:
 
     steps:
     - uses: hecrj/setup-rust-action@v1
-      with: 
+      with:
          rust-version: ${{ matrix.rust }}
          components: ${{ matrix.components || '' }}
          targets: ${{ matrix.targets || '' }}
@@ -93,3 +86,31 @@ jobs:
     - name: Compile, but don't run benchmarks
       run:
          cargo bench --no-run
+
+  kernel-tests:
+    name: Rusty-Hermit Kernel based integration tests
+    runs-on: [self-hosted]
+
+    steps:
+    - uses: hecrj/setup-rust-action@v1
+      with:
+         rust-version: nightly
+         components: 'rustfmt, clippy'
+         targets: 'x86_64-unknown-linux-gnu'
+    - uses: actions/checkout@v2.3.4
+      with:
+         submodules: true
+    - name: Check Cargo availability
+      run: cargo --version
+    - name: Integration Tests
+      run: cargo test --test '*'
+    - name: Generate integration test coverage
+      run: |
+        ./generate_test_coverage.sh --print-coverage
+    - name: Generate unit test coverage
+      run: |
+        #./generate_test_coverage.sh --print-coverage
+        bash <(curl -s https://codecov.io/bash) -f
+    - uses: codecov/codecov-action@v1.5.2
+      with:
+        files: ./coveralls.json
