@@ -53,7 +53,7 @@ fi
 
 if [ "$SKIP_TEST" = false ]; then
     # Test coverage requires clean build, so that everything is instrumented
-    cargo clean
+    cargo clean -p uhyve
     echo "Running cargo test. This may take a while."
 
     # Run tests and collect information about the filenames of the executables in json format
