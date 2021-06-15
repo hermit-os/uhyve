@@ -58,15 +58,6 @@ if ! command -v rustup &>/dev/null; then
     exit 1
 fi
 # Implicitly assumes that cargo is there if rustup is available
-if ! cargo profdata --help &>/dev/null; then
-    echo "Warning: cargo profdata not available. Attempting to install via rustup"
-    echo "This adds llvm-tools-preview and cargo-binutils."
-    # shellcheck disable=SC2015
-    rustup component add llvm-tools-preview &&
-        cargo install cargo-binutils &&
-        cargo profdata --help &>/dev/null ||
-        exit_with_error "Error when installing llvm-tools-preview or cargo-binutils"
-fi
 
 if ! rustfilt --version &>/dev/null; then
     echo "rustfilt not found. It is required for demangling function names"
@@ -95,11 +86,6 @@ if [ "$SKIP_TEST" = false ]; then
     fi
     echo "Finished cargo test successfully"
 fi
-echo "Finished cargo test successfully"
-cargo profdata -- merge -sparse uhyve-*.profraw -o uhyve.profdata \
-    || exit_with_error "Failed to merge raw profiling data"
-
-echo "finished profdata generation"
 
 if [ "$PROFILE_ONLY" = true ]; then
     exit 0
@@ -158,6 +144,21 @@ if [ "$PRINT_COVERAGE" = true ]; then
             || exit_with_error "Error merging file $file"; \
         done \
     )
+
+    if ! cargo profdata --help &>/dev/null; then
+        echo "Warning: cargo profdata not available. Attempting to install via rustup"
+        echo "This adds llvm-tools-preview and cargo-binutils."
+        # shellcheck disable=SC2015
+        rustup component add llvm-tools-preview &&
+            cargo install cargo-binutils &&
+            cargo profdata --help &>/dev/null ||
+            exit_with_error "Error when installing llvm-tools-preview or cargo-binutils"
+    fi
+
+    cargo profdata -- merge -sparse uhyve-*.profraw -o uhyve.profdata \
+        || exit_with_error "Failed to merge raw profiling data"
+
+    echo "finished profdata generation"
 
     # Print summary on cmdline
     cargo cov -- report \
