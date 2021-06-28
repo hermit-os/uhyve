@@ -1,16 +1,14 @@
 use crate::linux::virtqueue::*;
 use crate::vm::VirtualCPU;
 use log::info;
+use mac_address::*;
 use std::fmt;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
 use std::sync::Mutex;
 use std::vec::Vec;
 use tun_tap::*;
-extern crate virtio_bindings;
-use self::virtio_bindings::bindings::virtio_net::*;
-extern crate mac_address;
-use self::mac_address::*;
+use virtio_bindings::bindings::virtio_net::*;
 
 const STATUS_ACKNOWLEDGE: u8 = 0b00000001;
 const STATUS_DRIVER: u8 = 0b00000010;
@@ -277,7 +275,7 @@ impl VirtioNetPciDevice {
 				*(dest.as_ptr() as *const usize)
 			};
 			let hva = (*vcpu).host_address(gpa) as *mut u8;
-			let queue = Virtqueue::new(hva, QUEUE_LIMIT);
+			let queue = unsafe { Virtqueue::new(hva, QUEUE_LIMIT) };
 			self.virt_queues.push(queue);
 		}
 	}
@@ -324,9 +322,7 @@ impl VirtioNetPciDevice {
 
 impl PciDevice for VirtioNetPciDevice {
 	fn handle_read(&self, address: u32, dest: &mut [u8]) {
-		for i in 0..dest.len() {
-			dest[i] = self.registers[(address as usize) + i];
-		}
+		dest.copy_from_slice(&self.registers[address as usize..][..dest.len()]);
 	}
 
 	fn handle_write(&mut self, address: u32, dest: &[u8]) {

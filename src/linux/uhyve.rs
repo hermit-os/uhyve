@@ -136,30 +136,28 @@ pub struct Uhyve {
 }
 
 impl Uhyve {
-	pub fn new(kernel_path: String, specs: &Parameter, dbg: Option<DebugManager>) -> Result<Uhyve> {
+	pub fn new(
+		kernel_path: String,
+		specs: &Parameter<'_>,
+		dbg: Option<DebugManager>,
+	) -> Result<Uhyve> {
 		// parse string to get IP address
-		let ip_addr = match &specs.ip {
-			Some(addr_str) => {
-				Some(Ipv4Addr::from_str(addr_str).expect("Unable to parse ip address"))
-			}
-			_ => None,
-		};
+		let ip_addr = specs
+			.ip
+			.as_ref()
+			.map(|addr_str| Ipv4Addr::from_str(addr_str).expect("Unable to parse ip address"));
 
 		// parse string to get gateway address
-		let gw_addr = match &specs.gateway {
-			Some(addr_str) => {
-				Some(Ipv4Addr::from_str(addr_str).expect("Unable to parse gateway address"))
-			}
-			_ => None,
-		};
+		let gw_addr = specs
+			.gateway
+			.as_ref()
+			.map(|addr_str| Ipv4Addr::from_str(addr_str).expect("Unable to parse gateway address"));
 
 		// parse string to get gateway address
-		let mask = match &specs.mask {
-			Some(addr_str) => {
-				Some(Ipv4Addr::from_str(addr_str).expect("Unable to parse network parse"))
-			}
-			_ => None,
-		};
+		let mask = specs
+			.mask
+			.as_ref()
+			.map(|addr_str| Ipv4Addr::from_str(addr_str).expect("Unable to parse network parse"));
 
 		let vm = KVM.create_vm().or_else(to_error)?;
 
@@ -320,10 +318,7 @@ impl Vm for Uhyve {
 
 	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>> {
 		let vm_start = self.mem.host_address() as usize;
-		let tx = match &self.uhyve_device {
-			Some(dev) => Some(dev.tx.clone()),
-			_ => None,
-		};
+		let tx = self.uhyve_device.as_ref().map(|dev| dev.tx.clone());
 
 		Ok(Box::new(UhyveCPU::new(
 			id,

@@ -37,7 +37,7 @@ const INT3: &[u8] = &[0xcc];
 impl UhyveCPU {
 	/// Called on Trap. Creates Handler.
 	/// Enter gdb-event-loop until gdb tells us to continue. Set singlestep mode if necessary and return
-	pub fn gdb_handle_exception<'a>(&mut self, signal: Option<VcpuExit<'a>>) {
+	pub fn gdb_handle_exception(&mut self, signal: Option<VcpuExit<'_>>) {
 		debug!("Handling debug exception!");
 		if let Some(dbg) = &mut self.dbg {
 			let dbgarc = dbg.clone();
@@ -616,32 +616,6 @@ impl Registers {
 		let regs = cpu.get_regs().expect("Cant get regs from kvm!");
 		let sregs = cpu.get_sregs().expect("Cant get sregs from kvm!");
 
-		let mut registers = Registers::default();
-		registers.r15 = Some(regs.r15);
-		registers.r14 = Some(regs.r14);
-		registers.r13 = Some(regs.r13);
-		registers.r12 = Some(regs.r12);
-		registers.r11 = Some(regs.r11);
-		registers.r10 = Some(regs.r10);
-		registers.r9 = Some(regs.r9);
-		registers.r8 = Some(regs.r8);
-		registers.rax = Some(regs.rax);
-		registers.rbx = Some(regs.rbx);
-		registers.rcx = Some(regs.rcx);
-		registers.rdx = Some(regs.rdx);
-		registers.rsi = Some(regs.rsi);
-		registers.rdi = Some(regs.rdi);
-		registers.rsp = Some(regs.rsp);
-		registers.rbp = Some(regs.rbp);
-		registers.rip = Some(regs.rip);
-		registers.eflags = Some(regs.rflags as _);
-		registers.cs = Some(sregs.cs.base as _);
-		registers.ss = Some(sregs.ss.base as _);
-		registers.ds = Some(sregs.ds.base as _);
-		registers.es = Some(sregs.es.base as _);
-		registers.fs = Some(sregs.fs.base as _);
-		registers.gs = Some(sregs.gs.base as _);
-
 		/*registers.fctrl = Some(float.cwd as _);
 		registers.fop = Some(float.fop as _);
 
@@ -675,7 +649,32 @@ impl Registers {
 		registers.fs_base = Some(sregs.fs.base as _);
 		registers.gs_base = Some(sregs.gs.base as _);*/
 
-		registers
+		Self {
+			r15: Some(regs.r15),
+			r14: Some(regs.r14),
+			r13: Some(regs.r13),
+			r12: Some(regs.r12),
+			r11: Some(regs.r11),
+			r10: Some(regs.r10),
+			r9: Some(regs.r9),
+			r8: Some(regs.r8),
+			rax: Some(regs.rax),
+			rbx: Some(regs.rbx),
+			rcx: Some(regs.rcx),
+			rdx: Some(regs.rdx),
+			rsi: Some(regs.rsi),
+			rdi: Some(regs.rdi),
+			rsp: Some(regs.rsp),
+			rbp: Some(regs.rbp),
+			rip: Some(regs.rip),
+			eflags: Some(regs.rflags as _),
+			cs: Some(sregs.cs.base as _),
+			ss: Some(sregs.ss.base as _),
+			ds: Some(sregs.ds.base as _),
+			es: Some(sregs.es.base as _),
+			fs: Some(sregs.fs.base as _),
+			gs: Some(sregs.gs.base as _),
+		}
 	}
 
 	/// Saves a register struct (only where non-None values are) into kvm.
@@ -714,37 +713,33 @@ impl Registers {
 
 	/// take the serialized register set send by gdb and decodes it into a register structure.
 	/// uses little endian, order as specified by gdb arch i386:x86-64
-	pub fn decode(raw: &[u8]) -> Self {
-		let mut registers = Registers::default();
-		let mut raw = raw.clone();
-
-		registers.rax = raw.read_u64::<LittleEndian>().ok();
-		registers.rbx = raw.read_u64::<LittleEndian>().ok();
-		registers.rcx = raw.read_u64::<LittleEndian>().ok();
-		registers.rdx = raw.read_u64::<LittleEndian>().ok();
-		registers.rsi = raw.read_u64::<LittleEndian>().ok();
-		registers.rdi = raw.read_u64::<LittleEndian>().ok();
-		registers.rbp = raw.read_u64::<LittleEndian>().ok();
-		registers.rsp = raw.read_u64::<LittleEndian>().ok();
-		registers.r8 = raw.read_u64::<LittleEndian>().ok();
-		registers.r9 = raw.read_u64::<LittleEndian>().ok();
-		registers.r10 = raw.read_u64::<LittleEndian>().ok();
-		registers.r11 = raw.read_u64::<LittleEndian>().ok();
-		registers.r12 = raw.read_u64::<LittleEndian>().ok();
-		registers.r13 = raw.read_u64::<LittleEndian>().ok();
-		registers.r14 = raw.read_u64::<LittleEndian>().ok();
-		registers.r15 = raw.read_u64::<LittleEndian>().ok();
-		registers.rip = raw.read_u64::<LittleEndian>().ok();
-
-		registers.eflags = raw.read_u32::<LittleEndian>().ok();
-		registers.cs = raw.read_u32::<LittleEndian>().ok();
-		registers.ss = raw.read_u32::<LittleEndian>().ok();
-		registers.ds = raw.read_u32::<LittleEndian>().ok();
-		registers.es = raw.read_u32::<LittleEndian>().ok();
-		registers.fs = raw.read_u32::<LittleEndian>().ok();
-		registers.gs = raw.read_u32::<LittleEndian>().ok();
-
-		registers
+	pub fn decode(mut raw: &[u8]) -> Self {
+		Self {
+			rax: raw.read_u64::<LittleEndian>().ok(),
+			rbx: raw.read_u64::<LittleEndian>().ok(),
+			rcx: raw.read_u64::<LittleEndian>().ok(),
+			rdx: raw.read_u64::<LittleEndian>().ok(),
+			rsi: raw.read_u64::<LittleEndian>().ok(),
+			rdi: raw.read_u64::<LittleEndian>().ok(),
+			rbp: raw.read_u64::<LittleEndian>().ok(),
+			rsp: raw.read_u64::<LittleEndian>().ok(),
+			r8: raw.read_u64::<LittleEndian>().ok(),
+			r9: raw.read_u64::<LittleEndian>().ok(),
+			r10: raw.read_u64::<LittleEndian>().ok(),
+			r11: raw.read_u64::<LittleEndian>().ok(),
+			r12: raw.read_u64::<LittleEndian>().ok(),
+			r13: raw.read_u64::<LittleEndian>().ok(),
+			r14: raw.read_u64::<LittleEndian>().ok(),
+			r15: raw.read_u64::<LittleEndian>().ok(),
+			rip: raw.read_u64::<LittleEndian>().ok(),
+			eflags: raw.read_u32::<LittleEndian>().ok(),
+			cs: raw.read_u32::<LittleEndian>().ok(),
+			ss: raw.read_u32::<LittleEndian>().ok(),
+			ds: raw.read_u32::<LittleEndian>().ok(),
+			es: raw.read_u32::<LittleEndian>().ok(),
+			fs: raw.read_u32::<LittleEndian>().ok(),
+			gs: raw.read_u32::<LittleEndian>().ok(),
+		}
 	}
 
 	/// take the register set and encode it as a u8-vector by concatenating the values

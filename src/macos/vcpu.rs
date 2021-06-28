@@ -63,7 +63,6 @@ lazy_static! {
 pub struct UhyveCPU {
 	id: u32,
 	kernel_path: String,
-	extint_pending: bool,
 	vcpu: vCPU,
 	vm_start: usize,
 	apic_base: u64,
@@ -80,14 +79,13 @@ impl UhyveCPU {
 		dbg: Option<Arc<Mutex<DebugManager>>>,
 	) -> UhyveCPU {
 		UhyveCPU {
-			id: id,
+			id,
 			kernel_path,
-			extint_pending: false,
 			vcpu: vCPU::new().unwrap(),
-			vm_start: vm_start,
+			vm_start,
 			apic_base: APIC_DEFAULT_BASE,
-			ioapic: ioapic,
-			dbg: dbg,
+			ioapic,
+			dbg,
 		}
 	}
 
@@ -318,7 +316,7 @@ impl UhyveCPU {
 
 				if extended_features {
 					// disable SGX support
-					rbx = rbx & !(1 << 2);
+					rbx &= !(1 << 2);
 				}
 
 				self.vcpu.write_register(&x86Reg::RAX, rax)?;
@@ -569,7 +567,7 @@ impl VirtualCPU for UhyveCPU {
 
 		for _i in 0..4 {
 			let index = (addr >> page_bits) & ((1 << PAGE_MAP_BITS) - 1);
-			entry = unsafe { *page_table.offset(index as isize) & executable_disable_mask };
+			entry = unsafe { *page_table.add(index) & executable_disable_mask };
 
 			// bit 7 is set if this entry references a 1 GiB (PDPT) or 2 MiB (PDT) page.
 			if entry & PageTableEntryFlags::HUGE_PAGE.bits() != 0 {
@@ -651,8 +649,6 @@ impl VirtualCPU for UhyveCPU {
 				}
 				vmx_exit::VMX_REASON_IRQ => {
 					trace!("Exit reason {} - External interrupt", reason);
-
-					self.extint_pending = true;
 				}
 				vmx_exit::VMX_REASON_VMENTRY_GUEST => {
 					error!(
@@ -667,7 +663,7 @@ impl VirtualCPU for UhyveCPU {
 					let gpa = self.vcpu.read_vmcs(VMCS_GUEST_PHYSICAL_ADDRESS)?;
 					trace!("Exit reason {} - EPT violation at 0x{:x}", reason, gpa);
 
-					if gpa >= IOAPIC_BASE && gpa < IOAPIC_BASE + IOAPIC_SIZE {
+					if (IOAPIC_BASE..IOAPIC_BASE + IOAPIC_SIZE).contains(&gpa) {
 						self.emulate_ioapic(rip, gpa)?;
 					}
 				}
@@ -680,7 +676,7 @@ impl VirtualCPU for UhyveCPU {
 					let len = self.vcpu.read_vmcs(VMCS_RO_VMEXIT_INSTR_LEN)?;
 					let port: u16 = ((qualification >> 16) & 0xFFFF) as u16;
 
-					if input == true {
+					if input {
 						error!("Invalid I/O operation");
 						return Err(Error::InternalError);
 					}

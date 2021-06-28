@@ -1,10 +1,10 @@
+#![warn(rust_2018_idioms)]
+
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate clap;
 
-#[cfg(feature = "instrument")]
-extern crate rftrace;
 #[cfg(feature = "instrument")]
 extern crate rftrace_frontend;
 
@@ -27,7 +27,7 @@ const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
 const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
 
 #[cfg(feature = "instrument")]
-static mut EVENTS: Option<Box<&mut Events>> = None;
+static mut EVENTS: Option<&mut Events> = None;
 
 #[cfg(feature = "instrument")]
 extern "C" fn dump_trace() {
@@ -44,7 +44,7 @@ extern "C" fn dump_trace() {
 fn main() {
 	#[cfg(feature = "instrument")]
 	{
-		let events = Box::new(rftrace_frontend::init(1000000, true));
+		let events = rftrace_frontend::init(1000000, true);
 		rftrace_frontend::enable();
 
 		unsafe {
@@ -178,7 +178,7 @@ fn main() {
 	let mem_size: usize = matches
 		.value_of("MEM")
 		.map(|x| {
-			let mem = utils::parse_mem(&x).unwrap_or(DEFAULT_GUEST_SIZE);
+			let mem = utils::parse_mem(x).unwrap_or(DEFAULT_GUEST_SIZE);
 			if mem < MINIMAL_GUEST_SIZE {
 				warn!("Resize guest memory to {} MByte", DEFAULT_GUEST_SIZE >> 20);
 				DEFAULT_GUEST_SIZE
@@ -189,7 +189,7 @@ fn main() {
 		.unwrap_or(DEFAULT_GUEST_SIZE);
 	let num_cpus: u32 = matches
 		.value_of("CPUS")
-		.map(|x| utils::parse_u32(&x).unwrap_or(1))
+		.map(|x| utils::parse_u32(x).unwrap_or(1))
 		.unwrap_or(1);
 
 	let set_cpu_affinity = matches.is_present("CPU_AFFINITY");
@@ -255,9 +255,18 @@ fn main() {
 	let vm = Arc::new({
 		let mut vm = vm::create_vm(
 			path.to_string(),
-			&vm::Parameter::new(
-				mem_size, num_cpus, verbose, hugepage, mergeable, ip, gateway, mask, nic, gdbport,
-			),
+			&vm::Parameter {
+				mem_size,
+				num_cpus,
+				verbose,
+				hugepage,
+				mergeable,
+				ip,
+				gateway,
+				mask,
+				nic,
+				gdbport,
+			},
 		)
 		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?");
 		unsafe {

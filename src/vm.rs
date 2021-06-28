@@ -91,8 +91,14 @@ impl BootInfo {
 	}
 }
 
+impl Default for BootInfo {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl fmt::Debug for BootInfo {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		writeln!(f, "magic_number 0x{:x}", self.magic_number)?;
 		writeln!(f, "version 0x{:x}", self.version)?;
 		writeln!(f, "base 0x{:x}", self.base)?;
@@ -141,34 +147,6 @@ pub struct Parameter<'a> {
 	pub gdbport: Option<u32>,
 }
 
-impl<'a> Parameter<'a> {
-	pub fn new(
-		mem_size: usize,
-		num_cpus: u32,
-		verbose: bool,
-		hugepage: bool,
-		mergeable: bool,
-		ip: Option<&'a str>,
-		gateway: Option<&'a str>,
-		mask: Option<&'a str>,
-		nic: Option<&'a str>,
-		gdbport: Option<u32>,
-	) -> Self {
-		Parameter {
-			mem_size,
-			num_cpus,
-			verbose,
-			hugepage,
-			mergeable,
-			ip,
-			gateway,
-			mask,
-			nic,
-			gdbport,
-		}
-	}
-}
-
 #[repr(C, packed)]
 struct SysWrite {
 	fd: i32,
@@ -190,6 +168,7 @@ struct SysClose {
 	ret: i32,
 }
 
+#[repr(C, packed)]
 struct SysOpen {
 	name: *const u8,
 	flags: i32,
@@ -348,7 +327,7 @@ pub trait VirtualCPU {
 
 				// Create string for environment variable
 				slice[0..key.len()].copy_from_slice(key.as_bytes());
-				slice[key.len()..(key.len() + 1)].copy_from_slice(&"=".to_string().as_bytes());
+				slice[key.len()..(key.len() + 1)].copy_from_slice("=".to_string().as_bytes());
 				slice[(key.len() + 1)..(len + 1)].copy_from_slice(value.as_bytes());
 				slice[len + 1] = 0;
 				counter += 1;
@@ -891,20 +870,20 @@ mod tests {
 			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
 		let vm = create_vm(
 			path,
-			&Parameter::new(
-				1024,
-				1,
-				false,
-				true,
-				false,
-				std::option::Option::None,
-				std::option::Option::None,
-				std::option::Option::None,
-				std::option::Option::None,
-				std::option::Option::None,
-			),
+			&Parameter {
+				mem_size: 1024,
+				num_cpus: 1,
+				verbose: false,
+				hugepage: true,
+				mergeable: false,
+				ip: None,
+				gateway: None,
+				mask: None,
+				nic: None,
+				gdbport: None,
+			},
 		);
-		assert_eq!(vm.is_err(), true);
+		assert!(vm.is_err());
 	}
 
 	#[cfg(target_os = "linux")]
@@ -918,34 +897,34 @@ mod tests {
 			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
 		let mut vm = create_vm(
 			path,
-			&Parameter::new(
-				102400,
-				1,
-				false,
-				true,
-				false,
-				std::option::Option::None,
-				std::option::Option::None,
-				std::option::Option::None,
-				std::option::Option::None,
-				std::option::Option::None,
-			),
+			&Parameter {
+				mem_size: 102400,
+				num_cpus: 1,
+				verbose: false,
+				hugepage: true,
+				mergeable: false,
+				ip: None,
+				gateway: None,
+				mask: None,
+				nic: None,
+				gdbport: None,
+			},
 		)
 		.expect("Unable to create VM");
 		unsafe {
 			let res = vm.load_kernel();
 
-			assert_eq!(res.is_err(), true);
+			assert!(res.is_err());
 		}
 	}
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn create_vm(path: String, specs: &super::vm::Parameter) -> Result<Uhyve> {
+pub fn create_vm(path: String, specs: &super::vm::Parameter<'_>) -> Result<Uhyve> {
 	// If we are given a port, create new DebugManager.
 	let gdb = specs.gdbport.map(|port| DebugManager::new(port).unwrap());
 
-	let vm = Uhyve::new(path, &specs, gdb)?;
+	let vm = Uhyve::new(path, specs, gdb)?;
 
 	Ok(vm)
 }
