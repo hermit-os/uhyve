@@ -73,9 +73,9 @@ checksum = "a06f77d526c1a601b7c4cdd98f54b5eaabffc14d5f2f0296febdc7f357c6d3ba"
 
 [[package]]
 name = "hermit-sys"
-version = "0.1.21"
+version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc48b514481a905016e828cf4a3eeebbd767efd9bc4a41da6e7086457667c68b"
+checksum = "e2cb2c90b6a8e396029c6b22a811eb0246fa11ac205ebe5fcbc8f35498f3d442"
 dependencies = [
  "aarch64",
  "lazy_static",
