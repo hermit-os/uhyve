@@ -16,7 +16,7 @@ jobs:
     steps:
     - uses: hecrj/setup-rust-action@v1
       with: 
-         rust-version: nightly
+         rust-version: nightly-2021-04-20
          components: 'rustfmt, clippy'
          targets: 'x86_64-unknown-linux-gnu'
     - uses: actions/checkout@v2.3.4
@@ -61,7 +61,7 @@ jobs:
     steps:
     - uses: hecrj/setup-rust-action@v1
       with:
-         rust-version: nightly
+         rust-version: nightly-2021-04-20
          components: 'rustfmt, clippy'
          targets: 'x86_64-unknown-linux-gnu'
     - uses: actions/checkout@v2.3.4
