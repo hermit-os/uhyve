@@ -13,3 +13,6 @@ opt-level = 3
 
 [profile.dev]
 opt-level = 1      # controls the `--opt-level` the compiler builds with
+
+[dependencies]
+hermit-sys = "0.1.22"
