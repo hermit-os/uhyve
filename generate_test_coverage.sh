@@ -118,7 +118,12 @@ if [ "$PRINT_COVERAGE" = true ]; then
     fi
     echo "Info: Detected the following Test executables: $TEST_FILES"
 
-    DOC_TEST_BINS=("$DIR/target/debug/doctestbins/*/rust_out")
+    DOC_TEST_BINS=$(find $DIR/target/debug/ -name rust_out)
+    if ! echo $DOC_TEST_BINS | grep . -q ; then
+        echo "ERROR: doc wasn't build exiting"
+        exit -1
+    fi
+
     # Generate options to pass paths to all test executables to llvm-cov
     CARGO_COV_OBJECTS=$( \
         for file in $TEST_FILES $DOC_TEST_BINS; do \
