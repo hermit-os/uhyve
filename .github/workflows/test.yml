@@ -47,8 +47,8 @@ jobs:
          cargo test -- --nocapture
     - name: Generate Test coverage
       run: |
-        ./generate_test_coverage.sh
-        bash <(curl -s https://codecov.io/bash) -f 
+        ./generate_test_coverage.sh --print-coverage
+        bash <(curl -s https://codecov.io/bash) -f
     - uses: codecov/codecov-action@v1.5.0
       with:
         files: ./coveralls.json
