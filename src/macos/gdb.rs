@@ -48,7 +48,7 @@ impl UhyveCPU {
 					Some(StopReason::Signal(5)),
 				)
 			} else {
-				// target stopped on boot. No signal recv'd yet. Pretend debug singal..? Not used rn anyways
+				// target stopped on boot. No signal recv'd yet. Pretend debug signal? Not used rn anyways.
 				(CmdHandler::new(self, &dbg.state), None)
 			};
 
@@ -69,12 +69,12 @@ impl UhyveCPU {
 				VCont::Continue | VCont::ContinueWithSignal(_) => {
 					debug!("Continuing execution..");
 					self.change_guestdbg(false, hwbr.as_ref())
-						.expect("Could not change KVM debugging state"); // TODO: optimize this, dont call too often?
+						.expect("Could not change KVM debugging state"); // TODO: optimize this, don't call too often?
 				}
 				VCont::Step | VCont::StepWithSignal(_) => {
 					debug!("Starting Single Stepping..");
 					self.change_guestdbg(true, hwbr.as_ref())
-						.expect("Could not change KVM debugging state"); // TODO: optimize this, dont call too often?
+						.expect("Could not change KVM debugging state"); // TODO: optimize this, don't call too often?
 				}
 				_ => error!("Unknown Handler exit reason!"),
 			}
@@ -474,7 +474,7 @@ impl<'a> Handler for CmdHandler<'a> {
 			self.continue_execution(cmd);
 		});
 
-		// this reason should not matter, since we dont send it when continuing.
+		// This reason should not matter, since we don't send it when continuing.
 		Ok(StopReason::Signal(0))
 	}
 

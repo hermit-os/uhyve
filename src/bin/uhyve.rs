@@ -229,7 +229,7 @@ fn main() {
 	if matches.is_present("MERGEABLE") {
 		mergeable = true;
 	}
-	// per default we use huge page to improve the performace,
+	// per default we use huge page to improve the performance,
 	// if the kernel supports transparent hugepages
 	let hugepage_default = utils::transparent_hugepages_available().unwrap_or(true);
 	info!("Default hugepages set to: {}", hugepage_default);
@@ -305,7 +305,7 @@ fn main() {
 					hint::spin_loop();
 				}
 
-				// jump into the VM and excute code of the guest
+				// jump into the VM and execute code of the guest
 				let result = cpu.run();
 				match result {
 					Err(x) => {
