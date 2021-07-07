@@ -229,7 +229,7 @@ impl Uhyve {
 			..Default::default()
 		};
 		if vm.enable_cap(&cap).is_ok() {
-			panic!("The support of KVM_CAP_IRQFD is curently required");
+			panic!("The support of KVM_CAP_IRQFD is currently required");
 		}
 
 		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
@@ -248,7 +248,7 @@ impl Uhyve {
 		// create TUN/TAP device
 		let uhyve_device = match &specs.nic {
 			Some(nic) => {
-				debug!("Intialize network interface");
+				debug!("Initialize network interface");
 				Some(UhyveNetwork::new(
 					evtfd,
 					nic.to_owned().to_string(),

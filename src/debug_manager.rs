@@ -55,7 +55,7 @@ impl DebugManager {
 		})
 	}
 
-	/// main event-loop. Called from vcpu trap, loops and executes commmands until debugger tells us to continue.
+	/// main event-loop. Called from vcpu trap, loops and executes commands until debugger tells us to continue.
 	/// Do not borrow state in this func, since handler is expected to borrow/mutate it.
 	pub fn handle_commands<H>(
 		&self,
