@@ -8,6 +8,7 @@ mod macros;
 #[macro_use]
 extern crate log;
 
+mod arch;
 pub mod consts;
 #[cfg(target_os = "linux")]
 pub mod linux;

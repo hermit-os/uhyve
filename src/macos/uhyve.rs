@@ -69,6 +69,8 @@ impl Uhyve {
 			)?;
 		}
 
+		assert!(specs.gdbport.is_none(), "gdbstub is not supported on macos");
+
 		let hyve = Uhyve {
 			offset: 0,
 			entry_point: 0,

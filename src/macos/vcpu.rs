@@ -609,7 +609,7 @@ impl VirtualCPU for UhyveCPU {
 						irq_vec
 					);
 					debug!("Handle breakpoint exception");
-					return Ok(VcpuStopReason::Debug);
+					return Ok(VcpuStopReason::Debug(()));
 				}
 				vmx_exit::VMX_REASON_CPUID => {
 					self.emulate_cpuid(rip)?;
@@ -725,7 +725,9 @@ impl VirtualCPU for UhyveCPU {
 
 	fn run(&mut self) -> HypervisorResult<Option<i32>> {
 		match self.r#continue()? {
-			VcpuStopReason::Debug => unimplemented!(),
+			VcpuStopReason::Debug(_) => {
+				unreachable!("reached debug exit without running in debugging mode")
+			}
 			VcpuStopReason::Exit(code) => Ok(Some(code)),
 			VcpuStopReason::Kick => Ok(None),
 		}

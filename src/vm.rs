@@ -19,6 +19,7 @@ use thiserror::Error;
 
 use crate::consts::*;
 use crate::os::vcpu::UhyveCPU;
+use crate::os::DebugExitInfo;
 use crate::os::HypervisorError;
 
 const MHZ_TO_HZ: u64 = 1000000;
@@ -191,7 +192,7 @@ pub type LoadKernelResult<T> = Result<T, LoadKernelError>;
 /// Reasons for vCPU exits.
 pub enum VcpuStopReason {
 	/// The vCPU stopped for debugging.
-	Debug,
+	Debug(DebugExitInfo),
 
 	/// The vCPU exited with the specified exit code.
 	Exit(i32),

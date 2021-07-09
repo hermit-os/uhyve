@@ -136,6 +136,7 @@ pub struct Uhyve {
 	mask: Option<Ipv4Addr>,
 	uhyve_device: Option<UhyveNetwork>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
+	pub(super) gdb_port: Option<u16>,
 }
 
 impl fmt::Debug for Uhyve {
@@ -272,6 +273,11 @@ impl Uhyve {
 			_ => None,
 		};
 
+		assert!(
+			specs.gdbport.is_none() || specs.num_cpus == 1,
+			"gdbstub is only supported with one CPU"
+		);
+
 		let hyve = Uhyve {
 			vm,
 			offset: 0,
@@ -286,6 +292,7 @@ impl Uhyve {
 			mask,
 			uhyve_device,
 			virtio_device,
+			gdb_port: specs.gdbport,
 		};
 
 		hyve.init_guest_mem();

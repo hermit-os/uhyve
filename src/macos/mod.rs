@@ -16,6 +16,7 @@ pub mod uhyve;
 pub mod vcpu;
 
 pub type HypervisorError = xhypervisor::Error;
+pub type DebugExitInfo = ();
 
 impl Uhyve {
 	/// Runs the VM.
