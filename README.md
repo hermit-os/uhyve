@@ -57,11 +57,11 @@ sysctl kern.hv_support
 
 The output `kern.hv_support: 1` indicates virtualization support.
 
-Startinhg with Big Sur, all processes using the Hypervisor API must have the [com.apple.security.hypervisor](https://developer.apple.com/documentation/Hypervisor) entitlement and therefor must be signed.
+Starting with Big Sur, all processes using the Hypervisor API must have the [com.apple.security.hypervisor](https://developer.apple.com/documentation/Hypervisor) entitlement and therefore must be signed.
 
 ## Building from source
 
-To build from souce, simply checkout the code and use `cargo build`.
+To build from source, simply checkout the code and use `cargo build`.
 
 ```sh
 git clone https://github.com/hermitcore/uhyve.git
@@ -135,7 +135,7 @@ The repository [rusty-hermit](https://github.com/hermitcore/rusty-hermit) provid
 
 ## Known issues
 
- * Uhyve isn't able to pass more than 128 environment variables to the unikernel
+ * Uhyve isn't able to pass more than 128 environment variables to the unikernel.
 
 ## Licensing
 

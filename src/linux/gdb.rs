@@ -50,7 +50,7 @@ impl UhyveCPU {
 					Some(StopReason::Signal(5)),
 				)
 			} else {
-				// target stopped on boot. No signal recv'd yet. Pretend debug singal..? Not used rn anyways
+				// target stopped on boot. No signal recv'd yet. Pretend debug signal? Not used rn anyways.
 				(CmdHandler::new(self, &dbg.state, VcpuExit::Debug), None)
 			};
 
@@ -71,12 +71,12 @@ impl UhyveCPU {
 				VCont::Continue | VCont::ContinueWithSignal(_) => {
 					info!("Continuing execution..");
 					self.kvm_change_guestdbg(false, hwbr.as_ref())
-						.expect("Could not change KVM debugging state"); // TODO: optimize this, dont call too often?
+						.expect("Could not change KVM debugging state"); // TODO: optimize this, don't call too often?
 				}
 				VCont::Step | VCont::StepWithSignal(_) => {
 					info!("Starting Single Stepping..");
 					self.kvm_change_guestdbg(true, hwbr.as_ref())
-						.expect("Could not change KVM debugging state"); // TODO: optimize this, dont call too often?
+						.expect("Could not change KVM debugging state"); // TODO: optimize this, don't call too often?
 				}
 				_ => error!("Unknown Handler exit reason!"),
 			}
@@ -491,7 +491,7 @@ impl<'a> Handler for CmdHandler<'a> {
 			self.continue_execution(cmd.clone());
 		}
 
-		// this reason should not matter, since we dont send it when continuing.
+		// This reason should not matter, since we don't send it when continuing.
 		Ok(StopReason::Signal(0))
 	}
 
@@ -613,8 +613,8 @@ pub struct Registers {
 impl Registers {
 	/// Loads the register set from kvm into the register struct
 	pub fn from_kvm(cpu: &VcpuFd) -> Self {
-		let regs = cpu.get_regs().expect("Cant get regs from kvm!");
-		let sregs = cpu.get_sregs().expect("Cant get sregs from kvm!");
+		let regs = cpu.get_regs().expect("Can't get regs from kvm!");
+		let sregs = cpu.get_sregs().expect("Can't get sregs from kvm!");
 
 		/*registers.fctrl = Some(float.cwd as _);
 		registers.fop = Some(float.fop as _);
@@ -679,8 +679,8 @@ impl Registers {
 
 	/// Saves a register struct (only where non-None values are) into kvm.
 	pub fn to_kvm(&self, cpu: &mut VcpuFd) {
-		let mut regs = cpu.get_regs().expect("Cant get regs from kvm!");
-		let mut sregs = cpu.get_sregs().expect("Cant get sregs from kvm!");
+		let mut regs = cpu.get_regs().expect("Can't get regs from kvm!");
+		let mut sregs = cpu.get_sregs().expect("Can't get sregs from kvm!");
 
 		regs.r15 = self.r15.unwrap_or(regs.r15);
 		regs.r14 = self.r14.unwrap_or(regs.r14);
@@ -707,8 +707,8 @@ impl Registers {
 		sregs.fs.base = self.fs.unwrap_or(sregs.fs.base as _) as _;
 		sregs.gs.base = self.gs.unwrap_or(sregs.gs.base as _) as _;
 
-		cpu.set_regs(&regs).expect("Cant set regs to kvm!");
-		cpu.set_sregs(&sregs).expect("Cant set regs to kvm!");
+		cpu.set_regs(&regs).expect("Can't set regs to kvm!");
+		cpu.set_sregs(&sregs).expect("Can't set regs to kvm!");
 	}
 
 	/// take the serialized register set send by gdb and decodes it into a register structure.
