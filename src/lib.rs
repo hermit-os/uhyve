@@ -20,7 +20,6 @@ pub mod macos;
 pub mod paging;
 #[cfg(target_os = "linux")]
 pub mod shared_queue;
-pub mod utils;
 pub mod vm;
 
 pub use arch::*;

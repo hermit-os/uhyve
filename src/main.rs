@@ -1,5 +1,8 @@
 #![warn(rust_2018_idioms)]
 
+mod bin_utils;
+use bin_utils as utils;
+
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -8,18 +11,18 @@ extern crate clap;
 #[cfg(feature = "instrument")]
 extern crate rftrace_frontend;
 
+use std::collections::HashSet;
+use std::convert::TryInto;
 use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use uhyve::uhyve_run;
-use uhyve::utils;
 use uhyve::vm;
 
+use byte_unit::Byte;
 use clap::{App, Arg};
 #[cfg(feature = "instrument")]
 use rftrace_frontend::Events;
-use uhyve::utils::{filter_cpu_affinity, parse_cpu_affinity};
 
 const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
 const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
@@ -178,55 +181,52 @@ fn main() {
 	.expect("Invalid kernel path");
 	let mem_size: usize = matches
 		.value_of("MEM")
-		.map(|x| {
-			let mem = utils::parse_mem(x).unwrap_or(DEFAULT_GUEST_SIZE);
+		.map(|s| {
+			let mem = Byte::from_str(s)
+				.expect("Invalid MEM specified")
+				.get_bytes()
+				.try_into()
+				.unwrap();
 			if mem < MINIMAL_GUEST_SIZE {
-				warn!("Resize guest memory to {} MByte", DEFAULT_GUEST_SIZE >> 20);
-				DEFAULT_GUEST_SIZE
+				warn!(
+					"Resize guest memory to {}",
+					Byte::from_bytes(MINIMAL_GUEST_SIZE.try_into().unwrap())
+				);
+				MINIMAL_GUEST_SIZE
 			} else {
 				mem
 			}
 		})
 		.unwrap_or(DEFAULT_GUEST_SIZE);
-	let num_cpus: u32 = matches
+	let num_cpus = matches
 		.value_of("CPUS")
-		.map(|x| utils::parse_u32(x).unwrap_or(1))
+		.map(|cpus| cpus.parse().ok())
+		.flatten()
 		.unwrap_or(1);
 
-	let set_cpu_affinity = matches.is_present("CPU_AFFINITY");
-	let cpu_affinity: Option<Vec<core_affinity::CoreId>> = if set_cpu_affinity {
-		let args: Vec<&str> = matches
-			.values_of("CPU_AFFINITY")
-			.unwrap()
-			.into_iter()
-			.collect();
+	let cpu_affinity = matches.values_of("CPU_AFFINITY").map(|affinity| {
+		let parsed_affinity = utils::parse_ranges(affinity)
+			.collect::<Result<HashSet<_>, _>>()
+			.expect("Invalid parameters passed for CPU_AFFINITY");
 
 		// According to https://github.com/Elzair/core_affinity_rs/issues/3
 		// on linux this gives a list of CPUs the process is allowed to run on
 		// (as opposed to all CPUs available on the system as the docs suggest)
-		let parsed_affinity =
-			parse_cpu_affinity(args).expect("Invalid parameters passed for CPU_AFFINITY");
 		let core_ids = core_affinity::get_core_ids()
-			.expect("Dependency core_affinity failed to find any available CPUs");
-		let filtered_core_ids = filter_cpu_affinity(core_ids, parsed_affinity);
-		if num_cpus as usize != filtered_core_ids.len() {
-			panic!(
-				"Uhyve was specified to use {} CPUs, but only the following CPUs from the CPU mask \
-				are available: {:?}",
-				num_cpus,
-				filtered_core_ids
-			);
-		}
-		Some(filtered_core_ids)
-	} else {
-		None
-	};
+			.expect("Dependency core_affinity failed to find any available CPUs")
+			.into_iter()
+			.filter(|core_id| parsed_affinity.contains(&core_id.id))
+			.collect::<Vec<_>>();
+		assert_eq!(core_ids.len(), num_cpus as usize);
+		core_ids
+	});
+
 	let ip = None; //matches.value_of("IP").or(None);
 	let gateway = None; // matches.value_of("GATEWAY").or(None);
 	let mask = None; //matches.value_of("MASK").or(None);
 	let nic = None; //matches.value_of("NETIF").or(None);
 
-	let mut mergeable: bool = utils::parse_bool("HERMIT_MERGEABLE", false);
+	let mut mergeable = envmnt::is_or("HERMIT_MERGEABLE", false);
 	if matches.is_present("MERGEABLE") {
 		mergeable = true;
 	}
@@ -235,11 +235,11 @@ fn main() {
 	let hugepage_default = utils::transparent_hugepages_available().unwrap_or(true);
 	info!("Default hugepages set to: {}", hugepage_default);
 	// HERMIT_HUGEPAGES overrides the default we detected.
-	let mut hugepage: bool = utils::parse_bool("HERMIT_HUGEPAGE", hugepage_default);
+	let mut hugepage = envmnt::is_or("HERMIT_HUGEPAGE", hugepage_default);
 	if matches.is_present("DISABLE_HUGEPAGE") {
 		hugepage = false;
 	}
-	let mut verbose: bool = utils::parse_bool("HERMIT_VERBOSE", false);
+	let mut verbose = envmnt::is_or("HERMIT_VERBOSE", false);
 	if matches.is_present("VERBOSE") {
 		verbose = true;
 	}

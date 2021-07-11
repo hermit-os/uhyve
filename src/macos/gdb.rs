@@ -11,11 +11,10 @@ use xhypervisor::{vCPU, x86Reg};
 use crate::arch::x86;
 use crate::error;
 use crate::gdb_parser::{
-	Breakpoint, Error, FileData, Handler, Id, MemoryRegion, ProcessInfo, ProcessType, StopReason,
-	ThreadId, VCont, VContFeature, Watchpoint,
+	get_max_subslice, Breakpoint, Error, FileData, Handler, Id, MemoryRegion, ProcessInfo,
+	ProcessType, StopReason, ThreadId, VCont, VContFeature, Watchpoint,
 };
 use crate::macos::vcpu::UhyveCPU;
-use crate::utils::get_max_subslice;
 use crate::vm::VirtualCPU;
 
 /// Debugging Stub for linux/x64
