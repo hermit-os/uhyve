@@ -49,7 +49,7 @@ jobs:
       run: |
         ./generate_test_coverage.sh --print-coverage
         bash <(curl -s https://codecov.io/bash) -f
-    - uses: codecov/codecov-action@v1.5.0
+    - uses: codecov/codecov-action@v1.5.2
       with:
         files: ./coveralls.json
 
