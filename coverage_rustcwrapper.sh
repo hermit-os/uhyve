@@ -20,7 +20,7 @@ get_crate_name(){
 }
 
 case $(get_crate_name "$@") in
-    uhyve|uhyvelib)
+    uhyve)
         EXTRA_OPTIONS=("-Zinstrument-coverage" "-Clink-dead-code")
         ;;
     *)

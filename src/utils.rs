@@ -24,7 +24,7 @@ pub fn parse_mem(mem: &str) -> Result<usize> {
 
 /// Example:
 /// ```rust
-/// # use uhyvelib::utils::parse_u32;
+/// # use uhyve::utils::parse_u32;
 /// assert_eq!(parse_u32("15").unwrap(), 15);
 /// ```
 pub fn parse_u32(s: &str) -> Result<u32> {
@@ -46,11 +46,11 @@ fn parse_bool_str(value: &str) -> Option<bool> {
 /// A single positive integer is also a valid parameter ( a range of length 1)
 /// Example:
 /// ```rust
-/// # use uhyvelib::utils::parse_u32_range;
+/// # use uhyve::utils::parse_u32_range;
 /// let s = "5-7";
 /// let range = parse_u32_range(s)?;
 /// assert_eq!(range, [5, 6, 7]);
-/// # Ok::<(), uhyvelib::error::Error>(())
+/// # Ok::<(), uhyve::error::Error>(())
 ///  ```
 pub fn parse_u32_range(s: &str) -> Result<Vec<u32>> {
 	let split: Vec<&str> = s.split('-').collect();
@@ -148,7 +148,7 @@ pub fn filter_cpu_affinity(available: Vec<CoreId>, affinity: Vec<u32>) -> Vec<Co
 /// as well as inclusive ranges where all numbers are representable as an u32
 /// Example:
 /// ```rust
-/// # use uhyvelib::utils::parse_cpu_affinity;
+/// # use uhyve::utils::parse_cpu_affinity;
 /// let a =  parse_cpu_affinity(vec!["5", "2-3", "8-9"]);
 /// assert_eq!(a.unwrap(), vec![2,3,5,8,9]);
 /// ```

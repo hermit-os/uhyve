@@ -20,7 +20,7 @@ default = []
 instrument = ["rftrace", "rftrace-frontend"]
 
 [lib]
-name = "uhyvelib"
+name = "uhyve"
 path = "src/lib.rs"
 
 [[bin]]

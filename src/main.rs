@@ -12,14 +12,14 @@ use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use uhyvelib::uhyve_run;
-use uhyvelib::utils;
-use uhyvelib::vm;
+use uhyve::uhyve_run;
+use uhyve::utils;
+use uhyve::vm;
 
 use clap::{App, Arg};
 #[cfg(feature = "instrument")]
 use rftrace_frontend::Events;
-use uhyvelib::utils::{filter_cpu_affinity, parse_cpu_affinity};
+use uhyve::utils::{filter_cpu_affinity, parse_cpu_affinity};
 
 const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
 const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
