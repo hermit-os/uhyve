@@ -25,7 +25,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "uhyve"
-path = "src/bin/uhyve.rs"
+path = "src/main.rs"
 
 [dependencies]
 log = "0.4.14"
