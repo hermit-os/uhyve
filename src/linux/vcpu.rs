@@ -371,12 +371,12 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_CMDSIZE => {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.cmdsize(self.host_address(data_addr))?;
+							self.cmdsize(self.host_address(data_addr));
 						}
 						UHYVE_PORT_CMDVAL => {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.cmdval(self.host_address(data_addr))?;
+							self.cmdval(self.host_address(data_addr));
 						}
 						UHYVE_PORT_NETWRITE => {
 							match &self.tx {
@@ -393,32 +393,32 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_OPEN => {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.open(self.host_address(data_addr))?;
+							self.open(self.host_address(data_addr));
 						}
 						UHYVE_PORT_WRITE => {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.write(self.host_address(data_addr))?;
+							self.write(self.host_address(data_addr)).unwrap();
 						}
 						UHYVE_PORT_READ => {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.read(self.host_address(data_addr))?;
+							self.read(self.host_address(data_addr));
 						}
 						UHYVE_PORT_UNLINK => {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.unlink(self.host_address(data_addr))?;
+							self.unlink(self.host_address(data_addr));
 						}
 						UHYVE_PORT_LSEEK => {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.lseek(self.host_address(data_addr))?;
+							self.lseek(self.host_address(data_addr));
 						}
 						UHYVE_PORT_CLOSE => {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.close(self.host_address(data_addr))?;
+							self.close(self.host_address(data_addr));
 						}
 						//TODO:
 						PCI_CONFIG_DATA_PORT => {

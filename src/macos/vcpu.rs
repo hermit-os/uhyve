@@ -695,13 +695,13 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_CMDSIZE => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&x86Reg::RAX)? & 0xFFFFFFFF;
-							self.cmdsize(self.host_address(data_addr as usize))?;
+							self.cmdsize(self.host_address(data_addr as usize));
 							self.vcpu.write_register(&x86Reg::RIP, rip + len)?;
 						}
 						UHYVE_PORT_CMDVAL => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&x86Reg::RAX)? & 0xFFFFFFFF;
-							self.cmdval(self.host_address(data_addr as usize))?;
+							self.cmdval(self.host_address(data_addr as usize));
 							self.vcpu.write_register(&x86Reg::RIP, rip + len)?;
 						}
 						UHYVE_PORT_EXIT => {
@@ -712,37 +712,37 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_OPEN => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&x86Reg::RAX)? & 0xFFFFFFFF;
-							self.open(self.host_address(data_addr as usize))?;
+							self.open(self.host_address(data_addr as usize));
 							self.vcpu.write_register(&x86Reg::RIP, rip + len)?;
 						}
 						UHYVE_PORT_WRITE => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&x86Reg::RAX)? & 0xFFFFFFFF;
-							self.write(self.host_address(data_addr as usize))?;
+							self.write(self.host_address(data_addr as usize)).unwrap();
 							self.vcpu.write_register(&x86Reg::RIP, rip + len)?;
 						}
 						UHYVE_PORT_READ => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&x86Reg::RAX)? & 0xFFFFFFFF;
-							self.read(self.host_address(data_addr as usize))?;
+							self.read(self.host_address(data_addr as usize));
 							self.vcpu.write_register(&x86Reg::RIP, rip + len)?;
 						}
 						UHYVE_PORT_UNLINK => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&x86Reg::RAX)? & 0xFFFFFFFF;
-							self.unlink(self.host_address(data_addr as usize))?;
+							self.unlink(self.host_address(data_addr as usize));
 							self.vcpu.write_register(&x86Reg::RIP, rip + len)?;
 						}
 						UHYVE_PORT_LSEEK => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&x86Reg::RAX)? & 0xFFFFFFFF;
-							self.lseek(self.host_address(data_addr as usize))?;
+							self.lseek(self.host_address(data_addr as usize));
 							self.vcpu.write_register(&x86Reg::RIP, rip + len)?;
 						}
 						UHYVE_PORT_CLOSE => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&x86Reg::RAX)? & 0xFFFFFFFF;
-							self.close(self.host_address(data_addr as usize))?;
+							self.close(self.host_address(data_addr as usize));
 							self.vcpu.write_register(&x86Reg::RIP, rip + len)?;
 						}
 						_ => {

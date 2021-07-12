@@ -6,7 +6,6 @@ use goblin::elf64::header::{EM_X86_64, ET_DYN};
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
 use goblin::elf64::reloc::*;
 use log::{debug, error, warn};
-use nix::errno::errno;
 use raw_cpuid::CpuId;
 use std::convert::TryInto;
 use std::io::Write;
@@ -229,7 +228,7 @@ pub trait VirtualCPU {
 	/// Returns the (host) path of the kernel binary.
 	fn kernel_path(&self) -> PathBuf;
 
-	fn cmdsize(&self, args_ptr: usize) -> Result<()> {
+	fn cmdsize(&self, args_ptr: usize) {
 		let syssize = unsafe { &mut *(args_ptr as *mut SysCmdsize) };
 		syssize.argc = 0;
 		syssize.envc = 0;
@@ -271,12 +270,10 @@ pub trait VirtualCPU {
 		if counter >= MAX_ENVC.try_into().unwrap() {
 			warn!("Environment is too large!");
 		}
-
-		Ok(())
 	}
 
 	/// Copies the arguments end environment of the application into the VM's memory.
-	fn cmdval(&self, args_ptr: usize) -> Result<()> {
+	fn cmdval(&self, args_ptr: usize) {
 		let syscmdval = unsafe { &*(args_ptr as *const SysCmdval) };
 
 		let mut counter: i32 = 0;
@@ -344,19 +341,15 @@ pub trait VirtualCPU {
 				counter += 1;
 			}
 		}
-
-		Ok(())
 	}
 
 	/// unlink delets a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
 	/// TODO: UNSAFE AS *%@#. It has to be checked that the VM is allowed to unlink that file!
-	fn unlink(&self, args_ptr: usize) -> Result<()> {
+	fn unlink(&self, args_ptr: usize) {
 		unsafe {
 			let sysunlink = &mut *(args_ptr as *mut SysUnlink);
 			sysunlink.ret = libc::unlink(self.host_address(sysunlink.name as usize) as *const i8);
 		}
-
-		Ok(())
 	}
 
 	/// Reads the exit code from an VM and returns it
@@ -366,7 +359,7 @@ pub trait VirtualCPU {
 	}
 
 	/// Handles an open syscall by opening a file on the host.
-	fn open(&self, args_ptr: usize) -> Result<()> {
+	fn open(&self, args_ptr: usize) {
 		unsafe {
 			let sysopen = &mut *(args_ptr as *mut SysOpen);
 			sysopen.ret = libc::open(
@@ -375,22 +368,18 @@ pub trait VirtualCPU {
 				sysopen.mode,
 			);
 		}
-
-		Ok(())
 	}
 
 	/// Handles an close syscall by closing the file on the host.
-	fn close(&self, args_ptr: usize) -> Result<()> {
+	fn close(&self, args_ptr: usize) {
 		unsafe {
 			let sysclose = &mut *(args_ptr as *mut SysClose);
 			sysclose.ret = libc::close(sysclose.fd);
 		}
-
-		Ok(())
 	}
 
 	/// Handles an read syscall on the host.
-	fn read(&self, args_ptr: usize) -> Result<()> {
+	fn read(&self, args_ptr: usize) {
 		unsafe {
 			let sysread = &mut *(args_ptr as *mut SysRead);
 			let buffer = self.virt_to_phys(sysread.buf as usize);
@@ -406,12 +395,10 @@ pub trait VirtualCPU {
 				sysread.ret = -1;
 			}
 		}
-
-		Ok(())
 	}
 
 	/// Handles an write syscall on the host.
-	fn write(&self, args_ptr: usize) -> Result<()> {
+	fn write(&self, args_ptr: usize) -> io::Result<()> {
 		let syswrite = unsafe { &*(args_ptr as *const SysWrite) };
 		let mut bytes_written: usize = 0;
 		let buffer = self.virt_to_phys(syswrite.buf as usize);
@@ -426,7 +413,7 @@ pub trait VirtualCPU {
 				if step >= 0 {
 					bytes_written += step as usize;
 				} else {
-					return Err(Error::OsError(errno()));
+					return Err(io::Error::last_os_error());
 				}
 			}
 		}
@@ -435,14 +422,12 @@ pub trait VirtualCPU {
 	}
 
 	/// Handles an write syscall on the host.
-	fn lseek(&self, args_ptr: usize) -> Result<()> {
+	fn lseek(&self, args_ptr: usize) {
 		unsafe {
 			let syslseek = &mut *(args_ptr as *mut SysLseek);
 			syslseek.offset =
 				libc::lseek(syslseek.fd, syslseek.offset as i64, syslseek.whence) as isize;
 		}
-
-		Ok(())
 	}
 
 	/// Handles an UART syscall by writing to stdout.
