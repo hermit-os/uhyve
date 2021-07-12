@@ -943,19 +943,11 @@ mod tests {
 	}
 }
 
-#[cfg(not(target_os = "windows"))]
 pub fn create_vm(path: PathBuf, specs: &super::vm::Parameter<'_>) -> Result<Uhyve> {
 	// If we are given a port, create new DebugManager.
 	let gdb = specs.gdbport.map(|port| DebugManager::new(port).unwrap());
 
 	let vm = Uhyve::new(path, specs, gdb)?;
-
-	Ok(vm)
-}
-
-#[cfg(target_os = "windows")]
-pub fn create_vm(path: PathBuf, specs: &super::vm::Parameter) -> Result<Uhyve> {
-	let vm = Uhyve::new(path.clone(), &specs)?;
 
 	Ok(vm)
 }
