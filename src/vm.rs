@@ -11,6 +11,8 @@ use raw_cpuid::CpuId;
 use std::convert::TryInto;
 use std::io::Write;
 use std::net::Ipv4Addr;
+use std::os::unix::ffi::OsStrExt;
+use std::path::PathBuf;
 use std::ptr::write;
 use std::time::{Duration, Instant, SystemTime};
 use std::{fmt, mem, slice};
@@ -214,12 +216,18 @@ struct SysUnlink {
 }
 
 pub trait VirtualCPU {
+	/// Initialize the cpu to start running the code ad entry_point.
 	fn init(&mut self, entry_point: u64) -> Result<()>;
+	/// Start the execution of the CPU. The function will run until it crashes (`Err`) or terminate with an exit code (`Ok`).
 	fn run(&mut self) -> Result<Option<i32>>;
+	/// Prints the VCPU's registers to stdout.
 	fn print_registers(&self);
+	/// Translates an address from the VM's physical space into the hosts virtual space.
 	fn host_address(&self, addr: usize) -> usize;
+	/// Looks up the guests pagetable and translates a guest's virtual address to a guest's physical address.
 	fn virt_to_phys(&self, addr: usize) -> usize;
-	fn kernel_path(&self) -> String;
+	/// Returns the (host) path of the kernel binary.
+	fn kernel_path(&self) -> PathBuf;
 
 	fn cmdsize(&self, args_ptr: usize) -> Result<()> {
 		let syssize = unsafe { &mut *(args_ptr as *mut SysCmdsize) };
@@ -230,7 +238,7 @@ pub trait VirtualCPU {
 		let mut separator_pos: i32 = 0;
 		let path = self.kernel_path();
 		let mut found_separator = false;
-		syssize.argsz[0] = path.len() as i32 + 1;
+		syssize.argsz[0] = path.as_os_str().len() as i32 + 1;
 
 		for argument in std::env::args() {
 			if !found_separator && argument == "--" {
@@ -267,6 +275,7 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Copies the arguments end environment of the application into the VM's memory.
 	fn cmdval(&self, args_ptr: usize) -> Result<()> {
 		let syscmdval = unsafe { &*(args_ptr as *const SysCmdval) };
 
@@ -277,7 +286,7 @@ pub trait VirtualCPU {
 
 		// copy kernel path as first argument
 		{
-			let path = self.kernel_path();
+			let path = self.kernel_path().into_os_string();
 
 			let argvptr = unsafe { self.host_address(*(argv as *mut *mut u8) as usize) };
 			let len = path.len();
@@ -288,6 +297,7 @@ pub trait VirtualCPU {
 			slice[len] = 0;
 		}
 
+		// Copy the application arguments into the vm memory
 		for argument in std::env::args() {
 			if !found_separator && argument == "--" {
 				separator_pos = counter + 1;
@@ -312,6 +322,7 @@ pub trait VirtualCPU {
 			counter += 1;
 		}
 
+		// Copy the environment variables into the vm memory
 		counter = 0;
 		let envp = self.host_address(syscmdval.envp as usize);
 		for (key, value) in std::env::vars() {
@@ -337,6 +348,8 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// unlink delets a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
+	/// TODO: UNSAFE AS *%@#. It has to be checked that the VM is allowed to unlink that file!
 	fn unlink(&self, args_ptr: usize) -> Result<()> {
 		unsafe {
 			let sysunlink = &mut *(args_ptr as *mut SysUnlink);
@@ -346,11 +359,13 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Reads the exit code from an VM and returns it
 	fn exit(&self, args_ptr: usize) -> i32 {
 		let sysexit = unsafe { &*(args_ptr as *const SysExit) };
 		sysexit.arg
 	}
 
+	/// Handles an open syscall by opening a file on the host.
 	fn open(&self, args_ptr: usize) -> Result<()> {
 		unsafe {
 			let sysopen = &mut *(args_ptr as *mut SysOpen);
@@ -364,6 +379,7 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Handles an close syscall by closing the file on the host.
 	fn close(&self, args_ptr: usize) -> Result<()> {
 		unsafe {
 			let sysclose = &mut *(args_ptr as *mut SysClose);
@@ -373,6 +389,7 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Handles an read syscall on the host.
 	fn read(&self, args_ptr: usize) -> Result<()> {
 		unsafe {
 			let sysread = &mut *(args_ptr as *mut SysRead);
@@ -393,6 +410,7 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Handles an write syscall on the host.
 	fn write(&self, args_ptr: usize) -> Result<()> {
 		let syswrite = unsafe { &*(args_ptr as *const SysWrite) };
 		let mut bytes_written: usize = 0;
@@ -416,6 +434,7 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Handles an write syscall on the host.
 	fn lseek(&self, args_ptr: usize) -> Result<()> {
 		unsafe {
 			let syslseek = &mut *(args_ptr as *mut SysLseek);
@@ -426,6 +445,7 @@ pub trait VirtualCPU {
 		Ok(())
 	}
 
+	/// Handles an UART syscall by writing to stdout.
 	fn uart(&self, buf: &[u8]) -> io::Result<()> {
 		io::stdout().write_all(buf)
 	}
@@ -441,11 +461,14 @@ fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {
 }
 
 pub trait Vm {
+	/// Returns the number of cores for the vm.
 	fn num_cpus(&self) -> u32;
+	/// Returns a pointer to the address of the guest memory and the size of the memory in bytes.
 	fn guest_mem(&self) -> (*mut u8, usize);
+	/// Sets the elf entry point.
 	fn set_entry_point(&mut self, entry: u64);
 	fn get_entry_point(&self) -> u64;
-	fn kernel_path(&self) -> &str;
+	fn kernel_path(&self) -> PathBuf;
 	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>>;
 	fn set_boot_info(&mut self, header: *const BootInfo);
 	fn cpu_online(&self) -> u32;
@@ -506,19 +529,18 @@ pub trait Vm {
 	}
 
 	unsafe fn load_kernel(&mut self) -> Result<()> {
-		debug!("Load kernel from {}", self.kernel_path());
+		debug!("Load kernel from {}", self.kernel_path().display());
 
-		let buffer = fs::read(self.kernel_path())
-			.map_err(|_| Error::InvalidFile(self.kernel_path().into()))?;
-		let elf =
-			elf::Elf::parse(&buffer).map_err(|_| Error::InvalidFile(self.kernel_path().into()))?;
+		let buffer =
+			fs::read(self.kernel_path()).map_err(|_| Error::InvalidFile(self.kernel_path()))?;
+		let elf = elf::Elf::parse(&buffer).map_err(|_| Error::InvalidFile(self.kernel_path()))?;
 
 		if !elf.libraries.is_empty() {
 			warn!(
 				"Error: file depends on following libraries: {:?}",
 				elf.libraries
 			);
-			return Err(Error::InvalidFile(self.kernel_path().into()));
+			return Err(Error::InvalidFile(self.kernel_path()));
 		}
 
 		let is_dyn = elf.header.e_type == ET_DYN;
@@ -527,7 +549,7 @@ pub trait Vm {
 		}
 
 		if elf.header.e_machine != EM_X86_64 {
-			return Err(Error::InvalidFile(self.kernel_path().into()));
+			return Err(Error::InvalidFile(self.kernel_path()));
 		}
 
 		// acquire the slices of the user memory
@@ -866,8 +888,9 @@ mod tests {
 			return;
 		}
 
-		let path =
-			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
+		let mut path = PathBuf::new();
+		path.push(env!("CARGO_MANIFEST_DIR"));
+		path.push("/benches_data/hello_world");
 		let vm = create_vm(
 			path,
 			&Parameter {
@@ -893,8 +916,9 @@ mod tests {
 			return;
 		}
 
-		let path =
-			env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
+		let mut path = PathBuf::new();
+		path.push(env!("CARGO_MANIFEST_DIR"));
+		path.push("/benches_data/hello_world");
 		let mut vm = create_vm(
 			path,
 			&Parameter {
@@ -920,7 +944,7 @@ mod tests {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn create_vm(path: String, specs: &super::vm::Parameter<'_>) -> Result<Uhyve> {
+pub fn create_vm(path: PathBuf, specs: &super::vm::Parameter<'_>) -> Result<Uhyve> {
 	// If we are given a port, create new DebugManager.
 	let gdb = specs.gdbport.map(|port| DebugManager::new(port).unwrap());
 
@@ -930,7 +954,7 @@ pub fn create_vm(path: String, specs: &super::vm::Parameter<'_>) -> Result<Uhyve
 }
 
 #[cfg(target_os = "windows")]
-pub fn create_vm(path: String, specs: &super::vm::Parameter) -> Result<Uhyve> {
+pub fn create_vm(path: PathBuf, specs: &super::vm::Parameter) -> Result<Uhyve> {
 	let vm = Uhyve::new(path.clone(), &specs)?;
 
 	Ok(vm)

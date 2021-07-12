@@ -9,6 +9,7 @@ use crate::vm::VirtualCPU;
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use lazy_static::lazy_static;
 use log::{debug, error, trace};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use x86::controlregs::*;
 use x86::cpuid::*;
@@ -62,7 +63,7 @@ lazy_static! {
 
 pub struct UhyveCPU {
 	id: u32,
-	kernel_path: String,
+	kernel_path: PathBuf,
 	vcpu: vCPU,
 	vm_start: usize,
 	apic_base: u64,
@@ -73,7 +74,7 @@ pub struct UhyveCPU {
 impl UhyveCPU {
 	pub fn new(
 		id: u32,
-		kernel_path: String,
+		kernel_path: PathBuf,
 		vm_start: usize,
 		ioapic: Arc<Mutex<IoApic>>,
 		dbg: Option<Arc<Mutex<DebugManager>>>,
@@ -551,7 +552,7 @@ impl VirtualCPU for UhyveCPU {
 		Ok(())
 	}
 
-	fn kernel_path(&self) -> String {
+	fn kernel_path(&self) -> PathBuf {
 		self.kernel_path.clone()
 	}
 

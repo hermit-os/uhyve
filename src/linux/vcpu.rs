@@ -11,6 +11,7 @@ use kvm_ioctls::{VcpuExit, VcpuFd};
 use libc::ioctl;
 use log::{debug, error, info};
 use std::os::unix::io::AsRawFd;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use x86::controlregs::*;
 
@@ -25,7 +26,7 @@ pub struct UhyveCPU {
 	id: u32,
 	vcpu: VcpuFd,
 	vm_start: usize,
-	kernel_path: String,
+	kernel_path: PathBuf,
 	tx: Option<std::sync::mpsc::SyncSender<usize>>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	pub dbg: Option<Arc<Mutex<DebugManager>>>,
@@ -34,7 +35,7 @@ pub struct UhyveCPU {
 impl UhyveCPU {
 	pub fn new(
 		id: u32,
-		kernel_path: String,
+		kernel_path: PathBuf,
 		vcpu: VcpuFd,
 		vm_start: usize,
 		tx: Option<std::sync::mpsc::SyncSender<usize>>,
@@ -256,7 +257,7 @@ impl VirtualCPU for UhyveCPU {
 		Ok(())
 	}
 
-	fn kernel_path(&self) -> String {
+	fn kernel_path(&self) -> PathBuf {
 		self.kernel_path.clone()
 	}
 

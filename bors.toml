@@ -1,10 +1,12 @@
 status = [
-  "Build (ubuntu-latest, nightly)",
-  "Build (macOS-latest, nightly)",
-  "Format check (ubuntu-latest, nightly)",
-  "Test (ubuntu-latest, nightly)",
-  "Test (macOS-latest, nightly)",
-  "KVM Tests",
+    "Cargo tests (ubuntu-latest, nightly)",
+    "Build (ubuntu-latest, nightly)",
+    "Build (macOS-latest, nightly)",
+    "Cargo tests (macOS-latest, nightly)",
+    "KVM Tests",
+    "Rusty-Hermit Kernel Tests",
+    "Rusty-Hermit Kernel based integration tests",
+    "Format check (ubuntu-latest, nightly)",
 ]
 delete_merged_branches = true
 timeout_sec = 7200
