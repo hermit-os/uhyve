@@ -1,11 +1,11 @@
 use crate::debug_manager::DebugManager;
-use crate::error::*;
 use crate::macos::ioapic::IoApic;
 use crate::macos::vcpu::*;
+use crate::vm::HypervisorResult;
 use crate::vm::{BootInfo, Parameter, VirtualCPU, Vm};
 use libc;
 use libc::c_void;
-use log::{debug, error};
+use log::debug;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::ptr;
@@ -30,7 +30,7 @@ impl Uhyve {
 		kernel_path: PathBuf,
 		specs: &Parameter<'_>,
 		dbg: Option<DebugManager>,
-	) -> Result<Uhyve> {
+	) -> HypervisorResult<Uhyve> {
 		let mem = unsafe {
 			libc::mmap(
 				std::ptr::null_mut(),
@@ -42,10 +42,7 @@ impl Uhyve {
 			)
 		};
 
-		if mem == libc::MAP_FAILED {
-			error!("mmap failed with");
-			return Err(Error::NotEnoughMemory);
-		}
+		assert_ne!(libc::MAP_FAILED, mem, "mmap failed");
 
 		debug!("Allocate memory for the guest at 0x{:x}", mem as usize);
 
@@ -104,7 +101,7 @@ impl Vm for Uhyve {
 		self.path.clone()
 	}
 
-	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>> {
+	fn create_cpu(&self, id: u32) -> HypervisorResult<Box<dyn VirtualCPU>> {
 		Ok(Box::new(UhyveCPU::new(
 			id,
 			self.path.clone(),

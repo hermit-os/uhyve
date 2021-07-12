@@ -11,7 +11,6 @@ extern crate log;
 pub mod arch;
 pub mod consts;
 pub mod debug_manager;
-pub mod error;
 pub mod gdb_parser;
 #[cfg(target_os = "linux")]
 pub mod linux;
@@ -86,7 +85,7 @@ pub fn uhyve_run(
 			let result = cpu.run();
 			match result {
 				Err(x) => {
-					error!("CPU {} crashes! {}", tid, x);
+					error!("CPU {} crashes! {:?}", tid, x);
 				}
 				Ok(exit_code) => {
 					if let Some(code) = exit_code {

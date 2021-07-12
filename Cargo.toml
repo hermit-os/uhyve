@@ -52,6 +52,7 @@ raw-cpuid = "10.0"
 rustc-serialize = "0.3"
 strum = "0.21"
 strum_macros = "0.21"
+thiserror = "1.0"
 
 rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }

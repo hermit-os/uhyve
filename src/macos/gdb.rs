@@ -9,7 +9,6 @@ use std::slice;
 use xhypervisor::{vCPU, x86Reg};
 
 use crate::arch::x86;
-use crate::error;
 use crate::gdb_parser::{
 	get_max_subslice, Breakpoint, Error, FileData, Handler, Id, MemoryRegion, ProcessInfo,
 	ProcessType, StopReason, ThreadId, VCont, VContFeature, Watchpoint,
@@ -67,13 +66,11 @@ impl UhyveCPU {
 			match vcont {
 				VCont::Continue | VCont::ContinueWithSignal(_) => {
 					debug!("Continuing execution..");
-					self.change_guestdbg(false, hwbr.as_ref())
-						.expect("Could not change KVM debugging state"); // TODO: optimize this, don't call too often?
+					self.change_guestdbg(false, hwbr.as_ref()); // TODO: optimize this, don't call too often?
 				}
 				VCont::Step | VCont::StepWithSignal(_) => {
 					debug!("Starting Single Stepping..");
-					self.change_guestdbg(true, hwbr.as_ref())
-						.expect("Could not change KVM debugging state"); // TODO: optimize this, don't call too often?
+					self.change_guestdbg(true, hwbr.as_ref()); // TODO: optimize this, don't call too often?
 				}
 				_ => error!("Unknown Handler exit reason!"),
 			}
@@ -102,7 +99,7 @@ impl UhyveCPU {
 		&mut self,
 		single_step: bool,
 		hwbr: Option<&x86::HWBreakpoints>, /*&HashMap<usize, Breakpoint>*/
-	) -> Result<(), error::Error> {
+	) {
 		debug!(
 			"xhypervisor: Enable guest debug. single_step:{}",
 			single_step
@@ -129,8 +126,6 @@ impl UhyveCPU {
 				.unwrap();
 			vcpu.write_register(&x86Reg::DR7, hwbr.get_dr7()).unwrap();
 		}
-
-		Ok(())
 	}
 }
 

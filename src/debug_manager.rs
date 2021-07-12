@@ -61,7 +61,7 @@ impl DebugManager {
 		&self,
 		handler: &mut H,
 		signal: Option<StopReason>,
-	) -> std::result::Result<VCont, gdb_protocol::Error>
+	) -> Result<VCont, gdb_protocol::Error>
 	where
 		H: Handler,
 	{

@@ -2,13 +2,13 @@
 
 use crate::consts::*;
 use crate::debug_manager::DebugManager;
-use crate::error::*;
 use crate::macos::ioapic::IoApic;
 use crate::paging::*;
+use crate::vm::HypervisorResult;
 use crate::vm::VirtualCPU;
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use lazy_static::lazy_static;
-use log::{debug, error, trace};
+use log::{debug, trace};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use x86::controlregs::*;
@@ -90,7 +90,7 @@ impl UhyveCPU {
 		}
 	}
 
-	fn setup_system_gdt(&mut self) -> Result<()> {
+	fn setup_system_gdt(&mut self) -> Result<(), xhypervisor::Error> {
 		debug!("Setup GDT");
 
 		self.vcpu.write_vmcs(VMCS_GUEST_CS_LIMIT, 0)?;
@@ -158,7 +158,7 @@ impl UhyveCPU {
 		Ok(())
 	}
 
-	fn setup_system_64bit(&mut self) -> Result<()> {
+	fn setup_system_64bit(&mut self) -> Result<(), xhypervisor::Error> {
 		debug!("Setup 64bit mode");
 
 		let cr0 = Cr0::CR0_PROTECTED_MODE
@@ -191,7 +191,7 @@ impl UhyveCPU {
 		Ok(())
 	}
 
-	fn setup_msr(&mut self) -> Result<()> {
+	fn setup_msr(&mut self) -> Result<(), xhypervisor::Error> {
 		const IA32_CSTAR: u32 = 0xc0000083;
 
 		debug!("Enable MSR registers");
@@ -212,7 +212,7 @@ impl UhyveCPU {
 		Ok(())
 	}
 
-	fn setup_capabilities(&mut self) -> Result<()> {
+	fn setup_capabilities(&mut self) -> Result<(), xhypervisor::Error> {
 		debug!("Setup VMX capabilities");
 
 		self.vcpu.write_vmcs(VMCS_CTRL_PIN_BASED, *CAP_PINBASED)?;
@@ -246,7 +246,7 @@ impl UhyveCPU {
 		Ok(())
 	}
 
-	fn emulate_cpuid(&mut self, rip: u64) -> Result<()> {
+	fn emulate_cpuid(&mut self, rip: u64) -> HypervisorResult<()> {
 		let len = self.vcpu.read_vmcs(VMCS_RO_VMEXIT_INSTR_LEN)?;
 		let rax = self.vcpu.read_register(&x86Reg::RAX)?;
 		let rcx = self.vcpu.read_register(&x86Reg::RCX)?;
@@ -332,7 +332,7 @@ impl UhyveCPU {
 		Ok(())
 	}
 
-	fn emulate_rdmsr(&mut self, rip: u64) -> Result<()> {
+	fn emulate_rdmsr(&mut self, rip: u64) -> HypervisorResult<()> {
 		let len = self.vcpu.read_vmcs(VMCS_RO_VMEXIT_INSTR_LEN)?;
 		let rcx = self.vcpu.read_register(&x86Reg::RCX)? & 0xFFFFFFFF;
 
@@ -355,9 +355,8 @@ impl UhyveCPU {
 				self.vcpu
 					.write_register(&x86Reg::RDX, (self.apic_base >> 32) & 0xFFFFFFFF)?;
 			}
-			_ => {
-				error!("Unable to read msr 0x{:x}!", rcx);
-				return Err(Error::InternalError);
+			rcx => {
+				panic!("Unable to read msr 0x{:x}!", rcx)
 			}
 		}
 
@@ -366,7 +365,7 @@ impl UhyveCPU {
 		Ok(())
 	}
 
-	fn emulate_wrmsr(&mut self, rip: u64) -> Result<()> {
+	fn emulate_wrmsr(&mut self, rip: u64) -> HypervisorResult<()> {
 		let len = self.vcpu.read_vmcs(VMCS_RO_VMEXIT_INSTR_LEN)?;
 		let rcx = self.vcpu.read_register(&x86Reg::RCX)? & 0xFFFFFFFF;
 
@@ -396,9 +395,8 @@ impl UhyveCPU {
 			IA32_X2APIC_LVT_ERROR => {}
 			IA32_X2APIC_EOI => {}
 			IA32_X2APIC_ICR => {}
-			_ => {
-				error!("Unable to write msr 0x{:x}!", rcx);
-				return Err(Error::InternalError);
+			rcx => {
+				panic!("Unable to write msr 0x{:x}!", rcx)
 			}
 		}
 
@@ -407,7 +405,7 @@ impl UhyveCPU {
 		Ok(())
 	}
 
-	fn emulate_xsetbv(&mut self, rip: u64) -> Result<()> {
+	fn emulate_xsetbv(&mut self, rip: u64) -> HypervisorResult<()> {
 		let len = self.vcpu.read_vmcs(VMCS_RO_VMEXIT_INSTR_LEN)?;
 		let eax = self.vcpu.read_register(&x86Reg::RAX)? & 0xFFFFFFFF;
 		let edx = self.vcpu.read_register(&x86Reg::RDX)? & 0xFFFFFFFF;
@@ -419,7 +417,7 @@ impl UhyveCPU {
 		Ok(())
 	}
 
-	fn emulate_ioapic(&mut self, rip: u64, address: u64) -> Result<()> {
+	fn emulate_ioapic(&mut self, rip: u64, address: u64) -> HypervisorResult<()> {
 		let len = self.vcpu.read_vmcs(VMCS_RO_VMEXIT_INSTR_LEN)?;
 		let qualification = self.vcpu.read_vmcs(VMCS_RO_EXIT_QUALIFIC)?;
 		let read = (qualification & (1 << 0)) != 0;
@@ -455,19 +453,18 @@ impl UhyveCPU {
 								self.vcpu.read_register(&x86Reg::RDX)? & 0xFFFFFFFF
 							}
 							_ => {
-								error!("IO-APIC write failed: {:?}", instr.operands);
-								return Err(Error::InternalError);
+								panic!("IO-APIC write failed: {:?}", instr.operands)
 							}
 						};
 
 						self.ioapic
 							.lock()
 							.unwrap()
-							.write(address - IOAPIC_BASE, val)?;
+							.write(address - IOAPIC_BASE, val);
 					}
 
 					if read {
-						let value = self.ioapic.lock().unwrap().read(address - IOAPIC_BASE)?;
+						let value = self.ioapic.lock().unwrap().read(address - IOAPIC_BASE);
 
 						match instr.operands[0].operand {
 							OperandType::REG_EDI => {
@@ -492,15 +489,13 @@ impl UhyveCPU {
 								self.vcpu.write_register(&x86Reg::RDX, value)?;
 							}
 							_ => {
-								error!("IO-APIC read failed: {:?}", instr.operands);
-								return Err(Error::InternalError);
+								panic!("IO-APIC read failed: {:?}", instr.operands)
 							}
 						}
 					}
 				}
 				_ => {
-					error!("IO-APIC Emulation failed");
-					return Err(Error::InternalError);
+					panic!("IO-APIC Emulation failed");
 				}
 			}
 		};
@@ -516,7 +511,7 @@ impl UhyveCPU {
 }
 
 impl VirtualCPU for UhyveCPU {
-	fn init(&mut self, entry_point: u64) -> Result<()> {
+	fn init(&mut self, entry_point: u64) -> HypervisorResult<()> {
 		self.setup_capabilities()?;
 		self.setup_msr()?;
 
@@ -582,7 +577,7 @@ impl VirtualCPU for UhyveCPU {
 		(entry & ((!0usize) << PAGE_BITS)) | (addr & !((!0usize) << PAGE_BITS))
 	}
 
-	fn run(&mut self) -> Result<Option<i32>> {
+	fn run(&mut self) -> HypervisorResult<Option<i32>> {
 		//self.print_registers();
 
 		// Pause first CPU before first execution, so we have time to attach debugger
@@ -622,19 +617,13 @@ impl VirtualCPU for UhyveCPU {
 					let valid = (irq_info & (1 << 31)) != 0;
 					let trap_or_breakpoint = (irq_vec == 3) || (irq_vec == 1);
 
-					if valid && trap_or_breakpoint {
-						debug!("Handle breakpoint exception");
-						self.gdb_handle_exception(true);
-					} else {
-						debug!("Receive exception or non-maskable interrupt {}!", irq_vec);
-						//self.print_registers();
-						return Err(Error::InternalError);
-					}
-				}
-				vmx_exit::VMX_REASON_TRIPLE_FAULT => {
-					error!("Triple fault! System crashed!");
-					self.print_registers();
-					return Err(Error::UnhandledExitReason);
+					assert!(
+						valid && trap_or_breakpoint,
+						"Received exception or non-maskable interrupt {}!",
+						irq_vec
+					);
+					debug!("Handle breakpoint exception");
+					self.gdb_handle_exception(true);
 				}
 				vmx_exit::VMX_REASON_CPUID => {
 					self.emulate_cpuid(rip)?;
@@ -650,15 +639,6 @@ impl VirtualCPU for UhyveCPU {
 				}
 				vmx_exit::VMX_REASON_IRQ => {
 					trace!("Exit reason {} - External interrupt", reason);
-				}
-				vmx_exit::VMX_REASON_VMENTRY_GUEST => {
-					error!(
-						"Exit reason {} - VM-entry failure due to invalid guest state",
-						reason
-					);
-					//self.print_registers();
-
-					return Err(Error::InternalError);
 				}
 				vmx_exit::VMX_REASON_EPT_VIOLATION => {
 					let gpa = self.vcpu.read_vmcs(VMCS_GUEST_PHYSICAL_ADDRESS)?;
@@ -677,10 +657,7 @@ impl VirtualCPU for UhyveCPU {
 					let len = self.vcpu.read_vmcs(VMCS_RO_VMEXIT_INSTR_LEN)?;
 					let port: u16 = ((qualification >> 16) & 0xFFFF) as u16;
 
-					if input {
-						error!("Invalid I/O operation");
-						return Err(Error::InternalError);
-					}
+					assert!(input, "Invalid I/O operation");
 
 					match port {
 						SHUTDOWN_PORT => {
@@ -751,10 +728,8 @@ impl VirtualCPU for UhyveCPU {
 						}
 					}
 				}
-				_ => {
-					error!("Unhandled exit: {}", reason);
-					self.print_registers();
-					return Err(Error::UnhandledExitReason);
+				vmx_reason => {
+					unimplemented!("{:?}", vmx_reason)
 				}
 			}
 		}

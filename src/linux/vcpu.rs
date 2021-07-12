@@ -1,16 +1,13 @@
 use crate::consts::*;
 use crate::debug_manager::DebugManager;
-use crate::error::Error::*;
-use crate::error::*;
 use crate::linux::virtio::*;
 use crate::linux::KVM;
 use crate::paging::*;
+use crate::vm::HypervisorResult;
 use crate::vm::VirtualCPU;
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
-use libc::ioctl;
-use log::{debug, error, info};
-use std::os::unix::io::AsRawFd;
+use log::{debug, info};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use x86::controlregs::*;
@@ -53,12 +50,10 @@ impl UhyveCPU {
 		}
 	}
 
-	fn setup_cpuid(&self) -> Result<()> {
+	fn setup_cpuid(&self) -> Result<(), kvm_ioctls::Error> {
 		//debug!("Setup cpuid");
 
-		let mut kvm_cpuid = KVM
-			.get_supported_cpuid(KVM_MAX_CPUID_ENTRIES)
-			.or_else(to_error)?;
+		let mut kvm_cpuid = KVM.get_supported_cpuid(KVM_MAX_CPUID_ENTRIES)?;
 		let kvm_cpuid_entries = kvm_cpuid.as_mut_slice();
 		let i = kvm_cpuid_entries
 			.iter()
@@ -128,15 +123,15 @@ impl UhyveCPU {
 		// disable performance monitor
 		kvm_cpuid_entries[i].eax = 0x00;
 
-		self.vcpu.set_cpuid2(&kvm_cpuid).or_else(to_error)?;
+		self.vcpu.set_cpuid2(&kvm_cpuid)?;
 
 		Ok(())
 	}
 
-	fn setup_msrs(&self) -> Result<()> {
+	fn setup_msrs(&self) -> Result<(), kvm_ioctls::Error> {
 		//debug!("Setup MSR");
 
-		let msr_list = KVM.get_msr_index_list().or_else(to_error)?;
+		let msr_list = KVM.get_msr_index_list()?;
 
 		let mut msr_entries = msr_list
 			.as_slice()
@@ -154,15 +149,15 @@ impl UhyveCPU {
 
 		let msrs = Msrs::from_entries(&msr_entries)
 			.expect("Unable to create initial values for the machine specific registers");
-		self.vcpu.set_msrs(&msrs).or_else(to_error)?;
+		self.vcpu.set_msrs(&msrs)?;
 
 		Ok(())
 	}
 
-	fn setup_long_mode(&self, entry_point: u64) -> Result<()> {
+	fn setup_long_mode(&self, entry_point: u64) -> Result<(), kvm_ioctls::Error> {
 		//debug!("Setup long mode");
 
-		let mut sregs = self.vcpu.get_sregs().or_else(to_error)?;
+		let mut sregs = self.vcpu.get_sregs()?;
 
 		let cr0 = (Cr0::CR0_PROTECTED_MODE
 			| Cr0::CR0_ENABLE_PAGING
@@ -203,14 +198,14 @@ impl UhyveCPU {
 		sregs.gdt.base = BOOT_GDT;
 		sregs.gdt.limit = ((std::mem::size_of::<u64>() * BOOT_GDT_MAX as usize) - 1) as u16;
 
-		self.vcpu.set_sregs(&sregs).or_else(to_error)?;
+		self.vcpu.set_sregs(&sregs)?;
 
-		let mut regs = self.vcpu.get_regs().or_else(to_error)?;
+		let mut regs = self.vcpu.get_regs()?;
 		regs.rflags = 2;
 		regs.rip = entry_point;
 		regs.rdi = BOOT_INFO_ADDR;
 
-		self.vcpu.set_regs(&regs).or_else(to_error)?;
+		self.vcpu.set_regs(&regs)?;
 
 		Ok(())
 	}
@@ -233,7 +228,7 @@ impl UhyveCPU {
 }
 
 impl VirtualCPU for UhyveCPU {
-	fn init(&mut self, entry_point: u64) -> Result<()> {
+	fn init(&mut self, entry_point: u64) -> HypervisorResult<()> {
 		self.setup_long_mode(entry_point)?;
 		self.setup_cpuid()?;
 
@@ -241,16 +236,7 @@ impl VirtualCPU for UhyveCPU {
 		let mp_state = kvm_mp_state {
 			mp_state: KVM_MP_STATE_RUNNABLE,
 		};
-		let ret = unsafe {
-			ioctl(
-				self.vcpu.as_raw_fd(),
-				0x4004ae99, /* KVM_SET_MP_STATE */
-				&mp_state,
-			)
-		};
-		if ret < 0 {
-			return Err(OsError(unsafe { *libc::__errno_location() }));
-		}
+		self.vcpu.set_mp_state(mp_state)?;
 
 		self.setup_msrs()?;
 
@@ -287,7 +273,7 @@ impl VirtualCPU for UhyveCPU {
 		(entry & ((!0usize) << PAGE_BITS)) | (addr & !((!0usize) << PAGE_BITS))
 	}
 
-	fn run(&mut self) -> Result<Option<i32>> {
+	fn run(&mut self) -> HypervisorResult<Option<i32>> {
 		//self.print_registers();
 
 		// Pause first CPU before first execution, so we have time to attach debugger
@@ -298,7 +284,7 @@ impl VirtualCPU for UhyveCPU {
 		let mut pci_addr: u32 = 0;
 		let mut pci_addr_set: bool = false;
 		loop {
-			let exitreason = self.vcpu.run().or_else(to_error)?;
+			let exitreason = self.vcpu.run()?;
 			match exitreason {
 				VcpuExit::Hlt => {
 					debug!("Halt Exit");
@@ -366,7 +352,7 @@ impl VirtualCPU for UhyveCPU {
 							return Ok(None);
 						}
 						UHYVE_UART_PORT => {
-							self.uart(addr).unwrap();
+							self.uart(addr)?;
 						}
 						UHYVE_PORT_CMDSIZE => {
 							let data_addr: usize =
@@ -398,7 +384,7 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_WRITE => {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.write(self.host_address(data_addr)).unwrap();
+							self.write(self.host_address(data_addr))?;
 						}
 						UHYVE_PORT_READ => {
 							let data_addr: usize =
@@ -451,7 +437,6 @@ impl VirtualCPU for UhyveCPU {
 							let mut virtio_device = self.virtio_device.lock().unwrap();
 							virtio_device.write_pfn(addr, self);
 						}
-
 						_ => {
 							panic!("Unhandled IO exit: 0x{:x}", port);
 						}
@@ -462,16 +447,10 @@ impl VirtualCPU for UhyveCPU {
 					self.gdb_handle_exception(Some(VcpuExit::Debug));
 				}
 				VcpuExit::InternalError => {
-					error!("Internal error");
-					//self.print_registers();
-
-					return Err(Error::UnknownExitReason);
+					panic!("{:?}", VcpuExit::InternalError)
 				}
-				_ => {
-					error!("Unknown exit reason: {:?}", exitreason);
-					//self.print_registers();
-
-					return Err(Error::UnknownExitReason);
+				vcpu_exit => {
+					unimplemented!("{:?}", vcpu_exit)
 				}
 			}
 		}
