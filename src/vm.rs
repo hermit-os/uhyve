@@ -20,10 +20,8 @@ use thiserror::Error;
 
 use crate::consts::*;
 use crate::debug_manager::DebugManager;
-#[cfg(target_os = "linux")]
-pub use crate::linux::uhyve::*;
-#[cfg(target_os = "macos")]
-pub use crate::macos::uhyve::*;
+use crate::os::uhyve::*;
+use crate::os::HypervisorError;
 
 const MHZ_TO_HZ: u64 = 1000000;
 const KHZ_TO_HZ: u64 = 1000;
@@ -213,12 +211,6 @@ struct SysUnlink {
 	name: *const u8,
 	ret: i32,
 }
-
-#[cfg(target_os = "linux")]
-pub type HypervisorError = kvm_ioctls::Error;
-
-#[cfg(target_os = "macos")]
-pub type HypervisorError = xhypervisor::Error;
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
 

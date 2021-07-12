@@ -14,8 +14,12 @@ pub mod debug_manager;
 pub mod gdb_parser;
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(target_os = "linux")]
+pub use linux as os;
 #[cfg(target_os = "macos")]
 pub mod macos;
+#[cfg(target_os = "macos")]
+pub use macos as os;
 pub mod paging;
 #[cfg(target_os = "linux")]
 pub mod shared_queue;
