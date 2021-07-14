@@ -5,6 +5,7 @@ use crate::debug_manager::DebugManager;
 use crate::macos::ioapic::IoApic;
 use crate::paging::*;
 use crate::vm::HypervisorResult;
+use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use lazy_static::lazy_static;
@@ -577,15 +578,7 @@ impl VirtualCPU for UhyveCPU {
 		(entry & ((!0usize) << PAGE_BITS)) | (addr & !((!0usize) << PAGE_BITS))
 	}
 
-	fn run(&mut self) -> HypervisorResult<i32> {
-		//self.print_registers();
-
-		// Pause first CPU before first execution, so we have time to attach debugger
-		if self.id == 0 {
-			self.gdb_handle_exception(false);
-		}
-
-		debug!("Run vCPU {}", self.id);
+	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
 			/*if self.extint_pending == true {
 				let irq_info = self.vcpu.read_vmcs(VMCS_CTRL_VMENTRY_IRQ_INFO)?;
@@ -623,7 +616,7 @@ impl VirtualCPU for UhyveCPU {
 						irq_vec
 					);
 					debug!("Handle breakpoint exception");
-					self.gdb_handle_exception(true);
+					return Ok(VcpuStopReason::Debug);
 				}
 				vmx_exit::VMX_REASON_CPUID => {
 					self.emulate_cpuid(rip)?;
@@ -661,7 +654,7 @@ impl VirtualCPU for UhyveCPU {
 
 					match port {
 						SHUTDOWN_PORT => {
-							return Ok(0);
+							return Ok(VcpuStopReason::Exit(0));
 						}
 						UHYVE_UART_PORT => {
 							let al = (self.vcpu.read_register(&x86Reg::RAX)? & 0xFF) as u8;
@@ -684,7 +677,9 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_EXIT => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&x86Reg::RAX)? & 0xFFFFFFFF;
-							return Ok(self.exit(self.host_address(data_addr as usize)));
+							return Ok(VcpuStopReason::Exit(
+								self.exit(self.host_address(data_addr as usize)),
+							));
 						}
 						UHYVE_PORT_OPEN => {
 							let data_addr: u64 =
@@ -731,6 +726,20 @@ impl VirtualCPU for UhyveCPU {
 				vmx_reason => {
 					unimplemented!("{:?}", vmx_reason)
 				}
+			}
+		}
+	}
+
+	fn run(&mut self) -> HypervisorResult<i32> {
+		// Pause first CPU before first execution, so we have time to attach debugger
+		if self.id == 0 {
+			self.gdb_handle_exception(false);
+		}
+
+		loop {
+			match self.r#continue()? {
+				VcpuStopReason::Debug => self.gdb_handle_exception(true),
+				VcpuStopReason::Exit(code) => break Ok(code),
 			}
 		}
 	}
