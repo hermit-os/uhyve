@@ -3,6 +3,7 @@ status = [
     "Build (ubuntu-latest, nightly)",
     "Cargo tests (macOS-latest, nightly)",
     "Cargo tests (ubuntu-latest, nightly)",
+    "Clippy",
     "Format check (ubuntu-latest, nightly)",
     "KVM Tests",
     "Rusty-Hermit Kernel based integration tests",
