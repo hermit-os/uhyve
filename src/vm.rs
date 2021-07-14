@@ -230,7 +230,7 @@ pub trait VirtualCPU {
 	/// Initialize the cpu to start running the code ad entry_point.
 	fn init(&mut self, entry_point: u64) -> HypervisorResult<()>;
 	/// Start the execution of the CPU. The function will run until it crashes (`Err`) or terminate with an exit code (`Ok`).
-	fn run(&mut self) -> HypervisorResult<Option<i32>>;
+	fn run(&mut self) -> HypervisorResult<i32>;
 	/// Prints the VCPU's registers to stdout.
 	fn print_registers(&self);
 	/// Translates an address from the VM's physical space into the hosts virtual space.
