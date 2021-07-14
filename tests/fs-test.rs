@@ -11,7 +11,7 @@ fn new_file_test() {
 	let testfile = PathBuf::from("foo.txt");
 	if testfile.exists() {
 		println!("Removing existing file {}", testfile.display());
-		remove_file(&testfile).expect(&std::format!("Can't remove {}", testfile.display()));
+		remove_file(&testfile).unwrap_or_else(|_| panic!("Can't remove {}", testfile.display()));
 	}
 	let bin_path = build_hermit_bin("create_file");
 	run_simple_vm(bin_path);
@@ -19,5 +19,5 @@ fn new_file_test() {
 	assert!(testfile.exists());
 	let file_content = read("foo.txt").unwrap();
 	assert_eq!(file_content, "Hello, world!".as_bytes());
-	remove_file(&testfile).expect(&std::format!("Can't remove {}", testfile.display()));
+	remove_file(&testfile).unwrap_or_else(|_| panic!("Can't remove {}", testfile.display()));
 }
