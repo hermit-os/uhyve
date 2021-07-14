@@ -26,6 +26,7 @@ pub struct UhyveCPU {
 	kernel_path: PathBuf,
 	tx: Option<std::sync::mpsc::SyncSender<usize>>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
+	pci_addr: Option<u32>,
 	pub dbg: Option<Arc<Mutex<DebugManager>>>,
 }
 
@@ -46,6 +47,7 @@ impl UhyveCPU {
 			kernel_path,
 			tx,
 			virtio_device,
+			pci_addr: None,
 			dbg,
 		}
 	}
@@ -281,8 +283,6 @@ impl VirtualCPU for UhyveCPU {
 			self.gdb_handle_exception(None);
 		}
 
-		let mut pci_addr: u32 = 0;
-		let mut pci_addr_set: bool = false;
 		loop {
 			let exitreason = self.vcpu.run()?;
 			match exitreason {
@@ -295,14 +295,15 @@ impl VirtualCPU for UhyveCPU {
 				}
 				VcpuExit::IoIn(port, addr) => match port {
 					PCI_CONFIG_DATA_PORT => {
-						if pci_addr & 0x1ff800 == 0 && pci_addr_set {
-							let virtio_device = self.virtio_device.lock().unwrap();
-							virtio_device.handle_read(pci_addr & 0x3ff, addr);
+						if let Some(pci_addr) = self.pci_addr {
+							if pci_addr & 0x1ff800 == 0 {
+								let virtio_device = self.virtio_device.lock().unwrap();
+								virtio_device.handle_read(pci_addr & 0x3ff, addr);
+							} else {
+								unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
+							}
 						} else {
-							#[allow(clippy::cast_ptr_alignment)]
-							unsafe {
-								*(addr.as_ptr() as *mut u32) = 0xffffffff
-							};
+							unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
 						}
 					}
 					PCI_CONFIG_ADDRESS_PORT => {}
@@ -393,14 +394,15 @@ impl VirtualCPU for UhyveCPU {
 						}
 						//TODO:
 						PCI_CONFIG_DATA_PORT => {
-							if pci_addr & 0x1ff800 == 0 && pci_addr_set {
-								let mut virtio_device = self.virtio_device.lock().unwrap();
-								virtio_device.handle_write(pci_addr & 0x3ff, addr);
+							if let Some(pci_addr) = self.pci_addr {
+								if pci_addr & 0x1ff800 == 0 {
+									let mut virtio_device = self.virtio_device.lock().unwrap();
+									virtio_device.handle_write(pci_addr & 0x3ff, addr);
+								}
 							}
 						}
 						PCI_CONFIG_ADDRESS_PORT => {
-							pci_addr = unsafe { *(addr.as_ptr() as *const u32) };
-							pci_addr_set = true;
+							self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
 						}
 						VIRTIO_PCI_STATUS => {
 							let mut virtio_device = self.virtio_device.lock().unwrap();
