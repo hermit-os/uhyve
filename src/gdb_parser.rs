@@ -1720,7 +1720,7 @@ fn test_parse_d_packets() {
 fn test_parse_write_memory() {
 	assert_eq!(
 		write_memory(&b"Mf0,3:ff0102"[..]),
-		Done(&b""[..], (240, 3, vec!(255, 1, 2)))
+		Done(&b""[..], (240, 3, vec![255, 1, 2]))
 	);
 }
 
@@ -1728,23 +1728,23 @@ fn test_parse_write_memory() {
 fn test_parse_write_memory_binary() {
 	assert_eq!(
 		write_memory_binary(&b"Xf0,1: "[..]),
-		Done(&b""[..], (240, 1, vec!(0x20)))
+		Done(&b""[..], (240, 1, vec![0x20]))
 	);
 	assert_eq!(
 		write_memory_binary(&b"X90,10:}\x5d"[..]),
-		Done(&b""[..], (144, 16, vec!(0x7d)))
+		Done(&b""[..], (144, 16, vec![0x7d]))
 	);
 	assert_eq!(
 		write_memory_binary(&b"X5,100:}\x5d}\x03"[..]),
-		Done(&b""[..], (5, 256, vec!(0x7d, 0x23)))
+		Done(&b""[..], (5, 256, vec![0x7d, 0x23]))
 	);
 	assert_eq!(
 		write_memory_binary(&b"Xff,2:}\x04\x9a"[..]),
-		Done(&b""[..], (255, 2, vec!(0x24, 0x9a)))
+		Done(&b""[..], (255, 2, vec![0x24, 0x9a]))
 	);
 	assert_eq!(
 		write_memory_binary(&b"Xff,2:\xce}\x0a\x9a"[..]),
-		Done(&b""[..], (255, 2, vec!(0xce, 0x2a, 0x9a)))
+		Done(&b""[..], (255, 2, vec![0xce, 0x2a, 0x9a]))
 	);
 }
 
@@ -1776,11 +1776,11 @@ fn test_parse_syscalls() {
 	);
 	assert_eq!(
 		query(&b"QCatchSyscalls:1"[..]),
-		Done(&b""[..], Query::CatchSyscalls(Some(vec!())))
+		Done(&b""[..], Query::CatchSyscalls(Some(vec![])))
 	);
 	assert_eq!(
 		query(&b"QCatchSyscalls:1;0;1;ff"[..]),
-		Done(&b""[..], Query::CatchSyscalls(Some(vec!(0, 1, 255))))
+		Done(&b""[..], Query::CatchSyscalls(Some(vec![0, 1, 255])))
 	);
 }
 
@@ -1788,23 +1788,23 @@ fn test_parse_syscalls() {
 fn test_parse_signals() {
 	assert_eq!(
 		query(&b"QPassSignals:"[..]),
-		Done(&b""[..], Query::PassSignals(vec!()))
+		Done(&b""[..], Query::PassSignals(vec![]))
 	);
 	assert_eq!(
 		query(&b"QPassSignals:0"[..]),
-		Done(&b""[..], Query::PassSignals(vec!(0)))
+		Done(&b""[..], Query::PassSignals(vec![0]))
 	);
 	assert_eq!(
 		query(&b"QPassSignals:1;2;ff"[..]),
-		Done(&b""[..], Query::PassSignals(vec!(1, 2, 255)))
+		Done(&b""[..], Query::PassSignals(vec![1, 2, 255]))
 	);
 	assert_eq!(
 		query(&b"QProgramSignals:0"[..]),
-		Done(&b""[..], Query::ProgramSignals(vec!(0)))
+		Done(&b""[..], Query::ProgramSignals(vec![0]))
 	);
 	assert_eq!(
 		query(&b"QProgramSignals:1;2;ff"[..]),
-		Done(&b""[..], Query::ProgramSignals(vec!(1, 2, 255)))
+		Done(&b""[..], Query::ProgramSignals(vec![1, 2, 255]))
 	);
 }
 
@@ -1838,7 +1838,7 @@ fn test_thread_list() {
 fn test_parse_write_register() {
 	assert_eq!(
 		write_register(&b"Pff=1020"[..]),
-		Done(&b""[..], (255, vec!(16, 32)))
+		Done(&b""[..], (255, vec![16, 32]))
 	);
 }
 
@@ -1846,14 +1846,14 @@ fn test_parse_write_register() {
 fn test_parse_write_general_registers() {
 	assert_eq!(
 		write_general_registers(&b"G0001020304"[..]),
-		Done(&b""[..], vec!(0, 1, 2, 3, 4))
+		Done(&b""[..], vec![0, 1, 2, 3, 4])
 	);
 }
 
 #[cfg(test)]
 macro_rules! bytecode {
 	($elem:expr; $n:expr) => (Bytecode { bytecode: vec![$elem; $n] });
-	($($x:expr),*) => (Bytecode { bytecode: vec!($($x),*) })
+	($($x:expr),*) => (Bytecode { bytecode: vec![$($x),*] })
 }
 
 #[test]
@@ -1936,7 +1936,7 @@ fn test_breakpoints() {
 			Command::InsertSoftwareBreakpoint(Breakpoint::new(
 				0x1ff,
 				2,
-				Some(vec!(bytecode!(b'0'))),
+				Some(vec![bytecode!(b'0')]),
 				None
 			))
 		)
@@ -1948,7 +1948,7 @@ fn test_breakpoints() {
 			Command::InsertHardwareBreakpoint(Breakpoint::new(
 				0x1ff,
 				2,
-				Some(vec!(bytecode!(b'0'))),
+				Some(vec![bytecode!(b'0')]),
 				None
 			))
 		)
@@ -1962,7 +1962,7 @@ fn test_breakpoints() {
 				0x1ff,
 				2,
 				None,
-				Some(vec!(bytecode!(b'z')))
+				Some(vec![bytecode!(b'z')])
 			))
 		)
 	);
@@ -1974,7 +1974,7 @@ fn test_breakpoints() {
 				0x1ff,
 				2,
 				None,
-				Some(vec!(bytecode!(b'z')))
+				Some(vec![bytecode!(b'z')])
 			))
 		)
 	);
@@ -1986,8 +1986,8 @@ fn test_breakpoints() {
 			Command::InsertSoftwareBreakpoint(Breakpoint::new(
 				0x1ff,
 				2,
-				Some(vec!(bytecode!(b'0'))),
-				Some(vec!(bytecode!(b'a')))
+				Some(vec![bytecode!(b'0')]),
+				Some(vec![bytecode!(b'a')])
 			))
 		)
 	);
@@ -1998,8 +1998,8 @@ fn test_breakpoints() {
 			Command::InsertHardwareBreakpoint(Breakpoint::new(
 				0x1ff,
 				2,
-				Some(vec!(bytecode!(b'0'))),
-				Some(vec!(bytecode!(b'a')))
+				Some(vec![bytecode!(b'0')]),
+				Some(vec![bytecode!(b'a')])
 			))
 		)
 	);
@@ -2009,35 +2009,35 @@ fn test_breakpoints() {
 fn test_cond_or_command_list() {
 	assert_eq!(
 		parse_condition_list(&b";X1,a"[..]),
-		Done(&b""[..], vec!(bytecode!(b'a')))
+		Done(&b""[..], vec![bytecode!(b'a')])
 	);
 	assert_eq!(
 		parse_condition_list(&b";X2,ab"[..]),
-		Done(&b""[..], vec!(bytecode!(b'a', b'b')))
+		Done(&b""[..], vec![bytecode!(b'a', b'b')])
 	);
 	assert_eq!(
 		parse_condition_list(&b";X1,zX1,y"[..]),
-		Done(&b""[..], vec!(bytecode!(b'z'), bytecode!(b'y')))
+		Done(&b""[..], vec![bytecode!(b'z'), bytecode!(b'y')])
 	);
 	assert_eq!(
 		parse_condition_list(&b";X1,zX10,yyyyyyyyyyyyyyyy"[..]),
-		Done(&b""[..], vec!(bytecode!(b'z'), bytecode![b'y'; 16]))
+		Done(&b""[..], vec![bytecode!(b'z'), bytecode![b'y'; 16]])
 	);
 
 	assert_eq!(
 		parse_command_list(&b";cmdsX1,a"[..]),
-		Done(&b""[..], vec!(bytecode!(b'a')))
+		Done(&b""[..], vec![bytecode!(b'a')])
 	);
 	assert_eq!(
 		parse_command_list(&b";cmdsX2,ab"[..]),
-		Done(&b""[..], vec!(bytecode!(b'a', b'b')))
+		Done(&b""[..], vec![bytecode!(b'a', b'b')])
 	);
 	assert_eq!(
 		parse_command_list(&b";cmdsX1,zX1,y"[..]),
-		Done(&b""[..], vec!(bytecode!(b'z'), bytecode!(b'y')))
+		Done(&b""[..], vec![bytecode!(b'z'), bytecode!(b'y')])
 	);
 	assert_eq!(
 		parse_command_list(&b";cmdsX1,zX10,yyyyyyyyyyyyyyyy"[..]),
-		Done(&b""[..], vec!(bytecode!(b'z'), bytecode![b'y'; 16]))
+		Done(&b""[..], vec![bytecode!(b'z'), bytecode![b'y'; 16]])
 	);
 }
