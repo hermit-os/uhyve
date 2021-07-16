@@ -717,8 +717,8 @@ fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
 	debug!("Trying to detect CPU frequency by tsc info");
 
 	let has_invariant_tsc = cpuid
-		.get_extended_function_info()
-		.map_or(false, |efinfo| efinfo.has_invariant_tsc());
+		.get_advanced_power_mgmt_info()
+		.map_or(false, |apm_info| apm_info.has_invariant_tsc());
 	if !has_invariant_tsc {
 		warn!("TSC frequency varies with speed-stepping")
 	}
@@ -804,8 +804,8 @@ mod tests {
 			.map_or(false, |finfo| finfo.has_tsc());
 
 		let has_invariant_tsc = cpuid
-			.get_extended_function_info()
-			.map_or(false, |efinfo| efinfo.has_invariant_tsc());
+			.get_advanced_power_mgmt_info()
+			.map_or(false, |apm_info| apm_info.has_invariant_tsc());
 
 		let tsc_frequency_hz = cpuid.get_tsc_info().map(|tinfo| {
 			if tinfo.tsc_frequency().is_some() {
