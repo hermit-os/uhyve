@@ -45,16 +45,12 @@ core_affinity = "0.5"
 either = "1.6"
 env_logger = "0.9"
 envmnt = "0.9"
-gdb-protocol = "0.1"
 goblin = { version = "0.4", default-features = false, features = ["elf64", "elf32", "endian_fd", "std"] }
 lazy_static = "1.4"
 libc = "0.2"
 log = "0.4"
-nom = "3.2"
 raw-cpuid = "10.2"
 rustc-serialize = "0.3"
-strum = "0.21"
-strum_macros = "0.21"
 thiserror = "1.0"
 
 rftrace = { version = "0.1", optional = true }

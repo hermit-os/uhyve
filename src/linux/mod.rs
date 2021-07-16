@@ -1,4 +1,3 @@
-pub mod gdb;
 pub mod uhyve;
 pub mod vcpu;
 pub mod virtio;
