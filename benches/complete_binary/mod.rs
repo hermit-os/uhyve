@@ -9,7 +9,6 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 // based on https://stackoverflow.com/questions/35045996/check-if-a-command-is-in-path-executable-as-process#35046243
-// will fail on windows
 fn is_program_in_path(program: &str) -> bool {
 	if let Ok(path) = env::var("PATH") {
 		for p in path.split(':') {
