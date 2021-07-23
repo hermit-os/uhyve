@@ -789,9 +789,6 @@ fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
 
 #[cfg(test)]
 mod tests {
-	#[cfg(target_os = "linux")]
-	use crate::linux::tests::has_vm_support;
-
 	use super::*;
 
 	// test is derived from
@@ -884,10 +881,6 @@ mod tests {
 	#[cfg(target_os = "linux")]
 	#[test]
 	fn test_vm_load_min_size_1024() {
-		if !has_vm_support() {
-			return;
-		}
-
 		let mut path = PathBuf::new();
 		path.push(env!("CARGO_MANIFEST_DIR"));
 		path.push("/benches_data/hello_world");
@@ -912,10 +905,6 @@ mod tests {
 	#[cfg(target_os = "linux")]
 	#[test]
 	fn test_vm_load_min_size_102400() {
-		if !has_vm_support() {
-			return;
-		}
-
 		let mut path = PathBuf::new();
 		path.push(env!("CARGO_MANIFEST_DIR"));
 		path.push("/benches_data/hello_world");
