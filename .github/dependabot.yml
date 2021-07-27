@@ -10,11 +10,11 @@ updates:
     directory: "/"
     # Check for updates every day (weekdays)
     schedule:
-      interval: "daily"
+      interval: "weekly"
   # Enable version updates for Github Actions
   - package-ecosystem: "github-actions"
     # Set to `/` to check the Actions used in `.github/workflows`
     directory: "/"
     # Check for updates every day (weekdays)
     schedule:
-      interval: "daily"
+      interval: "weekly"
