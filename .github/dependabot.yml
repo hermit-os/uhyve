@@ -8,7 +8,7 @@ updates:
   - package-ecosystem: "cargo"
     # Look `Cargo.toml` in the repository root
     directory: "/"
-    # Check for updates every day (weekdays)
+    # Check for updates every week
     schedule:
       interval: "weekly"
   # Enable version updates for Github Actions
