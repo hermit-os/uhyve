@@ -44,7 +44,7 @@ jobs:
       run: cargo --version
     - name: Test
       run: |
-         cargo test --lib -- --nocapture
+         cargo test --lib -- --nocapture --skip test_vm
          cargo test --doc -- --nocapture
 
   build:
