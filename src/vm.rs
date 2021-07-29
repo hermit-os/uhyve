@@ -19,8 +19,6 @@ use std::{fs, io};
 use thiserror::Error;
 
 use crate::consts::*;
-use crate::debug_manager::DebugManager;
-use crate::os::uhyve::*;
 use crate::os::HypervisorError;
 
 const MHZ_TO_HZ: u64 = 1000000;
@@ -893,7 +891,7 @@ mod tests {
 		let mut path = PathBuf::new();
 		path.push(env!("CARGO_MANIFEST_DIR"));
 		path.push("/benches_data/hello_world");
-		let vm = create_vm(
+		let vm = crate::Uhyve::new(
 			path,
 			&Parameter {
 				mem_size: 1024,
@@ -917,7 +915,7 @@ mod tests {
 		let mut path = PathBuf::new();
 		path.push(env!("CARGO_MANIFEST_DIR"));
 		path.push("/benches_data/hello_world");
-		let mut vm = create_vm(
+		let mut vm = crate::Uhyve::new(
 			path,
 			&Parameter {
 				mem_size: 102400,
@@ -939,13 +937,4 @@ mod tests {
 			assert!(res.is_err());
 		}
 	}
-}
-
-pub fn create_vm(path: PathBuf, specs: &super::vm::Parameter<'_>) -> HypervisorResult<Uhyve> {
-	// If we are given a port, create new DebugManager.
-	let gdb = specs.gdbport.map(|port| DebugManager::new(port).unwrap());
-
-	let vm = Uhyve::new(path, specs, gdb)?;
-
-	Ok(vm)
 }

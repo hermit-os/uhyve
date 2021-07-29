@@ -26,11 +26,7 @@ pub struct Uhyve {
 }
 
 impl Uhyve {
-	pub fn new(
-		kernel_path: PathBuf,
-		specs: &Parameter<'_>,
-		dbg: Option<DebugManager>,
-	) -> HypervisorResult<Uhyve> {
+	pub fn new(kernel_path: PathBuf, specs: &Parameter<'_>) -> HypervisorResult<Uhyve> {
 		let mem = unsafe {
 			libc::mmap(
 				std::ptr::null_mut(),
@@ -58,6 +54,11 @@ impl Uhyve {
 			)?;
 		}
 
+		let dbg = specs
+			.gdbport
+			.map(|port| DebugManager::new(port).unwrap())
+			.map(|g| Arc::new(Mutex::new(g)));
+
 		let hyve = Uhyve {
 			entry_point: 0,
 			mem_size: specs.mem_size,
@@ -67,7 +68,7 @@ impl Uhyve {
 			boot_info: ptr::null(),
 			ioapic: Arc::new(Mutex::new(IoApic::new())),
 			verbose: specs.verbose,
-			dbg: dbg.map(|g| Arc::new(Mutex::new(g))),
+			dbg,
 		};
 
 		hyve.init_guest_mem();

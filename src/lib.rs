@@ -27,6 +27,8 @@ pub mod utils;
 pub mod vm;
 
 pub use arch::*;
+pub use os::uhyve::Uhyve;
+
 use core_affinity::CoreId;
 use std::hint;
 use std::path::PathBuf;
@@ -44,7 +46,7 @@ pub fn uhyve_run(
 ) -> i32 {
 	// create and initialize the VM
 	let vm = Arc::new({
-		let mut vm = vm::create_vm(path, vm_params)
+		let mut vm = Uhyve::new(path, vm_params)
 			.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?");
 		unsafe {
 			vm.load_kernel().expect("Unabled to load the kernel");
