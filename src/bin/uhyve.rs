@@ -14,9 +14,9 @@ use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use uhyvelib::uhyve_run;
 use uhyvelib::utils;
 use uhyvelib::vm;
+use uhyvelib::Uhyve;
 
 use byte_unit::Byte;
 use clap::{App, Arg};
@@ -263,6 +263,9 @@ fn main() {
 		nic,
 		gdbport,
 	};
-	let ret_val = uhyve_run(path, &params, cpu_affinity);
-	std::process::exit(ret_val);
+
+	let code = Uhyve::new(path, &params)
+		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?")
+		.run(cpu_affinity);
+	std::process::exit(code);
 }
