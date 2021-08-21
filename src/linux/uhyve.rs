@@ -137,11 +137,7 @@ pub struct Uhyve {
 }
 
 impl Uhyve {
-	pub fn new(
-		kernel_path: PathBuf,
-		specs: &Parameter<'_>,
-		dbg: Option<DebugManager>,
-	) -> HypervisorResult<Uhyve> {
+	pub fn new(kernel_path: PathBuf, specs: &Parameter<'_>) -> HypervisorResult<Uhyve> {
 		// parse string to get IP address
 		let ip_addr = specs
 			.ip
@@ -258,6 +254,11 @@ impl Uhyve {
 			_ => None,
 		};
 
+		let dbg = specs
+			.gdbport
+			.map(|port| DebugManager::new(port).unwrap())
+			.map(|g| Arc::new(Mutex::new(g)));
+
 		let hyve = Uhyve {
 			vm,
 			entry_point: 0,
@@ -271,7 +272,7 @@ impl Uhyve {
 			mask,
 			uhyve_device,
 			virtio_device,
-			dbg: dbg.map(|g| Arc::new(Mutex::new(g))),
+			dbg,
 		};
 
 		hyve.init_guest_mem();

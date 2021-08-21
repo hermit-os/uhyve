@@ -1,16 +1,13 @@
-extern crate criterion;
-
-use criterion::{criterion_group, Criterion};
 use std::path::PathBuf;
 
-extern crate uhyvelib;
-use crate::vm::uhyvelib::vm::Vm;
+use criterion::{criterion_group, Criterion};
+use uhyvelib::{vm::Vm, Uhyve};
 
 pub fn load_vm_hello_world(c: &mut Criterion) {
 	let mut path = PathBuf::new();
 	path.push(env!("CARGO_MANIFEST_DIR"));
 	path.push("benches_data/hello_world");
-	let mut vm = uhyvelib::vm::create_vm(
+	let mut vm = Uhyve::new(
 		path,
 		&uhyvelib::vm::Parameter {
 			mem_size: 1024 * 100000,
