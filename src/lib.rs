@@ -11,12 +11,15 @@ extern crate log;
 pub mod arch;
 pub mod consts;
 pub mod debug_manager;
-pub mod error;
 pub mod gdb_parser;
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(target_os = "linux")]
+pub use linux as os;
 #[cfg(target_os = "macos")]
 pub mod macos;
+#[cfg(target_os = "macos")]
+pub use macos as os;
 pub mod paging;
 #[cfg(target_os = "linux")]
 pub mod shared_queue;
@@ -86,7 +89,7 @@ pub fn uhyve_run(
 			let result = cpu.run();
 			match result {
 				Err(x) => {
-					error!("CPU {} crashes! {}", tid, x);
+					error!("CPU {} crashes! {:?}", tid, x);
 				}
 				Ok(exit_code) => {
 					if let Some(code) = exit_code {

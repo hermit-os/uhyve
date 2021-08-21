@@ -3,11 +3,11 @@
 
 use crate::consts::*;
 use crate::debug_manager::DebugManager;
-use crate::error::*;
 use crate::linux::vcpu::*;
 use crate::linux::virtio::*;
 use crate::linux::{MemoryRegion, KVM};
 use crate::shared_queue::*;
+use crate::vm::HypervisorResult;
 use crate::vm::{BootInfo, Parameter, VirtualCPU, Vm};
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
@@ -141,7 +141,7 @@ impl Uhyve {
 		kernel_path: PathBuf,
 		specs: &Parameter<'_>,
 		dbg: Option<DebugManager>,
-	) -> Result<Uhyve> {
+	) -> HypervisorResult<Uhyve> {
 		// parse string to get IP address
 		let ip_addr = specs
 			.ip
@@ -160,7 +160,7 @@ impl Uhyve {
 			.as_ref()
 			.map(|addr_str| Ipv4Addr::from_str(addr_str).expect("Unable to parse network parse"));
 
-		let vm = KVM.create_vm().or_else(to_error)?;
+		let vm = KVM.create_vm()?;
 
 		let mem = MmapMemory::new(0, specs.mem_size, 0, specs.hugepage, specs.mergeable);
 
@@ -181,7 +181,7 @@ impl Uhyve {
 			userspace_addr: mem.host_address() as u64,
 		};
 
-		unsafe { vm.set_user_memory_region(kvm_mem) }.or_else(to_error)?;
+		unsafe { vm.set_user_memory_region(kvm_mem) }?;
 
 		if specs.mem_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
 			let kvm_mem = kvm_userspace_memory_region {
@@ -194,13 +194,13 @@ impl Uhyve {
 					as u64,
 			};
 
-			unsafe { vm.set_user_memory_region(kvm_mem) }.or_else(to_error)?;
+			unsafe { vm.set_user_memory_region(kvm_mem) }?;
 		}
 
 		debug!("Initialize interrupt controller");
 
 		// create basic interrupt controller
-		vm.create_irq_chip().or_else(to_error)?;
+		vm.create_irq_chip()?;
 
 		// enable x2APIC support
 		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
@@ -244,7 +244,7 @@ impl Uhyve {
 			.expect("Unable to disable exists due pause instructions");
 
 		let evtfd = EventFd::new(0).unwrap();
-		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET).or_else(to_error)?;
+		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET)?;
 		// create TUN/TAP device
 		let uhyve_device = match &specs.nic {
 			Some(nic) => {
@@ -317,16 +317,14 @@ impl Vm for Uhyve {
 		self.path.clone()
 	}
 
-	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>> {
+	fn create_cpu(&self, id: u32) -> HypervisorResult<Box<dyn VirtualCPU>> {
 		let vm_start = self.mem.host_address() as usize;
 		let tx = self.uhyve_device.as_ref().map(|dev| dev.tx.clone());
 
 		Ok(Box::new(UhyveCPU::new(
 			id,
 			self.path.clone(),
-			self.vm
-				.create_vcpu(id.try_into().unwrap())
-				.or_else(to_error)?,
+			self.vm.create_vcpu(id.try_into().unwrap())?,
 			vm_start,
 			tx,
 			self.virtio_device.clone(),

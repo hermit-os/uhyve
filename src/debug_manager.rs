@@ -26,11 +26,7 @@ use std::net::TcpStream;
 ///
 /// - To be Host-OS/Arch flexible, both Handler and State are defined in eg `linux/gdb.rs`
 ///
-
-#[cfg(target_os = "linux")]
-use crate::linux::gdb;
-#[cfg(target_os = "macos")]
-use crate::macos::gdb;
+use crate::os::gdb;
 
 use log::{debug, info};
 
@@ -61,7 +57,7 @@ impl DebugManager {
 		&self,
 		handler: &mut H,
 		signal: Option<StopReason>,
-	) -> std::result::Result<VCont, gdb_protocol::Error>
+	) -> Result<VCont, gdb_protocol::Error>
 	where
 		H: Handler,
 	{

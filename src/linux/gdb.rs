@@ -7,10 +7,9 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
-use std::slice;
+use std::{io, slice};
 
 use crate::arch::x86;
-use crate::error::{self, Error::OsError};
 use crate::gdb_parser::{
 	get_max_subslice, Breakpoint, Error, FileData, Handler, Id, MemoryRegion, ProcessInfo,
 	ProcessType, StopReason, ThreadId, VCont, VContFeature, Watchpoint,
@@ -69,13 +68,11 @@ impl UhyveCPU {
 			match vcont {
 				VCont::Continue | VCont::ContinueWithSignal(_) => {
 					info!("Continuing execution..");
-					self.kvm_change_guestdbg(false, hwbr.as_ref())
-						.expect("Could not change KVM debugging state"); // TODO: optimize this, don't call too often?
+					self.kvm_change_guestdbg(false, hwbr.as_ref()); // TODO: optimize this, don't call too often?
 				}
 				VCont::Step | VCont::StepWithSignal(_) => {
 					info!("Starting Single Stepping..");
-					self.kvm_change_guestdbg(true, hwbr.as_ref())
-						.expect("Could not change KVM debugging state"); // TODO: optimize this, don't call too often?
+					self.kvm_change_guestdbg(true, hwbr.as_ref()); // TODO: optimize this, don't call too often?
 				}
 				_ => error!("Unknown Handler exit reason!"),
 			}
@@ -104,7 +101,7 @@ impl UhyveCPU {
 		&mut self,
 		single_step: bool,
 		hwbr: Option<&x86::HWBreakpoints>, /*&HashMap<usize, Breakpoint>*/
-	) -> Result<(), error::Error> {
+	) {
 		debug!("KVM: Enable guest debug. SS:{}", single_step);
 		let mut dbg = kvm_guest_debug {
 			control: KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_SW_BP, // KVM_GUESTDBG_USE_HW_BP
@@ -134,10 +131,11 @@ impl UhyveCPU {
 			)
 		};
 		if ret < 0 {
-			return Err(OsError(unsafe { *libc::__errno_location() }));
+			panic!(
+				"Could not change KVM debugging state: {:?}",
+				io::Error::last_os_error()
+			)
 		}
-
-		Ok(())
 	}
 }
 

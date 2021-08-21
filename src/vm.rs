@@ -6,7 +6,6 @@ use goblin::elf64::header::{EM_X86_64, ET_DYN};
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
 use goblin::elf64::reloc::*;
 use log::{debug, error, warn};
-use nix::errno::errno;
 use raw_cpuid::CpuId;
 use std::convert::TryInto;
 use std::io::Write;
@@ -17,14 +16,12 @@ use std::ptr::write;
 use std::time::{Duration, Instant, SystemTime};
 use std::{fmt, mem, slice};
 use std::{fs, io};
+use thiserror::Error;
 
 use crate::consts::*;
 use crate::debug_manager::DebugManager;
-use crate::error::*;
-#[cfg(target_os = "linux")]
-pub use crate::linux::uhyve::*;
-#[cfg(target_os = "macos")]
-pub use crate::macos::uhyve::*;
+use crate::os::uhyve::*;
+use crate::os::HypervisorError;
 
 const MHZ_TO_HZ: u64 = 1000000;
 const KHZ_TO_HZ: u64 = 1000;
@@ -215,11 +212,25 @@ struct SysUnlink {
 	ret: i32,
 }
 
+pub type HypervisorResult<T> = Result<T, HypervisorError>;
+
+#[derive(Error, Debug)]
+pub enum LoadKernelError {
+	#[error(transparent)]
+	Io(#[from] io::Error),
+	#[error(transparent)]
+	Goblin(#[from] goblin::error::Error),
+	#[error("guest memory size is not large enough")]
+	InsufficientMemory,
+}
+
+pub type LoadKernelResult<T> = Result<T, LoadKernelError>;
+
 pub trait VirtualCPU {
 	/// Initialize the cpu to start running the code ad entry_point.
-	fn init(&mut self, entry_point: u64) -> Result<()>;
+	fn init(&mut self, entry_point: u64) -> HypervisorResult<()>;
 	/// Start the execution of the CPU. The function will run until it crashes (`Err`) or terminate with an exit code (`Ok`).
-	fn run(&mut self) -> Result<Option<i32>>;
+	fn run(&mut self) -> HypervisorResult<Option<i32>>;
 	/// Prints the VCPU's registers to stdout.
 	fn print_registers(&self);
 	/// Translates an address from the VM's physical space into the hosts virtual space.
@@ -229,7 +240,7 @@ pub trait VirtualCPU {
 	/// Returns the (host) path of the kernel binary.
 	fn kernel_path(&self) -> PathBuf;
 
-	fn cmdsize(&self, args_ptr: usize) -> Result<()> {
+	fn cmdsize(&self, args_ptr: usize) {
 		let syssize = unsafe { &mut *(args_ptr as *mut SysCmdsize) };
 		syssize.argc = 0;
 		syssize.envc = 0;
@@ -271,12 +282,10 @@ pub trait VirtualCPU {
 		if counter >= MAX_ENVC.try_into().unwrap() {
 			warn!("Environment is too large!");
 		}
-
-		Ok(())
 	}
 
 	/// Copies the arguments end environment of the application into the VM's memory.
-	fn cmdval(&self, args_ptr: usize) -> Result<()> {
+	fn cmdval(&self, args_ptr: usize) {
 		let syscmdval = unsafe { &*(args_ptr as *const SysCmdval) };
 
 		let mut counter: i32 = 0;
@@ -344,19 +353,15 @@ pub trait VirtualCPU {
 				counter += 1;
 			}
 		}
-
-		Ok(())
 	}
 
 	/// unlink delets a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
 	/// TODO: UNSAFE AS *%@#. It has to be checked that the VM is allowed to unlink that file!
-	fn unlink(&self, args_ptr: usize) -> Result<()> {
+	fn unlink(&self, args_ptr: usize) {
 		unsafe {
 			let sysunlink = &mut *(args_ptr as *mut SysUnlink);
 			sysunlink.ret = libc::unlink(self.host_address(sysunlink.name as usize) as *const i8);
 		}
-
-		Ok(())
 	}
 
 	/// Reads the exit code from an VM and returns it
@@ -366,7 +371,7 @@ pub trait VirtualCPU {
 	}
 
 	/// Handles an open syscall by opening a file on the host.
-	fn open(&self, args_ptr: usize) -> Result<()> {
+	fn open(&self, args_ptr: usize) {
 		unsafe {
 			let sysopen = &mut *(args_ptr as *mut SysOpen);
 			sysopen.ret = libc::open(
@@ -375,22 +380,18 @@ pub trait VirtualCPU {
 				sysopen.mode,
 			);
 		}
-
-		Ok(())
 	}
 
 	/// Handles an close syscall by closing the file on the host.
-	fn close(&self, args_ptr: usize) -> Result<()> {
+	fn close(&self, args_ptr: usize) {
 		unsafe {
 			let sysclose = &mut *(args_ptr as *mut SysClose);
 			sysclose.ret = libc::close(sysclose.fd);
 		}
-
-		Ok(())
 	}
 
 	/// Handles an read syscall on the host.
-	fn read(&self, args_ptr: usize) -> Result<()> {
+	fn read(&self, args_ptr: usize) {
 		unsafe {
 			let sysread = &mut *(args_ptr as *mut SysRead);
 			let buffer = self.virt_to_phys(sysread.buf as usize);
@@ -406,12 +407,10 @@ pub trait VirtualCPU {
 				sysread.ret = -1;
 			}
 		}
-
-		Ok(())
 	}
 
 	/// Handles an write syscall on the host.
-	fn write(&self, args_ptr: usize) -> Result<()> {
+	fn write(&self, args_ptr: usize) -> io::Result<()> {
 		let syswrite = unsafe { &*(args_ptr as *const SysWrite) };
 		let mut bytes_written: usize = 0;
 		let buffer = self.virt_to_phys(syswrite.buf as usize);
@@ -426,7 +425,7 @@ pub trait VirtualCPU {
 				if step >= 0 {
 					bytes_written += step as usize;
 				} else {
-					return Err(Error::OsError(errno()));
+					return Err(io::Error::last_os_error());
 				}
 			}
 		}
@@ -435,14 +434,12 @@ pub trait VirtualCPU {
 	}
 
 	/// Handles an write syscall on the host.
-	fn lseek(&self, args_ptr: usize) -> Result<()> {
+	fn lseek(&self, args_ptr: usize) {
 		unsafe {
 			let syslseek = &mut *(args_ptr as *mut SysLseek);
 			syslseek.offset =
 				libc::lseek(syslseek.fd, syslseek.offset as i64, syslseek.whence) as isize;
 		}
-
-		Ok(())
 	}
 
 	/// Handles an UART syscall by writing to stdout.
@@ -469,7 +466,7 @@ pub trait Vm {
 	fn set_entry_point(&mut self, entry: u64);
 	fn get_entry_point(&self) -> u64;
 	fn kernel_path(&self) -> PathBuf;
-	fn create_cpu(&self, id: u32) -> Result<Box<dyn VirtualCPU>>;
+	fn create_cpu(&self, id: u32) -> HypervisorResult<Box<dyn VirtualCPU>>;
 	fn set_boot_info(&mut self, header: *const BootInfo);
 	fn cpu_online(&self) -> u32;
 	fn get_ip(&self) -> Option<Ipv4Addr>;
@@ -528,28 +525,25 @@ pub trait Vm {
 		}
 	}
 
-	unsafe fn load_kernel(&mut self) -> Result<()> {
+	unsafe fn load_kernel(&mut self) -> LoadKernelResult<()> {
 		debug!("Load kernel from {}", self.kernel_path().display());
 
-		let buffer =
-			fs::read(self.kernel_path()).map_err(|_| Error::InvalidFile(self.kernel_path()))?;
-		let elf = elf::Elf::parse(&buffer).map_err(|_| Error::InvalidFile(self.kernel_path()))?;
+		let buffer = fs::read(self.kernel_path())?;
+		let elf = elf::Elf::parse(&buffer)?;
 
 		if !elf.libraries.is_empty() {
 			warn!(
 				"Error: file depends on following libraries: {:?}",
 				elf.libraries
 			);
-			return Err(Error::InvalidFile(self.kernel_path()));
+			return Err(LoadKernelError::Io(io::ErrorKind::InvalidData.into()));
 		}
 
 		let is_dyn = elf.header.e_type == ET_DYN;
-		if is_dyn {
-			debug!("ELF file is a shared object file");
-		}
+		debug!("ELF file is a shared object file: {}", is_dyn);
 
 		if elf.header.e_machine != EM_X86_64 {
-			return Err(Error::InvalidFile(self.kernel_path()));
+			return Err(LoadKernelError::Io(io::ErrorKind::InvalidData.into()));
 		}
 
 		// acquire the slices of the user memory
@@ -655,8 +649,7 @@ pub trait Vm {
 					);
 
 					if region_start + program_header.p_memsz as usize > vm_mem_length {
-						error!("Guest memory size isn't large enough");
-						return Err(Error::NotEnoughMemory);
+						return Err(LoadKernelError::InsufficientMemory);
 					}
 
 					vm_slice[region_start..region_end]
@@ -713,7 +706,7 @@ pub trait Vm {
 	}
 }
 
-fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
+fn detect_freq_from_cpuid(cpuid: &CpuId) -> Result<u32, ()> {
 	debug!("Trying to detect CPU frequency by tsc info");
 
 	let has_invariant_tsc = cpuid
@@ -753,7 +746,7 @@ fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
 	}
 }
 
-fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<u32, ()> {
+fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> Result<u32, ()> {
 	debug!("Trying to detect CPU frequency by hypervisor info");
 	let hypervisor_info = cpuid.get_hypervisor_info().ok_or(())?;
 	debug!(
@@ -769,7 +762,7 @@ fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<
 	}
 }
 
-fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
+fn get_cpu_frequency_from_os() -> Result<u32, ()> {
 	// Determine TSC frequency by measuring it (loop for a second, record ticks)
 	let duration = Duration::from_millis(10);
 	let now = Instant::now();
@@ -932,7 +925,7 @@ mod tests {
 	}
 }
 
-pub fn create_vm(path: PathBuf, specs: &super::vm::Parameter<'_>) -> Result<Uhyve> {
+pub fn create_vm(path: PathBuf, specs: &super::vm::Parameter<'_>) -> HypervisorResult<Uhyve> {
 	// If we are given a port, create new DebugManager.
 	let gdb = specs.gdbport.map(|port| DebugManager::new(port).unwrap());
 

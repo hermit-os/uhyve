@@ -1,6 +1,3 @@
-use crate::error::*;
-use log::debug;
-
 /// Number of redirection table entries
 const REDIR_ENTRIES: usize = 24;
 /// Redirection table base
@@ -39,31 +36,19 @@ impl IoApic {
 		ioapic
 	}
 
-	pub fn write(&mut self, offset: u64, value: u64) -> Result<()> {
+	pub fn write(&mut self, offset: u64, value: u64) {
 		match offset {
-			0 => {
-				self.selector = value as usize;
-				Ok(())
-			}
-			0x10 => {
-				self.rtbl[self.selector].reg = value as u32;
-				Ok(())
-			}
-			_ => {
-				debug!("Invalid offset {}", offset);
-				Err(Error::InternalError)
-			}
+			0x00 => self.selector = value as usize,
+			0x10 => self.rtbl[self.selector].reg = value as u32,
+			offset => panic!("Invalid offset {}", offset),
 		}
 	}
 
-	pub fn read(&mut self, offset: u64) -> Result<u64> {
+	pub fn read(&mut self, offset: u64) -> u64 {
 		match offset {
-			0 => Ok(self.selector as u64),
-			0x10 => Ok(self.rtbl[self.selector].reg as u64),
-			_ => {
-				debug!("Invalid offset {}", offset);
-				Err(Error::InternalError)
-			}
+			0x00 => self.selector as u64,
+			0x10 => self.rtbl[self.selector].reg as u64,
+			offset => panic!("Invalid offset {}", offset),
 		}
 	}
 }
