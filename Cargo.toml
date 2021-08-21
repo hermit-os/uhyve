@@ -36,9 +36,12 @@ instrument = ["rftrace", "rftrace-frontend"]
 [dependencies]
 bitflags = "1.2"
 byteorder = "1.4"
+byte-unit = "4.0"
 clap = "2.33"
 core_affinity = "0.5"
+either = "1.6"
 env_logger = "0.9"
+envmnt = "0.9"
 gdb-protocol = "0.1"
 goblin = { version = "0.4", default-features = false, features = ["elf64", "elf32", "endian_fd", "std"] }
 lazy_static = "1.4"
