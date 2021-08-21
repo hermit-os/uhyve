@@ -226,17 +226,33 @@ pub enum LoadKernelError {
 
 pub type LoadKernelResult<T> = Result<T, LoadKernelError>;
 
+/// Reasons for vCPU exits.
+pub enum VcpuStopReason {
+	/// The vCPU stopped for debugging.
+	Debug,
+	/// The vCPU exited with the specified exit code.
+	Exit(i32),
+}
+
 pub trait VirtualCPU {
 	/// Initialize the cpu to start running the code ad entry_point.
 	fn init(&mut self, entry_point: u64) -> HypervisorResult<()>;
+
+	/// Continues execution.
+	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason>;
+
 	/// Start the execution of the CPU. The function will run until it crashes (`Err`) or terminate with an exit code (`Ok`).
 	fn run(&mut self) -> HypervisorResult<i32>;
+
 	/// Prints the VCPU's registers to stdout.
 	fn print_registers(&self);
+
 	/// Translates an address from the VM's physical space into the hosts virtual space.
 	fn host_address(&self, addr: usize) -> usize;
+
 	/// Looks up the guests pagetable and translates a guest's virtual address to a guest's physical address.
 	fn virt_to_phys(&self, addr: usize) -> usize;
+
 	/// Returns the (host) path of the kernel binary.
 	fn kernel_path(&self) -> PathBuf;
 

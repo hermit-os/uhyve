@@ -4,6 +4,7 @@ use crate::linux::virtio::*;
 use crate::linux::KVM;
 use crate::paging::*;
 use crate::vm::HypervisorResult;
+use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
@@ -26,6 +27,7 @@ pub struct UhyveCPU {
 	kernel_path: PathBuf,
 	tx: Option<std::sync::mpsc::SyncSender<usize>>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
+	pci_addr: Option<u32>,
 	pub dbg: Option<Arc<Mutex<DebugManager>>>,
 }
 
@@ -46,6 +48,7 @@ impl UhyveCPU {
 			kernel_path,
 			tx,
 			virtio_device,
+			pci_addr: None,
 			dbg,
 		}
 	}
@@ -273,16 +276,7 @@ impl VirtualCPU for UhyveCPU {
 		(entry & ((!0usize) << PAGE_BITS)) | (addr & !((!0usize) << PAGE_BITS))
 	}
 
-	fn run(&mut self) -> HypervisorResult<i32> {
-		//self.print_registers();
-
-		// Pause first CPU before first execution, so we have time to attach debugger
-		if self.id == 0 {
-			self.gdb_handle_exception(None);
-		}
-
-		let mut pci_addr: u32 = 0;
-		let mut pci_addr_set: bool = false;
+	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
 			let exitreason = self.vcpu.run()?;
 			match exitreason {
@@ -291,18 +285,19 @@ impl VirtualCPU for UhyveCPU {
 					debug!("{:?}", VcpuExit::Hlt);
 				}
 				VcpuExit::Shutdown => {
-					return Ok(0);
+					return Ok(VcpuStopReason::Exit(0));
 				}
 				VcpuExit::IoIn(port, addr) => match port {
 					PCI_CONFIG_DATA_PORT => {
-						if pci_addr & 0x1ff800 == 0 && pci_addr_set {
-							let virtio_device = self.virtio_device.lock().unwrap();
-							virtio_device.handle_read(pci_addr & 0x3ff, addr);
+						if let Some(pci_addr) = self.pci_addr {
+							if pci_addr & 0x1ff800 == 0 {
+								let virtio_device = self.virtio_device.lock().unwrap();
+								virtio_device.handle_read(pci_addr & 0x3ff, addr);
+							} else {
+								unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
+							}
 						} else {
-							#[allow(clippy::cast_ptr_alignment)]
-							unsafe {
-								*(addr.as_ptr() as *mut u32) = 0xffffffff
-							};
+							unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
 						}
 					}
 					PCI_CONFIG_ADDRESS_PORT => {}
@@ -359,7 +354,9 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_EXIT => {
 							let data_addr: usize =
 								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							return Ok(self.exit(self.host_address(data_addr)));
+							return Ok(VcpuStopReason::Exit(
+								self.exit(self.host_address(data_addr)),
+							));
 						}
 						UHYVE_PORT_OPEN => {
 							let data_addr: usize =
@@ -393,14 +390,15 @@ impl VirtualCPU for UhyveCPU {
 						}
 						//TODO:
 						PCI_CONFIG_DATA_PORT => {
-							if pci_addr & 0x1ff800 == 0 && pci_addr_set {
-								let mut virtio_device = self.virtio_device.lock().unwrap();
-								virtio_device.handle_write(pci_addr & 0x3ff, addr);
+							if let Some(pci_addr) = self.pci_addr {
+								if pci_addr & 0x1ff800 == 0 {
+									let mut virtio_device = self.virtio_device.lock().unwrap();
+									virtio_device.handle_write(pci_addr & 0x3ff, addr);
+								}
 							}
 						}
 						PCI_CONFIG_ADDRESS_PORT => {
-							pci_addr = unsafe { *(addr.as_ptr() as *const u32) };
-							pci_addr_set = true;
+							self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
 						}
 						VIRTIO_PCI_STATUS => {
 							let mut virtio_device = self.virtio_device.lock().unwrap();
@@ -429,7 +427,7 @@ impl VirtualCPU for UhyveCPU {
 				}
 				VcpuExit::Debug => {
 					info!("Caught Debug Interrupt! {:?}", exitreason);
-					self.gdb_handle_exception(Some(VcpuExit::Debug));
+					return Ok(VcpuStopReason::Debug);
 				}
 				VcpuExit::InternalError => {
 					panic!("{:?}", VcpuExit::InternalError)
@@ -437,6 +435,20 @@ impl VirtualCPU for UhyveCPU {
 				vcpu_exit => {
 					unimplemented!("{:?}", vcpu_exit)
 				}
+			}
+		}
+	}
+
+	fn run(&mut self) -> HypervisorResult<i32> {
+		// Pause first CPU before first execution, so we have time to attach debugger
+		if self.id == 0 {
+			self.gdb_handle_exception(None);
+		}
+
+		loop {
+			match self.r#continue()? {
+				VcpuStopReason::Debug => self.gdb_handle_exception(Some(VcpuExit::Debug)),
+				VcpuStopReason::Exit(code) => break Ok(code),
 			}
 		}
 	}
