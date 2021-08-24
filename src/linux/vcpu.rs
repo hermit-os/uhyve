@@ -423,7 +423,7 @@ impl VirtualCPU for UhyveCPU {
 							}
 						}
 					}
-					VcpuExit::Debug => {
+					VcpuExit::Debug(_) => {
 						info!("Caught Debug Interrupt!");
 						return Ok(VcpuStopReason::Debug);
 					}

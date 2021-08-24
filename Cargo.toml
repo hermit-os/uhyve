@@ -57,8 +57,8 @@ rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-kvm-bindings = "0.4"
-kvm-ioctls = "0.9"
+kvm-bindings = "0.5"
+kvm-ioctls = "0.10"
 mac_address = "1.1"
 nix = "0.22"
 tun-tap = { version = "0.1", default-features = false }
