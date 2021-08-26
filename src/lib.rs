@@ -51,32 +51,32 @@ impl Uhyve {
 
 		let this = Arc::new(self);
 
-		(0..this.num_cpus()).for_each(|tid| {
+		(0..this.num_cpus()).for_each(|cpu_id| {
 			let vm = this.clone();
 			let exit_tx = exit_tx.clone();
 
 			let local_cpu_affinity = match &cpu_affinity {
-				Some(vec) => vec.get(tid as usize).cloned(),
+				Some(vec) => vec.get(cpu_id as usize).cloned(),
 				None => None,
 			};
 
 			// create thread for each CPU
 			thread::spawn(move || {
-				debug!("Create thread for CPU {}", tid);
+				debug!("Create thread for CPU {}", cpu_id);
 				match local_cpu_affinity {
 					Some(core_id) => {
-						debug!("Trying to pin thread {} to CPU {}", tid, core_id.id);
+						debug!("Trying to pin thread {} to CPU {}", cpu_id, core_id.id);
 						core_affinity::set_for_current(core_id); // This does not return an error if it fails :(
 					}
 					None => debug!("No affinity specified, not binding thread"),
 				}
 
-				let mut cpu = vm.create_cpu(tid).unwrap();
+				let mut cpu = vm.create_cpu(cpu_id).unwrap();
 				cpu.init(vm.get_entry_point()).unwrap();
 
 				// only one core is able to enter startup code
 				// => the wait for the predecessor core
-				while tid != vm.cpu_online() {
+				while cpu_id != vm.cpu_online() {
 					hint::spin_loop();
 				}
 
@@ -84,7 +84,7 @@ impl Uhyve {
 				let result = cpu.run();
 				match result {
 					Err(x) => {
-						error!("CPU {} crashes! {:?}", tid, x);
+						error!("CPU {} crashes! {:?}", cpu_id, x);
 					}
 					Ok(exit_code) => {
 						exit_tx.send(exit_code).unwrap();
