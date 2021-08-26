@@ -622,10 +622,10 @@ pub trait Vm {
 
 		write(&mut (*boot_info).host_logical_addr, vm_mem.offset(0) as u64);
 
-		match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-			Ok(n) => write(&mut (*boot_info).boot_gtod, n.as_secs() * 1000000),
-			Err(err) => panic!("SystemTime before UNIX EPOCH! Error: {}", err),
-		}
+		let n = SystemTime::now()
+			.duration_since(SystemTime::UNIX_EPOCH)
+			.expect("SystemTime before UNIX EPOCH!");
+		write(&mut (*boot_info).boot_gtod, n.as_secs() * 1000000);
 
 		let cpuid = CpuId::new();
 		let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
@@ -827,53 +827,48 @@ mod tests {
 			}
 		});
 
-		if has_tsc {
-			// Try to figure out TSC frequency with CPUID
-			println!(
-				"TSC Frequency is: {} ({})",
-				match tsc_frequency_hz {
-					Some(x) => format!("{} Hz", x.unwrap_or(0)),
-					None => String::from("unknown"),
-				},
-				if has_invariant_tsc {
-					"invariant"
-				} else {
-					"TSC frequency varies with speed-stepping"
-				}
-			);
+		assert!(has_tsc, "System does not have a TSC.");
 
-			// Check if we run in a VM and the hypervisor can give us the TSC frequency
-			cpuid.get_hypervisor_info().map(|hv| {
-				hv.tsc_frequency().map(|tsc_khz| {
-					let virtual_tsc_frequency_hz = tsc_khz as u64 * KHZ_TO_HZ;
-					println!(
-						"Hypervisor reports TSC Frequency at: {} Hz",
-						virtual_tsc_frequency_hz
-					);
-				})
-			});
-
-			// Determine TSC frequency by measuring it (loop for a second, record ticks)
-			let one_second = Duration::from_secs(1);
-			let now = Instant::now();
-			let start = unsafe { rdtsc() };
-			if start > 0 {
-				loop {
-					if now.elapsed() >= one_second {
-						break;
-					}
-				}
-				let end = unsafe { rdtsc() };
-				println!(
-					"Empirical measurement of TSC frequency was: {} Hz",
-					(end - start)
-				);
+		// Try to figure out TSC frequency with CPUID
+		println!(
+			"TSC Frequency is: {} ({})",
+			match tsc_frequency_hz {
+				Some(x) => format!("{} Hz", x.unwrap_or(0)),
+				None => String::from("unknown"),
+			},
+			if has_invariant_tsc {
+				"invariant"
 			} else {
-				panic!("Don't have rdtsc on stable!");
+				"TSC frequency varies with speed-stepping"
 			}
-		} else {
-			panic!("System does not have a TSC.");
+		);
+
+		// Check if we run in a VM and the hypervisor can give us the TSC frequency
+		cpuid.get_hypervisor_info().map(|hv| {
+			hv.tsc_frequency().map(|tsc_khz| {
+				let virtual_tsc_frequency_hz = tsc_khz as u64 * KHZ_TO_HZ;
+				println!(
+					"Hypervisor reports TSC Frequency at: {} Hz",
+					virtual_tsc_frequency_hz
+				);
+			})
+		});
+
+		// Determine TSC frequency by measuring it (loop for a second, record ticks)
+		let one_second = Duration::from_secs(1);
+		let now = Instant::now();
+		let start = unsafe { rdtsc() };
+		assert!(start > 0, "Don't have rdtsc on stable!");
+		loop {
+			if now.elapsed() >= one_second {
+				break;
+			}
 		}
+		let end = unsafe { rdtsc() };
+		println!(
+			"Empirical measurement of TSC frequency was: {} Hz",
+			(end - start)
+		);
 	}
 
 	#[test]

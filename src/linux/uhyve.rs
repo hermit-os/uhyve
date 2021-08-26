@@ -216,17 +216,15 @@ impl Uhyve {
 			..Default::default()
 		};
 		cap.args[0] = 0;
-		if vm.enable_cap(&cap).is_ok() {
-			panic!("Processor feature \"tsc deadline\" isn't supported!")
-		}
+		vm.enable_cap(&cap)
+			.expect_err("Processor feature `tsc deadline` isn't supported!");
 
 		let cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
 			cap: KVM_CAP_IRQFD,
 			..Default::default()
 		};
-		if vm.enable_cap(&cap).is_ok() {
-			panic!("The support of KVM_CAP_IRQFD is currently required");
-		}
+		vm.enable_cap(&cap)
+			.expect_err("The support of KVM_CAP_IRQFD is currently required");
 
 		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
 			cap: KVM_CAP_X86_DISABLE_EXITS,
@@ -386,18 +384,14 @@ impl MmapMemory {
 		if mergeable {
 			debug!("Enable kernel feature to merge same pages");
 			unsafe {
-				if madvise(host_address, memory_size, MmapAdvise::MADV_MERGEABLE).is_err() {
-					panic!("madvise failed");
-				}
+				madvise(host_address, memory_size, MmapAdvise::MADV_MERGEABLE).unwrap();
 			}
 		}
 
 		if huge_pages {
 			debug!("Uhyve uses huge pages");
 			unsafe {
-				if madvise(host_address, memory_size, MmapAdvise::MADV_HUGEPAGE).is_err() {
-					panic!("madvise failed");
-				}
+				madvise(host_address, memory_size, MmapAdvise::MADV_HUGEPAGE).unwrap();
 			}
 		}
 
@@ -437,9 +431,7 @@ impl Drop for MmapMemory {
 	fn drop(&mut self) {
 		if self.memory_size() > 0 {
 			unsafe {
-				if munmap(self.host_address() as *mut c_void, self.memory_size()).is_err() {
-					panic!("munmap failed");
-				}
+				munmap(self.host_address() as *mut c_void, self.memory_size()).unwrap();
 			}
 		}
 	}
