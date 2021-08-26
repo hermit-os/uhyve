@@ -30,13 +30,6 @@ lazy_static! {
 	static ref KVM: Kvm = Kvm::new().unwrap();
 }
 
-trait MemoryRegion {
-	fn flags(&self) -> u32;
-	fn memory_size(&self) -> usize;
-	fn guest_address(&self) -> usize;
-	fn host_address(&self) -> usize;
-}
-
 /// The signal for kicking vCPUs out of KVM_RUN.
 ///
 /// It is used to stop a vCPU from another thread.

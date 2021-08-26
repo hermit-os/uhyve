@@ -4,7 +4,7 @@
 use crate::consts::*;
 use crate::linux::vcpu::*;
 use crate::linux::virtio::*;
-use crate::linux::{MemoryRegion, KVM};
+use crate::linux::KVM;
 use crate::shared_queue::*;
 use crate::vm::HypervisorResult;
 use crate::vm::{BootInfo, Parameter, Vm};
@@ -191,10 +191,10 @@ impl Uhyve {
 
 		let kvm_mem = kvm_userspace_memory_region {
 			slot: 0,
-			flags: mem.flags(),
+			flags: mem.flags,
 			memory_size: sz as u64,
-			guest_phys_addr: mem.guest_address() as u64,
-			userspace_addr: mem.host_address() as u64,
+			guest_phys_addr: mem.guest_address as u64,
+			userspace_addr: mem.host_address as u64,
 		};
 
 		unsafe { vm.set_user_memory_region(kvm_mem) }?;
@@ -202,11 +202,11 @@ impl Uhyve {
 		if specs.mem_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
 			let kvm_mem = kvm_userspace_memory_region {
 				slot: 1,
-				flags: mem.flags(),
+				flags: mem.flags,
 				memory_size: (specs.mem_size - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
-				guest_phys_addr: (mem.guest_address() + KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE)
+				guest_phys_addr: (mem.guest_address + KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE)
 					as u64,
-				userspace_addr: (mem.host_address() + KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE)
+				userspace_addr: (mem.host_address + KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE)
 					as u64,
 			};
 
@@ -266,7 +266,7 @@ impl Uhyve {
 				Some(UhyveNetwork::new(
 					evtfd,
 					nic.to_string(),
-					mem.host_address() + SHAREDQUEUE_START,
+					mem.host_address + SHAREDQUEUE_START,
 				))
 			}
 			_ => None,
@@ -332,7 +332,7 @@ impl Vm for Uhyve {
 	}
 
 	fn guest_mem(&self) -> (*mut u8, usize) {
-		(self.mem.host_address() as *mut u8, self.mem.memory_size())
+		(self.mem.host_address as *mut u8, self.mem.memory_size)
 	}
 
 	fn kernel_path(&self) -> &Path {
@@ -340,7 +340,7 @@ impl Vm for Uhyve {
 	}
 
 	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU> {
-		let vm_start = self.mem.host_address() as usize;
+		let vm_start = self.mem.host_address as usize;
 		let tx = self.uhyve_device.as_ref().map(|dev| dev.tx.clone());
 
 		Ok(UhyveCPU::new(
@@ -431,29 +431,11 @@ impl MmapMemory {
 	}
 }
 
-impl MemoryRegion for MmapMemory {
-	fn flags(&self) -> u32 {
-		self.flags
-	}
-
-	fn memory_size(&self) -> usize {
-		self.memory_size
-	}
-
-	fn guest_address(&self) -> usize {
-		self.guest_address
-	}
-
-	fn host_address(&self) -> usize {
-		self.host_address
-	}
-}
-
 impl Drop for MmapMemory {
 	fn drop(&mut self) {
-		if self.memory_size() > 0 {
+		if self.memory_size > 0 {
 			unsafe {
-				munmap(self.host_address() as *mut c_void, self.memory_size()).unwrap();
+				munmap(self.host_address as *mut c_void, self.memory_size).unwrap();
 			}
 		}
 	}
