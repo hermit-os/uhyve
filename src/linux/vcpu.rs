@@ -278,168 +278,174 @@ impl VirtualCPU for UhyveCPU {
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
-			let exitreason = self.vcpu.run()?;
-			match exitreason {
-				VcpuExit::Hlt => {
-					// Ignore `VcpuExit::Hlt`
-					debug!("{:?}", VcpuExit::Hlt);
-				}
-				VcpuExit::Shutdown => {
-					return Ok(VcpuStopReason::Exit(0));
-				}
-				VcpuExit::IoIn(port, addr) => match port {
-					PCI_CONFIG_DATA_PORT => {
-						if let Some(pci_addr) = self.pci_addr {
-							if pci_addr & 0x1ff800 == 0 {
-								let virtio_device = self.virtio_device.lock().unwrap();
-								virtio_device.handle_read(pci_addr & 0x3ff, addr);
-							} else {
-								unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
-							}
-						} else {
-							unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
-						}
+			match self.vcpu.run() {
+				Ok(vcpu_stop_reason) => match vcpu_stop_reason {
+					VcpuExit::Hlt => {
+						// Ignore `VcpuExit::Hlt`
+						debug!("{:?}", VcpuExit::Hlt);
 					}
-					PCI_CONFIG_ADDRESS_PORT => {}
-					VIRTIO_PCI_STATUS => {
-						let virtio_device = self.virtio_device.lock().unwrap();
-						virtio_device.read_status(addr);
+					VcpuExit::Shutdown => {
+						return Ok(VcpuStopReason::Exit(0));
 					}
-					VIRTIO_PCI_HOST_FEATURES => {
-						let virtio_device = self.virtio_device.lock().unwrap();
-						virtio_device.read_host_features(addr);
-					}
-					VIRTIO_PCI_GUEST_FEATURES => {
-						let mut virtio_device = self.virtio_device.lock().unwrap();
-						virtio_device.read_requested_features(addr);
-					}
-					VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
-						let virtio_device = self.virtio_device.lock().unwrap();
-						virtio_device.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_OFF);
-					}
-					VIRTIO_PCI_ISR => {
-						let mut virtio_device = self.virtio_device.lock().unwrap();
-						virtio_device.reset_interrupt()
-					}
-					VIRTIO_PCI_LINK_STATUS_MSIX_OFF => {
-						let virtio_device = self.virtio_device.lock().unwrap();
-						virtio_device.read_link_status(addr);
-					}
-					_ => {
-						info!("Unhanded IO Exit");
-					}
-				},
-				VcpuExit::IoOut(port, addr) => {
-					match port {
-						UHYVE_UART_PORT => {
-							self.uart(addr)?;
-						}
-						UHYVE_PORT_CMDSIZE => {
-							let data_addr: usize =
-								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.cmdsize(self.host_address(data_addr));
-						}
-						UHYVE_PORT_CMDVAL => {
-							let data_addr: usize =
-								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.cmdval(self.host_address(data_addr));
-						}
-						UHYVE_PORT_NETWRITE => {
-							match &self.tx {
-								Some(tx_channel) => tx_channel.send(1).unwrap(),
-
-								None => {}
-							};
-						}
-						UHYVE_PORT_EXIT => {
-							let data_addr: usize =
-								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							return Ok(VcpuStopReason::Exit(
-								self.exit(self.host_address(data_addr)),
-							));
-						}
-						UHYVE_PORT_OPEN => {
-							let data_addr: usize =
-								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.open(self.host_address(data_addr));
-						}
-						UHYVE_PORT_WRITE => {
-							let data_addr: usize =
-								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.write(self.host_address(data_addr))?;
-						}
-						UHYVE_PORT_READ => {
-							let data_addr: usize =
-								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.read(self.host_address(data_addr));
-						}
-						UHYVE_PORT_UNLINK => {
-							let data_addr: usize =
-								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.unlink(self.host_address(data_addr));
-						}
-						UHYVE_PORT_LSEEK => {
-							let data_addr: usize =
-								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.lseek(self.host_address(data_addr));
-						}
-						UHYVE_PORT_CLOSE => {
-							let data_addr: usize =
-								unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-							self.close(self.host_address(data_addr));
-						}
-						//TODO:
+					VcpuExit::IoIn(port, addr) => match port {
 						PCI_CONFIG_DATA_PORT => {
 							if let Some(pci_addr) = self.pci_addr {
 								if pci_addr & 0x1ff800 == 0 {
-									let mut virtio_device = self.virtio_device.lock().unwrap();
-									virtio_device.handle_write(pci_addr & 0x3ff, addr);
+									let virtio_device = self.virtio_device.lock().unwrap();
+									virtio_device.handle_read(pci_addr & 0x3ff, addr);
+								} else {
+									unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
 								}
+							} else {
+								unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
 							}
 						}
-						PCI_CONFIG_ADDRESS_PORT => {
-							self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
-						}
+						PCI_CONFIG_ADDRESS_PORT => {}
 						VIRTIO_PCI_STATUS => {
-							let mut virtio_device = self.virtio_device.lock().unwrap();
-							virtio_device.write_status(addr);
+							let virtio_device = self.virtio_device.lock().unwrap();
+							virtio_device.read_status(addr);
+						}
+						VIRTIO_PCI_HOST_FEATURES => {
+							let virtio_device = self.virtio_device.lock().unwrap();
+							virtio_device.read_host_features(addr);
 						}
 						VIRTIO_PCI_GUEST_FEATURES => {
 							let mut virtio_device = self.virtio_device.lock().unwrap();
-							virtio_device.write_requested_features(addr);
+							virtio_device.read_requested_features(addr);
 						}
-						VIRTIO_PCI_QUEUE_NOTIFY => {
-							let mut virtio_device = self.virtio_device.lock().unwrap();
-							virtio_device.handle_notify_output(addr, self);
+						VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
+							let virtio_device = self.virtio_device.lock().unwrap();
+							virtio_device
+								.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_OFF);
 						}
-						VIRTIO_PCI_QUEUE_SEL => {
+						VIRTIO_PCI_ISR => {
 							let mut virtio_device = self.virtio_device.lock().unwrap();
-							virtio_device.write_selected_queue(addr);
+							virtio_device.reset_interrupt()
 						}
-						VIRTIO_PCI_QUEUE_PFN => {
-							let mut virtio_device = self.virtio_device.lock().unwrap();
-							virtio_device.write_pfn(addr, self);
+						VIRTIO_PCI_LINK_STATUS_MSIX_OFF => {
+							let virtio_device = self.virtio_device.lock().unwrap();
+							virtio_device.read_link_status(addr);
 						}
 						_ => {
-							panic!("Unhandled IO exit: 0x{:x}", port);
+							info!("Unhanded IO Exit");
+						}
+					},
+					VcpuExit::IoOut(port, addr) => {
+						match port {
+							UHYVE_UART_PORT => {
+								self.uart(addr)?;
+							}
+							UHYVE_PORT_CMDSIZE => {
+								let data_addr: usize =
+									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+								self.cmdsize(self.host_address(data_addr));
+							}
+							UHYVE_PORT_CMDVAL => {
+								let data_addr: usize =
+									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+								self.cmdval(self.host_address(data_addr));
+							}
+							UHYVE_PORT_NETWRITE => {
+								match &self.tx {
+									Some(tx_channel) => tx_channel.send(1).unwrap(),
+
+									None => {}
+								};
+							}
+							UHYVE_PORT_EXIT => {
+								let data_addr: usize =
+									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+								return Ok(VcpuStopReason::Exit(
+									self.exit(self.host_address(data_addr)),
+								));
+							}
+							UHYVE_PORT_OPEN => {
+								let data_addr: usize =
+									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+								self.open(self.host_address(data_addr));
+							}
+							UHYVE_PORT_WRITE => {
+								let data_addr: usize =
+									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+								self.write(self.host_address(data_addr))?;
+							}
+							UHYVE_PORT_READ => {
+								let data_addr: usize =
+									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+								self.read(self.host_address(data_addr));
+							}
+							UHYVE_PORT_UNLINK => {
+								let data_addr: usize =
+									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+								self.unlink(self.host_address(data_addr));
+							}
+							UHYVE_PORT_LSEEK => {
+								let data_addr: usize =
+									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+								self.lseek(self.host_address(data_addr));
+							}
+							UHYVE_PORT_CLOSE => {
+								let data_addr: usize =
+									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+								self.close(self.host_address(data_addr));
+							}
+							//TODO:
+							PCI_CONFIG_DATA_PORT => {
+								if let Some(pci_addr) = self.pci_addr {
+									if pci_addr & 0x1ff800 == 0 {
+										let mut virtio_device = self.virtio_device.lock().unwrap();
+										virtio_device.handle_write(pci_addr & 0x3ff, addr);
+									}
+								}
+							}
+							PCI_CONFIG_ADDRESS_PORT => {
+								self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
+							}
+							VIRTIO_PCI_STATUS => {
+								let mut virtio_device = self.virtio_device.lock().unwrap();
+								virtio_device.write_status(addr);
+							}
+							VIRTIO_PCI_GUEST_FEATURES => {
+								let mut virtio_device = self.virtio_device.lock().unwrap();
+								virtio_device.write_requested_features(addr);
+							}
+							VIRTIO_PCI_QUEUE_NOTIFY => {
+								let mut virtio_device = self.virtio_device.lock().unwrap();
+								virtio_device.handle_notify_output(addr, self);
+							}
+							VIRTIO_PCI_QUEUE_SEL => {
+								let mut virtio_device = self.virtio_device.lock().unwrap();
+								virtio_device.write_selected_queue(addr);
+							}
+							VIRTIO_PCI_QUEUE_PFN => {
+								let mut virtio_device = self.virtio_device.lock().unwrap();
+								virtio_device.write_pfn(addr, self);
+							}
+							_ => {
+								panic!("Unhandled IO exit: 0x{:x}", port);
+							}
 						}
 					}
-				}
-				VcpuExit::Debug => {
-					info!("Caught Debug Interrupt! {:?}", exitreason);
-					return Ok(VcpuStopReason::Debug);
-				}
-				VcpuExit::InternalError => {
-					panic!("{:?}", VcpuExit::InternalError)
-				}
-				vcpu_exit => {
-					unimplemented!("{:?}", vcpu_exit)
-				}
+					VcpuExit::Debug => {
+						info!("Caught Debug Interrupt!");
+						return Ok(VcpuStopReason::Debug);
+					}
+					VcpuExit::InternalError => {
+						panic!("{:?}", VcpuExit::InternalError)
+					}
+					vcpu_exit => {
+						unimplemented!("{:?}", vcpu_exit)
+					}
+				},
+				Err(err) => match err.errno() {
+					libc::EINTR => return Ok(VcpuStopReason::Kick),
+					_ => return Err(err),
+				},
 			}
 		}
 	}
 
-	fn run(&mut self) -> HypervisorResult<i32> {
+	fn run(&mut self) -> HypervisorResult<Option<i32>> {
 		// Pause first CPU before first execution, so we have time to attach debugger
 		if self.id == 0 {
 			self.gdb_handle_exception(None);
@@ -448,7 +454,8 @@ impl VirtualCPU for UhyveCPU {
 		loop {
 			match self.r#continue()? {
 				VcpuStopReason::Debug => self.gdb_handle_exception(Some(VcpuExit::Debug)),
-				VcpuStopReason::Exit(code) => break Ok(code),
+				VcpuStopReason::Exit(code) => break Ok(Some(code)),
+				VcpuStopReason::Kick => break Ok(None),
 			}
 		}
 	}

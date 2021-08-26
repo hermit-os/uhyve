@@ -83,12 +83,9 @@ impl Uhyve {
 				// jump into the VM and execute code of the guest
 				let result = cpu.run();
 				match result {
-					Err(x) => {
-						error!("CPU {} crashes! {:?}", cpu_id, x);
-					}
-					Ok(exit_code) => {
-						exit_tx.send(exit_code).unwrap();
-					}
+					Ok(Some(exit_code)) => exit_tx.send(exit_code).unwrap(),
+					Ok(None) => {}
+					Err(err) => error!("CPU {} crashed with {:?}", cpu_id, err),
 				}
 			});
 		});

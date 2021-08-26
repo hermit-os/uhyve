@@ -730,7 +730,7 @@ impl VirtualCPU for UhyveCPU {
 		}
 	}
 
-	fn run(&mut self) -> HypervisorResult<i32> {
+	fn run(&mut self) -> HypervisorResult<Option<i32>> {
 		// Pause first CPU before first execution, so we have time to attach debugger
 		if self.id == 0 {
 			self.gdb_handle_exception(false);
@@ -739,7 +739,8 @@ impl VirtualCPU for UhyveCPU {
 		loop {
 			match self.r#continue()? {
 				VcpuStopReason::Debug => self.gdb_handle_exception(true),
-				VcpuStopReason::Exit(code) => break Ok(code),
+				VcpuStopReason::Exit(code) => break Ok(Some(code)),
+				VcpuStopReason::Kick => break Ok(None),
 			}
 		}
 	}
