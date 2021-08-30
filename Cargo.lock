@@ -27,7 +27,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9b39be18770d11421cdb1b9947a45dd3f37e93092cbf377614828a319d5fee8"
 dependencies = [
  "hermit-abi",
- "libc",
+ "libc 0.2.100",
  "winapi 0.3.9",
 ]
 
@@ -131,7 +131,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f8a03115cc34fb0d7c321dd154a3914b3ca082ccc5c11d91bf7117dbbe7171f"
 dependencies = [
  "kernel32-sys",
- "libc",
+ "libc 0.2.100",
  "num_cpus",
  "winapi 0.2.8",
 ]
@@ -320,7 +320,7 @@ version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62b467343b94ba476dcb2500d242dadbb39557df889310ac77c5d99100aaac33"
 dependencies = [
- "libc",
+ "libc 0.2.100",
 ]
 
 [[package]]
@@ -389,7 +389,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2924454e22895c738e43331ae310459c74a11ded9c97dc250129ee10d2f9ca2"
 dependencies = [
  "kvm-bindings",
- "libc",
+ "libc 0.2.100",
  "vmm-sys-util",
 ]
 
@@ -398,6 +398,11 @@ name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
+
+[[package]]
+name = "libc"
+version = "0.2.98"
+source = "git+https://github.com/rust-lang/libc?rev=f5e31f208#f5e31f208ee51d60e4848e09c16ee86e3968b6f8"
 
 [[package]]
 name = "libc"
@@ -430,7 +435,7 @@ version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "148fab2e51b4f1cfc66da2a7c32981d1d3c083a803978268bb11fe4b86925e7a"
 dependencies = [
- "libc",
+ "libc 0.2.100",
 ]
 
 [[package]]
@@ -457,19 +462,18 @@ dependencies = [
  "bitflags",
  "cc",
  "cfg-if",
- "libc",
+ "libc 0.2.100",
 ]
 
 [[package]]
 name = "nix"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf1e25ee6b412c2a1e3fcb6a4499a5c1bfe7f43e014bdce9a6b6666e5aa2d187"
+source = "git+https://github.com/nix-rust/nix#dab7332eabed8646f6d01a0d0688b4d1438accb4"
 dependencies = [
  "bitflags",
  "cc",
  "cfg-if",
- "libc",
+ "libc 0.2.98",
  "memoffset",
 ]
 
@@ -498,7 +502,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05499f3756671c15885fee9034446956fff3f243d6077b91e5767df161f766b3"
 dependencies = [
  "hermit-abi",
- "libc",
+ "libc 0.2.100",
 ]
 
 [[package]]
@@ -851,7 +855,7 @@ dependencies = [
  "kvm-bindings",
  "kvm-ioctls",
  "lazy_static",
- "libc",
+ "libc 0.2.100",
  "log",
  "mac_address",
  "nix 0.22.0",
@@ -913,7 +917,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01cf11afbc4ebc0d5c7a7748a77d19e2042677fc15faa2f4ccccb27c18a60605"
 dependencies = [
  "bitflags",
- "libc",
+ "libc 0.2.100",
 ]
 
 [[package]]
@@ -1051,5 +1055,5 @@ version = "0.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "643a7272630495dac4765f4f6b020b54af2c4d71fd29ef6b6141ade280355f8a"
 dependencies = [
- "libc",
+ "libc 0.2.100",
 ]
