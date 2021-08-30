@@ -3,7 +3,6 @@ name: KVM Tests
 on:
   push:
     branches:
-      - master
       - staging
       - trying
 
