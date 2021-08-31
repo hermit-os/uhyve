@@ -4,12 +4,18 @@ version = 3
 
 [[package]]
 name = "aarch64"
-version = "0.0.5"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6270352a570bfc5f730fd1fce0c34b190c75da28e184f7e70704672a539ade77"
+checksum = "4fb59c3a5adf5ce5807ba9e635a0874c7c4136e07208caafeb4e2b0ecf0764cb"
 dependencies = [
  "cortex-a",
 ]
+
+[[package]]
+name = "async-task"
+version = "4.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e91831deabf0d6d7ec49552e489aed63b7456a7a3c46cff62adad428110b0af0"
 
 [[package]]
 name = "autocfg"
@@ -31,9 +37,15 @@ checksum = "dcb6dd1c2376d2e096796e234a70e17e94cc2d5d54ff8ce42b28cef1d0d359a4"
 
 [[package]]
 name = "bitflags"
-version = "1.2.1"
+version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
+checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
+
+[[package]]
+name = "cache-padded"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "631ae5198c9be5e753e5cc215e1bd73c2b466a3565173db433f52bb9d3e66dba"
 
 [[package]]
 name = "cfg-if"
@@ -51,12 +63,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "cortex-a"
-version = "5.1.6"
+name = "concurrent-queue"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ecefc30975eb87afc5a810d4b2305c0ec29e607ea97e51b2ecd80766e9268d28"
+checksum = "30ed07550be01594c6026cff2a1d7fe9c8f683caa798e12b68694ac9e88286a3"
 dependencies = [
- "register",
+ "cache-padded",
+]
+
+[[package]]
+name = "cortex-a"
+version = "6.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "509fc35485a2b4ddbacabe0bf2212cdfff88da93658608e5cc651afcb75b7733"
+dependencies = [
+ "tock-registers",
 ]
 
 [[package]]
@@ -66,18 +87,57 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56899898ce76aaf4a0f24d914c97ea6ed976d42fec6ad33fcbb0a1103e07b2b0"
 
 [[package]]
+name = "fastrand"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b394ed3d285a429378d3b384b9eb1285267e7df4b166df24b7a6939a04dc392e"
+dependencies = [
+ "instant",
+]
+
+[[package]]
 name = "fuchsia-cprng"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a06f77d526c1a601b7c4cdd98f54b5eaabffc14d5f2f0296febdc7f357c6d3ba"
 
 [[package]]
-name = "hermit-sys"
-version = "0.1.22"
+name = "futures-core"
+version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2cb2c90b6a8e396029c6b22a811eb0246fa11ac205ebe5fcbc8f35498f3d442"
+checksum = "88d1c26957f23603395cd326b0ffe64124b818f4449552f960d815cfba83a53d"
+
+[[package]]
+name = "futures-io"
+version = "0.3.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "522de2a0fe3e380f1bc577ba0474108faf3f6b18321dbf60b3b9c39a75073377"
+
+[[package]]
+name = "futures-lite"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7694489acd39452c77daa48516b894c153f192c3578d5a839b62c58099fcbf48"
+dependencies = [
+ "fastrand",
+ "futures-core",
+ "futures-io",
+ "memchr",
+ "parking",
+ "pin-project-lite",
+ "waker-fn",
+]
+
+[[package]]
+name = "hermit-sys"
+version = "0.1.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "029ff47825c028a3c814b3a49bc8fca60e8a0ee9266d8291a91b65ae6db6c3c4"
 dependencies = [
  "aarch64",
+ "async-task",
+ "concurrent-queue",
+ "futures-lite",
  "lazy_static",
  "libm",
  "llvm-tools",
@@ -85,6 +145,15 @@ dependencies = [
  "target_build_utils",
  "walkdir",
  "x86",
+]
+
+[[package]]
+name = "instant"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bee0328b1209d157ef001c94dd85b4f8f64139adb0eac2659f4b08382b2f474d"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]
@@ -101,9 +170,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.94"
+version = "0.2.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18794a8ad5b29321f790b55d93dfba91e125cb1a9edbd4f8e3150acc771c1a5e"
+checksum = "3cb00336871be5ed2c8ed44b60ae9959dc5b9f08539422ed43f09e34ecaeba21"
 
 [[package]]
 name = "libm"
@@ -127,6 +196,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "memchr"
+version = "2.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
+
+[[package]]
 name = "num-traits"
 version = "0.1.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -143,6 +218,12 @@ checksum = "9a64b1ec5cda2586e284722486d802acf1f7dbdc623e2bfc57e65ca1cd099290"
 dependencies = [
  "autocfg 1.0.1",
 ]
+
+[[package]]
+name = "parking"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "427c3892f9e783d91cc128285287e70a59e206ca452770ece88a76f7a3eddd72"
 
 [[package]]
 name = "phf"
@@ -181,6 +262,12 @@ checksum = "234f71a15de2288bcb7e3b6515828d22af7ec8598ee6d24c3b526fa0a80b67a0"
 dependencies = [
  "siphasher",
 ]
+
+[[package]]
+name = "pin-project-lite"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d31d11c69a6b52a174b42bdc0c30e5e11670f90788b2c471c31c1d17d449443"
 
 [[package]]
 name = "rand"
@@ -290,9 +377,9 @@ dependencies = [
 
 [[package]]
 name = "raw-cpuid"
-version = "9.0.0"
+version = "10.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c27cb5785b85bd05d4eb171556c9a1a514552e26123aeae6bb7d811353148026"
+checksum = "929f54e29691d4e6a9cc558479de70db7aa3d98cd6fe7ab86d7507aa2886b9d2"
 dependencies = [
  "bitflags",
 ]
@@ -304,15 +391,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "678054eb77286b51581ba43620cc911abf02758c91f93f479767aed0f90458b2"
 dependencies = [
  "rand_core 0.3.1",
-]
-
-[[package]]
-name = "register"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4a247de29ab7cc8f5006cfe775c4a81c704f9914c5e2a79696862e643135433"
-dependencies = [
- "tock-registers",
 ]
 
 [[package]]
@@ -361,9 +439,9 @@ dependencies = [
 
 [[package]]
 name = "tock-registers"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f521a79accce68c417c9c77ce22108056b626126da1932f7e2e9b5bbffee0cea"
+checksum = "4ee8fba06c1f4d0b396ef61a54530bb6b28f0dc61c38bc8bc5a5a48161e6282e"
 
 [[package]]
 name = "uhyve-test-kernels"
@@ -371,6 +449,12 @@ version = "0.1.0"
 dependencies = [
  "hermit-sys",
 ]
+
+[[package]]
+name = "waker-fn"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d5b2c62b4012a3e1eca5a7e077d13b3bf498c4073e33ccd58626607748ceeca"
 
 [[package]]
 name = "walkdir"
@@ -416,9 +500,9 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "x86"
-version = "0.39.0"
+version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7726a0732fa834954e0cceacadb224b7a0deb55d6ea498e2fc1b591397bca57f"
+checksum = "edcf43654d533a571fe7f7116373098a95ebc01279efdc5038fc45d3b220cb5a"
 dependencies = [
  "bit_field",
  "bitflags",
