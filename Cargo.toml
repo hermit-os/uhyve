@@ -74,6 +74,9 @@ burst = "0.0"
 xhypervisor = "0.0"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
+x86_64 = { version = "0.14", default-features = false }
+
+[target.'cfg(all(target_arch = "x86_64", target_os = "macos"))'.dependencies]
 x86 = { version = "0.41", default-features = false }
 
 [dev-dependencies]

@@ -10,13 +10,14 @@ use crate::vm::VirtualCPU;
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use lazy_static::lazy_static;
 use log::{debug, trace};
+use std::arch::x86_64::__cpuid_count;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use x86::controlregs::*;
-use x86::cpuid::*;
 use x86::msr::*;
-use x86::segmentation::*;
-use x86::Ring;
+use x86_64::registers::control::Cr0Flags;
+use x86_64::registers::control::Cr4Flags;
+use x86_64::structures::gdt::SegmentSelector;
+use x86_64::PrivilegeLevel;
 use xhypervisor;
 use xhypervisor::consts::vmcs::*;
 use xhypervisor::consts::vmx_cap::{
@@ -133,27 +134,27 @@ impl UhyveCPU {
 		// Reload the segment descriptors
 		self.vcpu.write_register(
 			&x86Reg::CS,
-			SegmentSelector::new(GDT_KERNEL_CODE as u16, Ring::Ring0).bits() as u64,
+			SegmentSelector::new(GDT_KERNEL_CODE as u16, PrivilegeLevel::Ring0).0 as u64,
 		)?;
 		self.vcpu.write_register(
 			&x86Reg::DS,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, Ring::Ring0).bits() as u64,
+			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).0 as u64,
 		)?;
 		self.vcpu.write_register(
 			&x86Reg::ES,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, Ring::Ring0).bits() as u64,
+			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).0 as u64,
 		)?;
 		self.vcpu.write_register(
 			&x86Reg::SS,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, Ring::Ring0).bits() as u64,
+			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).0 as u64,
 		)?;
 		self.vcpu.write_register(
 			&x86Reg::FS,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, Ring::Ring0).bits() as u64,
+			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).0 as u64,
 		)?;
 		self.vcpu.write_register(
 			&x86Reg::GS,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, Ring::Ring0).bits() as u64,
+			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).0 as u64,
 		)?;
 
 		Ok(())
@@ -162,28 +163,25 @@ impl UhyveCPU {
 	fn setup_system_64bit(&mut self) -> Result<(), xhypervisor::Error> {
 		debug!("Setup 64bit mode");
 
-		let cr0 = Cr0::CR0_PROTECTED_MODE
-			| Cr0::CR0_ENABLE_PAGING
-			| Cr0::CR0_EXTENSION_TYPE
-			| Cr0::CR0_NUMERIC_ERROR;
-		let cr4 = Cr4::CR4_ENABLE_PAE | Cr4::CR4_ENABLE_VMX;
+		let cr0 = Cr0Flags::PROTECTED_MODE_ENABLE
+			| Cr0Flags::EXTENSION_TYPE
+			| Cr0Flags::NUMERIC_ERROR
+			| Cr0Flags::PAGING;
+		let cr4 = Cr4Flags::PHYSICAL_ADDRESS_EXTENSION | Cr4Flags::VIRTUAL_MACHINE_EXTENSIONS;
 
 		self.vcpu
 			.write_vmcs(VMCS_GUEST_IA32_EFER, EFER_LME | EFER_LMA)?;
 
 		self.vcpu.write_vmcs(
 			VMCS_CTRL_CR0_MASK,
-			(Cr0::CR0_CACHE_DISABLE | Cr0::CR0_NOT_WRITE_THROUGH | cr0).bits() as u64,
+			(Cr0Flags::CACHE_DISABLE | Cr0Flags::NOT_WRITE_THROUGH | cr0).bits(),
 		)?;
-		self.vcpu
-			.write_vmcs(VMCS_CTRL_CR0_SHADOW, cr0.bits() as u64)?;
-		self.vcpu
-			.write_vmcs(VMCS_CTRL_CR4_MASK, cr4.bits() as u64)?;
-		self.vcpu
-			.write_vmcs(VMCS_CTRL_CR4_SHADOW, cr4.bits() as u64)?;
+		self.vcpu.write_vmcs(VMCS_CTRL_CR0_SHADOW, cr0.bits())?;
+		self.vcpu.write_vmcs(VMCS_CTRL_CR4_MASK, cr4.bits())?;
+		self.vcpu.write_vmcs(VMCS_CTRL_CR4_SHADOW, cr4.bits())?;
 
-		self.vcpu.write_register(&x86Reg::CR0, cr0.bits() as u64)?;
-		self.vcpu.write_register(&x86Reg::CR4, cr4.bits() as u64)?;
+		self.vcpu.write_register(&x86Reg::CR0, cr0.bits())?;
+		self.vcpu.write_register(&x86Reg::CR4, cr4.bits())?;
 		self.vcpu.write_register(&x86Reg::CR3, BOOT_PML4)?;
 		self.vcpu.write_register(&x86Reg::DR7, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_ESP, 0)?;
@@ -193,8 +191,6 @@ impl UhyveCPU {
 	}
 
 	fn setup_msr(&mut self) -> Result<(), xhypervisor::Error> {
-		const IA32_CSTAR: u32 = 0xc0000083;
-
 		debug!("Enable MSR registers");
 
 		self.vcpu.enable_native_msr(IA32_FS_BASE, true)?;
@@ -304,7 +300,7 @@ impl UhyveCPU {
 			_ => {
 				let extended_features = (rax == 7) && (rcx == 0);
 				let processor_info = rax == 1;
-				let result = native_cpuid::cpuid_count(rax as u32, rcx as u32);
+				let result = unsafe { __cpuid_count(rax as u32, rcx as u32) };
 
 				let rax = result.eax as u64;
 				let mut rbx = result.ebx as u64;

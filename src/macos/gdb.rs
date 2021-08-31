@@ -1,4 +1,3 @@
-use ::x86::bits64::rflags::RFlags;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::{debug, error};
 use rustc_serialize::hex::ToHex;
@@ -6,6 +5,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::slice;
+use x86_64::registers::rflags::RFlags;
 use xhypervisor::{vCPU, x86Reg};
 
 use crate::arch::x86;
@@ -109,9 +109,9 @@ impl UhyveCPU {
 		let vcpu = self.get_vcpu();
 		let mut rflags = vcpu.read_register(&x86Reg::RFLAGS).unwrap();
 		if single_step {
-			rflags |= RFlags::FLAGS_TF.bits();
+			rflags |= RFlags::TRAP_FLAG.bits();
 		} else {
-			rflags &= !RFlags::FLAGS_TF.bits();
+			rflags &= !RFlags::TRAP_FLAG.bits();
 		}
 		vcpu.write_register(&x86Reg::RFLAGS, rflags).unwrap();
 
