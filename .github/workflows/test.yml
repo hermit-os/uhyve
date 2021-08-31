@@ -14,34 +14,13 @@ jobs:
   test:
     name: Cargo tests
     runs-on: ${{ matrix.os }}
-
     strategy:
       matrix:
-        os: [ubuntu-latest,macOS-latest]
-        rust: [nightly]
-        include:
-          - os: macOS-latest
-            rust: 'nightly'
-            components: 'rustfmt, clippy, rust-src'
-            targets: 'x86_64-apple-darwin'
-          - os: ubuntu-latest
-            rust: 'nightly'
-            components: 'rustfmt, clippy'
-            targets: 'x86_64-unknown-linux-musl'
-
-
+        os: [ubuntu-latest, macos-latest]
     steps:
-    - uses: hecrj/setup-rust-action@v1
-      with: 
-         rust-version: ${{ matrix.rust }}
-         components: ${{ matrix.components || '' }}
-         targets: ${{ matrix.targets || '' }}
     - uses: actions/checkout@v2
-      with:
-         submodules: true
-         fetch-depth: '0'
-    - name: Check Cargo availability
-      run: cargo --version
+    - name: Install toolchain from rust-toolchain.toml
+      run: rustup show
     - name: Test
       run: |
          cargo test --lib -- --nocapture --skip test_vm
@@ -50,63 +29,31 @@ jobs:
   build:
     name: Build
     runs-on: ${{ matrix.os }}
-
     strategy:
       matrix:
-        os: [ubuntu-latest,macOS-latest]
-        rust: [nightly]
-        include:
-          - os: macOS-latest
-            rust: 'nightly'
-            components: 'rustfmt, clippy, rust-src'
-            targets: 'x86_64-apple-darwin'
-          - os: ubuntu-latest
-            rust: 'nightly'
-            components: 'rustfmt, clippy'
-            targets: 'x86_64-unknown-linux-musl'
-
-
+        os: [ubuntu-latest, macos-latest]
     steps:
-    - uses: hecrj/setup-rust-action@v1
-      with:
-         rust-version: ${{ matrix.rust }}
-         components: ${{ matrix.components || '' }}
-         targets: ${{ matrix.targets || '' }}
     - uses: actions/checkout@v2
-      with:
-         submodules: true
-    - name: Check Cargo availability
-      run: cargo --version
+    - name: Install toolchain from rust-toolchain.toml
+      run: rustup show
     - name: Build
-      run:
-         cargo build
+      run: cargo build
     - name: Build with instrument feature
-      run:
-         cargo clean && RUSTFLAGS="-Z instrument-mcount" cargo build
+      run: cargo clean && RUSTFLAGS="-Z instrument-mcount" cargo build
     - name: Compile, but don't run benchmarks
-      run:
-         cargo bench --no-run
+      run: cargo bench --no-run
 
   kernel-tests:
     name: Rusty-Hermit Kernel based integration tests
     runs-on: [self-hosted]
-
     steps:
-    - uses: hecrj/setup-rust-action@v1
-      with:
-         rust-version: nightly
-         components: 'rustfmt, clippy'
-         targets: 'x86_64-unknown-linux-gnu'
     - uses: actions/checkout@v2
-      with:
-         submodules: true
-    - name: Check Cargo availability
-      run: cargo --version
+    - name: Install toolchain from rust-toolchain.toml
+      run: rustup show
     - name: Integration Tests
       run: cargo test --test '*'
     - name: Generate integration test coverage
-      run: |
-        ./generate_test_coverage.sh --print-coverage
+      run: ./generate_test_coverage.sh --print-coverage
     - name: Generate unit test coverage
       run: |
         #./generate_test_coverage.sh --print-coverage
