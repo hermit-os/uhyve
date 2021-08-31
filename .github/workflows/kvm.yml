@@ -10,24 +10,12 @@ jobs:
   kvm:
     name: KVM Tests
     runs-on: [self-hosted]
-
     steps:
-    - uses: hecrj/setup-rust-action@v1
-      with: 
-         rust-version: nightly
-         components: 'rustfmt, clippy'
-         targets: 'x86_64-unknown-linux-gnu'
     - uses: actions/checkout@v2
-      with:
-         submodules: true
-    - name: Check Cargo availability
-      run: cargo --version
+    - name: Install toolchain from rust-toolchain.toml
+      run: rustup show
     - name: Build (debug)
-      run:
-         cargo build
-    - name: Build (release)
-      run:
-         cargo build --release
+      run: cargo build
     - name: Prepare test environment
       shell: bash
       run: |
@@ -44,6 +32,8 @@ jobs:
          cd ../rusty-hermit
          cargo build -p rusty_demo
          RUST_LOG=debug $GITHUB_WORKSPACE/target/debug/uhyve -v -c 1 target/x86_64-unknown-hermit/debug/rusty_demo
+    - name: Build (release)
+      run: cargo build --release
     - name: KVM tests (release)
       shell: bash
       run: |
@@ -55,17 +45,9 @@ jobs:
   kernel-tests:
     name: Rusty-Hermit Kernel Tests
     runs-on: [self-hosted]
-
     steps:
-    - uses: hecrj/setup-rust-action@v1
-      with:
-         rust-version: nightly
-         components: 'rustfmt, clippy'
-         targets: 'x86_64-unknown-linux-gnu'
     - uses: actions/checkout@v2
-      with:
-         submodules: true
-    - name: Check Cargo availability
-      run: cargo --version
+    - name: Install toolchain from rust-toolchain.toml
+      run: rustup show
     - name: Integration Tests
       run: cargo test --test '*'
