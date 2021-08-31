@@ -41,13 +41,3 @@ jobs:
          cd ../rusty-hermit
          cargo build -p rusty_demo --release
          RUST_LOG=debug $GITHUB_WORKSPACE/target/release/uhyve -v -c 1 target/x86_64-unknown-hermit/release/rusty_demo
-
-  kernel-tests:
-    name: Rusty-Hermit Kernel Tests
-    runs-on: [self-hosted]
-    steps:
-    - uses: actions/checkout@v2
-    - name: Install toolchain from rust-toolchain.toml
-      run: rustup show
-    - name: Integration Tests
-      run: cargo test --test '*'

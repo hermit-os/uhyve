@@ -7,7 +7,6 @@ status = [
     "Format",
     "KVM Tests",
     "Rusty-Hermit Kernel based integration tests",
-    "Rusty-Hermit Kernel Tests",
 ]
 delete_merged_branches = true
 timeout_sec = 7200
