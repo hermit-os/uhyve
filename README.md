@@ -13,8 +13,8 @@ An installation of the Rust toolchain is required.
 Please visit the [Rust website](https://www.rust-lang.org/) and follow the installation instructions.
 The project can then be installed with the following command:
 
-```sh
-cargo install uhyve # Install latest published version from crates.io
+```console
+$ cargo +nightly install uhyve --locked
 ```
 
 ## Requirements
