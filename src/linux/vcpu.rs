@@ -11,7 +11,7 @@ use kvm_ioctls::{VcpuExit, VcpuFd};
 use log::{debug, info};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use x86::controlregs::*;
+use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
 const CPUID_TSC_DEADLINE: u32 = 1 << 24;
@@ -162,16 +162,17 @@ impl UhyveCPU {
 
 		let mut sregs = self.vcpu.get_sregs()?;
 
-		let cr0 = (Cr0::CR0_PROTECTED_MODE
-			| Cr0::CR0_ENABLE_PAGING
-			| Cr0::CR0_EXTENSION_TYPE
-			| Cr0::CR0_NUMERIC_ERROR)
-			.bits() as u64;
-		let cr4 = Cr4::CR4_ENABLE_PAE.bits() as u64;
+		let cr0 = Cr0Flags::PROTECTED_MODE_ENABLE
+			| Cr0Flags::EXTENSION_TYPE
+			| Cr0Flags::NUMERIC_ERROR
+			| Cr0Flags::PAGING;
+		sregs.cr0 = cr0.bits();
 
 		sregs.cr3 = BOOT_PML4;
-		sregs.cr4 = cr4;
-		sregs.cr0 = cr0;
+
+		let cr4 = Cr4Flags::PHYSICAL_ADDRESS_EXTENSION;
+		sregs.cr4 = cr4.bits();
+
 		sregs.efer = EFER_LME | EFER_LMA | EFER_NXE;
 
 		let mut seg = kvm_segment {
