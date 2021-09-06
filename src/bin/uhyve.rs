@@ -244,11 +244,11 @@ fn main() {
 	}
 	let gdbport = matches
 		.value_of("GDB_PORT")
-		.map(|p| p.parse::<u32>().expect("Could not parse gdb port"))
+		.map(|p| p.parse::<u16>().expect("Could not parse gdb port"))
 		.or_else(|| {
 			env::var("HERMIT_GDB_PORT")
 				.ok()
-				.map(|p| p.parse::<u32>().expect("Could not parse gdb port"))
+				.map(|p| p.parse::<u16>().expect("Could not parse gdb port"))
 		});
 
 	let params = vm::Parameter {

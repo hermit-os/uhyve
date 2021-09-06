@@ -105,7 +105,7 @@ pub struct Parameter<'a> {
 	pub gateway: Option<&'a str>,
 	pub mask: Option<&'a str>,
 	pub nic: Option<&'a str>,
-	pub gdbport: Option<u32>,
+	pub gdbport: Option<u16>,
 }
 
 #[repr(C, packed)]
