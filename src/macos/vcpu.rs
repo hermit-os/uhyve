@@ -650,7 +650,7 @@ impl VirtualCPU for UhyveCPU {
 					let len = self.vcpu.read_vmcs(VMCS_RO_VMEXIT_INSTR_LEN)?;
 					let port: u16 = ((qualification >> 16) & 0xFFFF) as u16;
 
-					assert!(input, "Invalid I/O operation");
+					assert!(!input, "Invalid I/O operation");
 
 					match port {
 						SHUTDOWN_PORT => {
