@@ -11,7 +11,7 @@ use std::convert::TryInto;
 use std::io::Write;
 use std::net::Ipv4Addr;
 use std::os::unix::ffi::OsStrExt;
-use std::path::PathBuf;
+use std::path::Path;
 use std::ptr::write;
 use std::time::{Duration, Instant, SystemTime};
 use std::{fmt, mem, slice};
@@ -256,7 +256,7 @@ pub trait VirtualCPU {
 	fn virt_to_phys(&self, addr: usize) -> usize;
 
 	/// Returns the (host) path of the kernel binary.
-	fn kernel_path(&self) -> PathBuf;
+	fn kernel_path(&self) -> &Path;
 
 	fn cmdsize(&self, args_ptr: usize) {
 		let syssize = unsafe { &mut *(args_ptr as *mut SysCmdsize) };
@@ -313,7 +313,7 @@ pub trait VirtualCPU {
 
 		// copy kernel path as first argument
 		{
-			let path = self.kernel_path().into_os_string();
+			let path = self.kernel_path().as_os_str();
 
 			let argvptr = unsafe { self.host_address(*(argv as *mut *mut u8) as usize) };
 			let len = path.len();
@@ -483,7 +483,7 @@ pub trait Vm {
 	/// Sets the elf entry point.
 	fn set_entry_point(&mut self, entry: u64);
 	fn get_entry_point(&self) -> u64;
-	fn kernel_path(&self) -> PathBuf;
+	fn kernel_path(&self) -> &Path;
 	fn create_cpu(&self, id: u32) -> HypervisorResult<Box<dyn VirtualCPU>>;
 	fn set_boot_info(&mut self, header: *const BootInfo);
 	fn cpu_online(&self) -> u32;
@@ -801,6 +801,8 @@ fn get_cpu_frequency_from_os() -> Result<u32, ()> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	use std::path::PathBuf;
 
 	// test is derived from
 	// https://github.com/gz/rust-cpuid/blob/master/examples/tsc_frequency.rs

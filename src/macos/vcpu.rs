@@ -11,6 +11,7 @@ use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use lazy_static::lazy_static;
 use log::{debug, trace};
 use std::arch::x86_64::__cpuid_count;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use x86::msr::*;
@@ -544,8 +545,8 @@ impl VirtualCPU for UhyveCPU {
 		Ok(())
 	}
 
-	fn kernel_path(&self) -> PathBuf {
-		self.kernel_path.clone()
+	fn kernel_path(&self) -> &Path {
+		self.kernel_path.as_path()
 	}
 
 	fn host_address(&self, addr: usize) -> usize {
