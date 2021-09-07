@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 use xhypervisor::{create_vm, map_mem, unmap_mem, MemPerm};
 
 pub struct Uhyve {
+	offset: u64,
 	entry_point: u64,
 	mem_size: usize,
 	guest_mem: *mut c_void,
@@ -61,6 +62,7 @@ impl Uhyve {
 			.map(|g| Arc::new(Mutex::new(g)));
 
 		let hyve = Uhyve {
+			offset: 0,
 			entry_point: 0,
 			mem_size: specs.mem_size,
 			guest_mem: mem,
@@ -81,6 +83,14 @@ impl Uhyve {
 impl Vm for Uhyve {
 	fn verbose(&self) -> bool {
 		self.verbose
+	}
+
+	fn set_offset(&mut self, offset: u64) {
+		self.offset = offset;
+	}
+
+	fn get_offset(&self) -> u64 {
+		self.offset
 	}
 
 	fn set_entry_point(&mut self, entry: u64) {

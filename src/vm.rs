@@ -481,6 +481,10 @@ pub trait Vm {
 	fn num_cpus(&self) -> u32;
 	/// Returns a pointer to the address of the guest memory and the size of the memory in bytes.
 	fn guest_mem(&self) -> (*mut u8, usize);
+	#[doc(hidden)]
+	fn set_offset(&mut self, offset: u64);
+	/// Returns the section offsets relative to their base addresses
+	fn get_offset(&self) -> u64;
 	/// Sets the elf entry point.
 	fn set_entry_point(&mut self, entry: u64);
 	fn get_entry_point(&self) -> u64;
@@ -596,6 +600,7 @@ pub trait Vm {
 			(0x800000u64, elf.entry)
 		};
 
+		self.set_offset(start_address);
 		self.set_entry_point(elf_entry);
 		debug!("ELF entry point at 0x{:x}", elf_entry);
 
