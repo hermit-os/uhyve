@@ -123,6 +123,7 @@ impl Drop for UhyveNetwork {
 
 pub struct Uhyve {
 	vm: VmFd,
+	offset: u64,
 	entry_point: u64,
 	mem: MmapMemory,
 	num_cpus: u32,
@@ -260,6 +261,7 @@ impl Uhyve {
 
 		let hyve = Uhyve {
 			vm,
+			offset: 0,
 			entry_point: 0,
 			mem,
 			num_cpus: specs.num_cpus,
@@ -283,6 +285,14 @@ impl Uhyve {
 impl Vm for Uhyve {
 	fn verbose(&self) -> bool {
 		self.verbose
+	}
+
+	fn set_offset(&mut self, offset: u64) {
+		self.offset = offset;
+	}
+
+	fn get_offset(&self) -> u64 {
+		self.offset
 	}
 
 	fn set_entry_point(&mut self, entry: u64) {
