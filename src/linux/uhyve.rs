@@ -18,6 +18,7 @@ use std::hint;
 use std::mem;
 use std::net::Ipv4Addr;
 use std::os::raw::c_void;
+use std::path::Path;
 use std::path::PathBuf;
 use std::ptr;
 use std::ptr::{read_volatile, write_volatile};
@@ -312,8 +313,8 @@ impl Vm for Uhyve {
 		(self.mem.host_address() as *mut u8, self.mem.memory_size())
 	}
 
-	fn kernel_path(&self) -> PathBuf {
-		self.path.clone()
+	fn kernel_path(&self) -> &Path {
+		self.path.as_path()
 	}
 
 	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU> {
