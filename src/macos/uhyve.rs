@@ -2,7 +2,7 @@ use crate::debug_manager::DebugManager;
 use crate::macos::ioapic::IoApic;
 use crate::macos::vcpu::*;
 use crate::vm::HypervisorResult;
-use crate::vm::{BootInfo, Parameter, VirtualCPU, Vm};
+use crate::vm::{BootInfo, Parameter, Vm};
 use libc;
 use libc::c_void;
 use log::debug;
@@ -103,14 +103,14 @@ impl Vm for Uhyve {
 		self.path.as_path()
 	}
 
-	fn create_cpu(&self, id: u32) -> HypervisorResult<Box<dyn VirtualCPU>> {
-		Ok(Box::new(UhyveCPU::new(
+	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU> {
+		Ok(UhyveCPU::new(
 			id,
 			self.path.clone(),
 			self.guest_mem as usize,
 			self.ioapic.clone(),
 			self.dbg.as_ref().cloned(),
-		)))
+		))
 	}
 
 	fn get_ip(&self) -> Option<Ipv4Addr> {

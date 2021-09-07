@@ -124,7 +124,7 @@ impl VirtioNetPciDevice {
 		//TODO: how to read packets without synchronization issues
 	}
 
-	pub fn handle_notify_output(&mut self, dest: &[u8], cpu: &dyn VirtualCPU) {
+	pub fn handle_notify_output(&mut self, dest: &[u8], cpu: &impl VirtualCPU) {
 		let tx_num = read_u16!(dest, 0);
 		if tx_num == 1 && self.read_status_reg() & STATUS_DRIVER_OK == STATUS_DRIVER_OK {
 			self.send_available_packets(cpu);
@@ -132,7 +132,7 @@ impl VirtioNetPciDevice {
 	}
 
 	// Sends packets using the tun_tap crate, subject to change
-	fn send_available_packets(&mut self, cpu: &dyn VirtualCPU) {
+	fn send_available_packets(&mut self, cpu: &impl VirtualCPU) {
 		let tx_queue = &mut self.virt_queues[TX_QUEUE];
 		let mut send_indices = Vec::new();
 		for index in tx_queue.avail_iter() {
@@ -264,7 +264,7 @@ impl VirtioNetPciDevice {
 	}
 
 	// Register virtqueue
-	pub fn write_pfn(&mut self, dest: &[u8], vcpu: &dyn VirtualCPU) {
+	pub fn write_pfn(&mut self, dest: &[u8], vcpu: &impl VirtualCPU) {
 		let status = self.read_status_reg();
 		if status & STATUS_FEATURES_OK != 0
 			&& status & STATUS_DRIVER_OK == 0

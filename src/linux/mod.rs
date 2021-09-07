@@ -22,7 +22,10 @@ use nix::sys::{
 	signal::{signal, SigHandler, Signal},
 };
 
-use crate::{vm::Vm, Uhyve};
+use crate::{
+	vm::{VirtualCPU, Vm},
+	Uhyve,
+};
 
 lazy_static! {
 	static ref KVM: Kvm = Kvm::new().unwrap();
