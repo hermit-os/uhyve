@@ -26,6 +26,21 @@ pub struct Uhyve {
 	dbg: Option<Arc<Mutex<DebugManager>>>,
 }
 
+impl std::fmt::Debug for Uhyve {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Uhyve")
+			.field("entry_point", &self.entry_point)
+			.field("mem_size", &self.mem_size)
+			.field("guest_mem", &self.guest_mem)
+			.field("num_cpus", &self.num_cpus)
+			.field("path", &self.path)
+			.field("boot_info", &self.boot_info)
+			.field("ioapic", &self.ioapic)
+			.field("verbose", &self.verbose)
+			.finish()
+	}
+}
+
 impl Uhyve {
 	pub fn new(kernel_path: PathBuf, specs: &Parameter<'_>) -> HypervisorResult<Uhyve> {
 		let mem = unsafe {

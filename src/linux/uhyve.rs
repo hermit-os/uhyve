@@ -14,6 +14,7 @@ use kvm_ioctls::VmFd;
 use log::debug;
 use nix::sys::mman::*;
 use std::convert::TryInto;
+use std::fmt;
 use std::hint;
 use std::mem;
 use std::net::Ipv4Addr;
@@ -33,6 +34,7 @@ const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
 const KVM_32BIT_GAP_SIZE: usize = 768 << 20;
 const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
 
+#[derive(Debug)]
 struct UhyveNetwork {
 	#[allow(dead_code)]
 	reader: std::thread::JoinHandle<()>,
@@ -135,6 +137,24 @@ pub struct Uhyve {
 	uhyve_device: Option<UhyveNetwork>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	dbg: Option<Arc<Mutex<DebugManager>>>,
+}
+
+impl fmt::Debug for Uhyve {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		f.debug_struct("Uhyve")
+			.field("entry_point", &self.entry_point)
+			.field("mem", &self.mem)
+			.field("num_cpus", &self.num_cpus)
+			.field("path", &self.path)
+			.field("boot_info", &self.boot_info)
+			.field("verbose", &self.verbose)
+			.field("ip", &self.ip)
+			.field("gateway", &self.gateway)
+			.field("mask", &self.mask)
+			.field("uhyve_device", &self.uhyve_device)
+			.field("virtio_device", &self.virtio_device)
+			.finish()
+	}
 }
 
 impl Uhyve {

@@ -3,7 +3,7 @@ const REDIR_ENTRIES: usize = 24;
 /// Redirection table base
 const IOAPIC_REG_TABLE: usize = 0x0010;
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 struct RedirectionTable {
 	reg: u32,
 }
@@ -14,6 +14,7 @@ impl RedirectionTable {
 	}
 }
 
+#[derive(Debug)]
 pub struct IoApic {
 	selector: usize,
 	rtbl: [RedirectionTable; IOAPIC_REG_TABLE + 2 * REDIR_ENTRIES],
