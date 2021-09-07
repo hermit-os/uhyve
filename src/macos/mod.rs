@@ -6,7 +6,10 @@ use std::{
 
 use core_affinity::CoreId;
 
-use crate::{vm::Vm, Uhyve};
+use crate::{
+	vm::{VirtualCPU, Vm},
+	Uhyve,
+};
 
 pub mod gdb;
 mod ioapic;

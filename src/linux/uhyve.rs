@@ -8,7 +8,7 @@ use crate::linux::virtio::*;
 use crate::linux::{MemoryRegion, KVM};
 use crate::shared_queue::*;
 use crate::vm::HypervisorResult;
-use crate::vm::{BootInfo, Parameter, VirtualCPU, Vm};
+use crate::vm::{BootInfo, Parameter, Vm};
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use log::debug;
@@ -316,11 +316,11 @@ impl Vm for Uhyve {
 		self.path.clone()
 	}
 
-	fn create_cpu(&self, id: u32) -> HypervisorResult<Box<dyn VirtualCPU>> {
+	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU> {
 		let vm_start = self.mem.host_address() as usize;
 		let tx = self.uhyve_device.as_ref().map(|dev| dev.tx.clone());
 
-		Ok(Box::new(UhyveCPU::new(
+		Ok(UhyveCPU::new(
 			id,
 			self.path.clone(),
 			self.vm.create_vcpu(id.try_into().unwrap())?,
@@ -328,7 +328,7 @@ impl Vm for Uhyve {
 			tx,
 			self.virtio_device.clone(),
 			self.dbg.as_ref().cloned(),
-		)))
+		))
 	}
 
 	fn set_boot_info(&mut self, header: *const BootInfo) {
