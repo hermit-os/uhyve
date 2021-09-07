@@ -892,7 +892,7 @@ mod tests {
 	fn test_vm_load_min_size_1024() {
 		let mut path = PathBuf::new();
 		path.push(env!("CARGO_MANIFEST_DIR"));
-		path.push("/benches_data/hello_world");
+		path.push("benches_data/hello_world");
 		let vm = crate::Uhyve::new(
 			path,
 			&Parameter {
@@ -916,7 +916,7 @@ mod tests {
 	fn test_vm_load_min_size_102400() {
 		let mut path = PathBuf::new();
 		path.push(env!("CARGO_MANIFEST_DIR"));
-		path.push("/benches_data/hello_world");
+		path.push("benches_data/hello_world");
 		let mut vm = crate::Uhyve::new(
 			path,
 			&Parameter {
