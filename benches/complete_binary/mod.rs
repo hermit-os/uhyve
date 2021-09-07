@@ -5,6 +5,7 @@ use criterion::{criterion_group, Criterion};
 use std::env;
 use std::fs;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -22,16 +23,19 @@ fn is_program_in_path(program: &str) -> bool {
 }
 
 pub fn run_hello_world(c: &mut Criterion) {
-	let uhyve_path = env!("CARGO_MANIFEST_DIR").to_string() + &"/target/release/uhyve".to_string();
+	let uhyve_path = [env!("CARGO_MANIFEST_DIR"), "target/release/uhyve"]
+		.iter()
+		.collect::<PathBuf>();
 	assert!(
-		Path::new(&uhyve_path).exists(),
+		uhyve_path.exists(),
 		"uhyve release build is required to run this benchmark"
 	);
 
-	let hello_world_path =
-		env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/hello_world".to_string();
+	let hello_world_path = [env!("CARGO_MANIFEST_DIR"), "benches_data/hello_world"]
+		.iter()
+		.collect::<PathBuf>();
 	assert!(
-		Path::new(&hello_world_path).exists(),
+		hello_world_path.exists(),
 		"hello_world executable missing from bench_data"
 	);
 
@@ -56,10 +60,11 @@ pub fn run_hello_world(c: &mut Criterion) {
 		return;
 	}
 
-	let rusty_loader_path =
-		env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/rusty-loader".to_string();
+	let rusty_loader_path = [env!("CARGO_MANIFEST_DIR"), "benches_data/rusty-loader"]
+		.iter()
+		.collect::<PathBuf>();
 	assert!(
-		Path::new(&rusty_loader_path).exists(),
+		rusty_loader_path.exists(),
 		"rusty-loader is missing from bench_data"
 	);
 
@@ -90,14 +95,17 @@ pub fn run_hello_world(c: &mut Criterion) {
 }
 
 pub fn run_rusty_demo(c: &mut Criterion) {
-	let uhyve_path = env!("CARGO_MANIFEST_DIR").to_string() + &"/target/release/uhyve".to_string();
+	let uhyve_path = [env!("CARGO_MANIFEST_DIR"), "target/release/uhyve"]
+		.iter()
+		.collect::<PathBuf>();
 	assert!(
-		Path::new(&uhyve_path).exists(),
+		uhyve_path.exists(),
 		"uhyve release build is required to run this benchmark"
 	);
 
-	let rusty_demo_path =
-		env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/rusty_demo".to_string();
+	let rusty_demo_path = [env!("CARGO_MANIFEST_DIR"), "benches_data/rusty_demo"]
+		.iter()
+		.collect::<PathBuf>();
 	assert!(
 		Path::new(&rusty_demo_path).exists(),
 		"rusty_demo executable missing from bench_data"
@@ -124,10 +132,11 @@ pub fn run_rusty_demo(c: &mut Criterion) {
 		return;
 	}
 
-	let rusty_loader_path =
-		env!("CARGO_MANIFEST_DIR").to_string() + &"/benches_data/rusty-loader".to_string();
+	let rusty_loader_path = [env!("CARGO_MANIFEST_DIR"), "benches_data/rusty-loader"]
+		.iter()
+		.collect::<PathBuf>();
 	assert!(
-		Path::new(&rusty_loader_path).exists(),
+		rusty_loader_path.exists(),
 		"rusty-loader is missing from bench_data"
 	);
 

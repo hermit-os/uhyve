@@ -1,23 +1,32 @@
-use std::{path::PathBuf, process::Command};
+use std::{
+	path::{Path, PathBuf},
+	process::Command,
+};
 use uhyvelib::{vm::Parameter, Uhyve};
 
-/// Uses Cargo to build a kernel in the `tests/test-kernels/` directory.
+/// Uses Cargo to build a kernel in the `tests/test-kernels` directory.
 /// Returns a path to the build binary.
-pub fn build_hermit_bin(kernel: &str) -> PathBuf {
-	println!("Building Kernel {}", kernel);
-	let kernel_src_path = PathBuf::from("tests/test-kernels");
+pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
+	let kernel = kernel.as_ref();
+	println!("Building Kernel {}", kernel.display());
+	let kernel_src_path = Path::new("tests/test-kernels");
 	let cmd = Command::new("cargo")
-		.args(&["build"])
-		.args(&["--bin", kernel])
-		.env_remove("RUSTUP_TOOLCHAIN") // Otherwise uhyve's toolchain would be used instead of the one from the rust-toolchain.toml of the kernels
-		.current_dir(&kernel_src_path)
+		.arg("build")
+		.arg("--bin")
+		.arg(kernel)
+		// Otherwise uhyve's toolchain would be used instead of the one from the rust-toolchain.toml of the kernels
+		.env_remove("RUSTUP_TOOLCHAIN")
+		.current_dir(kernel_src_path)
 		.status()
 		.expect("failed to execute `cargo build`");
 	assert!(cmd.success(), "Test binaries could not be build");
-	let mut bin_path = kernel_src_path;
-	bin_path.push("target/x86_64-unknown-hermit/debug/");
-	bin_path.push(kernel);
-	bin_path
+	[
+		kernel_src_path,
+		Path::new("target/x86_64-unknown-hermit/debug"),
+		Path::new(kernel),
+	]
+	.iter()
+	.collect()
 }
 
 /// Small wrapper around [`Uhyve::run`] with default parameters for a small and
