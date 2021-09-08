@@ -808,8 +808,6 @@ fn get_cpu_frequency_from_os() -> Result<u32, ()> {
 mod tests {
 	use super::*;
 
-	use std::path::PathBuf;
-
 	// test is derived from
 	// https://github.com/gz/rust-cpuid/blob/master/examples/tsc_frequency.rs
 	#[test]
@@ -895,9 +893,9 @@ mod tests {
 	#[cfg(target_os = "linux")]
 	#[test]
 	fn test_vm_load_min_size_1024() {
-		let mut path = PathBuf::new();
-		path.push(env!("CARGO_MANIFEST_DIR"));
-		path.push("/benches_data/hello_world");
+		let path = [env!("CARGO_MANIFEST_DIR"), "benches_data/hello_world"]
+			.iter()
+			.collect();
 		let vm = crate::Uhyve::new(
 			path,
 			&Parameter {
@@ -919,9 +917,9 @@ mod tests {
 	#[cfg(target_os = "linux")]
 	#[test]
 	fn test_vm_load_min_size_102400() {
-		let mut path = PathBuf::new();
-		path.push(env!("CARGO_MANIFEST_DIR"));
-		path.push("/benches_data/hello_world");
+		let path = [env!("CARGO_MANIFEST_DIR"), "benches_data/hello_world"]
+			.iter()
+			.collect();
 		let mut vm = crate::Uhyve::new(
 			path,
 			&Parameter {

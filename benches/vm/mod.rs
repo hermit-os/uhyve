@@ -1,12 +1,10 @@
-use std::path::PathBuf;
-
 use criterion::{criterion_group, Criterion};
 use uhyvelib::{vm::Vm, Uhyve};
 
 pub fn load_vm_hello_world(c: &mut Criterion) {
-	let mut path = PathBuf::new();
-	path.push(env!("CARGO_MANIFEST_DIR"));
-	path.push("benches_data/hello_world");
+	let path = [env!("CARGO_MANIFEST_DIR"), "benches_data/hello_world"]
+		.iter()
+		.collect();
 	let mut vm = Uhyve::new(
 		path,
 		&uhyvelib::vm::Parameter {
