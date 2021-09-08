@@ -366,7 +366,7 @@ pub trait VirtualCPU {
 
 				// Create string for environment variable
 				slice[0..key.len()].copy_from_slice(key.as_bytes());
-				slice[key.len()..(key.len() + 1)].copy_from_slice("=".to_string().as_bytes());
+				slice[key.len()..(key.len() + 1)].copy_from_slice("=".as_bytes());
 				slice[(key.len() + 1)..(len + 1)].copy_from_slice(value.as_bytes());
 				slice[len + 1] = 0;
 				counter += 1;

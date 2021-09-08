@@ -247,7 +247,7 @@ impl Uhyve {
 				debug!("Initialize network interface");
 				Some(UhyveNetwork::new(
 					evtfd,
-					nic.to_owned().to_string(),
+					nic.to_string(),
 					mem.host_address() + SHAREDQUEUE_START,
 				))
 			}
