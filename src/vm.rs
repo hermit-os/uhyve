@@ -860,7 +860,7 @@ mod tests {
 		let path = [env!("CARGO_MANIFEST_DIR"), "benches_data/hello_world"]
 			.iter()
 			.collect();
-		let vm = crate::Uhyve::new(
+		let res = crate::Uhyve::new(
 			path,
 			&Parameter {
 				mem_size: 1024,
@@ -875,7 +875,8 @@ mod tests {
 				gdbport: None,
 			},
 		);
-		assert!(vm.is_err());
+		// EINVAL 22 Invalid argument
+		assert_eq!(kvm_ioctls::Error::new(22), res.unwrap_err());
 	}
 
 	#[cfg(target_os = "linux")]
@@ -900,10 +901,14 @@ mod tests {
 			},
 		)
 		.expect("Unable to create VM");
-		unsafe {
-			let res = vm.load_kernel();
-
-			assert!(res.is_err());
+		let res = unsafe { vm.load_kernel() };
+		match res.unwrap_err() {
+			LoadKernelError::InsufficientMemory => {}
+			err => panic!(
+				"Expected {:?}, got {:?}",
+				LoadKernelError::InsufficientMemory,
+				err
+			),
 		}
 	}
 }
