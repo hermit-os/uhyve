@@ -3,4 +3,5 @@ channel = "nightly"
 components = [
     "rustfmt",
     "clippy",
+    "llvm-tools-preview",
 ]
