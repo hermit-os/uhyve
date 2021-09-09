@@ -63,7 +63,9 @@ pub struct VirtioNetPciDevice {
 
 impl fmt::Debug for VirtioNetPciDevice {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "Status: {}", self.registers[STATUS_REGISTER as usize])
+		f.debug_struct("VirtioNetPciDevice")
+			.field("status", &self.registers[STATUS_REGISTER as usize])
+			.finish()
 	}
 }
 
