@@ -7,9 +7,3 @@ publish = false
 
 [target.'cfg(target_os = "hermit")'.dependencies]
 hermit-sys = "0.1"
-
-[profile.release]
-opt-level = 3
-
-[profile.dev]
-opt-level = 1      # controls the `--opt-level` the compiler builds with
