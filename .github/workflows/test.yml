@@ -47,6 +47,8 @@ jobs:
     runs-on: [self-hosted]
     steps:
     - uses: actions/checkout@v2
+      with:
+        lfs: true
     - name: Install toolchain from rust-toolchain.toml
       run: rustup show
     - name: Integration Tests
