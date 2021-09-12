@@ -15,11 +15,9 @@ exclude = [
     "/benches_data/",
     "/.gitattributes",
     "/.gitignore",
-    "/.gitlab-ci.yml",
     "/.gitmodules",
     "/bors.toml",
     "/codecov.yml",
-    "/Dockerfile",
 ]
 
 [lib]
