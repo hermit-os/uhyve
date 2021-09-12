@@ -22,8 +22,8 @@ jobs:
       run: rustup show
     - name: Test
       run: |
-         cargo test --lib -- --nocapture --skip test_vm
-         cargo test --doc -- --nocapture
+        cargo test --lib -- --skip test_vm
+        cargo test --doc
 
   build:
     name: Build
