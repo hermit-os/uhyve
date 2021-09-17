@@ -1,6 +1,6 @@
 [package]
 name = "uhyve"
-version = "0.0.28"
+version = "0.0.29"
 authors = ["Stefan Lankes <slankes@eonerc.rwth-aachen>"]
 edition = "2018"
 description = "A hypervisor for RustyHermit."
