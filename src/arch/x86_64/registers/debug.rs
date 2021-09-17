@@ -2,11 +2,11 @@
 
 use std::convert::{TryFrom, TryInto};
 
-use gdbstub::target::ext::breakpoints::WatchKind;
+use gdbstub::target::ext::{base::singlethread::StopReason, breakpoints::WatchKind};
 use x86_64::{
 	registers::debug::{
-		DebugAddressRegisterNumber, Dr7Flags, Dr7Value, HwBreakpointCondition, HwBreakpointSize,
-		TryFromIntError,
+		DebugAddressRegisterNumber, Dr6Flags, Dr7Flags, Dr7Value, HwBreakpointCondition,
+		HwBreakpointSize, TryFromIntError,
 	},
 	VirtAddr,
 };
@@ -110,6 +110,33 @@ impl HwBreakpoints {
 			0,
 			control_value.bits(),
 		]
+	}
+
+	pub fn stop_reason(&self, dr6: Dr6Flags) -> StopReason<u64> {
+		if dr6.contains(Dr6Flags::STEP) {
+			StopReason::DoneStep
+		} else {
+			let n = (0..4)
+				.find(|&n| {
+					let n = DebugAddressRegisterNumber::new(n).unwrap();
+					dr6.contains(Dr6Flags::trap(n))
+				})
+				.unwrap();
+			let breakpoint = self.0[usize::from(n)].unwrap();
+
+			match breakpoint.condition {
+				HwBreakpointCondition::InstructionExecution => StopReason::HwBreak,
+				HwBreakpointCondition::DataWrites => StopReason::Watch {
+					kind: WatchKind::Write,
+					addr: breakpoint.addr.as_u64(),
+				},
+				HwBreakpointCondition::DataReadsWrites => StopReason::Watch {
+					kind: WatchKind::ReadWrite,
+					addr: breakpoint.addr.as_u64(),
+				},
+				HwBreakpointCondition::IoReadsWrites => unreachable!(),
+			}
+		}
 	}
 }
 
