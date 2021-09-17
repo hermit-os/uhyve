@@ -1,5 +1,4 @@
 use crate::consts::*;
-use crate::debug_manager::DebugManager;
 use crate::linux::virtio::*;
 use crate::linux::KVM;
 use crate::paging::*;
@@ -8,9 +7,10 @@ use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
-use log::{debug, info};
+use std::convert::TryInto;
 use std::path::Path;
 use std::path::PathBuf;
+use std::slice;
 use std::sync::{Arc, Mutex};
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
@@ -29,10 +29,15 @@ pub struct UhyveCPU {
 	tx: Option<std::sync::mpsc::SyncSender<usize>>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	pci_addr: Option<u32>,
-	pub dbg: Option<Arc<Mutex<DebugManager>>>,
 }
 
 impl UhyveCPU {
+	pub unsafe fn memory(&mut self, start_addr: u64, len: usize) -> &mut [u8] {
+		let phys = self.virt_to_phys(start_addr.try_into().unwrap());
+		let host = self.host_address(phys);
+		slice::from_raw_parts_mut(host as *mut u8, len)
+	}
+
 	pub fn new(
 		id: u32,
 		kernel_path: PathBuf,
@@ -40,7 +45,6 @@ impl UhyveCPU {
 		vm_start: usize,
 		tx: Option<std::sync::mpsc::SyncSender<usize>>,
 		virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
-		dbg: Option<Arc<Mutex<DebugManager>>>,
 	) -> UhyveCPU {
 		UhyveCPU {
 			id,
@@ -50,7 +54,6 @@ impl UhyveCPU {
 			tx,
 			virtio_device,
 			pci_addr: None,
-			dbg,
 		}
 	}
 
@@ -428,9 +431,9 @@ impl VirtualCPU for UhyveCPU {
 							}
 						}
 					}
-					VcpuExit::Debug => {
+					VcpuExit::Debug(debug) => {
 						info!("Caught Debug Interrupt!");
-						return Ok(VcpuStopReason::Debug);
+						return Ok(VcpuStopReason::Debug(debug));
 					}
 					VcpuExit::InternalError => {
 						panic!("{:?}", VcpuExit::InternalError)
@@ -448,17 +451,12 @@ impl VirtualCPU for UhyveCPU {
 	}
 
 	fn run(&mut self) -> HypervisorResult<Option<i32>> {
-		// Pause first CPU before first execution, so we have time to attach debugger
-		if self.id == 0 {
-			self.gdb_handle_exception(None);
-		}
-
-		loop {
-			match self.r#continue()? {
-				VcpuStopReason::Debug => self.gdb_handle_exception(Some(VcpuExit::Debug)),
-				VcpuStopReason::Exit(code) => break Ok(Some(code)),
-				VcpuStopReason::Kick => break Ok(None),
+		match self.r#continue()? {
+			VcpuStopReason::Debug(_) => {
+				unreachable!("reached debug exit without running in debugging mode")
 			}
+			VcpuStopReason::Exit(code) => Ok(Some(code)),
+			VcpuStopReason::Kick => Ok(None),
 		}
 	}
 

@@ -1,7 +1,6 @@
 #![allow(non_snake_case)]
 
 use crate::consts::*;
-use crate::debug_manager::DebugManager;
 use crate::macos::ioapic::IoApic;
 use crate::paging::*;
 use crate::vm::HypervisorResult;
@@ -71,7 +70,6 @@ pub struct UhyveCPU {
 	vm_start: usize,
 	apic_base: u64,
 	ioapic: Arc<Mutex<IoApic>>,
-	pub dbg: Option<Arc<Mutex<DebugManager>>>,
 }
 
 impl UhyveCPU {
@@ -80,7 +78,6 @@ impl UhyveCPU {
 		kernel_path: PathBuf,
 		vm_start: usize,
 		ioapic: Arc<Mutex<IoApic>>,
-		dbg: Option<Arc<Mutex<DebugManager>>>,
 	) -> UhyveCPU {
 		UhyveCPU {
 			id,
@@ -89,7 +86,6 @@ impl UhyveCPU {
 			vm_start,
 			apic_base: APIC_DEFAULT_BASE,
 			ioapic,
-			dbg,
 		}
 	}
 
@@ -613,7 +609,7 @@ impl VirtualCPU for UhyveCPU {
 						irq_vec
 					);
 					debug!("Handle breakpoint exception");
-					return Ok(VcpuStopReason::Debug);
+					return Ok(VcpuStopReason::Debug(()));
 				}
 				vmx_exit::VMX_REASON_CPUID => {
 					self.emulate_cpuid(rip)?;
@@ -728,17 +724,12 @@ impl VirtualCPU for UhyveCPU {
 	}
 
 	fn run(&mut self) -> HypervisorResult<Option<i32>> {
-		// Pause first CPU before first execution, so we have time to attach debugger
-		if self.id == 0 {
-			self.gdb_handle_exception(false);
-		}
-
-		loop {
-			match self.r#continue()? {
-				VcpuStopReason::Debug => self.gdb_handle_exception(true),
-				VcpuStopReason::Exit(code) => break Ok(Some(code)),
-				VcpuStopReason::Kick => break Ok(None),
+		match self.r#continue()? {
+			VcpuStopReason::Debug(_) => {
+				unreachable!("reached debug exit without running in debugging mode")
 			}
+			VcpuStopReason::Exit(code) => Ok(Some(code)),
+			VcpuStopReason::Kick => Ok(None),
 		}
 	}
 
