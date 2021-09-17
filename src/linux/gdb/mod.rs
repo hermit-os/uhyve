@@ -96,14 +96,8 @@ impl SingleThreadOps for GdbUhyve {
 		match self.vcpu.r#continue()? {
 			VcpuStopReason::Debug(debug) => match debug.exception {
 				DB_VECTOR => {
-					let dr6_flags = Dr6Flags::from_bits_truncate(debug.dr6);
-					if dr6_flags.contains(Dr6Flags::STEP) {
-						Ok(Some(StopReason::DoneStep))
-					} else if dr6_flags.intersects(Dr6Flags::TRAP) {
-						Ok(Some(StopReason::HwBreak))
-					} else {
-						unreachable!("could not identify KVM debug exit reason")
-					}
+					let dr6 = Dr6Flags::from_bits_truncate(debug.dr6);
+					Ok(Some(self.hw_breakpoints.stop_reason(dr6)))
 				}
 				BP_VECTOR => Ok(Some(StopReason::SwBreak)),
 				vector => unreachable!("unknown KVM exception vector: {}", vector),
