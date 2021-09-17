@@ -66,7 +66,7 @@ mac_address = "1.1"
 nix = "0.22"
 tun-tap = { version = "0.1", default-features = false }
 virtio-bindings = { version = "0.1", features = ["virtio-v4_14_0"] }
-vmm-sys-util = "0.8"
+vmm-sys-util = "0.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 burst = "0.0"
