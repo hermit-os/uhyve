@@ -59,6 +59,7 @@ jobs:
       run: |
         #./generate_test_coverage.sh --print-coverage
         bash <(curl -s https://codecov.io/bash) -f
-    - uses: codecov/codecov-action@v1
+    - uses: codecov/codecov-action@v2
       with:
-        files: ./coveralls.json
+        files: coveralls.json
+        fail_ci_if_error: true
