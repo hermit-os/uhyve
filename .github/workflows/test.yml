@@ -53,9 +53,9 @@ jobs:
     - name: Install toolchain from rust-toolchain.toml
       run: rustup show
     - name: Integration Tests
-      run: cargo test --test '*'
+      run: cargo test --test '*' -- --skip gdb
     - name: Generate integration test coverage
-      run: ./generate_test_coverage.sh --print-coverage
+      run: ./generate_test_coverage.sh --print-coverage -- --skip gdb
     - name: Generate unit test coverage
       run: |
         #./generate_test_coverage.sh --print-coverage

@@ -79,4 +79,5 @@ x86_64 = { version = "0.14", default-features = false }
 x86 = { version = "0.42", default-features = false }
 
 [dev-dependencies]
+assert_fs = "1"
 criterion = "0.3"
