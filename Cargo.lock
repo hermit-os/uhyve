@@ -27,7 +27,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9b39be18770d11421cdb1b9947a45dd3f37e93092cbf377614828a319d5fee8"
 dependencies = [
  "hermit-abi",
- "libc 0.2.102",
+ "libc 0.2.103",
  "winapi 0.3.9",
 ]
 
@@ -137,7 +137,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f8a03115cc34fb0d7c321dd154a3914b3ca082ccc5c11d91bf7117dbbe7171f"
 dependencies = [
  "kernel32-sys",
- "libc 0.2.102",
+ "libc 0.2.103",
  "num_cpus",
  "winapi 0.2.8",
 ]
@@ -340,7 +340,7 @@ version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62b467343b94ba476dcb2500d242dadbb39557df889310ac77c5d99100aaac33"
 dependencies = [
- "libc 0.2.102",
+ "libc 0.2.103",
 ]
 
 [[package]]
@@ -409,7 +409,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48dc14f9047df1873cf6942caccc7431d19c3d496ca7a0d162260c4cf0f64b76"
 dependencies = [
  "kvm-bindings",
- "libc 0.2.102",
+ "libc 0.2.103",
  "vmm-sys-util",
 ]
 
@@ -426,9 +426,9 @@ source = "git+https://github.com/rust-lang/libc?rev=621a95373#621a95373d18bc8152
 
 [[package]]
 name = "libc"
-version = "0.2.102"
+version = "0.2.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2a5ac8f984bfcf3a823267e5fde638acc3325f6496633a5da6bb6eb2171e103"
+checksum = "dd8f7255a17a627354f321ef0055d63b898c6fb27eff628af4d1b66b7331edf6"
 
 [[package]]
 name = "log"
@@ -498,7 +498,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05499f3756671c15885fee9034446956fff3f243d6077b91e5767df161f766b3"
 dependencies = [
  "hermit-abi",
- "libc 0.2.102",
+ "libc 0.2.103",
 ]
 
 [[package]]
@@ -831,7 +831,7 @@ dependencies = [
  "kvm-bindings",
  "kvm-ioctls",
  "lazy_static",
- "libc 0.2.102",
+ "libc 0.2.103",
  "log",
  "mac_address",
  "nix",
@@ -885,7 +885,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "733537bded03aaa93543f785ae997727b30d1d9f4a03b7861d23290474242e11"
 dependencies = [
  "bitflags",
- "libc 0.2.102",
+ "libc 0.2.103",
 ]
 
 [[package]]
@@ -1039,5 +1039,5 @@ version = "0.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "643a7272630495dac4765f4f6b020b54af2c4d71fd29ef6b6141ade280355f8a"
 dependencies = [
- "libc 0.2.102",
+ "libc 0.2.103",
 ]
