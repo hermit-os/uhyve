@@ -519,7 +519,7 @@ version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89544d9544366f6cda81244514a80809b137b5a179947b73bfa9f2797480de69"
 dependencies = [
- "nix",
+ "nix 0.22.0",
  "winapi 0.3.9",
 ]
 
@@ -547,7 +547,21 @@ dependencies = [
 [[package]]
 name = "nix"
 version = "0.22.0"
-source = "git+https://github.com/nix-rust/nix#9a2f86f4cf9bddefc1878a124b4ee6f83e6ef064"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf1e25ee6b412c2a1e3fcb6a4499a5c1bfe7f43e014bdce9a6b6666e5aa2d187"
+dependencies = [
+ "bitflags",
+ "cc",
+ "cfg-if",
+ "libc",
+ "memoffset",
+]
+
+[[package]]
+name = "nix"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f305c2c2e4c39a82f7bf0bf65fb557f9070ce06781d4f2454295cc34b1c43188"
 dependencies = [
  "bitflags",
  "cc",
@@ -1035,7 +1049,7 @@ dependencies = [
  "libc",
  "log",
  "mac_address",
- "nix",
+ "nix 0.23.0",
  "raw-cpuid",
  "rftrace",
  "rftrace-frontend",

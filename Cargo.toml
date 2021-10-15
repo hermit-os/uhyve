@@ -33,7 +33,6 @@ instrument = ["rftrace", "rftrace-frontend"]
 
 [patch.crates-io]
 gdbstub = { git = "https://github.com/daniel5151/gdbstub", branch = "dev/0.6" }
-nix = { git = "https://github.com/nix-rust/nix" }
 x86_64 = { git = "https://github.com/mkroening/x86_64", branch = "debug-stable" }
 
 [dependencies]
@@ -63,7 +62,7 @@ rftrace-frontend = { version = "0.1", optional = true }
 kvm-bindings = "0.5"
 kvm-ioctls = "0.10"
 mac_address = "1.1"
-nix = "0.22"
+nix = "0.23"
 tun-tap = { version = "0.1", default-features = false }
 virtio-bindings = { version = "0.1", features = ["virtio-v4_14_0"] }
 vmm-sys-util = "0.9"
