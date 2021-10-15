@@ -1,4 +1,5 @@
 use std::{
+	env,
 	path::{Path, PathBuf},
 	process::Command,
 };
@@ -14,8 +15,10 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 		.arg("build")
 		.arg("--bin")
 		.arg(kernel)
-		// Otherwise uhyve's toolchain would be used instead of the one from the rust-toolchain.toml of the kernels
-		.env_remove("RUSTUP_TOOLCHAIN")
+		// Remove environment variables related to the current cargo instance (toolchain version, coverage flags)
+		.env_clear()
+		// Retain PATH since it is used to find cargo and cc
+		.env("PATH", env::var_os("PATH").unwrap())
 		.current_dir(kernel_src_path)
 		.status()
 		.expect("failed to execute `cargo build`");

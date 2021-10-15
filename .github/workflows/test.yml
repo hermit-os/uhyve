@@ -54,13 +54,23 @@ jobs:
       run: rustup show
     - name: Integration Tests
       run: cargo test --test '*' -- --skip gdb
-    - name: Generate integration test coverage
-      run: ./generate_test_coverage.sh --print-coverage -- --skip gdb
-    - name: Generate unit test coverage
-      run: |
-        #./generate_test_coverage.sh --print-coverage
-        bash <(curl -s https://codecov.io/bash) -f
-    - uses: codecov/codecov-action@v2
+
+  coverage:
+    name: Coverage
+    runs-on: [self-hosted]
+    steps:
+    - uses: actions/checkout@v2
       with:
-        files: coveralls.json
+        lfs: true
+    - run: git lfs checkout benches_data/hello_world
+    - name: Install toolchain from rust-toolchain.toml
+      run: rustup show
+    - name: Install cargo-llvm-cov
+      run: curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin
+    - name: Generate code coverage
+      run: cargo llvm-cov --lcov --output-path lcov.info -- --skip gdb
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v2
+      with:
+        files: lcov.info
         fail_ci_if_error: true

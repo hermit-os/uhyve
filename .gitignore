@@ -1,6 +1,6 @@
 /target
 
 # Coverage
-coveralls.json
+lcov.info
 *.profraw
 *.profdata
