@@ -317,7 +317,7 @@ dependencies = [
 [[package]]
 name = "gdbstub"
 version = "0.5.0"
-source = "git+https://github.com/daniel5151/gdbstub?branch=dev/0.6#f9c9316341cf421cc56f752ffcb31f0d49abd2ff"
+source = "git+https://github.com/daniel5151/gdbstub?branch=dev/0.6#d616b2bc33c6e169ba9d9799d4cdf2367feedc48"
 dependencies = [
  "bitflags",
  "cfg-if",
