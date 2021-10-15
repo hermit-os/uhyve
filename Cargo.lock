@@ -317,7 +317,7 @@ dependencies = [
 [[package]]
 name = "gdbstub"
 version = "0.5.0"
-source = "git+https://github.com/daniel5151/gdbstub?branch=dev/0.6#d616b2bc33c6e169ba9d9799d4cdf2367feedc48"
+source = "git+https://github.com/daniel5151/gdbstub?branch=dev/0.6#c5489a09ab921118c15f2142cc55e2c728572e69"
 dependencies = [
  "bitflags",
  "cfg-if",
@@ -329,9 +329,8 @@ dependencies = [
 
 [[package]]
 name = "gdbstub_arch"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e358b9c0e1468eae66099062e47bb502849308b987b74b5e72f1936397c33c16"
+version = "0.1.0"
+source = "git+https://github.com/daniel5151/gdbstub?branch=dev/0.6#c5489a09ab921118c15f2142cc55e2c728572e69"
 dependencies = [
  "gdbstub",
  "num-traits",
