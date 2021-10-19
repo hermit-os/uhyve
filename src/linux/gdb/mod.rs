@@ -206,6 +206,6 @@ impl gdbstub_run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 	fn on_interrupt(
 		_target: &mut Self::Target,
 	) -> Result<Option<ThreadStopReason<u64>>, <Self::Target as Target>::Error> {
-		Ok(Some(StopReason::GdbCtrlCInterrupt.into()))
+		Ok(Some(StopReason::Signal(5).into()))
 	}
 }
