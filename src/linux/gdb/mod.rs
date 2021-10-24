@@ -8,7 +8,7 @@ use gdbstub::{
 		self,
 		ext::base::{
 			multithread::ThreadStopReason,
-			singlethread::{ResumeAction, SingleThreadOps, StopReason},
+			singlethread::{SingleThreadOps, StopReason},
 		},
 		Target, TargetError, TargetResult,
 	},
@@ -113,15 +113,20 @@ impl GdbUhyve {
 }
 
 impl SingleThreadOps for GdbUhyve {
-	fn resume(&mut self, action: ResumeAction) -> Result<(), Self::Error> {
-		let step = match action {
-			ResumeAction::Continue => false,
-			ResumeAction::Step => true,
+	fn resume(&mut self, signal: Option<u8>) -> Result<(), Self::Error> {
+		if signal.is_some() {
 			// cannot resume with signal
-			_ => return Err(kvm_ioctls::Error::new(EINVAL)),
-		};
+			return Err(kvm_ioctls::Error::new(EINVAL));
+		}
 
-		self.apply_guest_debug(step)
+		self.apply_guest_debug(false)
+	}
+
+	#[inline(always)]
+	fn support_single_step(
+		&mut self,
+	) -> Option<target::ext::base::singlethread::SingleThreadSingleStepOps<'_, Self>> {
+		Some(self)
 	}
 
 	fn read_registers(&mut self, regs: &mut X86_64CoreRegs) -> TargetResult<(), Self> {
@@ -144,6 +149,17 @@ impl SingleThreadOps for GdbUhyve {
 		let mem = unsafe { self.vcpu.memory(start_addr, data.len()) };
 		mem.copy_from_slice(data);
 		Ok(())
+	}
+}
+
+impl target::ext::base::singlethread::SingleThreadSingleStep for GdbUhyve {
+	fn step(&mut self, signal: Option<u8>) -> Result<(), Self::Error> {
+		if signal.is_some() {
+			// cannot step with signal
+			return Err(kvm_ioctls::Error::new(EINVAL));
+		}
+
+		self.apply_guest_debug(true)
 	}
 }
 
