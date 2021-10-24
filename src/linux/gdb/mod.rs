@@ -66,12 +66,14 @@ impl Target for GdbUhyve {
 	}
 
 	#[inline(always)]
-	fn breakpoints(&mut self) -> Option<target::ext::breakpoints::BreakpointsOps<'_, Self>> {
+	fn support_breakpoints(
+		&mut self,
+	) -> Option<target::ext::breakpoints::BreakpointsOps<'_, Self>> {
 		Some(self)
 	}
 
 	#[inline(always)]
-	fn section_offsets(
+	fn support_section_offsets(
 		&mut self,
 	) -> Option<target::ext::section_offsets::SectionOffsetsOps<'_, Self>> {
 		Some(self)
