@@ -317,7 +317,7 @@ dependencies = [
 [[package]]
 name = "gdbstub"
 version = "0.5.0"
-source = "git+https://github.com/daniel5151/gdbstub?branch=dev/0.6#644e138d76ecf51495833b049094f454257df5d3"
+source = "git+https://github.com/daniel5151/gdbstub?branch=dev/0.6#51762056459ca45dc21337ee9aae4519d1776a88"
 dependencies = [
  "bitflags",
  "cfg-if",
@@ -330,7 +330,7 @@ dependencies = [
 [[package]]
 name = "gdbstub_arch"
 version = "0.1.0"
-source = "git+https://github.com/daniel5151/gdbstub?branch=dev/0.6#644e138d76ecf51495833b049094f454257df5d3"
+source = "git+https://github.com/daniel5151/gdbstub?branch=dev/0.6#51762056459ca45dc21337ee9aae4519d1776a88"
 dependencies = [
  "gdbstub",
  "num-traits",
