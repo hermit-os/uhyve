@@ -3,6 +3,7 @@ mod regs;
 mod section_offsets;
 
 use gdbstub::{
+	common::Signal,
 	gdbstub_run_blocking,
 	target::{
 		self,
@@ -106,14 +107,14 @@ impl GdbUhyve {
 				let status = if code == 0 { 0 } else { 1 };
 				StopReason::Exited(status)
 			}
-			VcpuStopReason::Kick => StopReason::Signal(KickSignal::get() as _),
+			VcpuStopReason::Kick => StopReason::Signal(Signal::SIGINT),
 		};
 		Ok(stop_reason)
 	}
 }
 
 impl SingleThreadOps for GdbUhyve {
-	fn resume(&mut self, signal: Option<u8>) -> Result<(), Self::Error> {
+	fn resume(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
 		if signal.is_some() {
 			// cannot resume with signal
 			return Err(kvm_ioctls::Error::new(EINVAL));
@@ -153,7 +154,7 @@ impl SingleThreadOps for GdbUhyve {
 }
 
 impl target::ext::base::singlethread::SingleThreadSingleStep for GdbUhyve {
-	fn step(&mut self, signal: Option<u8>) -> Result<(), Self::Error> {
+	fn step(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
 		if signal.is_some() {
 			// cannot step with signal
 			return Err(kvm_ioctls::Error::new(EINVAL));
@@ -204,7 +205,7 @@ impl gdbstub_run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 		let stop_reason = target.run().map_err(WaitForStopReasonError::Target)?;
 
 		let event = match stop_reason {
-			StopReason::Signal(signal) if signal == KickSignal::get() as _ => {
+			StopReason::Signal(Signal::SIGINT) => {
 				assert!(conn
 					.peek()
 					.map_err(WaitForStopReasonError::Connection)?
@@ -222,6 +223,6 @@ impl gdbstub_run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 	fn on_interrupt(
 		_target: &mut Self::Target,
 	) -> Result<Option<ThreadStopReason<u64>>, <Self::Target as Target>::Error> {
-		Ok(Some(StopReason::Signal(2).into()))
+		Ok(Some(StopReason::Signal(Signal::SIGINT).into()))
 	}
 }
