@@ -33,6 +33,7 @@ instrument = ["rftrace", "rftrace-frontend"]
 
 [patch.crates-io]
 gdbstub = { git = "https://github.com/daniel5151/gdbstub", branch = "dev/0.6" }
+gdbstub_arch = { git = "https://github.com/daniel5151/gdbstub", branch = "dev/0.6" }
 x86_64 = { git = "https://github.com/mkroening/x86_64", branch = "debug-stable" }
 
 [dependencies]
@@ -45,7 +46,7 @@ either = "1.6"
 env_logger = "0.9"
 envmnt = "0.9"
 gdbstub = "0.5"
-gdbstub_arch = "0.1"
+gdbstub_arch = "0.1.0"
 goblin = { version = "0.4", default-features = false, features = ["elf64", "elf32", "endian_fd", "std"] }
 lazy_static = "1.4"
 libc = "0.2"

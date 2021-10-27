@@ -24,17 +24,23 @@ pub type SwBreakpoints = HashMap<SwBreakpoint, Vec<u8>>;
 
 impl target::ext::breakpoints::Breakpoints for GdbUhyve {
 	#[inline(always)]
-	fn sw_breakpoint(&mut self) -> Option<target::ext::breakpoints::SwBreakpointOps<'_, Self>> {
+	fn support_sw_breakpoint(
+		&mut self,
+	) -> Option<target::ext::breakpoints::SwBreakpointOps<'_, Self>> {
 		Some(self)
 	}
 
 	#[inline(always)]
-	fn hw_breakpoint(&mut self) -> Option<target::ext::breakpoints::HwBreakpointOps<'_, Self>> {
+	fn support_hw_breakpoint(
+		&mut self,
+	) -> Option<target::ext::breakpoints::HwBreakpointOps<'_, Self>> {
 		Some(self)
 	}
 
 	#[inline(always)]
-	fn hw_watchpoint(&mut self) -> Option<target::ext::breakpoints::HwWatchpointOps<'_, Self>> {
+	fn support_hw_watchpoint(
+		&mut self,
+	) -> Option<target::ext::breakpoints::HwWatchpointOps<'_, Self>> {
 		Some(self)
 	}
 }

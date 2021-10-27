@@ -8,32 +8,25 @@ pub type HypervisorError = kvm_ioctls::Error;
 pub type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
 
 use std::{
-	hint,
-	io::{self, Read},
-	mem,
+	hint, io, mem,
 	net::{TcpListener, TcpStream},
 	os::unix::prelude::JoinHandleExt,
 	sync::{Arc, Barrier},
 	thread,
-	time::Duration,
 };
 
 use core_affinity::CoreId;
-use gdbstub::{
-	state_machine::Event,
-	target::{ext::base::multithread::ThreadStopReason, Target},
-	ConnectionExt, DisconnectReason, GdbStub, GdbStubStateMachine,
-};
+use gdbstub::DisconnectReason;
 use kvm_ioctls::Kvm;
 use lazy_static::lazy_static;
 use libc::{SIGRTMAX, SIGRTMIN};
 use nix::sys::{
-	pthread::{pthread_kill, pthread_self, Pthread},
+	pthread::{pthread_kill, Pthread},
 	signal::{signal, SigHandler, Signal},
 };
 
 use crate::{
-	linux::gdb::GdbUhyve,
+	linux::gdb::{GdbUhyve, UhyveGdbEventLoop},
 	vm::{VirtualCPU, Vm},
 	Uhyve,
 };
@@ -182,11 +175,13 @@ impl Uhyve {
 		cpu.init(self.get_entry_point()).unwrap();
 
 		let connection = wait_for_gdb_connection(self.gdb_port.unwrap()).unwrap();
-
-		let debugger = gdbstub::GdbStub::new(connection.try_clone().unwrap());
+		let debugger = gdbstub::GdbStub::new(connection);
 		let mut debuggable_vcpu = GdbUhyve::new(self, cpu);
 
-		match run_debugger(&mut debuggable_vcpu, debugger, connection).unwrap() {
+		match debugger
+			.run_blocking::<UhyveGdbEventLoop>(&mut debuggable_vcpu)
+			.unwrap()
+		{
 			DisconnectReason::TargetExited(code) => code.into(),
 			DisconnectReason::TargetTerminated(_) => unreachable!(),
 			DisconnectReason::Disconnect => {
@@ -196,69 +191,6 @@ impl Uhyve {
 			DisconnectReason::Kill => {
 				eprintln!("Kill command received.");
 				0
-			}
-		}
-	}
-}
-
-fn run_debugger<T: Target, C: ConnectionExt>(
-	target: &mut T,
-	gdb: GdbStub<'_, T, C>,
-	mut tcp_stream: TcpStream,
-) -> Result<DisconnectReason, gdbstub::GdbStubError<T::Error, C::Error>> {
-	let parent_thread = pthread_self();
-	thread::spawn(move || {
-		loop {
-			// Block on TCP stream without consuming any data.
-			Read::read(&mut tcp_stream, &mut []).unwrap();
-
-			// Kick VCPU out of KVM_RUN
-			KickSignal::pthread_kill(parent_thread).unwrap();
-
-			// Wait for all inputs to be processed and for VCPU to be running again
-			thread::sleep(Duration::from_millis(20));
-		}
-	});
-
-	let mut gdb = gdb.run_state_machine()?;
-	loop {
-		gdb = match gdb {
-			GdbStubStateMachine::Pump(mut gdb) => {
-				let byte = gdb
-					.borrow_conn()
-					.read()
-					.map_err(gdbstub::GdbStubError::ConnectionRead)?;
-
-				let (gdb, disconnect_reason) = gdb.pump(target, byte)?;
-				if let Some(disconnect_reason) = disconnect_reason {
-					break Ok(disconnect_reason);
-				}
-				gdb
-			}
-			GdbStubStateMachine::DeferredStopReason(mut gdb) => {
-				let byte = gdb
-					.borrow_conn()
-					.read()
-					.map_err(gdbstub::GdbStubError::ConnectionRead)?;
-
-				let (gdb, event) = gdb.pump(target, byte)?;
-				match event {
-					Event::None => gdb,
-					Event::Disconnect(disconnect_reason) => break Ok(disconnect_reason),
-					Event::CtrlCInterrupt => {
-						// when an interrupt is received, report the `GdbInterrupt` stop reason.
-						if let GdbStubStateMachine::DeferredStopReason(gdb) = gdb {
-							match gdb
-								.deferred_stop_reason(target, ThreadStopReason::GdbInterrupt)?
-							{
-								(_, Some(disconnect_reason)) => break Ok(disconnect_reason),
-								(gdb, None) => gdb,
-							}
-						} else {
-							gdb
-						}
-					}
-				}
 			}
 		}
 	}
