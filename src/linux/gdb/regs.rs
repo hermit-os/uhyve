@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use gdbstub_arch::x86::reg::{X86SegmentRegs, X86_64CoreRegs, X87FpuInternalRegs, F80};
 use kvm_bindings::{kvm_fpu, kvm_regs, kvm_sregs};
 use kvm_ioctls::VcpuFd;

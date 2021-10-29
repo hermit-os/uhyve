@@ -9,7 +9,6 @@ extern crate clap;
 extern crate rftrace_frontend;
 
 use std::collections::HashSet;
-use std::convert::TryInto;
 use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;

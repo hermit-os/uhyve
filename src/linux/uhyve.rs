@@ -12,7 +12,6 @@ use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use log::debug;
 use nix::sys::mman::*;
-use std::convert::TryInto;
 use std::fmt;
 use std::hint;
 use std::mem;
