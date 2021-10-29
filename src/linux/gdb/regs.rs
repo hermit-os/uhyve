@@ -154,7 +154,9 @@ impl From<Fpu> for kvm_fpu {
 			last_dp
 		};
 
-		let xmm = IntoIterator::into_iter(fpu.xmm)
+		let xmm = fpu
+			.xmm
+			.into_iter()
 			.map(u128::to_ne_bytes)
 			.collect::<Vec<_>>()
 			.try_into()
