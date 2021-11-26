@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use gdbstub_arch::x86::reg::{X86SegmentRegs, X86_64CoreRegs, X87FpuInternalRegs, F80};
 use kvm_bindings::{kvm_fpu, kvm_regs, kvm_sregs};
 use kvm_ioctls::VcpuFd;
@@ -156,7 +154,9 @@ impl From<Fpu> for kvm_fpu {
 			last_dp
 		};
 
-		let xmm = IntoIterator::into_iter(fpu.xmm)
+		let xmm = fpu
+			.xmm
+			.into_iter()
 			.map(u128::to_ne_bytes)
 			.collect::<Vec<_>>()
 			.try_into()

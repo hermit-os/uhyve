@@ -7,7 +7,6 @@ use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
-use std::convert::TryInto;
 use std::path::Path;
 use std::path::PathBuf;
 use std::slice;

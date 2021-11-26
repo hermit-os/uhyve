@@ -1,7 +1,5 @@
 //! Functions to read and write debug registers.
 
-use std::convert::{TryFrom, TryInto};
-
 use gdbstub::target::ext::{base::singlethread::StopReason, breakpoints::WatchKind};
 use x86_64::{
 	registers::debug::{
