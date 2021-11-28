@@ -6,6 +6,9 @@ on:
       - staging
       - trying
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   kvm:
     name: KVM Tests
