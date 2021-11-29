@@ -7,6 +7,9 @@
 
 uhyve is small hypervisor to boot the library operating systems [RustyHermit](https://github.com/hermitcore/libhermit-rs), which  is a unikernel operating system targeting a scalable and predictable runtime behavior for HPC and cloud environments.
 
+**Warning:** At the moment uhyve grants full host file system access from within the unikernel with the permissions of the user running uhyve.
+Thus, it should not be used for applications which require isolation from the host system.
+
 ## Installation
 
 An installation of the Rust toolchain is required.
