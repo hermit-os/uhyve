@@ -53,6 +53,7 @@ pub struct BootInfo {
 	pub hcip: [u8; 4],
 	pub hcgateway: [u8; 4],
 	pub hcmask: [u8; 4],
+	pub tls_align: u64,
 }
 
 impl BootInfo {
@@ -84,6 +85,7 @@ impl BootInfo {
 			hcip: [255, 255, 255, 255],
 			hcgateway: [255, 255, 255, 255],
 			hcmask: [255, 255, 255, 0],
+			tls_align: 0,
 		}
 	}
 }
@@ -668,6 +670,7 @@ pub trait Vm {
 					write(&mut (*boot_info).tls_start, tls_start);
 					write(&mut (*boot_info).tls_filesz, program_header.p_filesz);
 					write(&mut (*boot_info).tls_memsz, program_header.p_memsz);
+					write(&mut (*boot_info).tls_align, program_header.p_align);
 
 					Ok(())
 				}
