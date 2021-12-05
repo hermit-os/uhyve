@@ -1,6 +1,6 @@
 //! Functions to read and write debug registers.
 
-use gdbstub::{stub::stop_reason::StopReason, target::ext::breakpoints::WatchKind};
+use gdbstub::{stub::SingleThreadStopReason, target::ext::breakpoints::WatchKind};
 use x86_64::{
 	registers::debug::{
 		DebugAddressRegisterNumber, Dr6Flags, Dr7Flags, Dr7Value, HwBreakpointCondition,
@@ -110,9 +110,9 @@ impl HwBreakpoints {
 		]
 	}
 
-	pub fn stop_reason(&self, dr6: Dr6Flags) -> StopReason<u64> {
+	pub fn stop_reason(&self, dr6: Dr6Flags) -> SingleThreadStopReason<u64> {
 		if dr6.contains(Dr6Flags::STEP) {
-			StopReason::DoneStep
+			SingleThreadStopReason::DoneStep
 		} else {
 			let n = (0..4)
 				.find(|&n| {
@@ -123,12 +123,14 @@ impl HwBreakpoints {
 			let breakpoint = self.0[usize::from(n)].unwrap();
 
 			match breakpoint.condition {
-				HwBreakpointCondition::InstructionExecution => StopReason::HwBreak,
-				HwBreakpointCondition::DataWrites => StopReason::Watch {
+				HwBreakpointCondition::InstructionExecution => SingleThreadStopReason::HwBreak(()),
+				HwBreakpointCondition::DataWrites => SingleThreadStopReason::Watch {
+					tid: (),
 					kind: WatchKind::Write,
 					addr: breakpoint.addr.as_u64(),
 				},
-				HwBreakpointCondition::DataReadsWrites => StopReason::Watch {
+				HwBreakpointCondition::DataReadsWrites => SingleThreadStopReason::Watch {
+					tid: (),
 					kind: WatchKind::ReadWrite,
 					addr: breakpoint.addr.as_u64(),
 				},
