@@ -5,15 +5,8 @@ mod section_offsets;
 use gdbstub::{
 	common::Signal,
 	conn::{Connection, ConnectionExt},
-	stub::run_blocking,
-	target::{
-		self,
-		ext::base::{
-			multithread::ThreadStopReason,
-			singlethread::{SingleThreadBase, StopReason},
-		},
-		Target, TargetError, TargetResult,
-	},
+	stub::{run_blocking, stop_reason::StopReason},
+	target::{self, ext::base::singlethread::SingleThreadBase, Target, TargetError, TargetResult},
 };
 use gdbstub_arch::x86::reg::X86_64CoreRegs;
 use kvm_bindings::{
@@ -180,13 +173,14 @@ pub enum UhyveGdbEventLoop {}
 impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 	type Target = GdbUhyve;
 	type Connection = TcpStream;
+	type StopReason = StopReason<u64>;
 
 	#[allow(clippy::type_complexity)]
 	fn wait_for_stop_reason(
 		target: &mut Self::Target,
 		conn: &mut Self::Connection,
 	) -> Result<
-		run_blocking::Event<u64>,
+		run_blocking::Event<StopReason<u64>>,
 		run_blocking::WaitForStopReasonError<
 			<Self::Target as Target>::Error,
 			<Self::Connection as Connection>::Error,
@@ -225,7 +219,7 @@ impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 					ConnectionExt::read(conn).map_err(WaitForStopReasonError::Connection)?,
 				)
 			}
-			stop_reason => run_blocking::Event::TargetStopped(stop_reason.into()),
+			stop_reason => run_blocking::Event::TargetStopped(stop_reason),
 		};
 
 		Ok(event)
@@ -233,7 +227,7 @@ impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 
 	fn on_interrupt(
 		_target: &mut Self::Target,
-	) -> Result<Option<ThreadStopReason<u64>>, <Self::Target as Target>::Error> {
-		Ok(Some(StopReason::Signal(Signal::SIGINT).into()))
+	) -> Result<Option<StopReason<u64>>, <Self::Target as Target>::Error> {
+		Ok(Some(StopReason::Signal(Signal::SIGINT)))
 	}
 }

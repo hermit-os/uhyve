@@ -1,6 +1,6 @@
 //! Functions to read and write debug registers.
 
-use gdbstub::target::ext::{base::singlethread::StopReason, breakpoints::WatchKind};
+use gdbstub::{stub::stop_reason::StopReason, target::ext::breakpoints::WatchKind};
 use x86_64::{
 	registers::debug::{
 		DebugAddressRegisterNumber, Dr6Flags, Dr7Flags, Dr7Value, HwBreakpointCondition,
