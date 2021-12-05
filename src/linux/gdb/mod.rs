@@ -9,7 +9,7 @@ use gdbstub::{
 		self,
 		ext::base::{
 			multithread::ThreadStopReason,
-			singlethread::{SingleThreadOps, StopReason},
+			singlethread::{SingleThreadBase, StopReason},
 		},
 		Target, TargetError, TargetResult,
 	},
@@ -115,23 +115,7 @@ impl GdbUhyve {
 	}
 }
 
-impl SingleThreadOps for GdbUhyve {
-	fn resume(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
-		if signal.is_some() {
-			// cannot resume with signal
-			return Err(kvm_ioctls::Error::new(EINVAL));
-		}
-
-		self.apply_guest_debug(false)
-	}
-
-	#[inline(always)]
-	fn support_single_step(
-		&mut self,
-	) -> Option<target::ext::base::singlethread::SingleThreadSingleStepOps<'_, Self>> {
-		Some(self)
-	}
-
+impl SingleThreadBase for GdbUhyve {
 	fn read_registers(&mut self, regs: &mut X86_64CoreRegs) -> TargetResult<(), Self> {
 		regs::read(self.vcpu.get_vcpu(), regs)
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))
@@ -152,6 +136,31 @@ impl SingleThreadOps for GdbUhyve {
 		let mem = unsafe { self.vcpu.memory(start_addr, data.len()) };
 		mem.copy_from_slice(data);
 		Ok(())
+	}
+
+	#[inline(always)]
+	fn support_resume(
+		&mut self,
+	) -> Option<target::ext::base::singlethread::SingleThreadResumeOps<'_, Self>> {
+		Some(self)
+	}
+}
+
+impl target::ext::base::singlethread::SingleThreadResume for GdbUhyve {
+	fn resume(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
+		if signal.is_some() {
+			// cannot resume with signal
+			return Err(kvm_ioctls::Error::new(EINVAL));
+		}
+
+		self.apply_guest_debug(false)
+	}
+
+	#[inline(always)]
+	fn support_single_step(
+		&mut self,
+	) -> Option<target::ext::base::singlethread::SingleThreadSingleStepOps<'_, Self>> {
+		Some(self)
 	}
 }
 
