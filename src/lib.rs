@@ -20,7 +20,6 @@ pub mod macos;
 pub use macos as os;
 #[cfg(target_os = "linux")]
 pub mod shared_queue;
-pub mod utils;
 pub mod vm;
 
 pub use arch::*;
