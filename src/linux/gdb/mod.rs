@@ -4,16 +4,9 @@ mod section_offsets;
 
 use gdbstub::{
 	common::Signal,
-	gdbstub_run_blocking,
-	target::{
-		self,
-		ext::base::{
-			multithread::ThreadStopReason,
-			singlethread::{SingleThreadOps, StopReason},
-		},
-		Target, TargetError, TargetResult,
-	},
-	Connection, ConnectionExt,
+	conn::{Connection, ConnectionExt},
+	stub::{run_blocking, SingleThreadStopReason},
+	target::{self, ext::base::singlethread::SingleThreadBase, Target, TargetError, TargetResult},
 };
 use gdbstub_arch::x86::reg::X86_64CoreRegs;
 use kvm_bindings::{
@@ -95,43 +88,27 @@ impl GdbUhyve {
 		self.vcpu.get_vcpu().set_guest_debug(&debug_struct)
 	}
 
-	pub fn run(&mut self) -> Result<StopReason<u64>, kvm_ioctls::Error> {
+	pub fn run(&mut self) -> Result<SingleThreadStopReason<u64>, kvm_ioctls::Error> {
 		let stop_reason = match self.vcpu.r#continue()? {
 			VcpuStopReason::Debug(debug) => match debug.exception {
 				DB_VECTOR => {
 					let dr6 = Dr6Flags::from_bits_truncate(debug.dr6);
 					self.hw_breakpoints.stop_reason(dr6)
 				}
-				BP_VECTOR => StopReason::SwBreak,
+				BP_VECTOR => SingleThreadStopReason::SwBreak(()),
 				vector => unreachable!("unknown KVM exception vector: {}", vector),
 			},
 			VcpuStopReason::Exit(code) => {
 				let status = if code == 0 { 0 } else { 1 };
-				StopReason::Exited(status)
+				SingleThreadStopReason::Exited(status)
 			}
-			VcpuStopReason::Kick => StopReason::Signal(Signal::SIGINT),
+			VcpuStopReason::Kick => SingleThreadStopReason::Signal(Signal::SIGINT),
 		};
 		Ok(stop_reason)
 	}
 }
 
-impl SingleThreadOps for GdbUhyve {
-	fn resume(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
-		if signal.is_some() {
-			// cannot resume with signal
-			return Err(kvm_ioctls::Error::new(EINVAL));
-		}
-
-		self.apply_guest_debug(false)
-	}
-
-	#[inline(always)]
-	fn support_single_step(
-		&mut self,
-	) -> Option<target::ext::base::singlethread::SingleThreadSingleStepOps<'_, Self>> {
-		Some(self)
-	}
-
+impl SingleThreadBase for GdbUhyve {
 	fn read_registers(&mut self, regs: &mut X86_64CoreRegs) -> TargetResult<(), Self> {
 		regs::read(self.vcpu.get_vcpu(), regs)
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))
@@ -153,6 +130,31 @@ impl SingleThreadOps for GdbUhyve {
 		mem.copy_from_slice(data);
 		Ok(())
 	}
+
+	#[inline(always)]
+	fn support_resume(
+		&mut self,
+	) -> Option<target::ext::base::singlethread::SingleThreadResumeOps<'_, Self>> {
+		Some(self)
+	}
+}
+
+impl target::ext::base::singlethread::SingleThreadResume for GdbUhyve {
+	fn resume(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
+		if signal.is_some() {
+			// cannot resume with signal
+			return Err(kvm_ioctls::Error::new(EINVAL));
+		}
+
+		self.apply_guest_debug(false)
+	}
+
+	#[inline(always)]
+	fn support_single_step(
+		&mut self,
+	) -> Option<target::ext::base::singlethread::SingleThreadSingleStepOps<'_, Self>> {
+		Some(self)
+	}
 }
 
 impl target::ext::base::singlethread::SingleThreadSingleStep for GdbUhyve {
@@ -168,22 +170,23 @@ impl target::ext::base::singlethread::SingleThreadSingleStep for GdbUhyve {
 
 pub enum UhyveGdbEventLoop {}
 
-impl gdbstub_run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
+impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 	type Target = GdbUhyve;
 	type Connection = TcpStream;
+	type StopReason = SingleThreadStopReason<u64>;
 
 	#[allow(clippy::type_complexity)]
 	fn wait_for_stop_reason(
 		target: &mut Self::Target,
 		conn: &mut Self::Connection,
 	) -> Result<
-		gdbstub_run_blocking::Event<u64>,
-		gdbstub_run_blocking::WaitForStopReasonError<
+		run_blocking::Event<SingleThreadStopReason<u64>>,
+		run_blocking::WaitForStopReasonError<
 			<Self::Target as Target>::Error,
 			<Self::Connection as Connection>::Error,
 		>,
 	> {
-		use gdbstub_run_blocking::WaitForStopReasonError;
+		use run_blocking::WaitForStopReasonError;
 
 		static SPAWN_THREAD: Once = Once::new();
 
@@ -207,16 +210,16 @@ impl gdbstub_run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 		let stop_reason = target.run().map_err(WaitForStopReasonError::Target)?;
 
 		let event = match stop_reason {
-			StopReason::Signal(Signal::SIGINT) => {
+			SingleThreadStopReason::Signal(Signal::SIGINT) => {
 				assert!(conn
 					.peek()
 					.map_err(WaitForStopReasonError::Connection)?
 					.is_some());
-				gdbstub_run_blocking::Event::IncomingData(
+				run_blocking::Event::IncomingData(
 					ConnectionExt::read(conn).map_err(WaitForStopReasonError::Connection)?,
 				)
 			}
-			stop_reason => gdbstub_run_blocking::Event::TargetStopped(stop_reason.into()),
+			stop_reason => run_blocking::Event::TargetStopped(stop_reason),
 		};
 
 		Ok(event)
@@ -224,7 +227,7 @@ impl gdbstub_run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 
 	fn on_interrupt(
 		_target: &mut Self::Target,
-	) -> Result<Option<ThreadStopReason<u64>>, <Self::Target as Target>::Error> {
-		Ok(Some(StopReason::Signal(Signal::SIGINT).into()))
+	) -> Result<Option<SingleThreadStopReason<u64>>, <Self::Target as Target>::Error> {
+		Ok(Some(SingleThreadStopReason::Signal(Signal::SIGINT)))
 	}
 }

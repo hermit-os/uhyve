@@ -16,7 +16,7 @@ use std::{
 };
 
 use core_affinity::CoreId;
-use gdbstub::DisconnectReason;
+use gdbstub::stub::{DisconnectReason, GdbStub};
 use kvm_ioctls::Kvm;
 use lazy_static::lazy_static;
 use libc::{SIGRTMAX, SIGRTMIN};
@@ -175,7 +175,7 @@ impl Uhyve {
 		cpu.init(self.get_entry_point()).unwrap();
 
 		let connection = wait_for_gdb_connection(self.gdb_port.unwrap()).unwrap();
-		let debugger = gdbstub::GdbStub::new(connection);
+		let debugger = GdbStub::new(connection);
 		let mut debuggable_vcpu = GdbUhyve::new(self, cpu);
 
 		match debugger
