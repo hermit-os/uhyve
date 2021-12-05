@@ -4,7 +4,8 @@ mod section_offsets;
 
 use gdbstub::{
 	common::Signal,
-	gdbstub_run_blocking,
+	conn::{Connection, ConnectionExt},
+	stub::run_blocking,
 	target::{
 		self,
 		ext::base::{
@@ -13,7 +14,6 @@ use gdbstub::{
 		},
 		Target, TargetError, TargetResult,
 	},
-	Connection, ConnectionExt,
 };
 use gdbstub_arch::x86::reg::X86_64CoreRegs;
 use kvm_bindings::{
@@ -177,7 +177,7 @@ impl target::ext::base::singlethread::SingleThreadSingleStep for GdbUhyve {
 
 pub enum UhyveGdbEventLoop {}
 
-impl gdbstub_run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
+impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 	type Target = GdbUhyve;
 	type Connection = TcpStream;
 
@@ -186,13 +186,13 @@ impl gdbstub_run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 		target: &mut Self::Target,
 		conn: &mut Self::Connection,
 	) -> Result<
-		gdbstub_run_blocking::Event<u64>,
-		gdbstub_run_blocking::WaitForStopReasonError<
+		run_blocking::Event<u64>,
+		run_blocking::WaitForStopReasonError<
 			<Self::Target as Target>::Error,
 			<Self::Connection as Connection>::Error,
 		>,
 	> {
-		use gdbstub_run_blocking::WaitForStopReasonError;
+		use run_blocking::WaitForStopReasonError;
 
 		static SPAWN_THREAD: Once = Once::new();
 
@@ -221,11 +221,11 @@ impl gdbstub_run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 					.peek()
 					.map_err(WaitForStopReasonError::Connection)?
 					.is_some());
-				gdbstub_run_blocking::Event::IncomingData(
+				run_blocking::Event::IncomingData(
 					ConnectionExt::read(conn).map_err(WaitForStopReasonError::Connection)?,
 				)
 			}
-			stop_reason => gdbstub_run_blocking::Event::TargetStopped(stop_reason.into()),
+			stop_reason => run_blocking::Event::TargetStopped(stop_reason.into()),
 		};
 
 		Ok(event)
