@@ -143,6 +143,10 @@ impl Vm for Uhyve {
 		None
 	}
 
+	fn get_boot_info(&self) -> *const BootInfo {
+		self.boot_info
+	}
+
 	fn set_boot_info(&mut self, header: *const BootInfo) {
 		self.boot_info = header;
 	}

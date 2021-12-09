@@ -69,7 +69,7 @@ fn main() {
 		.arg(
 			Arg::with_name("DISABLE_HUGEPAGE")
 				.long("disable-hugepages")
-				.help("Disable the usage of huge pages"),
+				.help("Disable the usage of transparent huge pages"),
 		)
 		.arg(
 			Arg::with_name("MERGEABLE")
@@ -115,6 +115,13 @@ fn main() {
 				.help("Enables GDB-Stub on given port")
 				.takes_value(true)
 				.env("HERMIT_GDB_PORT"),
+		)
+		.arg(
+			Arg::with_name("HUGETLBFS")
+				.long("hugetlbfs")
+				.value_name("HUGETLBFS")
+				.help("Hugetlbfs path")
+				.takes_value(true),
 		)
 		.arg(
 			Arg::with_name("NETIF")
@@ -241,6 +248,7 @@ fn main() {
 	if matches.is_present("VERBOSE") {
 		verbose = true;
 	}
+	#[cfg(target_arch = "x86_64")]
 	let gdbport = matches
 		.value_of("GDB_PORT")
 		.map(|p| p.parse::<u16>().expect("Could not parse gdb port"))
@@ -249,6 +257,10 @@ fn main() {
 				.ok()
 				.map(|p| p.parse::<u16>().expect("Could not parse gdb port"))
 		});
+	#[cfg(target_arch = "riscv64")]
+	let gdbport = None;
+
+	let hugetlbfs_path = matches.value_of("HUGETLBFS");
 
 	let params = vm::Parameter {
 		mem_size,
@@ -256,6 +268,7 @@ fn main() {
 		verbose,
 		hugepage,
 		mergeable,
+		hugetlbfs_path,
 		ip,
 		gateway,
 		mask,

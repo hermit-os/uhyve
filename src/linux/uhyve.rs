@@ -3,6 +3,8 @@
 
 use crate::consts::*;
 use crate::linux::vcpu::*;
+
+#[cfg(target_arch = "x86_64")]
 use crate::linux::virtio::*;
 use crate::linux::KVM;
 use crate::shared_queue::*;
@@ -12,6 +14,9 @@ use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use log::debug;
 use nix::sys::mman::*;
+use nix::sys::statfs::statfs;
+use nix::sys::statfs::HUGETLBFS_MAGIC;
+use nix::unistd::{close, ftruncate, mkstemp, unlink};
 use std::fmt;
 use std::hint;
 use std::mem;
@@ -23,7 +28,9 @@ use std::ptr;
 use std::ptr::{read_volatile, write_volatile};
 use std::str::FromStr;
 use std::sync::mpsc::sync_channel;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+#[cfg(target_arch = "x86_64")]
+use std::sync::Mutex;
 use std::thread;
 use tun_tap::{Iface, Mode};
 use vmm_sys_util::eventfd::EventFd;
@@ -134,10 +141,12 @@ pub struct Uhyve {
 	gateway: Option<Ipv4Addr>,
 	mask: Option<Ipv4Addr>,
 	uhyve_device: Option<UhyveNetwork>,
+	#[cfg(target_arch = "x86_64")]
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	pub(super) gdb_port: Option<u16>,
 }
 
+#[cfg(target_arch = "x86_64")]
 impl fmt::Debug for Uhyve {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		f.debug_struct("Uhyve")
@@ -152,6 +161,24 @@ impl fmt::Debug for Uhyve {
 			.field("mask", &self.mask)
 			.field("uhyve_device", &self.uhyve_device)
 			.field("virtio_device", &self.virtio_device)
+			.finish()
+	}
+}
+
+#[cfg(target_arch = "riscv64")]
+impl fmt::Debug for Uhyve {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		f.debug_struct("Uhyve")
+			.field("entry_point", &self.entry_point)
+			.field("mem", &self.mem)
+			.field("num_cpus", &self.num_cpus)
+			.field("path", &self.path)
+			.field("boot_info", &self.boot_info)
+			.field("verbose", &self.verbose)
+			.field("ip", &self.ip)
+			.field("gateway", &self.gateway)
+			.field("mask", &self.mask)
+			.field("uhyve_device", &self.uhyve_device)
 			.finish()
 	}
 }
@@ -178,7 +205,14 @@ impl Uhyve {
 
 		let vm = KVM.create_vm()?;
 
-		let mem = MmapMemory::new(0, specs.mem_size, 0, specs.hugepage, specs.mergeable);
+		let mem = MmapMemory::new(
+			0,
+			specs.mem_size,
+			0,
+			specs.hugepage,
+			specs.hugetlbfs_path,
+			specs.mergeable,
+		);
 
 		let sz = if specs.mem_size < KVM_32BIT_GAP_START {
 			specs.mem_size
@@ -187,6 +221,7 @@ impl Uhyve {
 		};
 
 		// create virtio interface
+		#[cfg(target_arch = "x86_64")]
 		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new()));
 
 		let kvm_mem = kvm_userspace_memory_region {
@@ -213,53 +248,60 @@ impl Uhyve {
 			unsafe { vm.set_user_memory_region(kvm_mem) }?;
 		}
 
-		debug!("Initialize interrupt controller");
+		#[cfg(target_arch = "x86_64")]
+		{
+			debug!("Initialize interrupt controller");
 
-		// create basic interrupt controller
-		vm.create_irq_chip()?;
+			// create basic interrupt controller
+			vm.create_irq_chip()?;
 
-		// enable x2APIC support
-		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
-			cap: KVM_CAP_X2APIC_API,
-			flags: 0,
-			..Default::default()
-		};
-		cap.args[0] =
-			(KVM_X2APIC_API_USE_32BIT_IDS | KVM_X2APIC_API_DISABLE_BROADCAST_QUIRK).into();
-		vm.enable_cap(&cap)
-			.expect("Unable to enable x2apic support");
+			// enable x2APIC support
+			let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+				cap: KVM_CAP_X2APIC_API,
+				flags: 0,
+				..Default::default()
+			};
+			cap.args[0] =
+				(KVM_X2APIC_API_USE_32BIT_IDS | KVM_X2APIC_API_DISABLE_BROADCAST_QUIRK).into();
+			vm.enable_cap(&cap)
+				.expect("Unable to enable x2apic support");
 
-		// currently, we support only system, which provides the
-		// cpu feature TSC_DEADLINE
-		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
-			cap: KVM_CAP_TSC_DEADLINE_TIMER,
-			..Default::default()
-		};
-		cap.args[0] = 0;
-		vm.enable_cap(&cap)
-			.expect_err("Processor feature `tsc deadline` isn't supported!");
+			// currently, we support only system, which provides the
+			// cpu feature TSC_DEADLINE
+			let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+				cap: KVM_CAP_TSC_DEADLINE_TIMER,
+				..Default::default()
+			};
+			cap.args[0] = 0;
+			vm.enable_cap(&cap)
+				.expect_err("Processor feature `tsc deadline` isn't supported!");
 
-		let cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
-			cap: KVM_CAP_IRQFD,
-			..Default::default()
-		};
-		vm.enable_cap(&cap)
-			.expect_err("The support of KVM_CAP_IRQFD is currently required");
+			let cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+				cap: KVM_CAP_IRQFD,
+				..Default::default()
+			};
+			vm.enable_cap(&cap)
+				.expect_err("The support of KVM_CAP_IRQFD is currently required");
 
-		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
-			cap: KVM_CAP_X86_DISABLE_EXITS,
-			flags: 0,
-			..Default::default()
-		};
-		cap.args[0] =
-			(KVM_X86_DISABLE_EXITS_PAUSE | KVM_X86_DISABLE_EXITS_MWAIT | KVM_X86_DISABLE_EXITS_HLT)
+			let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+				cap: KVM_CAP_X86_DISABLE_EXITS,
+				flags: 0,
+				..Default::default()
+			};
+			cap.args[0] = (KVM_X86_DISABLE_EXITS_PAUSE
+				| KVM_X86_DISABLE_EXITS_MWAIT
+				| KVM_X86_DISABLE_EXITS_HLT)
 				.into();
-		vm.enable_cap(&cap)
-			.expect("Unable to disable exists due pause instructions");
-
+			vm.enable_cap(&cap)
+				.expect("Unable to disable exists due pause instructions");
+		}
+		#[cfg(target_arch = "x86_64")]
 		let evtfd = EventFd::new(0).unwrap();
+		#[cfg(target_arch = "x86_64")]
 		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET)?;
+
 		// create TUN/TAP device
+		#[cfg(target_arch = "x86_64")]
 		let uhyve_device = match &specs.nic {
 			Some(nic) => {
 				debug!("Initialize network interface");
@@ -271,6 +313,9 @@ impl Uhyve {
 			}
 			_ => None,
 		};
+
+		#[cfg(target_arch = "riscv64")]
+		let uhyve_device = None;
 
 		assert!(
 			specs.gdbport.is_none() || specs.num_cpus == 1,
@@ -290,6 +335,7 @@ impl Uhyve {
 			gateway: gw_addr,
 			mask,
 			uhyve_device,
+			#[cfg(target_arch = "x86_64")]
 			virtio_device,
 			gdb_port: specs.gdbport,
 		};
@@ -345,6 +391,7 @@ impl Vm for Uhyve {
 		self.path.as_path()
 	}
 
+	#[cfg(target_arch = "x86_64")]
 	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU> {
 		let vm_start = self.mem.host_address as usize;
 		let tx = self.uhyve_device.as_ref().map(|dev| dev.tx.clone());
@@ -357,6 +404,24 @@ impl Vm for Uhyve {
 			tx,
 			self.virtio_device.clone(),
 		))
+	}
+
+	#[cfg(target_arch = "riscv64")]
+	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU> {
+		let vm_start = self.mem.host_address as usize;
+		#[cfg(target_arch = "x86_64")]
+		let tx = self.uhyve_device.as_ref().map(|dev| dev.tx.clone());
+
+		Ok(UhyveCPU::new(
+			id,
+			self.path.clone(),
+			self.vm.create_vcpu(id.try_into().unwrap())?,
+			vm_start,
+		))
+	}
+
+	fn get_boot_info(&self) -> *const BootInfo {
+		self.boot_info
 	}
 
 	fn set_boot_info(&mut self, header: *const BootInfo) {
@@ -398,31 +463,68 @@ impl MmapMemory {
 		memory_size: usize,
 		guest_address: u64,
 		huge_pages: bool,
+		hugetlbfs_path: Option<&str>,
 		mergeable: bool,
 	) -> MmapMemory {
-		let host_address = unsafe {
-			mmap(
-				std::ptr::null_mut(),
-				memory_size,
-				ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
-				MapFlags::MAP_PRIVATE | MapFlags::MAP_ANONYMOUS | MapFlags::MAP_NORESERVE,
-				-1,
-				0,
-			)
-			.expect("mmap failed")
-		};
-
-		if mergeable {
-			debug!("Enable kernel feature to merge same pages");
-			unsafe {
-				madvise(host_address, memory_size, MmapAdvise::MADV_MERGEABLE).unwrap();
+		let host_address: *mut c_void;
+		if let Some(path) = hugetlbfs_path {
+			debug!("Uhyve uses explicit huge pages");
+			// Derived from kvmtool
+			let sfs = statfs(path).expect("No stat for given hugetlbfs path");
+			if sfs.filesystem_type() != HUGETLBFS_MAGIC {
+				panic!("Given hugetlbfs is not a hugetlbfs");
 			}
-		}
+			let blk_size = sfs.block_size() as usize;
+			if blk_size == 0 || blk_size > memory_size {
+				panic!(
+					"Can't use hugetlbfs pagesize {} for mem size {}",
+					blk_size, memory_size
+				);
+			}
+			let mpath = format!("{}/uhyve_XXXXXX", path);
+			let (fd, new_mpath) =
+				mkstemp(mpath.as_str()).expect("Can't open file for hugetlbfs map");
+			debug!("new_mpath: {:?}", new_mpath);
+			unlink(&new_mpath).expect("Unlink failed");
+			ftruncate(fd, memory_size as i64).expect("Can't ftruncate for mem mapping");
+			host_address = unsafe {
+				mmap(
+					std::ptr::null_mut(),
+					memory_size,
+					ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
+					MapFlags::MAP_PRIVATE,
+					fd,
+					0,
+				)
+				.expect("mmap failed")
+			};
+			close(fd).expect("File cannot be closed");
+		} else {
+			// host_address may not be aligned to huge page
+			host_address = unsafe {
+				mmap(
+					std::ptr::null_mut(),
+					memory_size,
+					ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
+					MapFlags::MAP_PRIVATE | MapFlags::MAP_ANONYMOUS | MapFlags::MAP_NORESERVE,
+					-1,
+					0,
+				)
+				.expect("mmap failed")
+			};
 
-		if huge_pages {
-			debug!("Uhyve uses huge pages");
-			unsafe {
-				madvise(host_address, memory_size, MmapAdvise::MADV_HUGEPAGE).unwrap();
+			if mergeable {
+				debug!("Enable kernel feature to merge same pages");
+				unsafe {
+					madvise(host_address, memory_size, MmapAdvise::MADV_MERGEABLE).unwrap();
+				}
+			}
+
+			if huge_pages {
+				debug!("Uhyve uses transparent huge pages");
+				unsafe {
+					madvise(host_address, memory_size, MmapAdvise::MADV_HUGEPAGE).unwrap();
+				}
 			}
 		}
 

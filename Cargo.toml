@@ -35,6 +35,8 @@ instrument = ["rftrace", "rftrace-frontend"]
 gdbstub = { git = "https://github.com/daniel5151/gdbstub", branch = "dev/0.6" }
 gdbstub_arch = { git = "https://github.com/daniel5151/gdbstub", branch = "dev/0.6" }
 x86_64 = { git = "https://github.com/mkroening/x86_64", branch = "debug-stable" }
+kvm-bindings = { git = "https://github.com/simonschoening/kvm-bindings", branch = "riscv" }
+kvm-ioctls = { git = "https://github.com/simonschoening/kvm-ioctls", branch = "riscv" }
 
 [dependencies]
 bitflags = "1.3"
@@ -47,21 +49,19 @@ env_logger = "0.9"
 envmnt = "0.9"
 gdbstub = "0.5"
 gdbstub_arch = "0.1.0"
-goblin = { version = "0.4", default-features = false, features = ["elf64", "elf32", "endian_fd", "std"] }
+goblin = { version = "0.4.3", default-features = false, features = ["elf64", "elf32", "endian_fd", "std"] }
 lazy_static = "1.4"
 libc = "0.2"
 log = "0.4"
-raw-cpuid = "10.2"
 rustc-serialize = "0.3"
 thiserror = "1.0"
-x86_64 = "0.14"
 
 rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.5"
-kvm-ioctls = "0.10"
+kvm-ioctls = "0.11.0"
 mac_address = "1.1"
 nix = "0.23"
 tun-tap = { version = "0.1", default-features = false }
@@ -74,6 +74,9 @@ xhypervisor = "0.0"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = { version = "0.14", default-features = false }
+
+[target.'cfg(target_arch = "x86_64")'.dependencies.raw-cpuid]
+version = "10.2.0"
 
 [target.'cfg(all(target_arch = "x86_64", target_os = "macos"))'.dependencies]
 x86 = { version = "0.43", default-features = false }

@@ -2,17 +2,24 @@ use super::paging::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::_rdtsc as rdtsc;
 use goblin::elf;
-use goblin::elf64::header::{EM_X86_64, ET_DYN};
+#[cfg(target_arch = "riscv64")]
+use goblin::elf64::header::EM_RISCV;
+#[cfg(target_arch = "x86_64")]
+use goblin::elf64::header::EM_X86_64;
+use goblin::elf64::header::ET_DYN;
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
 use goblin::elf64::reloc::*;
 use log::{debug, error, warn};
+#[cfg(target_arch = "x86_64")]
 use raw_cpuid::CpuId;
 use std::io::Write;
 use std::net::Ipv4Addr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::ptr::write;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::SystemTime;
+#[cfg(target_arch = "x86_64")]
+use std::time::{Duration, Instant};
 use std::{fs, io, mem, slice};
 use thiserror::Error;
 
@@ -21,7 +28,9 @@ use crate::os::vcpu::UhyveCPU;
 use crate::os::DebugExitInfo;
 use crate::os::HypervisorError;
 
+#[cfg(target_arch = "x86_64")]
 const MHZ_TO_HZ: u64 = 1000000;
+#[cfg(target_arch = "x86_64")]
 const KHZ_TO_HZ: u64 = 1000;
 
 #[repr(C)]
@@ -53,7 +62,14 @@ pub struct BootInfo {
 	pub hcip: [u8; 4],
 	pub hcgateway: [u8; 4],
 	pub hcmask: [u8; 4],
+	#[cfg(target_arch = "x86_64")]
 	pub tls_align: u64,
+	#[cfg(target_arch = "riscv64")]
+	pub dtb_ptr: u64,
+	#[cfg(target_arch = "riscv64")]
+	pub hart_mask: u64,
+	#[cfg(target_arch = "riscv64")]
+	pub timebase_freq: u64,
 }
 
 impl BootInfo {
@@ -85,7 +101,14 @@ impl BootInfo {
 			hcip: [255, 255, 255, 255],
 			hcgateway: [255, 255, 255, 255],
 			hcmask: [255, 255, 255, 0],
+			#[cfg(target_arch = "x86_64")]
 			tls_align: 0,
+			#[cfg(target_arch = "riscv64")]
+			dtb_ptr: 0,
+			#[cfg(target_arch = "riscv64")]
+			hart_mask: 0,
+			#[cfg(target_arch = "riscv64")]
+			timebase_freq: 0,
 		}
 	}
 }
@@ -102,6 +125,7 @@ pub struct Parameter<'a> {
 	pub num_cpus: u32,
 	pub verbose: bool,
 	pub hugepage: bool,
+	pub hugetlbfs_path: Option<&'a str>,
 	pub mergeable: bool,
 	pub ip: Option<&'a str>,
 	pub gateway: Option<&'a str>,
@@ -204,7 +228,11 @@ pub enum VcpuStopReason {
 
 pub trait VirtualCPU {
 	/// Initialize the cpu to start running the code ad entry_point.
+	#[cfg(target_arch = "x86_64")]
 	fn init(&mut self, entry_point: u64) -> HypervisorResult<()>;
+
+	#[cfg(target_arch = "riscv64")]
+	fn init(&mut self, entry_point: u64, boot_info: *const BootInfo) -> HypervisorResult<()>;
 
 	/// Continues execution.
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason>;
@@ -341,10 +369,18 @@ pub trait VirtualCPU {
 
 	/// unlink delets a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
 	/// TODO: UNSAFE AS *%@#. It has to be checked that the VM is allowed to unlink that file!
+	#[cfg(target_arch = "x86_64")]
 	fn unlink(&self, args_ptr: usize) {
 		unsafe {
 			let sysunlink = &mut *(args_ptr as *mut SysUnlink);
 			sysunlink.ret = libc::unlink(self.host_address(sysunlink.name as usize) as *const i8);
+		}
+	}
+	#[cfg(target_arch = "riscv64")]
+	fn unlink(&self, args_ptr: usize) {
+		unsafe {
+			let sysunlink = &mut *(args_ptr as *mut SysUnlink);
+			sysunlink.ret = libc::unlink(self.host_address(sysunlink.name as usize) as *const u8);
 		}
 	}
 
@@ -355,11 +391,23 @@ pub trait VirtualCPU {
 	}
 
 	/// Handles an open syscall by opening a file on the host.
+	#[cfg(target_arch = "x86_64")]
 	fn open(&self, args_ptr: usize) {
 		unsafe {
 			let sysopen = &mut *(args_ptr as *mut SysOpen);
 			sysopen.ret = libc::open(
 				self.host_address(sysopen.name as usize) as *const i8,
+				sysopen.flags,
+				sysopen.mode,
+			);
+		}
+	}
+	#[cfg(target_arch = "riscv64")]
+	fn open(&self, args_ptr: usize) {
+		unsafe {
+			let sysopen = &mut *(args_ptr as *mut SysOpen);
+			sysopen.ret = libc::open(
+				self.host_address(sysopen.name as usize) as *const u8,
 				sysopen.flags,
 				sysopen.mode,
 			);
@@ -455,6 +503,7 @@ pub trait Vm {
 	fn get_entry_point(&self) -> u64;
 	fn kernel_path(&self) -> &Path;
 	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU>;
+	fn get_boot_info(&self) -> *const BootInfo;
 	fn set_boot_info(&mut self, header: *const BootInfo);
 	fn cpu_online(&self) -> u32;
 	fn get_ip(&self) -> Option<Ipv4Addr>;
@@ -530,6 +579,12 @@ pub trait Vm {
 		let is_dyn = elf.header.e_type == ET_DYN;
 		debug!("ELF file is a shared object file: {}", is_dyn);
 
+		#[cfg(target_arch = "riscv64")]
+		if elf.header.e_machine != EM_RISCV {
+			return Err(LoadKernelError::Io(io::ErrorKind::InvalidData.into()));
+		}
+
+		#[cfg(target_arch = "x86_64")]
 		if elf.header.e_machine != EM_X86_64 {
 			return Err(LoadKernelError::Io(io::ErrorKind::InvalidData.into()));
 		}
@@ -602,7 +657,9 @@ pub trait Vm {
 			.expect("SystemTime before UNIX EPOCH!");
 		write(&mut (*boot_info).boot_gtod, n.as_secs() * 1000000);
 
+		#[cfg(target_arch = "x86_64")]
 		let cpuid = CpuId::new();
+		#[cfg(target_arch = "x86_64")]
 		let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
 			debug!("Failed to detect from cpuid");
 			detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
@@ -610,11 +667,17 @@ pub trait Vm {
 				get_cpu_frequency_from_os().unwrap_or(0)
 			})
 		});
+		#[cfg(target_arch = "x86_64")]
 		debug!("detected a cpu frequency of {} Mhz", mhz);
+		#[cfg(target_arch = "x86_64")]
 		write(&mut (*boot_info).cpu_freq, mhz);
+
 		if (*boot_info).cpu_freq == 0 {
 			warn!("Unable to determine processor frequency");
 		}
+
+		#[cfg(target_arch = "riscv64")]
+		write(&mut (*boot_info).hart_mask, (1 << self.num_cpus()) - 1);
 
 		// load kernel and determine image size
 		let vm_slice = std::slice::from_raw_parts_mut(vm_mem, vm_mem_length);
@@ -670,7 +733,7 @@ pub trait Vm {
 					write(&mut (*boot_info).tls_start, tls_start);
 					write(&mut (*boot_info).tls_filesz, program_header.p_filesz);
 					write(&mut (*boot_info).tls_memsz, program_header.p_memsz);
-					write(&mut (*boot_info).tls_align, program_header.p_align);
+					//write(&mut (*boot_info).tls_align, program_header.p_align);
 
 					Ok(())
 				}
@@ -679,7 +742,13 @@ pub trait Vm {
 
 		// relocate entries (strings, copy-data, etc.) with an addend
 		elf.dynrelas.iter().for_each(|rela| match rela.r_type {
+			#[cfg(target_arch = "x86_64")]
 			R_X86_64_RELATIVE => {
+				let offset = (vm_mem as u64 + start_address + rela.r_offset) as *mut u64;
+				*offset = (start_address as i64 + rela.r_addend.unwrap_or(0)) as u64;
+			}
+			#[cfg(target_arch = "riscv64")]
+			R_RISCV_RELATIVE => {
 				let offset = (vm_mem as u64 + start_address + rela.r_offset) as *mut u64;
 				*offset = (start_address as i64 + rela.r_addend.unwrap_or(0)) as u64;
 			}
@@ -696,6 +765,7 @@ pub trait Vm {
 	}
 }
 
+#[cfg(target_arch = "x86_64")]
 fn detect_freq_from_cpuid(cpuid: &CpuId) -> Result<u32, ()> {
 	debug!("Trying to detect CPU frequency by tsc info");
 
@@ -736,6 +806,7 @@ fn detect_freq_from_cpuid(cpuid: &CpuId) -> Result<u32, ()> {
 	}
 }
 
+#[cfg(target_arch = "x86_64")]
 fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> Result<u32, ()> {
 	debug!("Trying to detect CPU frequency by hypervisor info");
 	let hypervisor_info = cpuid.get_hypervisor_info().ok_or(())?;
@@ -752,6 +823,7 @@ fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> Result<u32, ()> {
 	}
 }
 
+#[cfg(target_arch = "x86_64")]
 fn get_cpu_frequency_from_os() -> Result<u32, ()> {
 	// Determine TSC frequency by measuring it (loop for a second, record ticks)
 	let duration = Duration::from_millis(10);
@@ -777,6 +849,7 @@ mod tests {
 	// test is derived from
 	// https://github.com/gz/rust-cpuid/blob/master/examples/tsc_frequency.rs
 	#[test]
+	#[cfg(target_arch = "x86_64")]
 	fn test_detect_freq_from_cpuid() {
 		let cpuid = CpuId::new();
 		let has_tsc = cpuid
@@ -848,6 +921,7 @@ mod tests {
 	}
 
 	#[test]
+	#[cfg(target_arch = "x86_64")]
 	fn test_get_cpu_frequency_from_os() {
 		let freq_res = get_cpu_frequency_from_os();
 		assert!(freq_res.is_ok());

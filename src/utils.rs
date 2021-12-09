@@ -15,7 +15,7 @@ pub fn transparent_hugepages_available() -> io::Result<bool> {
 		let transp_hugepage_enabled = Path::new("/sys/kernel/mm/transparent_hugepage/enabled");
 		if !transp_hugepage_enabled.is_file() {
 			debug!(
-				"`{}` does not exist. Assuming Hugepages are not available",
+				"`{}` does not exist. Assuming transparent Hugepages are not available",
 				transp_hugepage_enabled.display()
 			);
 			Ok(false)

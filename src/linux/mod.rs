@@ -1,11 +1,17 @@
+pub mod arch;
+#[cfg(target_arch = "x86_64")]
 pub mod gdb;
 pub mod uhyve;
-pub mod vcpu;
+//pub mod vcpu;
+#[cfg(target_arch = "x86_64")]
 pub mod virtio;
+#[cfg(target_arch = "x86_64")]
 pub mod virtqueue;
 
 pub type HypervisorError = kvm_ioctls::Error;
 pub type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
+
+pub use arch::vcpu;
 
 use std::{
 	hint, io, mem,
@@ -16,6 +22,7 @@ use std::{
 };
 
 use core_affinity::CoreId;
+#[cfg(target_arch = "x86_64")]
 use gdbstub::DisconnectReason;
 use kvm_ioctls::Kvm;
 use lazy_static::lazy_static;
@@ -25,8 +32,10 @@ use nix::sys::{
 	signal::{signal, SigHandler, Signal},
 };
 
+#[cfg(target_arch = "x86_64")]
+use crate::linux::gdb::{GdbUhyve, UhyveGdbEventLoop};
+
 use crate::{
-	linux::gdb::{GdbUhyve, UhyveGdbEventLoop},
 	vm::{VirtualCPU, Vm},
 	Uhyve,
 };
@@ -79,11 +88,15 @@ impl Uhyve {
 			self.load_kernel().expect("Unabled to load the kernel");
 		}
 
+		#[cfg(target_arch = "x86_64")]
 		if self.gdb_port.is_none() {
 			self.run_no_gdb(cpu_affinity)
 		} else {
 			self.run_gdb(cpu_affinity)
 		}
+
+		#[cfg(target_arch = "riscv64")]
+		self.run_no_gdb(cpu_affinity)
 	}
 
 	fn run_no_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> i32 {
@@ -111,6 +124,9 @@ impl Uhyve {
 					}
 
 					let mut cpu = vm.create_cpu(cpu_id).unwrap();
+					#[cfg(target_arch = "riscv64")]
+					cpu.init(vm.get_entry_point(), vm.get_boot_info()).unwrap();
+					#[cfg(target_arch = "x86_64")]
 					cpu.init(vm.get_entry_point()).unwrap();
 
 					// only one core is able to enter startup code
@@ -155,6 +171,7 @@ impl Uhyve {
 		code[0]
 	}
 
+	#[cfg(target_arch = "x86_64")]
 	fn run_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> i32 {
 		let cpu_id = 0;
 
