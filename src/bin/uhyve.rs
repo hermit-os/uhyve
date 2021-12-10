@@ -198,8 +198,7 @@ fn main() {
 		.unwrap_or(DEFAULT_GUEST_SIZE);
 	let num_cpus = matches
 		.value_of("CPUS")
-		.map(|cpus| cpus.parse().ok())
-		.flatten()
+		.and_then(|cpus| cpus.parse().ok())
 		.unwrap_or(1);
 
 	let cpu_affinity = matches.values_of("CPU_AFFINITY").map(|affinity| {

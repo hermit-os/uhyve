@@ -97,8 +97,7 @@ impl Uhyve {
 				let barrier = barrier.clone();
 				let local_cpu_affinity = cpu_affinity
 					.as_ref()
-					.map(|core_ids| core_ids.get(cpu_id as usize).copied())
-					.flatten();
+					.and_then(|core_ids| core_ids.get(cpu_id as usize).copied());
 
 				thread::spawn(move || {
 					debug!("Create thread for CPU {}", cpu_id);
@@ -160,8 +159,7 @@ impl Uhyve {
 
 		let local_cpu_affinity = cpu_affinity
 			.as_ref()
-			.map(|core_ids| core_ids.get(cpu_id as usize).copied())
-			.flatten();
+			.and_then(|core_ids| core_ids.get(cpu_id as usize).copied());
 
 		match local_cpu_affinity {
 			Some(core_id) => {
