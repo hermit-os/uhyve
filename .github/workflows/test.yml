@@ -49,6 +49,10 @@ jobs:
     name: Rusty-Hermit Kernel based integration tests
     runs-on: [self-hosted]
     steps:
+    - name: Install gdb
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends gdb
     - uses: actions/checkout@v2
       with:
         lfs: true
@@ -56,12 +60,16 @@ jobs:
     - name: Install toolchain from rust-toolchain.toml
       run: rustup show
     - name: Integration Tests
-      run: cargo test --test '*' -- --skip gdb
+      run: cargo test --test '*'
 
   coverage:
     name: Coverage
     runs-on: [self-hosted]
     steps:
+    - name: Install gdb
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends gdb
     - uses: actions/checkout@v2
       with:
         lfs: true
@@ -71,7 +79,7 @@ jobs:
     - name: Install cargo-llvm-cov
       run: curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin
     - name: Generate code coverage
-      run: cargo llvm-cov --lcov --output-path lcov.info -- --skip gdb
+      run: cargo llvm-cov --lcov --output-path lcov.info
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v2
       with:
