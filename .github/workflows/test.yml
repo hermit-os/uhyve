@@ -49,6 +49,10 @@ jobs:
     name: Rusty-Hermit Kernel based integration tests
     runs-on: [self-hosted]
     steps:
+    - name: Install gdb
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends gdb
     - uses: actions/checkout@v2
       with:
         lfs: true
@@ -62,6 +66,10 @@ jobs:
     name: Coverage
     runs-on: [self-hosted]
     steps:
+    - name: Install gdb
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends gdb
     - uses: actions/checkout@v2
       with:
         lfs: true
