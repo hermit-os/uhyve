@@ -54,7 +54,6 @@ log = "0.4"
 raw-cpuid = "10.2"
 rustc-serialize = "0.3"
 thiserror = "1.0"
-x86_64 = "0.14"
 
 rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }
