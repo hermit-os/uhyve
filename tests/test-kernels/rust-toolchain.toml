@@ -1,8 +1,9 @@
 [toolchain]
 channel = "nightly-2021-12-04"
 components = [
+    "clippy",
     "llvm-tools-preview",
-    "rust-src",
     "rustfmt",
+    "rust-src",
 ]
 targets = [ "x86_64-unknown-hermit" ]
