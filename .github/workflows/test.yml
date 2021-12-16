@@ -40,8 +40,6 @@ jobs:
       run: rustup show
     - name: Build
       run: cargo build
-    - name: Build with instrument feature
-      run: cargo clean && RUSTFLAGS="-Z instrument-mcount" cargo build
     - name: Compile, but don't run benchmarks
       run: cargo bench --no-run
 
