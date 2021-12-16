@@ -1057,7 +1057,6 @@ dependencies = [
  "tun-tap",
  "virtio-bindings",
  "vmm-sys-util",
- "x86",
  "x86_64",
  "xhypervisor",
 ]
@@ -1231,17 +1230,6 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
-
-[[package]]
-name = "x86"
-version = "0.43.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e85eb056bbe47f56d75dc0ccc5fe9c12211ed141292f4d7485d2a7c3dedda09"
-dependencies = [
- "bit_field",
- "bitflags",
- "raw-cpuid",
-]
 
 [[package]]
 name = "x86_64"

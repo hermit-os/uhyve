@@ -13,7 +13,6 @@ use std::arch::x86_64::__cpuid_count;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use x86::msr::*;
 use x86_64::registers::control::Cr0Flags;
 use x86_64::registers::control::Cr4Flags;
 use x86_64::structures::gdt::SegmentSelector;
@@ -27,6 +26,85 @@ use xhypervisor::consts::vmx_cap::{
 };
 use xhypervisor::consts::vmx_exit;
 use xhypervisor::{read_vmx_cap, vCPU, x86Reg};
+
+/// Extracted from `x86::msr`.
+mod msr {
+	/// See Section 17.13, Time-Stamp Counter.
+	pub const TSC: u32 = 0x10;
+
+	/// APIC Location and Status (R/W) See Table 35-2. See Section 10.4.4, Local APIC  Status and Location.
+	pub const IA32_APIC_BASE: u32 = 0x1b;
+
+	/// CS register target for CPL 0 code (R/W) See Table 35-2. See Section 5.8.7, Performing Fast Calls to  System Procedures with the SYSENTER and  SYSEXIT Instructions.
+	pub const IA32_SYSENTER_CS: u32 = 0x174;
+
+	/// Stack pointer for CPL 0 stack (R/W) See Table 35-2. See Section 5.8.7, Performing Fast Calls to  System Procedures with the SYSENTER and  SYSEXIT Instructions.
+	pub const IA32_SYSENTER_ESP: u32 = 0x175;
+
+	/// CPL 0 code entry point (R/W) See Table 35-2. See Section 5.8.7, Performing  Fast Calls to System Procedures with the SYSENTER and SYSEXIT Instructions.
+	pub const IA32_SYSENTER_EIP: u32 = 0x176;
+
+	pub const IA32_MISC_ENABLE: u32 = 0x1a0;
+
+	/// x2APIC Task Priority register (R/W)
+	pub const IA32_X2APIC_TPR: u32 = 0x808;
+
+	/// x2APIC End of Interrupt. If ( CPUID.01H:ECX.\[bit 21\]  = 1 )
+	pub const IA32_X2APIC_EOI: u32 = 0x80b;
+
+	/// x2APIC Spurious Interrupt Vector register (R/W)
+	pub const IA32_X2APIC_SIVR: u32 = 0x80f;
+
+	/// x2APIC Interrupt Command register (R/W)
+	pub const IA32_X2APIC_ICR: u32 = 0x830;
+
+	/// x2APIC LVT Timer Interrupt register (R/W)
+	pub const IA32_X2APIC_LVT_TIMER: u32 = 0x832;
+
+	/// x2APIC LVT Thermal Sensor Interrupt register (R/W)
+	pub const IA32_X2APIC_LVT_THERMAL: u32 = 0x833;
+
+	/// x2APIC LVT Performance Monitor register (R/W)
+	pub const IA32_X2APIC_LVT_PMI: u32 = 0x834;
+
+	/// If ( CPUID.01H:ECX.\[bit 21\]  = 1 )
+	pub const IA32_X2APIC_LVT_LINT0: u32 = 0x835;
+
+	/// If ( CPUID.01H:ECX.\[bit 21\]  = 1 )
+	pub const IA32_X2APIC_LVT_LINT1: u32 = 0x836;
+
+	/// If ( CPUID.01H:ECX.\[bit 21\]  = 1 )
+	pub const IA32_X2APIC_LVT_ERROR: u32 = 0x837;
+
+	/// If (  CPUID.80000001.EDX.\[bit  20\] or  CPUID.80000001.EDX.\[bit 29\])
+	pub const IA32_EFER: u32 = 0xc0000080;
+
+	/// System Call Target Address (R/W)  See Table 35-2.
+	pub const IA32_STAR: u32 = 0xc0000081;
+
+	/// IA-32e Mode System Call Target Address (R/W)  See Table 35-2.
+	pub const IA32_LSTAR: u32 = 0xc0000082;
+
+	/// System Call Target Address the compatibility mode.
+	pub const IA32_CSTAR: u32 = 0xc0000083;
+
+	/// System Call Flag Mask (R/W)  See Table 35-2.
+	pub const IA32_FMASK: u32 = 0xc0000084;
+
+	/// Map of BASE Address of FS (R/W)  See Table 35-2.
+	pub const IA32_FS_BASE: u32 = 0xc0000100;
+
+	/// Map of BASE Address of GS (R/W)  See Table 35-2.
+	pub const IA32_GS_BASE: u32 = 0xc0000101;
+
+	/// Swap Target of BASE Address of GS (R/W) See Table 35-2.
+	pub const IA32_KERNEL_GSBASE: u32 = 0xc0000102;
+
+	/// AUXILIARY TSC Signature. (R/W) See Table 35-2 and Section  17.13.2, IA32_TSC_AUX Register and RDTSCP Support.
+	pub const IA32_TSC_AUX: u32 = 0xc0000103;
+}
+
+use msr::*;
 
 /* desired control word constrained by hardware/hypervisor capabilities */
 fn cap2ctrl(cap: u64, ctrl: u64) -> u64 {
