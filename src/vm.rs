@@ -1,4 +1,3 @@
-use super::paging::*;
 use goblin::elf;
 use goblin::elf64::header::ET_DYN;
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
@@ -363,15 +362,6 @@ pub trait VirtualCPU {
 	}
 }
 
-// Constructor for a conventional segment GDT (or LDT) entry
-fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {
-	((base & 0xff000000u64) << (56 - 24))
-		| ((flags & 0x0000f0ffu64) << 40)
-		| ((limit & 0x000f0000u64) << (48 - 16))
-		| ((base & 0x00ffffffu64) << 16)
-		| (limit & 0x0000ffffu64)
-}
-
 pub trait Vm {
 	/// Returns the number of cores for the vm.
 	fn num_cpus(&self) -> u32;
@@ -392,57 +382,7 @@ pub trait Vm {
 	fn get_gateway(&self) -> Option<Ipv4Addr>;
 	fn get_mask(&self) -> Option<Ipv4Addr>;
 	fn verbose(&self) -> bool;
-
-	/// Initialize the page tables for the guest
-	fn init_guest_mem(&self) {
-		debug!("Initialize guest memory");
-
-		let (mem_addr, _) = self.guest_mem();
-
-		unsafe {
-			let pml4 = &mut *((mem_addr as u64 + BOOT_PML4) as *mut PageTable);
-			let pdpte = &mut *((mem_addr as u64 + BOOT_PDPTE) as *mut PageTable);
-			let pde = &mut *((mem_addr as u64 + BOOT_PDE) as *mut PageTable);
-			let gdt_entry: u64 = mem_addr as u64 + BOOT_GDT;
-
-			// initialize GDT
-			*((gdt_entry) as *mut u64) = create_gdt_entry(0, 0, 0);
-			*((gdt_entry + mem::size_of::<*mut u64>() as u64) as *mut u64) =
-				create_gdt_entry(0xA09B, 0, 0xFFFFF); /* code */
-			*((gdt_entry + 2 * mem::size_of::<*mut u64>() as u64) as *mut u64) =
-				create_gdt_entry(0xC093, 0, 0xFFFFF); /* data */
-
-			/* For simplicity we currently use 2MB pages and only a single
-			PML4/PDPTE/PDE. */
-
-			// per default is the memory zeroed, which we allocate by the system call mmap
-			/*libc::memset(pml4 as *mut _ as *mut libc::c_void, 0x00, PAGE_SIZE);
-			libc::memset(pdpte as *mut _ as *mut libc::c_void, 0x00, PAGE_SIZE);
-			libc::memset(pde as *mut _ as *mut libc::c_void, 0x00, PAGE_SIZE);*/
-
-			pml4.entries[0].set(
-				BOOT_PDPTE as usize,
-				PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
-			);
-			pml4.entries[511].set(
-				BOOT_PML4 as usize,
-				PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
-			);
-			pdpte.entries[0].set(
-				BOOT_PDE as usize,
-				PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
-			);
-
-			for i in 0..512 {
-				pde.entries[i].set(
-					i * LargePageSize::SIZE,
-					PageTableEntryFlags::PRESENT
-						| PageTableEntryFlags::WRITABLE
-						| PageTableEntryFlags::HUGE_PAGE,
-				);
-			}
-		}
-	}
+	fn init_guest_mem(&self);
 
 	unsafe fn load_kernel(&mut self) -> LoadKernelResult<()> {
 		debug!("Load kernel from {}", self.kernel_path().display());

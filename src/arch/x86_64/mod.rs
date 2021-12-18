@@ -1,3 +1,4 @@
+pub mod paging;
 pub mod registers;
 
 use core::arch::x86_64::_rdtsc as rdtsc;

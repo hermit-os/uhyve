@@ -149,6 +149,10 @@ impl Vm for Uhyve {
 			unsafe { read_volatile(&(*self.boot_info).cpu_online) }
 		}
 	}
+
+	fn init_guest_mem(&self) {
+		debug!("Initialize guest memory");
+	}
 }
 
 impl Drop for Uhyve {

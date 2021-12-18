@@ -18,7 +18,6 @@ pub use linux as os;
 pub mod macos;
 #[cfg(target_os = "macos")]
 pub use macos as os;
-pub mod paging;
 #[cfg(target_os = "linux")]
 pub mod shared_queue;
 pub mod utils;
