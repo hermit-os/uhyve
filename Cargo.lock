@@ -602,9 +602,9 @@ checksum = "0ab1bc2a289d34bd04a330323ac98a1b4bc82c9d9fcb1e66b63caa84da26b575"
 
 [[package]]
 name = "paste"
-version = "1.0.5"
+version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "acbf547ad0c65e31259204bd90935776d1c693cec2f4ff7abb7a1bbbd40dfe58"
+checksum = "0744126afe1a6dd7f394cb50a716dbe086cb06e255e53d8d0185d82828358fb5"
 
 [[package]]
 name = "plain"
@@ -1243,9 +1243,7 @@ dependencies = [
 
 [[package]]
 name = "xhypervisor"
-version = "0.0.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "643a7272630495dac4765f4f6b020b54af2c4d71fd29ef6b6141ade280355f8a"
+version = "0.1.0"
 dependencies = [
  "libc",
 ]

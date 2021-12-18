@@ -1,5 +1,4 @@
-use crate::macos::ioapic::IoApic;
-use crate::macos::vcpu::*;
+use crate::macos::aarch64::vcpu::*;
 use crate::vm::HypervisorResult;
 use crate::vm::{BootInfo, Parameter, Vm};
 use libc;
@@ -10,7 +9,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::ptr;
 use std::ptr::read_volatile;
-use std::sync::{Arc, Mutex};
 use xhypervisor::{create_vm, map_mem, unmap_mem, MemPerm};
 
 pub struct Uhyve {
@@ -21,7 +19,6 @@ pub struct Uhyve {
 	num_cpus: u32,
 	path: PathBuf,
 	boot_info: *const BootInfo,
-	ioapic: Arc<Mutex<IoApic>>,
 	verbose: bool,
 }
 
@@ -34,7 +31,6 @@ impl std::fmt::Debug for Uhyve {
 			.field("num_cpus", &self.num_cpus)
 			.field("path", &self.path)
 			.field("boot_info", &self.boot_info)
-			.field("ioapic", &self.ioapic)
 			.field("verbose", &self.verbose)
 			.finish()
 	}
@@ -79,7 +75,6 @@ impl Uhyve {
 			num_cpus: specs.num_cpus,
 			path: kernel_path,
 			boot_info: ptr::null(),
-			ioapic: Arc::new(Mutex::new(IoApic::new())),
 			verbose: specs.verbose,
 		};
 
@@ -127,7 +122,6 @@ impl Vm for Uhyve {
 			id,
 			self.path.clone(),
 			self.guest_mem as usize,
-			self.ioapic.clone(),
 		))
 	}
 

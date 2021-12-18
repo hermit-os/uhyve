@@ -24,4 +24,5 @@ pub mod shared_queue;
 pub mod utils;
 pub mod vm;
 
+pub use arch::*;
 pub use os::uhyve::Uhyve;

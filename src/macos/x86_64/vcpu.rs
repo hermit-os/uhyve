@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use crate::consts::*;
-use crate::macos::ioapic::IoApic;
+use crate::macos::x86_64::ioapic::IoApic;
 use crate::paging::*;
 use crate::vm::HypervisorResult;
 use crate::vm::VcpuStopReason;

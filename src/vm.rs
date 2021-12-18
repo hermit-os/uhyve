@@ -1,28 +1,27 @@
 use super::paging::*;
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::_rdtsc as rdtsc;
 use goblin::elf;
 use goblin::elf64::header::{EM_X86_64, ET_DYN};
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
 use goblin::elf64::reloc::*;
 use log::{debug, error, warn};
-use raw_cpuid::CpuId;
 use std::io::Write;
 use std::net::Ipv4Addr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::ptr::write;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::SystemTime;
 use std::{fs, io, mem, slice};
 use thiserror::Error;
+
+#[cfg(target_arch = "x86_64")]
+use crate::arch::x86_64::{
+	detect_freq_from_cpuid, detect_freq_from_cpuid_hypervisor_info, get_cpu_frequency_from_os,
+};
 
 use crate::consts::*;
 use crate::os::vcpu::UhyveCPU;
 use crate::os::DebugExitInfo;
 use crate::os::HypervisorError;
-
-const MHZ_TO_HZ: u64 = 1000000;
-const KHZ_TO_HZ: u64 = 1000;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -602,14 +601,23 @@ pub trait Vm {
 			.expect("SystemTime before UNIX EPOCH!");
 		write(&mut (*boot_info).boot_gtod, n.as_secs() * 1000000);
 
-		let cpuid = CpuId::new();
-		let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
-			debug!("Failed to detect from cpuid");
-			detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
-				debug!("Failed to detect from hypervisor_info");
-				get_cpu_frequency_from_os().unwrap_or(0)
-			})
-		});
+		#[cfg(target_arch = "aarch64")]
+		let mhz: u32 = 0;
+		#[cfg(target_arch = "x86_64")]
+		let mhz = {
+			let cpuid = raw_cpuid::CpuId::new();
+			let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
+				debug!("Failed to detect from cpuid");
+				detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
+					debug!("Failed to detect from hypervisor_info");
+					get_cpu_frequency_from_os().unwrap_or(0)
+				})
+			});
+			debug!("detected a cpu frequency of {} Mhz", mhz);
+
+			mhz
+		};
+
 		debug!("detected a cpu frequency of {} Mhz", mhz);
 		write(&mut (*boot_info).cpu_freq, mhz);
 		if (*boot_info).cpu_freq == 0 {
@@ -696,166 +704,8 @@ pub trait Vm {
 	}
 }
 
-fn detect_freq_from_cpuid(cpuid: &CpuId) -> Result<u32, ()> {
-	debug!("Trying to detect CPU frequency by tsc info");
-
-	let has_invariant_tsc = cpuid
-		.get_advanced_power_mgmt_info()
-		.map_or(false, |apm_info| apm_info.has_invariant_tsc());
-	if !has_invariant_tsc {
-		warn!("TSC frequency varies with speed-stepping")
-	}
-
-	let tsc_frequency_hz = cpuid.get_tsc_info().map(|tinfo| {
-		if tinfo.tsc_frequency().is_some() {
-			tinfo.tsc_frequency()
-		} else {
-			// Skylake and Kabylake don't report the crystal clock, approximate with base frequency:
-			cpuid
-				.get_processor_frequency_info()
-				.map(|pinfo| pinfo.processor_base_frequency() as u64 * MHZ_TO_HZ)
-				.map(|cpu_base_freq_hz| {
-					let crystal_hz =
-						cpu_base_freq_hz * tinfo.denominator() as u64 / tinfo.numerator() as u64;
-					crystal_hz * tinfo.numerator() as u64 / tinfo.denominator() as u64
-				})
-		}
-	});
-
-	let hz = match tsc_frequency_hz {
-		Some(x) => x.unwrap_or(0),
-		None => {
-			return Err(());
-		}
-	};
-
-	if hz > 0 {
-		Ok((hz / MHZ_TO_HZ).try_into().unwrap())
-	} else {
-		Err(())
-	}
-}
-
-fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> Result<u32, ()> {
-	debug!("Trying to detect CPU frequency by hypervisor info");
-	let hypervisor_info = cpuid.get_hypervisor_info().ok_or(())?;
-	debug!(
-		"cpuid detected hypervisor: {:?}",
-		hypervisor_info.identify()
-	);
-	let hz = hypervisor_info.tsc_frequency().ok_or(())? as u64 * KHZ_TO_HZ;
-	let mhz: u32 = (hz / MHZ_TO_HZ).try_into().unwrap();
-	if mhz > 0 {
-		Ok(mhz)
-	} else {
-		Err(())
-	}
-}
-
-fn get_cpu_frequency_from_os() -> Result<u32, ()> {
-	// Determine TSC frequency by measuring it (loop for a second, record ticks)
-	let duration = Duration::from_millis(10);
-	let now = Instant::now();
-	let start = unsafe { rdtsc() };
-	if start > 0 {
-		loop {
-			if now.elapsed() >= duration {
-				break;
-			}
-		}
-		let end = unsafe { rdtsc() };
-		Ok((((end - start) * 100) / MHZ_TO_HZ).try_into().unwrap())
-	} else {
-		Err(())
-	}
-}
-
 #[cfg(test)]
 mod tests {
-	use super::*;
-
-	// test is derived from
-	// https://github.com/gz/rust-cpuid/blob/master/examples/tsc_frequency.rs
-	#[test]
-	fn test_detect_freq_from_cpuid() {
-		let cpuid = CpuId::new();
-		let has_tsc = cpuid
-			.get_feature_info()
-			.map_or(false, |finfo| finfo.has_tsc());
-
-		let has_invariant_tsc = cpuid
-			.get_advanced_power_mgmt_info()
-			.map_or(false, |apm_info| apm_info.has_invariant_tsc());
-
-		let tsc_frequency_hz = cpuid.get_tsc_info().map(|tinfo| {
-			if tinfo.tsc_frequency().is_some() {
-				tinfo.tsc_frequency()
-			} else {
-				// Skylake and Kabylake don't report the crystal clock, approximate with base frequency:
-				cpuid
-					.get_processor_frequency_info()
-					.map(|pinfo| pinfo.processor_base_frequency() as u64 * MHZ_TO_HZ)
-					.map(|cpu_base_freq_hz| {
-						let crystal_hz = cpu_base_freq_hz * tinfo.denominator() as u64
-							/ tinfo.numerator() as u64;
-						crystal_hz * tinfo.numerator() as u64 / tinfo.denominator() as u64
-					})
-			}
-		});
-
-		assert!(has_tsc, "System does not have a TSC.");
-
-		// Try to figure out TSC frequency with CPUID
-		println!(
-			"TSC Frequency is: {} ({})",
-			match tsc_frequency_hz {
-				Some(x) => format!("{} Hz", x.unwrap_or(0)),
-				None => String::from("unknown"),
-			},
-			if has_invariant_tsc {
-				"invariant"
-			} else {
-				"TSC frequency varies with speed-stepping"
-			}
-		);
-
-		// Check if we run in a VM and the hypervisor can give us the TSC frequency
-		cpuid.get_hypervisor_info().map(|hv| {
-			hv.tsc_frequency().map(|tsc_khz| {
-				let virtual_tsc_frequency_hz = tsc_khz as u64 * KHZ_TO_HZ;
-				println!(
-					"Hypervisor reports TSC Frequency at: {} Hz",
-					virtual_tsc_frequency_hz
-				);
-			})
-		});
-
-		// Determine TSC frequency by measuring it (loop for a second, record ticks)
-		let one_second = Duration::from_secs(1);
-		let now = Instant::now();
-		let start = unsafe { rdtsc() };
-		assert!(start > 0, "Don't have rdtsc on stable!");
-		loop {
-			if now.elapsed() >= one_second {
-				break;
-			}
-		}
-		let end = unsafe { rdtsc() };
-		println!(
-			"Empirical measurement of TSC frequency was: {} Hz",
-			(end - start)
-		);
-	}
-
-	#[test]
-	fn test_get_cpu_frequency_from_os() {
-		let freq_res = get_cpu_frequency_from_os();
-		assert!(freq_res.is_ok());
-		let freq = freq_res.unwrap();
-		assert!(freq > 0);
-		assert!(freq < 10000); //More than 10Ghz is probably wrong
-	}
-
 	#[cfg(target_os = "linux")]
 	#[test]
 	fn test_vm_load_min_size_1024() {
