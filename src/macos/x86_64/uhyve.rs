@@ -1,7 +1,8 @@
+use crate::arch::x86_64::BootInfo;
 use crate::macos::x86_64::ioapic::IoApic;
 use crate::macos::x86_64::vcpu::*;
 use crate::vm::HypervisorResult;
-use crate::vm::{BootInfo, Parameter, Vm};
+use crate::vm::{Parameter, Vm};
 use libc;
 use libc::c_void;
 use log::debug;

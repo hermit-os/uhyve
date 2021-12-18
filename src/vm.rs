@@ -1,6 +1,6 @@
 use super::paging::*;
 use goblin::elf;
-use goblin::elf64::header::{EM_X86_64, ET_DYN};
+use goblin::elf64::header::ET_DYN;
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
 use goblin::elf64::reloc::*;
 use log::{debug, error, warn};
@@ -16,84 +16,16 @@ use thiserror::Error;
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::{
 	detect_freq_from_cpuid, detect_freq_from_cpuid_hypervisor_info, get_cpu_frequency_from_os,
+	BootInfo, ELF_HOST_ARCH,
 };
+
+#[cfg(target_arch = "aarch64")]
+use crate::arch::aarch64::{BootInfo, ELF_HOST_ARCH};
 
 use crate::consts::*;
 use crate::os::vcpu::UhyveCPU;
 use crate::os::DebugExitInfo;
 use crate::os::HypervisorError;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct BootInfo {
-	pub magic_number: u32,
-	pub version: u32,
-	pub base: u64,
-	pub limit: u64,
-	pub image_size: u64,
-	pub tls_start: u64,
-	pub tls_filesz: u64,
-	pub tls_memsz: u64,
-	pub current_stack_address: u64,
-	pub current_percore_address: u64,
-	pub host_logical_addr: u64,
-	pub boot_gtod: u64,
-	pub mb_info: u64,
-	pub cmdline: u64,
-	pub cmdsize: u64,
-	pub cpu_freq: u32,
-	pub boot_processor: u32,
-	pub cpu_online: u32,
-	pub possible_cpus: u32,
-	pub current_boot_id: u32,
-	pub uartport: u16,
-	pub single_kernel: u8,
-	pub uhyve: u8,
-	pub hcip: [u8; 4],
-	pub hcgateway: [u8; 4],
-	pub hcmask: [u8; 4],
-	pub tls_align: u64,
-}
-
-impl BootInfo {
-	pub fn new() -> Self {
-		BootInfo {
-			magic_number: 0xC0DE_CAFEu32,
-			version: 1,
-			base: 0,
-			limit: 0,
-			tls_start: 0,
-			tls_filesz: 0,
-			tls_memsz: 0,
-			image_size: 0,
-			current_stack_address: 0,
-			current_percore_address: 0,
-			host_logical_addr: 0,
-			boot_gtod: 0,
-			mb_info: 0,
-			cmdline: 0,
-			cmdsize: 0,
-			cpu_freq: 0,
-			boot_processor: !0,
-			cpu_online: 0,
-			possible_cpus: 0,
-			current_boot_id: 0,
-			uartport: 0,
-			single_kernel: 1,
-			uhyve: 0,
-			hcip: [255, 255, 255, 255],
-			hcgateway: [255, 255, 255, 255],
-			hcmask: [255, 255, 255, 0],
-			tls_align: 0,
-		}
-	}
-}
-
-impl Default for BootInfo {
-	fn default() -> Self {
-		Self::new()
-	}
-}
 
 #[derive(Debug, Copy, Clone)]
 pub struct Parameter<'a> {
@@ -529,7 +461,7 @@ pub trait Vm {
 		let is_dyn = elf.header.e_type == ET_DYN;
 		debug!("ELF file is a shared object file: {}", is_dyn);
 
-		if elf.header.e_machine != EM_X86_64 {
+		if elf.header.e_machine != ELF_HOST_ARCH {
 			return Err(LoadKernelError::Io(io::ErrorKind::InvalidData.into()));
 		}
 
@@ -687,7 +619,7 @@ pub trait Vm {
 
 		// relocate entries (strings, copy-data, etc.) with an addend
 		elf.dynrelas.iter().for_each(|rela| match rela.r_type {
-			R_X86_64_RELATIVE => {
+			R_X86_64_RELATIVE | R_AARCH64_RELATIVE => {
 				let offset = (vm_mem as u64 + start_address + rela.r_offset) as *mut u64;
 				*offset = (start_address as i64 + rela.r_addend.unwrap_or(0)) as u64;
 			}
