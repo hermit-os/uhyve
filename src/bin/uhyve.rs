@@ -5,9 +5,6 @@ extern crate log;
 #[macro_use]
 extern crate clap;
 
-#[cfg(feature = "instrument")]
-extern crate rftrace_frontend;
-
 use std::collections::HashSet;
 use std::env;
 use std::path::PathBuf;
@@ -19,22 +16,31 @@ use uhyvelib::Uhyve;
 
 use byte_unit::Byte;
 use clap::{App, Arg};
-#[cfg(feature = "instrument")]
-use rftrace_frontend::Events;
 
 const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
 const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
 
 #[cfg(feature = "instrument")]
-static mut EVENTS: Option<&mut Events> = None;
+fn setup_trace() {
+	use rftrace_frontend::Events;
 
-#[cfg(feature = "instrument")]
-extern "C" fn dump_trace() {
-	unsafe {
-		if let Some(ref mut e) = EVENTS {
-			rftrace_frontend::dump_full_uftrace(&mut *e, "uhyve_trace", "uhyve", true)
-				.expect("Saving trace failed");
+	static mut EVENTS: Option<&mut Events> = None;
+
+	extern "C" fn dump_trace() {
+		unsafe {
+			if let Some(e) = &mut EVENTS {
+				rftrace_frontend::dump_full_uftrace(e, "uhyve_trace", "uhyve", true)
+					.expect("Saving trace failed");
+			}
 		}
+	}
+
+	let events = rftrace_frontend::init(1000000, true);
+	rftrace_frontend::enable();
+
+	unsafe {
+		EVENTS = Some(events);
+		libc::atexit(dump_trace);
 	}
 }
 
@@ -42,15 +48,7 @@ extern "C" fn dump_trace() {
 // as a result destructors are not run and cleanup may not happen.
 fn main() {
 	#[cfg(feature = "instrument")]
-	{
-		let events = rftrace_frontend::init(1000000, true);
-		rftrace_frontend::enable();
-
-		unsafe {
-			EVENTS = Some(events);
-			libc::atexit(dump_trace);
-		}
-	}
+	setup_trace();
 
 	env_logger::init();
 
