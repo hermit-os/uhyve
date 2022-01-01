@@ -27,7 +27,7 @@ $ cargo +nightly install uhyve --locked
 To check if your system supports virtualization, you can use the following command:
 
 ```sh
-if egrep -c '(vmx|svm)' /proc/cpuinfo > /dev/null; then echo "Virualization support found"; fi
+if egrep -c '(vmx|svm)' /proc/cpuinfo > /dev/null; then echo "Virtualization support found"; fi
 ```
 
 On Linux, uhyve depends on the virtualization solution [KVM](https://www.linux-kvm.org/page/Main_Page) (Kernel-based Virtual Machine).

@@ -339,7 +339,7 @@ pub trait VirtualCPU {
 		}
 	}
 
-	/// unlink delets a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
+	/// unlink deletes a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
 	/// TODO: UNSAFE AS *%@#. It has to be checked that the VM is allowed to unlink that file!
 	fn unlink(&self, args_ptr: usize) {
 		unsafe {
