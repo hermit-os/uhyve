@@ -2,53 +2,9 @@
 //!
 //! These functions are used to parse command line arguments or determining defaults.
 
-use std::{io, iter, num::ParseIntError};
+use std::{iter, num::ParseIntError};
 
 use either::Either;
-
-/// Checks if the kernel provides support for transparent huge pages
-pub fn transparent_hugepages_available() -> io::Result<bool> {
-	if cfg!(target_os = "linux") {
-		use std::fs;
-		use std::path::Path;
-
-		let transp_hugepage_enabled = Path::new("/sys/kernel/mm/transparent_hugepage/enabled");
-		if !transp_hugepage_enabled.is_file() {
-			debug!(
-				"`{}` does not exist. Assuming Hugepages are not available",
-				transp_hugepage_enabled.display()
-			);
-			Ok(false)
-		} else {
-			match fs::read_to_string(transp_hugepage_enabled) {
-				Ok(s) => match s.trim() {
-					"[always] madvise never" => Ok(true),
-					"always [madvise] never" => Ok(true),
-					"always madvise [never]" => Ok(false),
-					s => {
-						debug!(
-							"Could not interpret contents of {}: {}",
-							transp_hugepage_enabled.display(),
-							s
-						);
-						Err(io::ErrorKind::InvalidData.into())
-					}
-				},
-				Err(err) => {
-					debug!(
-						"transparent_hugepages_available: Error reading string: {:?}",
-						err
-					);
-					Err(err)
-				}
-			}
-		}
-	} else if cfg!(target_os = "macos") {
-		Ok(true)
-	} else {
-		panic!("Only linux and macos are supported.")
-	}
-}
 
 /// Parses ranges from strings into discrete steps.
 pub fn parse_ranges<'a>(
