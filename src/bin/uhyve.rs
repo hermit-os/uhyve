@@ -229,7 +229,7 @@ fn main() {
 	}
 	// per default we use huge page to improve the performance,
 	// if the kernel supports transparent hugepages
-	let hugepage_default = utils::transparent_hugepages_available().unwrap_or(true);
+	let hugepage_default = true;
 	info!("Default hugepages set to: {}", hugepage_default);
 	// HERMIT_HUGEPAGES overrides the default we detected.
 	let mut hugepage = envmnt::is_or("HERMIT_HUGEPAGE", hugepage_default);
