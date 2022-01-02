@@ -1,7 +1,7 @@
 [package]
 name = "uhyve"
 version = "0.0.29"
-authors = ["Stefan Lankes <slankes@eonerc.rwth-aachen>"]
+authors = ["Stefan Lankes <slankes@eonerc.rwth-aachen.de>"]
 edition = "2021"
 description = "A hypervisor for RustyHermit."
 repository = "https://github.com/hermitcore/uhyve"
