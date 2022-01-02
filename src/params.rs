@@ -1,6 +1,7 @@
+#[cfg(target_os = "linux")]
+use std::net::Ipv4Addr;
 use std::{
 	fmt,
-	net::Ipv4Addr,
 	num::{NonZeroU32, ParseIntError, TryFromIntError},
 	str::FromStr,
 };
@@ -17,42 +18,57 @@ pub struct Params {
 	pub memory_size: GuestMemorySize,
 
 	/// Advise Transparent Hugepages
+	#[cfg(target_os = "linux")]
 	pub thp: bool,
 
 	/// Advise Kernel Samepage Merging
+	#[cfg(target_os = "linux")]
 	pub ksm: bool,
 
 	/// Number of guest CPUs
 	pub cpu_count: CpuCount,
 
 	/// GDB server port
+	#[cfg(target_os = "linux")]
 	pub gdb_port: Option<u16>,
 
 	/// Guest IP address
+	#[cfg(target_os = "linux")]
 	pub ip: Option<Ipv4Addr>,
 
 	/// Guest gateway address
+	#[cfg(target_os = "linux")]
 	pub gateway: Option<Ipv4Addr>,
 
 	/// Guest network mask
+	#[cfg(target_os = "linux")]
 	pub mask: Option<Ipv4Addr>,
 
 	/// Name of the network interface
+	#[cfg(target_os = "linux")]
 	pub nic: Option<String>,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for Params {
 	fn default() -> Self {
 		Self {
 			verbose: Default::default(),
 			memory_size: Default::default(),
+			#[cfg(target_os = "linux")]
 			thp: true,
+			#[cfg(target_os = "linux")]
 			ksm: false,
 			cpu_count: Default::default(),
+			#[cfg(target_os = "linux")]
 			gdb_port: Default::default(),
+			#[cfg(target_os = "linux")]
 			ip: Default::default(),
+			#[cfg(target_os = "linux")]
 			gateway: Default::default(),
+			#[cfg(target_os = "linux")]
 			mask: Default::default(),
+			#[cfg(target_os = "linux")]
 			nic: Default::default(),
 		}
 	}

@@ -59,10 +59,12 @@ struct Args {
 	///
 	/// Starts a GDB server on the provided port and waits for a connection.
 	#[clap(short = 's', long, env = "HERMIT_GDB_PORT")]
+	#[cfg(target_os = "linux")]
 	gdb_port: Option<u16>,
 
 	// #[clap(flatten, help_heading = "NETWORK")]
 	#[clap(skip)]
+	#[cfg(target_os = "linux")]
 	network_args: NetworkArgs,
 
 	/// The kernel to execute
@@ -86,6 +88,7 @@ struct MemoryArgs {
 	///
 	/// [THP]: https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html
 	#[clap(long)]
+	#[cfg(target_os = "linux")]
 	no_thp: bool,
 
 	/// Kernel Samepage Merging
@@ -94,6 +97,7 @@ struct MemoryArgs {
 	///
 	/// [KSM]: https://www.kernel.org/doc/html/latest/admin-guide/mm/ksm.html
 	#[clap(long)]
+	#[cfg(target_os = "linux")]
 	ksm: bool,
 }
 
@@ -258,17 +262,22 @@ impl From<Args> for Params {
 	fn from(args: Args) -> Self {
 		let Args {
 			verbose,
-			memory_args: MemoryArgs {
-				memory_size,
-				no_thp,
-				ksm,
-			},
+			memory_args:
+				MemoryArgs {
+					memory_size,
+					#[cfg(target_os = "linux")]
+					no_thp,
+					#[cfg(target_os = "linux")]
+					ksm,
+				},
 			cpu_args: CpuArgs {
 				cpu_count,
 				affinity: _,
 			},
+			#[cfg(target_os = "linux")]
 			gdb_port,
-			network_args: NetworkArgs {
+			#[cfg(target_os = "linux")]
+				network_args: NetworkArgs {
 				ip,
 				gateway,
 				mask,
@@ -281,13 +290,20 @@ impl From<Args> for Params {
 		Self {
 			verbose,
 			memory_size,
+			#[cfg(target_os = "linux")]
 			thp: !no_thp,
+			#[cfg(target_os = "linux")]
 			ksm,
 			cpu_count,
+			#[cfg(target_os = "linux")]
 			ip,
+			#[cfg(target_os = "linux")]
 			gateway,
+			#[cfg(target_os = "linux")]
 			mask,
+			#[cfg(target_os = "linux")]
 			nic,
+			#[cfg(target_os = "linux")]
 			gdb_port,
 		}
 	}
