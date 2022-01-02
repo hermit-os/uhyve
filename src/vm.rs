@@ -26,20 +26,6 @@ use crate::os::vcpu::UhyveCPU;
 use crate::os::DebugExitInfo;
 use crate::os::HypervisorError;
 
-#[derive(Debug, Copy, Clone)]
-pub struct Parameter<'a> {
-	pub mem_size: usize,
-	pub num_cpus: u32,
-	pub verbose: bool,
-	pub hugepage: bool,
-	pub mergeable: bool,
-	pub ip: Option<&'a str>,
-	pub gateway: Option<&'a str>,
-	pub mask: Option<&'a str>,
-	pub nic: Option<&'a str>,
-	pub gdbport: Option<u16>,
-}
-
 #[repr(C, packed)]
 struct SysWrite {
 	fd: i32,

@@ -2,8 +2,9 @@ use crate::arch::x86_64::BootInfo;
 use crate::consts::*;
 use crate::macos::x86_64::ioapic::IoApic;
 use crate::macos::x86_64::vcpu::*;
+use crate::params::Params;
 use crate::vm::HypervisorResult;
-use crate::vm::{Parameter, Vm};
+use crate::vm::Vm;
 use crate::x86_64::create_gdt_entry;
 use libc;
 use libc::c_void;
@@ -47,11 +48,13 @@ impl std::fmt::Debug for Uhyve {
 }
 
 impl Uhyve {
-	pub fn new(kernel_path: PathBuf, specs: &Parameter<'_>) -> HypervisorResult<Uhyve> {
+	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<Uhyve> {
+		let memory_size = params.memory_size.get();
+
 		let mem = unsafe {
 			libc::mmap(
 				std::ptr::null_mut(),
-				specs.mem_size,
+				memory_size,
 				libc::PROT_READ | libc::PROT_WRITE,
 				libc::MAP_PRIVATE | libc::MAP_ANON | libc::MAP_NORESERVE,
 				-1,
@@ -69,24 +72,27 @@ impl Uhyve {
 		debug!("Map guest memory...");
 		unsafe {
 			map_mem(
-				std::slice::from_raw_parts(mem as *mut u8, specs.mem_size),
+				std::slice::from_raw_parts(mem as *mut u8, memory_size),
 				0,
 				MemPerm::ExecAndWrite,
 			)?;
 		}
 
-		assert!(specs.gdbport.is_none(), "gdbstub is not supported on macos");
+		assert!(
+			params.gdb_port.is_none(),
+			"gdbstub is not supported on macos"
+		);
 
 		let hyve = Uhyve {
 			offset: 0,
 			entry_point: 0,
-			mem_size: specs.mem_size,
+			mem_size: memory_size,
 			guest_mem: mem,
-			num_cpus: specs.num_cpus,
+			num_cpus: params.cpu_count.get(),
 			path: kernel_path,
 			boot_info: ptr::null(),
 			ioapic: Arc::new(Mutex::new(IoApic::new())),
-			verbose: specs.verbose,
+			verbose: params.verbose,
 		};
 
 		hyve.init_guest_mem();

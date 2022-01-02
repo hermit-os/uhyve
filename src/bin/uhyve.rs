@@ -1,22 +1,22 @@
 #![warn(rust_2018_idioms)]
 
 use std::ffi::OsString;
+use std::iter;
 use std::net::Ipv4Addr;
-use std::num::{NonZeroU32, ParseIntError, TryFromIntError};
+use std::num::ParseIntError;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::process;
 use std::str::FromStr;
-use std::{fmt, iter};
 
-use byte_unit::{AdjustedByte, Byte, ByteError};
 use clap::{App, ErrorKind, IntoApp, Parser};
 use core_affinity::CoreId;
 use either::Either;
 use mac_address::MacAddress;
 use thiserror::Error;
 
-use uhyvelib::{vm, Uhyve};
+use uhyvelib::params::{CpuCount, GuestMemorySize, Params};
+use uhyvelib::Uhyve;
 
 #[cfg(feature = "instrument")]
 fn setup_trace() {
@@ -74,67 +74,6 @@ struct Args {
 	kernel_args: Vec<OsString>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct GuestMemorySize(Byte);
-
-impl GuestMemorySize {
-	const fn minimum() -> Byte {
-		Byte::from_bytes(16 * 1024 * 1024)
-	}
-
-	pub fn get(self) -> usize {
-		self.0.get_bytes().try_into().unwrap()
-	}
-}
-
-impl Default for GuestMemorySize {
-	fn default() -> Self {
-		Self(Byte::from_bytes(64 * 1024 * 1024))
-	}
-}
-
-impl fmt::Display for GuestMemorySize {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		self.0.get_appropriate_unit(true).fmt(f)
-	}
-}
-
-#[derive(Error, Debug)]
-#[error("invalid amount of guest memory (minimum: {}, found {0})", GuestMemorySize::minimum().get_appropriate_unit(true))]
-pub struct InvalidGuestMemorySizeError(AdjustedByte);
-
-impl TryFrom<Byte> for GuestMemorySize {
-	type Error = InvalidGuestMemorySizeError;
-
-	fn try_from(value: Byte) -> Result<Self, Self::Error> {
-		if value >= Self::minimum() {
-			Ok(Self(value))
-		} else {
-			let value = value.get_appropriate_unit(true);
-			Err(InvalidGuestMemorySizeError(value))
-		}
-	}
-}
-
-#[derive(Error, Debug)]
-pub enum ParseByteError {
-	#[error(transparent)]
-	Parse(#[from] ByteError),
-
-	#[error(transparent)]
-	InvalidMemorySize(#[from] InvalidGuestMemorySizeError),
-}
-
-impl FromStr for GuestMemorySize {
-	type Err = ParseByteError;
-
-	fn from_str(s: &str) -> Result<Self, Self::Err> {
-		let requested = Byte::from_str(s)?;
-		let memory_size = requested.try_into()?;
-		Ok(memory_size)
-	}
-}
-
 #[derive(Parser, Debug)]
 struct MemoryArgs {
 	/// Guest RAM size
@@ -156,45 +95,6 @@ struct MemoryArgs {
 	/// [KSM]: https://www.kernel.org/doc/html/latest/admin-guide/mm/ksm.html
 	#[clap(long)]
 	ksm: bool,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct CpuCount(NonZeroU32);
-
-impl CpuCount {
-	pub fn get(self) -> u32 {
-		self.0.get()
-	}
-}
-
-impl Default for CpuCount {
-	fn default() -> Self {
-		let default = 1.try_into().unwrap();
-		Self(default)
-	}
-}
-
-impl fmt::Display for CpuCount {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		self.0.fmt(f)
-	}
-}
-
-impl TryFrom<u32> for CpuCount {
-	type Error = TryFromIntError;
-
-	fn try_from(value: u32) -> Result<Self, Self::Error> {
-		value.try_into().map(Self)
-	}
-}
-
-impl FromStr for CpuCount {
-	type Err = ParseIntError;
-
-	fn from_str(s: &str) -> Result<Self, Self::Err> {
-		let count = s.parse()?;
-		Ok(Self(count))
-	}
 }
 
 #[derive(Debug, Clone)]
@@ -354,6 +254,45 @@ struct NetworkArgs {
 	_mac: Option<MacAddress>,
 }
 
+impl From<Args> for Params {
+	fn from(args: Args) -> Self {
+		let Args {
+			verbose,
+			memory_args: MemoryArgs {
+				memory_size,
+				no_thp,
+				ksm,
+			},
+			cpu_args: CpuArgs {
+				cpu_count,
+				affinity: _,
+			},
+			gdb_port,
+			network_args: NetworkArgs {
+				ip,
+				gateway,
+				mask,
+				nic,
+				_mac,
+			},
+			kernel: _,
+			kernel_args: _kernel_args,
+		} = args;
+		Self {
+			verbose,
+			memory_size,
+			thp: !no_thp,
+			ksm,
+			cpu_count,
+			ip,
+			gateway,
+			mask,
+			nic,
+			gdb_port,
+		}
+	}
+}
+
 fn run_uhyve() -> i32 {
 	#[cfg(feature = "instrument")]
 	setup_trace();
@@ -361,42 +300,12 @@ fn run_uhyve() -> i32 {
 	env_logger::init();
 
 	let mut app = Args::into_app();
-	let Args {
-		verbose,
-		memory_args,
-		cpu_args,
-		gdb_port,
-		network_args: NetworkArgs {
-			ip,
-			gateway,
-			mask,
-			nic,
-			_mac,
-		},
-		kernel,
-		kernel_args: _kernel_args,
-	} = Args::parse();
-	let cpu_count = cpu_args.cpu_count;
-	let affinity = cpu_args.get_affinity(&mut app);
+	let args = Args::parse();
+	let kernel = args.kernel.clone();
+	let affinity = args.cpu_args.clone().get_affinity(&mut app);
+	let params = Params::from(args);
 
-	let ip = ip.map(|ip| ip.to_string());
-	let gateway = gateway.map(|ip| ip.to_string());
-	let mask = mask.map(|ip| ip.to_string());
-
-	let params = vm::Parameter {
-		mem_size: memory_args.memory_size.get(),
-		num_cpus: cpu_count.get(),
-		verbose,
-		hugepage: !memory_args.no_thp,
-		mergeable: memory_args.ksm,
-		ip: ip.as_deref(),
-		gateway: gateway.as_deref(),
-		mask: mask.as_deref(),
-		nic: nic.as_deref(),
-		gdbport: gdb_port,
-	};
-
-	Uhyve::new(kernel, &params)
+	Uhyve::new(kernel, params)
 		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?")
 		.run(affinity)
 }
