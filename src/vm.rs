@@ -582,6 +582,8 @@ pub trait Vm {
 
 #[cfg(test)]
 mod tests {
+	use crate::vm::Vm;
+
 	#[cfg(target_os = "linux")]
 	#[test]
 	fn test_vm_load_min_size_1024() {
@@ -590,7 +592,7 @@ mod tests {
 			.collect();
 		let res = crate::Uhyve::new(
 			path,
-			&Parameter {
+			&crate::vm::Parameter {
 				mem_size: 1024,
 				num_cpus: 1,
 				verbose: false,
@@ -615,7 +617,7 @@ mod tests {
 			.collect();
 		let mut vm = crate::Uhyve::new(
 			path,
-			&Parameter {
+			&crate::vm::Parameter {
 				mem_size: 102400,
 				num_cpus: 1,
 				verbose: false,
@@ -631,10 +633,10 @@ mod tests {
 		.expect("Unable to create VM");
 		let res = unsafe { vm.load_kernel() };
 		match res.unwrap_err() {
-			LoadKernelError::InsufficientMemory => {}
+			crate::vm::LoadKernelError::InsufficientMemory => {}
 			err => panic!(
 				"Expected {:?}, got {:?}",
-				LoadKernelError::InsufficientMemory,
+				crate::vm::LoadKernelError::InsufficientMemory,
 				err
 			),
 		}

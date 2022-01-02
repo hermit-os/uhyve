@@ -144,7 +144,7 @@ pub fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
 	// Determine TSC frequency by measuring it (loop for a second, record ticks)
 	let duration = Duration::from_millis(10);
 	let now = Instant::now();
-	let start = unsafe { rdtsc() };
+	let start = unsafe { crate::x86_64::rdtsc() };
 	if start > 0 {
 		loop {
 			if now.elapsed() >= duration {
@@ -163,7 +163,7 @@ mod tests {
 	// https://github.com/gz/rust-cpuid/blob/master/examples/tsc_frequency.rs
 	#[test]
 	fn test_detect_freq_from_cpuid() {
-		let cpuid = CpuId::new();
+		let cpuid = raw_cpuid::CpuId::new();
 		let has_tsc = cpuid
 			.get_feature_info()
 			.map_or(false, |finfo| finfo.has_tsc());
@@ -179,7 +179,7 @@ mod tests {
 				// Skylake and Kabylake don't report the crystal clock, approximate with base frequency:
 				cpuid
 					.get_processor_frequency_info()
-					.map(|pinfo| pinfo.processor_base_frequency() as u64 * MHZ_TO_HZ)
+					.map(|pinfo| pinfo.processor_base_frequency() as u64 * crate::x86_64::MHZ_TO_HZ)
 					.map(|cpu_base_freq_hz| {
 						let crystal_hz = cpu_base_freq_hz * tinfo.denominator() as u64
 							/ tinfo.numerator() as u64;
@@ -207,7 +207,7 @@ mod tests {
 		// Check if we run in a VM and the hypervisor can give us the TSC frequency
 		cpuid.get_hypervisor_info().map(|hv| {
 			hv.tsc_frequency().map(|tsc_khz| {
-				let virtual_tsc_frequency_hz = tsc_khz as u64 * KHZ_TO_HZ;
+				let virtual_tsc_frequency_hz = tsc_khz as u64 * crate::x86_64::KHZ_TO_HZ;
 				println!(
 					"Hypervisor reports TSC Frequency at: {} Hz",
 					virtual_tsc_frequency_hz
@@ -216,16 +216,16 @@ mod tests {
 		});
 
 		// Determine TSC frequency by measuring it (loop for a second, record ticks)
-		let one_second = Duration::from_secs(1);
-		let now = Instant::now();
-		let start = unsafe { rdtsc() };
+		let one_second = crate::x86_64::Duration::from_secs(1);
+		let now = crate::x86_64::Instant::now();
+		let start = unsafe { crate::x86_64::rdtsc() };
 		assert!(start > 0, "Don't have rdtsc on stable!");
 		loop {
 			if now.elapsed() >= one_second {
 				break;
 			}
 		}
-		let end = unsafe { rdtsc() };
+		let end = unsafe { crate::x86_64::rdtsc() };
 		println!(
 			"Empirical measurement of TSC frequency was: {} Hz",
 			(end - start)
@@ -234,7 +234,7 @@ mod tests {
 
 	#[test]
 	fn test_get_cpu_frequency_from_os() {
-		let freq_res = get_cpu_frequency_from_os();
+		let freq_res = crate::x86_64::get_cpu_frequency_from_os();
 		assert!(freq_res.is_ok());
 		let freq = freq_res.unwrap();
 		assert!(freq > 0);
