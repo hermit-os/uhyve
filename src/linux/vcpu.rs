@@ -1,10 +1,10 @@
 use crate::consts::*;
 use crate::linux::virtio::*;
 use crate::linux::KVM;
-use crate::paging::*;
 use crate::vm::HypervisorResult;
 use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
+use crate::x86_64::paging::*;
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
 use std::path::Path;
