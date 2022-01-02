@@ -568,7 +568,11 @@ pub trait Vm {
 			}
 		});
 
-		// debug!("Boot header: {:?}", *boot_info);
+		elf.dynrels.iter().for_each(|rel| {
+			debug!("rel {:?}", rel);
+		});
+
+		debug!("Boot header: {:?}", *boot_info);
 
 		debug!("Kernel loaded");
 

@@ -1,4 +1,5 @@
 use crate::consts::UHYVE_UART_PORT;
+use bitflags::bitflags;
 use core::fmt;
 use goblin::elf64::header::EM_AARCH64;
 
@@ -69,7 +70,7 @@ impl BootInfo {
 }
 
 impl fmt::Debug for BootInfo {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		writeln!(f, "magic_number {:#x}", self.magic_number)?;
 		writeln!(f, "version {:#x}", self.version)?;
 		writeln!(f, "base {:#x}", self.base)?;
@@ -97,5 +98,19 @@ impl fmt::Debug for BootInfo {
 		writeln!(f, "uartport {:#x}", self.uartport)?;
 		writeln!(f, "single_kernel {}", self.single_kernel)?;
 		writeln!(f, "uhyve {}", self.uhyve)
+	}
+}
+
+bitflags! {
+	pub struct PSR: u64 {
+		const MODE_EL1H	= 0x00000005;
+		/// FIQ mask bit
+		const F_BIT	= 0x00000040;
+		/// IRQ mask bit
+		const I_BIT	= 0x00000080;
+		/// SError mask bit
+		const A_BIT	= 0x00000100;
+		/// Debug mask bit
+		const D_BIT	= 0x00000200;
 	}
 }

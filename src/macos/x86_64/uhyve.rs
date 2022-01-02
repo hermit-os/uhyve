@@ -78,7 +78,7 @@ impl Uhyve {
 			map_mem(
 				std::slice::from_raw_parts(mem as *mut u8, specs.mem_size),
 				0,
-				&MemPerm::ExecAndWrite,
+				MemPerm::ExecAndWrite,
 			)?;
 		}
 

@@ -1,5 +1,6 @@
 use crate::aarch64::BootInfo;
 use crate::macos::aarch64::vcpu::*;
+use crate::macos::aarch64::HYPERVISOR_PAGE_SIZE;
 use crate::vm::HypervisorResult;
 use crate::vm::{Parameter, Vm};
 use libc;
@@ -39,6 +40,8 @@ impl std::fmt::Debug for Uhyve {
 
 impl Uhyve {
 	pub fn new(kernel_path: PathBuf, specs: &Parameter<'_>) -> HypervisorResult<Uhyve> {
+		assert!(HYPERVISOR_PAGE_SIZE < specs.mem_size);
+
 		let mem = unsafe {
 			libc::mmap(
 				std::ptr::null_mut(),
@@ -60,9 +63,21 @@ impl Uhyve {
 		debug!("Map guest memory...");
 		unsafe {
 			map_mem(
-				std::slice::from_raw_parts(mem as *mut u8, specs.mem_size),
+				std::slice::from_raw_parts(
+					mem as *mut u8,
+					HYPERVISOR_PAGE_SIZE.try_into().unwrap(),
+				),
 				0,
-				&MemPerm::ExecAndWrite,
+				MemPerm::Read,
+			)?;
+
+			map_mem(
+				std::slice::from_raw_parts_mut(
+					(mem as *mut u8).offset(HYPERVISOR_PAGE_SIZE.try_into().unwrap()),
+					specs.mem_size - HYPERVISOR_PAGE_SIZE,
+				),
+				HYPERVISOR_PAGE_SIZE.try_into().unwrap(),
+				MemPerm::ExecAndWrite,
 			)?;
 		}
 
@@ -152,6 +167,9 @@ impl Vm for Uhyve {
 
 	fn init_guest_mem(&self) {
 		debug!("Initialize guest memory");
+
+		// TODO: initialization if missing
+		//let (mem_addr, _) = self.guest_mem();
 	}
 }
 
