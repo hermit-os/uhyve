@@ -84,7 +84,18 @@ impl Default for BootInfo {
 	}
 }
 
-pub fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
+#[derive(Debug)]
+pub struct FrequencyDetectionFailed;
+
+impl std::fmt::Display for FrequencyDetectionFailed {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "Frequency detection failed")
+	}
+}
+
+impl std::error::Error for FrequencyDetectionFailed {}
+
+pub fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, FrequencyDetectionFailed> {
 	debug!("Trying to detect CPU frequency by tsc info");
 
 	let has_invariant_tsc = cpuid
@@ -113,34 +124,41 @@ pub fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
 	let hz = match tsc_frequency_hz {
 		Some(x) => x.unwrap_or(0),
 		None => {
-			return Err(());
+			return Err(FrequencyDetectionFailed);
 		}
 	};
 
 	if hz > 0 {
 		Ok((hz / MHZ_TO_HZ).try_into().unwrap())
 	} else {
-		Err(())
+		Err(FrequencyDetectionFailed)
 	}
 }
 
-pub fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<u32, ()> {
+pub fn detect_freq_from_cpuid_hypervisor_info(
+	cpuid: &CpuId,
+) -> std::result::Result<u32, FrequencyDetectionFailed> {
 	debug!("Trying to detect CPU frequency by hypervisor info");
-	let hypervisor_info = cpuid.get_hypervisor_info().ok_or(())?;
+	let hypervisor_info = cpuid
+		.get_hypervisor_info()
+		.ok_or(FrequencyDetectionFailed)?;
 	debug!(
 		"cpuid detected hypervisor: {:?}",
 		hypervisor_info.identify()
 	);
-	let hz = hypervisor_info.tsc_frequency().ok_or(())? as u64 * KHZ_TO_HZ;
+	let hz = hypervisor_info
+		.tsc_frequency()
+		.ok_or(FrequencyDetectionFailed)? as u64
+		* KHZ_TO_HZ;
 	let mhz: u32 = (hz / MHZ_TO_HZ).try_into().unwrap();
 	if mhz > 0 {
 		Ok(mhz)
 	} else {
-		Err(())
+		Err(FrequencyDetectionFailed)
 	}
 }
 
-pub fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
+pub fn get_cpu_frequency_from_os() -> std::result::Result<u32, FrequencyDetectionFailed> {
 	// Determine TSC frequency by measuring it (loop for a second, record ticks)
 	let duration = Duration::from_millis(10);
 	let now = Instant::now();
@@ -154,7 +172,7 @@ pub fn get_cpu_frequency_from_os() -> std::result::Result<u32, ()> {
 		let end = unsafe { rdtsc() };
 		Ok((((end - start) * 100) / MHZ_TO_HZ).try_into().unwrap())
 	} else {
-		Err(())
+		Err(FrequencyDetectionFailed)
 	}
 }
 
