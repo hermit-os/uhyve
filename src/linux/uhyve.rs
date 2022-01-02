@@ -14,6 +14,7 @@ use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use log::debug;
 use nix::sys::mman::*;
+use std::cmp;
 use std::fmt;
 use std::hint;
 use std::mem;
@@ -184,11 +185,7 @@ impl Uhyve {
 
 		let mem = MmapMemory::new(0, specs.mem_size, 0, specs.hugepage, specs.mergeable);
 
-		let sz = if specs.mem_size < KVM_32BIT_GAP_START {
-			specs.mem_size
-		} else {
-			KVM_32BIT_GAP_START
-		};
+		let sz = cmp::min(specs.mem_size, KVM_32BIT_GAP_START);
 
 		// create virtio interface
 		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new()));
