@@ -9,7 +9,6 @@ use crate::linux::KVM;
 use crate::shared_queue::*;
 use crate::vm::HypervisorResult;
 use crate::vm::{Parameter, Vm};
-use crate::x86_64::paging::*;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use log::debug;
@@ -29,6 +28,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use tun_tap::{Iface, Mode};
 use vmm_sys_util::eventfd::EventFd;
+use x86_64::structures::paging::{Page, PageTable, PageTableFlags, Size2MiB};
+use x86_64::PhysAddr;
 
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
 const KVM_32BIT_GAP_SIZE: usize = 768 << 20;
@@ -409,25 +410,24 @@ impl Vm for Uhyve {
 			libc::memset(pdpte as *mut _ as *mut libc::c_void, 0x00, PAGE_SIZE);
 			libc::memset(pde as *mut _ as *mut libc::c_void, 0x00, PAGE_SIZE);*/
 
-			pml4.entries[0].set(
-				BOOT_PDPTE as usize,
-				PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+			pml4[0].set_addr(
+				PhysAddr::new(BOOT_PDPTE),
+				PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 			);
-			pml4.entries[511].set(
-				BOOT_PML4 as usize,
-				PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+			pml4[511].set_addr(
+				PhysAddr::new(BOOT_PML4),
+				PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 			);
-			pdpte.entries[0].set(
-				BOOT_PDE as usize,
-				PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+			pdpte[0].set_addr(
+				PhysAddr::new(BOOT_PDE),
+				PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 			);
 
 			for i in 0..512 {
-				pde.entries[i].set(
-					i * LargePageSize::SIZE,
-					PageTableEntryFlags::PRESENT
-						| PageTableEntryFlags::WRITABLE
-						| PageTableEntryFlags::HUGE_PAGE,
+				let addr = PhysAddr::new(i as u64 * Page::<Size2MiB>::SIZE);
+				pde[i].set_addr(
+					addr,
+					PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::HUGE_PAGE,
 				);
 			}
 		}

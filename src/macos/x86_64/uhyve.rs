@@ -4,7 +4,6 @@ use crate::macos::x86_64::ioapic::IoApic;
 use crate::macos::x86_64::vcpu::*;
 use crate::vm::HypervisorResult;
 use crate::vm::{Parameter, Vm};
-use crate::x86_64::paging::*;
 use libc;
 use libc::c_void;
 use log::debug;
@@ -15,6 +14,8 @@ use std::path::PathBuf;
 use std::ptr;
 use std::ptr::read_volatile;
 use std::sync::{Arc, Mutex};
+use x86_64::structures::paging::{Page, PageTable, PageTableFlags, Size2MiB};
+use x86_64::PhysAddr;
 use xhypervisor::{create_vm, map_mem, unmap_mem, MemPerm};
 
 // Constructor for a conventional segment GDT (or LDT) entry
@@ -195,25 +196,24 @@ impl Vm for Uhyve {
 			libc::memset(pdpte as *mut _ as *mut libc::c_void, 0x00, PAGE_SIZE);
 			libc::memset(pde as *mut _ as *mut libc::c_void, 0x00, PAGE_SIZE);*/
 
-			pml4.entries[0].set(
-				BOOT_PDPTE as usize,
-				PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+			pml4[0].set_addr(
+				PhysAddr::new(BOOT_PDPTE),
+				PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 			);
-			pml4.entries[511].set(
-				BOOT_PML4 as usize,
-				PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+			pml4[511].set_addr(
+				PhysAddr::new(BOOT_PML4),
+				PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 			);
-			pdpte.entries[0].set(
-				BOOT_PDE as usize,
-				PageTableEntryFlags::PRESENT | PageTableEntryFlags::WRITABLE,
+			pdpte[0].set_addr(
+				PhysAddr::new(BOOT_PDE),
+				PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 			);
 
 			for i in 0..512 {
-				pde.entries[i].set(
-					i * LargePageSize::SIZE,
-					PageTableEntryFlags::PRESENT
-						| PageTableEntryFlags::WRITABLE
-						| PageTableEntryFlags::HUGE_PAGE,
+				let addr = PhysAddr::new(i as u64 * Page::<Size2MiB>::SIZE);
+				pde[i].set_addr(
+					addr,
+					PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::HUGE_PAGE,
 				);
 			}
 		}
