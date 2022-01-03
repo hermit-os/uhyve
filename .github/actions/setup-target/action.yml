@@ -1,0 +1,23 @@
+name: 'Setup target'
+description: 'Installs the target and sets CARGO_BUILD_TARGET'
+inputs:
+  arch:
+    description: 'Architecture (all lowercase)'
+    required: true
+  os:
+    description: 'Operating system (all lowecase)'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Detect target
+      run: |
+        case ${{ inputs.os }} in
+          ubuntu*) suffix=unknown-linux-gnu ;;
+          macos*) suffix=apple-darwin ;;
+        esac
+        echo "CARGO_BUILD_TARGET=${{ inputs.arch }}-$suffix" >> $GITHUB_ENV
+      shell: bash
+    - name: Install target
+      run: rustup target add $CARGO_BUILD_TARGET
+      shell: bash
