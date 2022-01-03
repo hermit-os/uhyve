@@ -4,7 +4,6 @@ use crate::linux::KVM;
 use crate::vm::HypervisorResult;
 use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
-use crate::x86_64::paging::*;
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
 use std::path::Path;
@@ -12,6 +11,7 @@ use std::path::PathBuf;
 use std::slice;
 use std::sync::{Arc, Mutex};
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
+use x86_64::structures::paging::PageTableFlags;
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
 const CPUID_TSC_DEADLINE: u32 = 1 << 24;
@@ -259,7 +259,13 @@ impl VirtualCPU for UhyveCPU {
 	}
 
 	fn virt_to_phys(&self, addr: usize) -> usize {
-		let executable_disable_mask: usize = !PageTableEntryFlags::EXECUTE_DISABLE.bits();
+		/// Number of Offset bits of a virtual address for a 4 KiB page, which are shifted away to get its Page Frame Number (PFN).
+		pub const PAGE_BITS: usize = 12;
+
+		/// Number of bits of the index in each table (PML4, PDPT, PDT, PGT).
+		pub const PAGE_MAP_BITS: usize = 9;
+
+		let executable_disable_mask = !usize::try_from(PageTableFlags::NO_EXECUTE.bits()).unwrap();
 		let mut page_table = self.host_address(BOOT_PML4 as usize) as *const usize;
 		let mut page_bits = 39;
 		let mut entry: usize = 0;
@@ -269,7 +275,7 @@ impl VirtualCPU for UhyveCPU {
 			entry = unsafe { *page_table.add(index) & executable_disable_mask };
 
 			// bit 7 is set if this entry references a 1 GiB (PDPT) or 2 MiB (PDT) page.
-			if entry & PageTableEntryFlags::HUGE_PAGE.bits() != 0 {
+			if entry & usize::try_from(PageTableFlags::HUGE_PAGE.bits()).unwrap() != 0 {
 				return (entry & ((!0usize) << page_bits)) | (addr & !((!0usize) << page_bits));
 			} else {
 				page_table = self.host_address(entry & !((1 << PAGE_BITS) - 1)) as *const usize;
