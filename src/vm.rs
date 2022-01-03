@@ -165,7 +165,7 @@ pub trait VirtualCPU {
 		let mut found_separator = false;
 		syssize.argsz[0] = path.as_os_str().len() as i32 + 1;
 
-		for argument in std::env::args() {
+		for argument in std::env::args_os() {
 			if !found_separator && argument == "--" {
 				separator_pos = counter + 1;
 				found_separator = true;
@@ -185,7 +185,7 @@ pub trait VirtualCPU {
 		}
 
 		counter = 0;
-		for (key, value) in std::env::vars() {
+		for (key, value) in std::env::vars_os() {
 			if counter < MAX_ENVC.try_into().unwrap() {
 				syssize.envsz[counter as usize] = (key.len() + value.len()) as i32 + 2;
 				counter += 1;
@@ -221,7 +221,7 @@ pub trait VirtualCPU {
 		}
 
 		// Copy the application arguments into the vm memory
-		for argument in std::env::args() {
+		for argument in std::env::args_os() {
 			if !found_separator && argument == "--" {
 				separator_pos = counter + 1;
 				found_separator = true;
@@ -248,7 +248,7 @@ pub trait VirtualCPU {
 		// Copy the environment variables into the vm memory
 		counter = 0;
 		let envp = self.host_address(syscmdval.envp as usize);
-		for (key, value) in std::env::vars() {
+		for (key, value) in std::env::vars_os() {
 			if counter < MAX_ENVC.try_into().unwrap() {
 				let envptr = unsafe {
 					self.host_address(
