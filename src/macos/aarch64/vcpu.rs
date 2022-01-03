@@ -21,10 +21,10 @@ pub struct UhyveCPU {
 impl UhyveCPU {
 	pub fn new(id: u32, kernel_path: PathBuf, vm_start: usize) -> UhyveCPU {
 		Self {
-			id: id,
+			id,
 			kernel_path,
 			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
-			vm_start: vm_start,
+			vm_start,
 		}
 	}
 }
