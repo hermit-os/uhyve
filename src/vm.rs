@@ -165,7 +165,7 @@ pub trait VirtualCPU {
 		let mut found_separator = false;
 		syssize.argsz[0] = path.as_os_str().len() as i32 + 1;
 
-		for argument in std::env::args() {
+		for argument in std::env::args_os() {
 			if !found_separator && argument == "--" {
 				separator_pos = counter + 1;
 				found_separator = true;
@@ -221,7 +221,7 @@ pub trait VirtualCPU {
 		}
 
 		// Copy the application arguments into the vm memory
-		for argument in std::env::args() {
+		for argument in std::env::args_os() {
 			if !found_separator && argument == "--" {
 				separator_pos = counter + 1;
 				found_separator = true;
