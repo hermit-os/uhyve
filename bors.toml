@@ -1,12 +1,17 @@
 status = [
-    "Build (macos-latest)",
-    "Build (ubuntu-latest)",
-    "Cargo tests (macos-latest)",
-    "Cargo tests (ubuntu-latest)",
-    "Clippy",
+    "Check (x86_64, ubuntu-latest)",
+    "Check (x86_64, macos-latest)",
+    "Check (aarch64, macos-latest)",
+    "Test (ubuntu-latest)",
+    "Test (macos-latest)",
+    "Integration Tests",
+    "rusty_demo",
     "Format",
-    "KVM Tests",
-    "Rusty-Hermit Kernel based integration tests",
+    "Clippy (x86_64, ubuntu-latest)",
+    "Clippy (x86_64, macos-latest)",
+    "Clippy (aarch64, macos-latest)",
+    "Clippy test-kernels",
+    "Coverage",
 ]
 delete_merged_branches = true
 timeout_sec = 7200

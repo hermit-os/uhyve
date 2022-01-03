@@ -582,6 +582,7 @@ pub trait Vm {
 
 #[cfg(test)]
 mod tests {
+	#[cfg(target_os = "linux")]
 	use crate::vm::Vm;
 
 	#[cfg(target_os = "linux")]

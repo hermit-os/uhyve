@@ -63,10 +63,7 @@ impl Uhyve {
 		debug!("Map guest memory...");
 		unsafe {
 			map_mem(
-				std::slice::from_raw_parts(
-					mem as *mut u8,
-					HYPERVISOR_PAGE_SIZE.try_into().unwrap(),
-				),
+				std::slice::from_raw_parts(mem as *mut u8, HYPERVISOR_PAGE_SIZE),
 				0,
 				MemPerm::Read,
 			)?;
