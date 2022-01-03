@@ -6,6 +6,7 @@ use crate::vm::HypervisorResult;
 use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
 use log::debug;
+use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
 use xhypervisor;
@@ -14,15 +15,17 @@ use xhypervisor::{Register, SystemRegister, VirtualCpuExitReason};
 pub struct UhyveCPU {
 	id: u32,
 	kernel_path: PathBuf,
+	args: Vec<OsString>,
 	vcpu: xhypervisor::VirtualCpu,
 	vm_start: usize,
 }
 
 impl UhyveCPU {
-	pub fn new(id: u32, kernel_path: PathBuf, vm_start: usize) -> UhyveCPU {
+	pub fn new(id: u32, kernel_path: PathBuf, args: Vec<OsString>, vm_start: usize) -> UhyveCPU {
 		Self {
 			id,
 			kernel_path,
+			args,
 			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
 			vm_start,
 		}
@@ -48,6 +51,10 @@ impl VirtualCPU for UhyveCPU {
 
 	fn kernel_path(&self) -> &Path {
 		self.kernel_path.as_path()
+	}
+
+	fn args(&self) -> &[OsString] {
+		self.args.as_slice()
 	}
 
 	fn host_address(&self, addr: usize) -> usize {

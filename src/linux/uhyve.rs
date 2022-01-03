@@ -16,6 +16,7 @@ use kvm_ioctls::VmFd;
 use log::debug;
 use nix::sys::mman::*;
 use std::cmp;
+use std::ffi::OsString;
 use std::fmt;
 use std::hint;
 use std::mem;
@@ -133,6 +134,7 @@ pub struct Uhyve {
 	mem: MmapMemory,
 	num_cpus: u32,
 	path: PathBuf,
+	args: Vec<OsString>,
 	boot_info: *const BootInfo,
 	verbose: bool,
 	ip: Option<Ipv4Addr>,
@@ -271,6 +273,7 @@ impl Uhyve {
 			mem,
 			num_cpus: cpu_count,
 			path: kernel_path,
+			args: params.kernel_args,
 			boot_info: ptr::null(),
 			verbose: params.verbose,
 			ip: params.ip,
@@ -339,6 +342,7 @@ impl Vm for Uhyve {
 		Ok(UhyveCPU::new(
 			id,
 			self.path.clone(),
+			self.args.clone(),
 			self.vm.create_vcpu(id.try_into().unwrap())?,
 			vm_start,
 			tx,

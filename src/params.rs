@@ -1,6 +1,7 @@
 #[cfg(target_os = "linux")]
 use std::net::Ipv4Addr;
 use std::{
+	ffi::OsString,
 	fmt,
 	num::{NonZeroU32, ParseIntError, TryFromIntError},
 	str::FromStr,
@@ -47,6 +48,9 @@ pub struct Params {
 	/// Name of the network interface
 	#[cfg(target_os = "linux")]
 	pub nic: Option<String>,
+
+	/// Arguments to forward to the kernel
+	pub kernel_args: Vec<OsString>,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -70,6 +74,7 @@ impl Default for Params {
 			mask: Default::default(),
 			#[cfg(target_os = "linux")]
 			nic: Default::default(),
+			kernel_args: Default::default(),
 		}
 	}
 }

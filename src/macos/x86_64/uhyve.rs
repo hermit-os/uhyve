@@ -9,6 +9,7 @@ use crate::x86_64::create_gdt_entry;
 use libc;
 use libc::c_void;
 use log::debug;
+use std::ffi::OsString;
 use std::mem;
 use std::net::Ipv4Addr;
 use std::path::Path;
@@ -27,6 +28,7 @@ pub struct Uhyve {
 	guest_mem: *mut c_void,
 	num_cpus: u32,
 	path: PathBuf,
+	args: Vec<OsString>,
 	boot_info: *const BootInfo,
 	ioapic: Arc<Mutex<IoApic>>,
 	verbose: bool,
@@ -85,6 +87,7 @@ impl Uhyve {
 			guest_mem: mem,
 			num_cpus: params.cpu_count.get(),
 			path: kernel_path,
+			args: params.kernel_args,
 			boot_info: ptr::null(),
 			ioapic: Arc::new(Mutex::new(IoApic::new())),
 			verbose: params.verbose,
@@ -133,6 +136,7 @@ impl Vm for Uhyve {
 		Ok(UhyveCPU::new(
 			id,
 			self.path.clone(),
+			self.args.clone(),
 			self.guest_mem as usize,
 			self.ioapic.clone(),
 		))

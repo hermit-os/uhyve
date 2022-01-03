@@ -3,6 +3,7 @@ use goblin::elf64::header::ET_DYN;
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
 use goblin::elf64::reloc::*;
 use log::{debug, error, warn};
+use std::ffi::OsString;
 use std::io::Write;
 use std::net::Ipv4Addr;
 use std::os::unix::ffi::OsStrExt;
@@ -140,37 +141,26 @@ pub trait VirtualCPU {
 	/// Returns the (host) path of the kernel binary.
 	fn kernel_path(&self) -> &Path;
 
+	fn args(&self) -> &[OsString];
+
 	fn cmdsize(&self, args_ptr: usize) {
 		let syssize = unsafe { &mut *(args_ptr as *mut SysCmdsize) };
 		syssize.argc = 0;
 		syssize.envc = 0;
 
-		let mut counter: i32 = 0;
-		let mut separator_pos: i32 = 0;
 		let path = self.kernel_path();
-		let mut found_separator = false;
 		syssize.argsz[0] = path.as_os_str().len() as i32 + 1;
 
-		for argument in std::env::args_os() {
-			if !found_separator && argument == "--" {
-				separator_pos = counter + 1;
-				found_separator = true;
-			}
-
-			if found_separator && counter >= separator_pos {
-				syssize.argsz[(counter - separator_pos + 1) as usize] = argument.len() as i32 + 1;
-			}
+		let mut counter = 0;
+		for argument in self.args() {
+			syssize.argsz[(counter + 1) as usize] = argument.len() as i32 + 1;
 
 			counter += 1;
 		}
 
-		if found_separator && counter >= separator_pos {
-			syssize.argc = counter - separator_pos + 1;
-		} else {
-			syssize.argc = 1;
-		}
+		syssize.argc = counter + 1;
 
-		counter = 0;
+		let mut counter = 0;
 		for (key, value) in std::env::vars_os() {
 			if counter < MAX_ENVC.try_into().unwrap() {
 				syssize.envsz[counter as usize] = (key.len() + value.len()) as i32 + 2;
@@ -187,11 +177,7 @@ pub trait VirtualCPU {
 	/// Copies the arguments end environment of the application into the VM's memory.
 	fn cmdval(&self, args_ptr: usize) {
 		let syscmdval = unsafe { &*(args_ptr as *const SysCmdval) };
-
-		let mut counter: i32 = 0;
 		let argv = self.host_address(syscmdval.argv as usize);
-		let mut found_separator = false;
-		let mut separator_pos: i32 = 0;
 
 		// copy kernel path as first argument
 		{
@@ -207,32 +193,23 @@ pub trait VirtualCPU {
 		}
 
 		// Copy the application arguments into the vm memory
-		for argument in std::env::args_os() {
-			if !found_separator && argument == "--" {
-				separator_pos = counter + 1;
-				found_separator = true;
-			}
+		for (counter, argument) in self.args().iter().enumerate() {
+			let argvptr = unsafe {
+				self.host_address(
+					*((argv + (counter + 1) as usize * mem::size_of::<usize>()) as *mut *mut u8)
+						as usize,
+				)
+			};
+			let len = argument.len();
+			let slice = unsafe { slice::from_raw_parts_mut(argvptr as *mut u8, len + 1) };
 
-			if found_separator && counter >= separator_pos {
-				let argvptr = unsafe {
-					self.host_address(
-						*((argv + (counter - separator_pos + 1) as usize * mem::size_of::<usize>())
-							as *mut *mut u8) as usize,
-					)
-				};
-				let len = argument.len();
-				let slice = unsafe { slice::from_raw_parts_mut(argvptr as *mut u8, len + 1) };
-
-				// Create string for environment variable
-				slice[0..len].copy_from_slice(argument.as_bytes());
-				slice[len] = 0;
-			}
-
-			counter += 1;
+			// Create string for environment variable
+			slice[0..len].copy_from_slice(argument.as_bytes());
+			slice[len] = 0;
 		}
 
 		// Copy the environment variables into the vm memory
-		counter = 0;
+		let mut counter = 0;
 		let envp = self.host_address(syscmdval.envp as usize);
 		for (key, value) in std::env::vars_os() {
 			if counter < MAX_ENVC.try_into().unwrap() {

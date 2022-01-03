@@ -285,7 +285,7 @@ impl From<Args> for Params {
 				_mac,
 			},
 			kernel: _,
-			kernel_args: _kernel_args,
+			kernel_args,
 		} = args;
 		Self {
 			verbose,
@@ -305,6 +305,7 @@ impl From<Args> for Params {
 			nic,
 			#[cfg(target_os = "linux")]
 			gdb_port,
+			kernel_args,
 		}
 	}
 }
