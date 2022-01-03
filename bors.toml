@@ -8,6 +8,7 @@ status = [
     "Format",
     "Clippy (ubuntu-latest)",
     "Clippy (macos-latest)",
+    "Clippy test-kernels",
     "Coverage",
 ]
 delete_merged_branches = true

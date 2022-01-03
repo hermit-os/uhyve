@@ -96,8 +96,14 @@ jobs:
       - uses: actions/checkout@v2
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
+  
+  clippy-test-kernel:
+    name: Clippy test-kernels
+    runs-on: ubuntu-latest
+    steps:
       - name: Install rusty-hermit dependencies
         run: cargo install cargo-download cargo-binutils
+      - uses: actions/checkout@v2
       - name: Clippy Test Kernels
         run: cargo clippy --all-targets -- -D warnings
         working-directory: tests/test-kernels
