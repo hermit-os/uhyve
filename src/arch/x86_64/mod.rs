@@ -258,3 +258,12 @@ mod tests {
 		assert!(freq < 10000); //More than 10Ghz is probably wrong
 	}
 }
+
+// Constructor for a conventional segment GDT (or LDT) entry
+pub fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {
+	((base & 0xff000000u64) << (56 - 24))
+		| ((flags & 0x0000f0ffu64) << 40)
+		| ((limit & 0x000f0000u64) << (48 - 16))
+		| ((base & 0x00ffffffu64) << 16)
+		| (limit & 0x0000ffffu64)
+}

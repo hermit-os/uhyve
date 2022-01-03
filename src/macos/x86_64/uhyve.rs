@@ -4,6 +4,7 @@ use crate::macos::x86_64::ioapic::IoApic;
 use crate::macos::x86_64::vcpu::*;
 use crate::vm::HypervisorResult;
 use crate::vm::{Parameter, Vm};
+use crate::x86_64::create_gdt_entry;
 use libc;
 use libc::c_void;
 use log::debug;
@@ -17,15 +18,6 @@ use std::sync::{Arc, Mutex};
 use x86_64::structures::paging::{Page, PageTable, PageTableFlags, Size2MiB};
 use x86_64::PhysAddr;
 use xhypervisor::{create_vm, map_mem, unmap_mem, MemPerm};
-
-// Constructor for a conventional segment GDT (or LDT) entry
-fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {
-	((base & 0xff000000u64) << (56 - 24))
-		| ((flags & 0x0000f0ffu64) << 40)
-		| ((limit & 0x000f0000u64) << (48 - 16))
-		| ((base & 0x00ffffffu64) << 16)
-		| (limit & 0x0000ffffu64)
-}
 
 pub struct Uhyve {
 	offset: u64,
