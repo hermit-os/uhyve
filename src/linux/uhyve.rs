@@ -9,6 +9,7 @@ use crate::linux::KVM;
 use crate::shared_queue::*;
 use crate::vm::HypervisorResult;
 use crate::vm::{Parameter, Vm};
+use crate::x86_64::create_gdt_entry;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use log::debug;
@@ -34,15 +35,6 @@ use x86_64::PhysAddr;
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
 const KVM_32BIT_GAP_SIZE: usize = 768 << 20;
 const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
-
-// Constructor for a conventional segment GDT (or LDT) entry
-fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {
-	((base & 0xff000000u64) << (56 - 24))
-		| ((flags & 0x0000f0ffu64) << 40)
-		| ((limit & 0x000f0000u64) << (48 - 16))
-		| ((base & 0x00ffffffu64) << 16)
-		| (limit & 0x0000ffffu64)
-}
 
 #[derive(Debug)]
 struct UhyveNetwork {
