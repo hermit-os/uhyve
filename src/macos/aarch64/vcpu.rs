@@ -38,8 +38,6 @@ impl VirtualCPU for UhyveCPU {
 		self.vcpu.write_register(Register::CPSR, pstate.bits())?;
 		self.vcpu.write_register(Register::PC, entry_point)?;
 		self.vcpu.write_register(Register::X0, BOOT_INFO_ADDR)?;
-		self.vcpu
-			.write_system_register(SystemRegister::SP_EL1, BOOT_INFO_ADDR - 0x10)?;
 
 		self.print_registers();
 
@@ -120,6 +118,10 @@ impl VirtualCPU for UhyveCPU {
 			.vcpu
 			.read_system_register(SystemRegister::SP_EL1)
 			.unwrap();
+		let sctlr = self
+			.vcpu
+			.read_system_register(SystemRegister::SCTLR_EL1)
+			.unwrap();
 		let lr = self.vcpu.read_register(Register::LR).unwrap();
 		let x0 = self.vcpu.read_register(Register::X0).unwrap();
 		let x1 = self.vcpu.read_register(Register::X1).unwrap();
@@ -156,8 +158,8 @@ impl VirtualCPU for UhyveCPU {
 		println!("----------");
 		println!(
 			"PC : {:016x}   LR : {:016x}   CPSR: {:016x}\n\
-		     SP : {:016x}",
-			pc, lr, cpsr, sp
+		     SP : {:016x}   SCTLR : {:016x}",
+			pc, lr, cpsr, sp, sctlr
 		);
 		print!(
 			"x0 : {:016x}   x1 : {:016x}    x2 : {:016x}\n\
