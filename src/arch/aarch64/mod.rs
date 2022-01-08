@@ -58,7 +58,7 @@ impl BootInfo {
 			cpu_online: 0,
 			possible_cpus: 0,
 			current_boot_id: 0,
-			uartport: UHYVE_UART_PORT,
+			uartport: UHYVE_UART_PORT as u32,
 			single_kernel: 1,
 			uhyve: 0,
 			hcip: [255, 255, 255, 255],
