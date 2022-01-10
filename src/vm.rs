@@ -525,7 +525,11 @@ pub trait Vm {
 						.copy_from_slice(&buffer[kernel_start..kernel_end]);
 
 					if program_header.p_memsz > program_header.p_filesz {
-						vm_slice[region_end..region_end + (program_header.p_memsz - program_header.p_filesz) as usize].iter_mut().for_each(|x| *x = 0);
+						vm_slice[region_end
+							..region_end
+								+ (program_header.p_memsz - program_header.p_filesz) as usize]
+							.iter_mut()
+							.for_each(|x| *x = 0);
 					}
 
 					image_size = if is_dyn {
@@ -560,7 +564,9 @@ pub trait Vm {
 		elf.dynrelas.iter().for_each(|rela| match rela.r_type {
 			R_X86_64_RELATIVE | R_AARCH64_RELATIVE => {
 				let offset = (vm_mem as u64 + start_address + rela.r_offset) as *mut u64;
-				*offset = (start_address as i64 + rela.r_addend.unwrap_or(0)).try_into().unwrap();
+				*offset = (start_address as i64 + rela.r_addend.unwrap_or(0))
+					.try_into()
+					.unwrap();
 			}
 			_ => {
 				debug!("Unsupported relocation type {}", rela.r_type);

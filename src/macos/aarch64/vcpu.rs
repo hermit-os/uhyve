@@ -77,7 +77,9 @@ impl VirtualCPU for UhyveCPU {
 							}
 							UHYVE_PORT_EXIT => {
 								let data_addr = self.vcpu.read_register(Register::X8)?;
-								return Ok(VcpuStopReason::Exit(self.exit(self.host_address(data_addr as usize))));
+								return Ok(VcpuStopReason::Exit(
+									self.exit(self.host_address(data_addr as usize)),
+								));
 							}
 							_ => {
 								error!("Unable to handle exception {:?}", exception);
