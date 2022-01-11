@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use crate::aarch64::PSR;
-use crate::consts::{BOOT_INFO_ADDR, UHYVE_UART_PORT};
+use crate::consts::*;
 use crate::vm::HypervisorResult;
 use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
@@ -38,10 +38,6 @@ impl VirtualCPU for UhyveCPU {
 		self.vcpu.write_register(Register::CPSR, pstate.bits())?;
 		self.vcpu.write_register(Register::PC, entry_point)?;
 		self.vcpu.write_register(Register::X0, BOOT_INFO_ADDR)?;
-		self.vcpu
-			.write_system_register(SystemRegister::SP_EL1, BOOT_INFO_ADDR - 0x10)?;
-
-		self.print_registers();
 
 		Ok(())
 	}
@@ -69,17 +65,21 @@ impl VirtualCPU for UhyveCPU {
 
 					// data abort from lower or current level
 					if ec == 0b100100u64 || ec == 0b100101u64 {
-						let addr: u32 = exception.physical_address.try_into().unwrap();
+						let addr: u16 = exception.physical_address.try_into().unwrap();
 						let pc = self.vcpu.read_register(Register::PC)?;
 
 						match addr {
 							UHYVE_UART_PORT => {
 								let x8 = (self.vcpu.read_register(Register::X8)? & 0xFF) as u8;
-								//println!("X8 = {}", x8);
-								//self.print_registers();
-								self.uart(&[x8]).unwrap();
 
+								self.uart(&[x8]).unwrap();
 								self.vcpu.write_register(Register::PC, pc + 4)?;
+							}
+							UHYVE_PORT_EXIT => {
+								let data_addr = self.vcpu.read_register(Register::X8)?;
+								return Ok(VcpuStopReason::Exit(
+									self.exit(self.host_address(data_addr as usize)),
+								));
 							}
 							_ => {
 								error!("Unable to handle exception {:?}", exception);
@@ -120,6 +120,10 @@ impl VirtualCPU for UhyveCPU {
 			.vcpu
 			.read_system_register(SystemRegister::SP_EL1)
 			.unwrap();
+		let sctlr = self
+			.vcpu
+			.read_system_register(SystemRegister::SCTLR_EL1)
+			.unwrap();
 		let lr = self.vcpu.read_register(Register::LR).unwrap();
 		let x0 = self.vcpu.read_register(Register::X0).unwrap();
 		let x1 = self.vcpu.read_register(Register::X1).unwrap();
@@ -156,8 +160,8 @@ impl VirtualCPU for UhyveCPU {
 		println!("----------");
 		println!(
 			"PC : {:016x}   LR : {:016x}   CPSR: {:016x}\n\
-		     SP : {:016x}",
-			pc, lr, cpsr, sp
+		     SP : {:016x}   SCTLR : {:016x}",
+			pc, lr, cpsr, sp, sctlr
 		);
 		print!(
 			"x0 : {:016x}   x1 : {:016x}    x2 : {:016x}\n\

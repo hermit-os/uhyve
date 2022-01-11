@@ -46,8 +46,5 @@ pub const UHYVE_PORT_NETSTAT: u16 = 0x700;
 pub const UHYVE_PORT_CMDSIZE: u16 = 0x740;
 pub const UHYVE_PORT_CMDVAL: u16 = 0x780;
 
-#[cfg(target_arch = "aarch64")]
-pub const UHYVE_UART_PORT: u32 = 0x800;
-#[cfg(target_arch = "x86_64")]
 pub const UHYVE_UART_PORT: u16 = 0x800;
 pub const UHYVE_PORT_UNLINK: u16 = 0x840;

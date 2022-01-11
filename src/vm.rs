@@ -452,7 +452,7 @@ pub trait Vm {
 		write(&mut (*boot_info).uhyve, 0x1); // announce uhyve
 		write(&mut (*boot_info).current_boot_id, 0);
 		if self.verbose() {
-			write(&mut (*boot_info).uartport, UHYVE_UART_PORT);
+			write(&mut (*boot_info).uartport, UHYVE_UART_PORT.into());
 		} else {
 			write(&mut (*boot_info).uartport, 0);
 		}
@@ -523,10 +523,13 @@ pub trait Vm {
 
 					vm_slice[region_start..region_end]
 						.copy_from_slice(&buffer[kernel_start..kernel_end]);
-					for i in &mut vm_slice[region_end
-						..region_end + (program_header.p_memsz - program_header.p_filesz) as usize]
-					{
-						*i = 0
+
+					if program_header.p_memsz > program_header.p_filesz {
+						vm_slice[region_end
+							..region_end
+								+ (program_header.p_memsz - program_header.p_filesz) as usize]
+							.iter_mut()
+							.for_each(|x| *x = 0);
 					}
 
 					image_size = if is_dyn {
@@ -561,7 +564,9 @@ pub trait Vm {
 		elf.dynrelas.iter().for_each(|rela| match rela.r_type {
 			R_X86_64_RELATIVE | R_AARCH64_RELATIVE => {
 				let offset = (vm_mem as u64 + start_address + rela.r_offset) as *mut u64;
-				*offset = (start_address as i64 + rela.r_addend.unwrap_or(0)) as u64;
+				*offset = (start_address as i64 + rela.r_addend.unwrap_or(0))
+					.try_into()
+					.unwrap();
 			}
 			_ => {
 				debug!("Unsupported relocation type {}", rela.r_type);
