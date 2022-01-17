@@ -124,6 +124,10 @@ impl VirtualCPU for UhyveCPU {
 			.vcpu
 			.read_system_register(SystemRegister::SCTLR_EL1)
 			.unwrap();
+		let ttbr0 = self
+			.vcpu
+			.read_system_register(SystemRegister::TTBR0_EL1)
+			.unwrap();
 		let lr = self.vcpu.read_register(Register::LR).unwrap();
 		let x0 = self.vcpu.read_register(Register::X0).unwrap();
 		let x1 = self.vcpu.read_register(Register::X1).unwrap();
@@ -159,21 +163,21 @@ impl VirtualCPU for UhyveCPU {
 		println!("\nRegisters:");
 		println!("----------");
 		println!(
-			"PC : {:016x}   LR : {:016x}   CPSR: {:016x}\n\
-		     SP : {:016x}   SCTLR : {:016x}",
-			pc, lr, cpsr, sp, sctlr
+			"PC    : {:016x}  LR    : {:016x}  CPSR  : {:016x}\n\
+		     SP    : {:016x}  SCTLR : {:016x}  TTBR0 : {:016x}",
+			pc, lr, cpsr, sp, sctlr, ttbr0,
 		);
 		print!(
-			"x0 : {:016x}   x1 : {:016x}    x2 : {:016x}\n\
-			 x3 : {:016x}   x4 : {:016x}    x5 : {:016x}\n\
-			 x6 : {:016x}   x7 : {:016x}    x8 : {:016x}\n\
-			 x9 : {:016x}   x10: {:016x}    x11: {:016x}\n\
-			 x12: {:016x}   x13: {:016x}    x14: {:016x}\n\
-			 x15: {:016x}   x16: {:016x}    x17: {:016x}\n\
-			 x18: {:016x}   x19: {:016x}    x20: {:016x}\n\
-			 x21: {:016x}   x22: {:016x}    x23: {:016x}\n\
-			 x24: {:016x}   x25: {:016x}    x26: {:016x}\n\
-			 x27: {:016x}   x28: {:016x}    x29: {:016x}\n",
+			"x0    : {:016x}  x1    : {:016x}  x2    : {:016x}\n\
+			 x3    : {:016x}  x4    : {:016x}  x5    : {:016x}\n\
+			 x6    : {:016x}  x7    : {:016x}  x8    : {:016x}\n\
+			 x9    : {:016x}  x10   : {:016x}  x11   : {:016x}\n\
+			 x12   : {:016x}  x13   : {:016x}  x14   : {:016x}\n\
+			 x15   : {:016x}  x16   : {:016x}  x17   : {:016x}\n\
+			 x18   : {:016x}  x19   : {:016x}  x20   : {:016x}\n\
+			 x21   : {:016x}  x22   : {:016x}  x23   : {:016x}\n\
+			 x24   : {:016x}  x25   : {:016x}  x26   : {:016x}\n\
+			 x27   : {:016x}  x28   : {:016x}  x29   : {:016x}\n",
 			x0,
 			x1,
 			x2,
