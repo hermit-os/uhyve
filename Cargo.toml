@@ -37,8 +37,6 @@ default = []
 instrument = ["rftrace", "rftrace-frontend"]
 
 [patch.crates-io]
-gdbstub = { git = "https://github.com/daniel5151/gdbstub", branch = "dev/0.6" }
-gdbstub_arch = { git = "https://github.com/daniel5151/gdbstub", branch = "dev/0.6" }
 x86_64 = { git = "https://github.com/mkroening/x86_64", branch = "debug-stable" }
 xhypervisor = { git = "https://github.com/RWTH-OS/xhypervisor.git", branch = "aarch64" }
 
