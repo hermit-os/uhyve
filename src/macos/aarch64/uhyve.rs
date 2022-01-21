@@ -1,11 +1,13 @@
 use crate::aarch64::BootInfo;
 use crate::macos::aarch64::vcpu::*;
 use crate::macos::aarch64::HYPERVISOR_PAGE_SIZE;
+use crate::params::Params;
 use crate::vm::HypervisorResult;
-use crate::vm::{Parameter, Vm};
+use crate::vm::Vm;
 use libc;
 use libc::c_void;
 use log::debug;
+use std::ffi::OsString;
 use std::net::Ipv4Addr;
 use std::path::Path;
 use std::path::PathBuf;
@@ -20,6 +22,7 @@ pub struct Uhyve {
 	guest_mem: *mut c_void,
 	num_cpus: u32,
 	path: PathBuf,
+	args: Vec<OsString>,
 	boot_info: *const BootInfo,
 	verbose: bool,
 }
@@ -39,13 +42,15 @@ impl std::fmt::Debug for Uhyve {
 }
 
 impl Uhyve {
-	pub fn new(kernel_path: PathBuf, specs: &Parameter<'_>) -> HypervisorResult<Uhyve> {
-		assert!(HYPERVISOR_PAGE_SIZE < specs.mem_size);
+	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<Uhyve> {
+		let memory_size = params.memory_size.get();
+
+		assert!(HYPERVISOR_PAGE_SIZE < memory_size);
 
 		let mem = unsafe {
 			libc::mmap(
 				std::ptr::null_mut(),
-				specs.mem_size,
+				memory_size,
 				libc::PROT_READ | libc::PROT_WRITE,
 				libc::MAP_PRIVATE | libc::MAP_ANON | libc::MAP_NORESERVE,
 				-1,
@@ -71,24 +76,23 @@ impl Uhyve {
 			map_mem(
 				std::slice::from_raw_parts_mut(
 					(mem as *mut u8).offset(HYPERVISOR_PAGE_SIZE.try_into().unwrap()),
-					specs.mem_size - HYPERVISOR_PAGE_SIZE,
+					memory_size - HYPERVISOR_PAGE_SIZE,
 				),
 				HYPERVISOR_PAGE_SIZE.try_into().unwrap(),
 				MemPerm::ExecAndWrite,
 			)?;
 		}
 
-		assert!(specs.gdbport.is_none(), "gdbstub is not supported on macos");
-
 		let hyve = Uhyve {
 			offset: 0,
 			entry_point: 0,
-			mem_size: specs.mem_size,
+			mem_size: memory_size,
 			guest_mem: mem,
-			num_cpus: specs.num_cpus,
+			num_cpus: params.cpu_count.get(),
 			path: kernel_path,
+			args: params.kernel_args,
 			boot_info: ptr::null(),
-			verbose: specs.verbose,
+			verbose: params.verbose,
 		};
 
 		hyve.init_guest_mem();
@@ -134,6 +138,7 @@ impl Vm for Uhyve {
 		Ok(UhyveCPU::new(
 			id,
 			self.path.clone(),
+			self.args.clone(),
 			self.guest_mem as usize,
 		))
 	}

@@ -1,9 +1,10 @@
+use byte_unit::Byte;
 use std::{
 	env,
 	path::{Path, PathBuf},
 	process::Command,
 };
-use uhyvelib::{vm::Parameter, Uhyve};
+use uhyvelib::{params::Params, Uhyve};
 
 /// Uses Cargo to build a kernel in the `tests/test-kernels` directory.
 /// Returns a path to the build binary.
@@ -35,18 +36,11 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 /// Small wrapper around [`Uhyve::run`] with default parameters for a small and
 /// simple uhyve vm
 pub fn run_simple_vm(kernel_path: PathBuf) {
-	let params = Parameter {
-		mem_size: 32 * 1024 * 1024,
-		num_cpus: 2,
-		verbose: false,
-		hugepage: true,
-		mergeable: false,
-		ip: None,
-		gateway: None,
-		mask: None,
-		nic: None,
-		gdbport: None,
+	let params = Params {
+		cpu_count: 2.try_into().unwrap(),
+		memory_size: Byte::from_bytes(32 * 1024 * 1024).try_into().unwrap(),
+		..Default::default()
 	};
-	let code = Uhyve::new(kernel_path, &params).unwrap().run(None);
+	let code = Uhyve::new(kernel_path, params).unwrap().run(None);
 	assert_eq!(0, code);
 }

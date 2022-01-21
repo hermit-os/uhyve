@@ -6,14 +6,17 @@ use crate::consts::*;
 use crate::linux::vcpu::*;
 use crate::linux::virtio::*;
 use crate::linux::KVM;
+use crate::params::Params;
 use crate::shared_queue::*;
 use crate::vm::HypervisorResult;
-use crate::vm::{Parameter, Vm};
+use crate::vm::Vm;
 use crate::x86_64::create_gdt_entry;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use log::debug;
 use nix::sys::mman::*;
+use std::cmp;
+use std::ffi::OsString;
 use std::fmt;
 use std::hint;
 use std::mem;
@@ -23,7 +26,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::ptr;
 use std::ptr::{read_volatile, write_volatile};
-use std::str::FromStr;
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -132,6 +134,7 @@ pub struct Uhyve {
 	mem: MmapMemory,
 	num_cpus: u32,
 	path: PathBuf,
+	args: Vec<OsString>,
 	boot_info: *const BootInfo,
 	verbose: bool,
 	ip: Option<Ipv4Addr>,
@@ -161,34 +164,14 @@ impl fmt::Debug for Uhyve {
 }
 
 impl Uhyve {
-	pub fn new(kernel_path: PathBuf, specs: &Parameter<'_>) -> HypervisorResult<Uhyve> {
-		// parse string to get IP address
-		let ip_addr = specs
-			.ip
-			.as_ref()
-			.map(|addr_str| Ipv4Addr::from_str(addr_str).expect("Unable to parse ip address"));
-
-		// parse string to get gateway address
-		let gw_addr = specs
-			.gateway
-			.as_ref()
-			.map(|addr_str| Ipv4Addr::from_str(addr_str).expect("Unable to parse gateway address"));
-
-		// parse string to get gateway address
-		let mask = specs
-			.mask
-			.as_ref()
-			.map(|addr_str| Ipv4Addr::from_str(addr_str).expect("Unable to parse network parse"));
+	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<Uhyve> {
+		let memory_size = params.memory_size.get();
 
 		let vm = KVM.create_vm()?;
 
-		let mem = MmapMemory::new(0, specs.mem_size, 0, specs.hugepage, specs.mergeable);
+		let mem = MmapMemory::new(0, memory_size, 0, params.thp, params.ksm);
 
-		let sz = if specs.mem_size < KVM_32BIT_GAP_START {
-			specs.mem_size
-		} else {
-			KVM_32BIT_GAP_START
-		};
+		let sz = cmp::min(memory_size, KVM_32BIT_GAP_START);
 
 		// create virtio interface
 		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new()));
@@ -203,11 +186,11 @@ impl Uhyve {
 
 		unsafe { vm.set_user_memory_region(kvm_mem) }?;
 
-		if specs.mem_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
+		if memory_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
 			let kvm_mem = kvm_userspace_memory_region {
 				slot: 1,
 				flags: mem.flags,
-				memory_size: (specs.mem_size - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
+				memory_size: (memory_size - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
 				guest_phys_addr: (mem.guest_address + KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE)
 					as u64,
 				userspace_addr: (mem.host_address + KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE)
@@ -264,7 +247,7 @@ impl Uhyve {
 		let evtfd = EventFd::new(0).unwrap();
 		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET)?;
 		// create TUN/TAP device
-		let uhyve_device = match &specs.nic {
+		let uhyve_device = match &params.nic {
 			Some(nic) => {
 				debug!("Initialize network interface");
 				Some(UhyveNetwork::new(
@@ -276,8 +259,10 @@ impl Uhyve {
 			_ => None,
 		};
 
+		let cpu_count = params.cpu_count.get();
+
 		assert!(
-			specs.gdbport.is_none() || specs.num_cpus == 1,
+			params.gdb_port.is_none() || cpu_count == 1,
 			"gdbstub is only supported with one CPU"
 		);
 
@@ -286,16 +271,17 @@ impl Uhyve {
 			offset: 0,
 			entry_point: 0,
 			mem,
-			num_cpus: specs.num_cpus,
+			num_cpus: cpu_count,
 			path: kernel_path,
+			args: params.kernel_args,
 			boot_info: ptr::null(),
-			verbose: specs.verbose,
-			ip: ip_addr,
-			gateway: gw_addr,
-			mask,
+			verbose: params.verbose,
+			ip: params.ip,
+			gateway: params.gateway,
+			mask: params.mask,
 			uhyve_device,
 			virtio_device,
-			gdb_port: specs.gdbport,
+			gdb_port: params.gdb_port,
 		};
 
 		hyve.init_guest_mem();
@@ -356,6 +342,7 @@ impl Vm for Uhyve {
 		Ok(UhyveCPU::new(
 			id,
 			self.path.clone(),
+			self.args.clone(),
 			self.vm.create_vcpu(id.try_into().unwrap())?,
 			vm_start,
 			tx,

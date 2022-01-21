@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 #[allow(dead_code)]
 mod common;
 
@@ -9,7 +11,7 @@ use std::{
 	process::Command,
 	thread,
 };
-use uhyvelib::{vm::Parameter, Uhyve};
+use uhyvelib::{params::Params, Uhyve};
 
 #[test]
 fn gdb() -> io::Result<()> {
@@ -21,17 +23,9 @@ fn gdb() -> io::Result<()> {
 		let bin_path = bin_path_clone;
 		let vm = Uhyve::new(
 			bin_path,
-			&Parameter {
-				mem_size: 32 * 1024 * 1024,
-				num_cpus: 1,
-				verbose: false,
-				hugepage: true,
-				mergeable: false,
-				ip: None,
-				gateway: None,
-				mask: None,
-				nic: None,
-				gdbport: Some(port),
+			Params {
+				gdb_port: Some(port),
+				..Default::default()
 			},
 		)
 		.unwrap();

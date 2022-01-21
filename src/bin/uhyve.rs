@@ -1,24 +1,22 @@
 #![warn(rust_2018_idioms)]
 
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate clap;
-
-use std::collections::HashSet;
-use std::env;
+use std::ffi::OsString;
+use std::iter;
+use std::net::Ipv4Addr;
+use std::num::ParseIntError;
+use std::ops::RangeInclusive;
 use std::path::PathBuf;
+use std::process;
 use std::str::FromStr;
 
-use uhyvelib::utils;
-use uhyvelib::vm;
+use clap::{App, ErrorKind, IntoApp, Parser};
+use core_affinity::CoreId;
+use either::Either;
+use mac_address::MacAddress;
+use thiserror::Error;
+
+use uhyvelib::params::{CpuCount, GuestMemorySize, Params};
 use uhyvelib::Uhyve;
-
-use byte_unit::Byte;
-use clap::{App, Arg};
-
-const MINIMAL_GUEST_SIZE: usize = 16 * 1024 * 1024;
-const DEFAULT_GUEST_SIZE: usize = 64 * 1024 * 1024;
 
 #[cfg(feature = "instrument")]
 fn setup_trace() {
@@ -44,224 +42,291 @@ fn setup_trace() {
 	}
 }
 
-// Note that we end main with `std::process::exit` to set the return value and
-// as a result destructors are not run and cleanup may not happen.
-fn main() {
+#[derive(Parser, Debug)]
+#[clap(version, author, about)]
+struct Args {
+	/// Print kernel messages
+	#[clap(short, long)]
+	verbose: bool,
+
+	#[clap(flatten, help_heading = "MEMORY")]
+	memory_args: MemoryArgs,
+
+	#[clap(flatten, help_heading = "CPU")]
+	cpu_args: CpuArgs,
+
+	/// GDB server port
+	///
+	/// Starts a GDB server on the provided port and waits for a connection.
+	#[clap(short = 's', long, env = "HERMIT_GDB_PORT")]
+	#[cfg(target_os = "linux")]
+	gdb_port: Option<u16>,
+
+	// #[clap(flatten, help_heading = "NETWORK")]
+	#[clap(skip)]
+	#[cfg(target_os = "linux")]
+	network_args: NetworkArgs,
+
+	/// The kernel to execute
+	#[clap(parse(from_os_str))]
+	kernel: PathBuf,
+
+	/// Arguments to forward to the kernel
+	#[clap(parse(from_os_str))]
+	kernel_args: Vec<OsString>,
+}
+
+#[derive(Parser, Debug)]
+struct MemoryArgs {
+	/// Guest RAM size
+	#[clap(short = 'm', long, default_value_t, env = "HERMIT_MEMORY_SIZE")]
+	memory_size: GuestMemorySize,
+
+	/// No Transparent Hugepages
+	///
+	/// Don't advise the kernel to enable Transparent Hugepages [THP] on the virtual RAM.
+	///
+	/// [THP]: https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html
+	#[clap(long)]
+	#[cfg(target_os = "linux")]
+	no_thp: bool,
+
+	/// Kernel Samepage Merging
+	///
+	/// Advise the kernel to enable Kernel Samepage Merging [KSM] on the virtual RAM.
+	///
+	/// [KSM]: https://www.kernel.org/doc/html/latest/admin-guide/mm/ksm.html
+	#[clap(long)]
+	#[cfg(target_os = "linux")]
+	ksm: bool,
+}
+
+#[derive(Debug, Clone)]
+struct Affinity(Vec<CoreId>);
+
+impl Affinity {
+	fn parse_ranges_iter<'a>(
+		ranges: impl IntoIterator<Item = &'a str> + 'a,
+	) -> impl Iterator<Item = Result<usize, ParseIntError>> + 'a {
+		struct ParsedRange(RangeInclusive<usize>);
+
+		impl FromStr for ParsedRange {
+			type Err = ParseIntError;
+
+			fn from_str(s: &str) -> Result<Self, Self::Err> {
+				let range = match s.split_once('-') {
+					Some((start, end)) => start.parse()?..=end.parse()?,
+					None => {
+						let idx = s.parse()?;
+						idx..=idx
+					}
+				};
+				Ok(Self(range))
+			}
+		}
+
+		ranges
+			.into_iter()
+			.map(ParsedRange::from_str)
+			.flat_map(|range| match range {
+				Ok(range) => Either::Left(range.0.map(Ok)),
+				Err(err) => Either::Right(iter::once(Err(err))),
+			})
+	}
+
+	fn parse_ranges(ranges: &str) -> Result<Vec<usize>, ParseIntError> {
+		Self::parse_ranges_iter(ranges.split([' ', ','].as_slice())).collect()
+	}
+}
+
+#[derive(Error, Debug)]
+enum ParseAffinityError {
+	#[error(transparent)]
+	Parse(#[from] ParseIntError),
+
+	#[error(
+		"Available cores: {available_cores:?}, requested affinities: {requested_affinities:?}"
+	)]
+	InvalidValue {
+		available_cores: Vec<usize>,
+		requested_affinities: Vec<usize>,
+	},
+}
+
+impl FromStr for Affinity {
+	type Err = ParseAffinityError;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		let available_cores = core_affinity::get_core_ids()
+			.unwrap()
+			.into_iter()
+			.map(|core_id| core_id.id)
+			.collect::<Vec<_>>();
+
+		let requested_affinities = Self::parse_ranges(s)?;
+
+		if !requested_affinities
+			.iter()
+			.all(|affinity| available_cores.contains(affinity))
+		{
+			return Err(ParseAffinityError::InvalidValue {
+				available_cores,
+				requested_affinities,
+			});
+		}
+
+		let core_ids = requested_affinities
+			.into_iter()
+			.map(|affinity| CoreId { id: affinity })
+			.collect();
+		Ok(Self(core_ids))
+	}
+}
+
+#[derive(Parser, Debug, Clone)]
+struct CpuArgs {
+	/// Number of guest CPUs
+	#[clap(short, long, default_value_t, env = "HERMIT_CPU_COUNT")]
+	cpu_count: CpuCount,
+
+	/// Bind guest vCPUs to host cpus
+	///
+	/// A list of host CPU numbers onto which the guest vCPUs should be bound to obtain performance benefits.
+	/// List items may be single numbers or inclusive ranges.
+	/// List items may be separated with commas or spaces.
+	///
+	/// # Examples
+	///
+	/// * `--affinity "0 1 2"`
+	///
+	/// * `--affinity 0-1,2`
+	#[clap(short, long, name = "CPUs")]
+	affinity: Option<Affinity>,
+}
+
+impl CpuArgs {
+	fn get_affinity(self, app: &mut App<'_>) -> Option<Vec<CoreId>> {
+		self.affinity.map(|affinity| {
+			let affinity_num_vals = affinity.0.len();
+			let cpus_num_vals = self.cpu_count.get().try_into().unwrap();
+			if affinity_num_vals != cpus_num_vals {
+				let affinity_arg = app
+					.get_arguments()
+					.find(|arg| arg.get_name() == "affinity")
+					.unwrap();
+				let cpus_arg = app
+					.get_arguments()
+					.find(|arg| arg.get_name() == "cpus")
+					.unwrap();
+				let verb = if affinity_num_vals > 1 { "were" } else { "was" };
+				let message = format!(
+					"The argument '{affinity_arg}' requires {cpus_num_vals} values (matching '{cpus_arg}'), but {affinity_num_vals} {verb} provided",
+					affinity_arg = affinity_arg,
+					cpus_num_vals = cpus_num_vals,
+					cpus_arg = cpus_arg,
+					affinity_num_vals = affinity_num_vals,
+					verb = verb,
+				);
+				app.error(ErrorKind::WrongNumberOfValues, message).exit()
+			} else {
+				affinity.0
+			}
+		})
+	}
+}
+
+#[derive(Parser, Debug, Default)]
+struct NetworkArgs {
+	/// Guest IP address
+	#[clap(long, env = "HERMIT_IP")]
+	ip: Option<Ipv4Addr>,
+
+	/// Guest gateway address
+	#[clap(long, env = "HERMIT_GATEWAY")]
+	gateway: Option<Ipv4Addr>,
+
+	/// Guest network mask
+	#[clap(long, env = "HERMIT_MASK")]
+	mask: Option<Ipv4Addr>,
+
+	/// Name of the network interface
+	#[clap(long, env = "HERMIT_NETIF")]
+	nic: Option<String>,
+
+	/// MAC address of the network interface
+	#[clap(long, env = "HERMIT_MAC")]
+	_mac: Option<MacAddress>,
+}
+
+impl From<Args> for Params {
+	fn from(args: Args) -> Self {
+		let Args {
+			verbose,
+			memory_args:
+				MemoryArgs {
+					memory_size,
+					#[cfg(target_os = "linux")]
+					no_thp,
+					#[cfg(target_os = "linux")]
+					ksm,
+				},
+			cpu_args: CpuArgs {
+				cpu_count,
+				affinity: _,
+			},
+			#[cfg(target_os = "linux")]
+			gdb_port,
+			#[cfg(target_os = "linux")]
+				network_args: NetworkArgs {
+				ip,
+				gateway,
+				mask,
+				nic,
+				_mac,
+			},
+			kernel: _,
+			kernel_args,
+		} = args;
+		Self {
+			verbose,
+			memory_size,
+			#[cfg(target_os = "linux")]
+			thp: !no_thp,
+			#[cfg(target_os = "linux")]
+			ksm,
+			cpu_count,
+			#[cfg(target_os = "linux")]
+			ip,
+			#[cfg(target_os = "linux")]
+			gateway,
+			#[cfg(target_os = "linux")]
+			mask,
+			#[cfg(target_os = "linux")]
+			nic,
+			#[cfg(target_os = "linux")]
+			gdb_port,
+			kernel_args,
+		}
+	}
+}
+
+fn run_uhyve() -> i32 {
 	#[cfg(feature = "instrument")]
 	setup_trace();
 
 	env_logger::init();
 
-	let matches = App::new("uhyve")
-		.version(crate_version!())
-		.setting(clap::AppSettings::TrailingVarArg)
-		.setting(clap::AppSettings::AllowLeadingHyphen)
-		.author(crate_authors!("\n"))
-		.about("A minimal hypervisor for RustyHermit")
-		.arg(
-			Arg::with_name("VERBOSE")
-				.short("v")
-				.long("verbose")
-				.help("Print also kernel messages"),
-		)
-		.arg(
-			Arg::with_name("DISABLE_HUGEPAGE")
-				.long("disable-hugepages")
-				.help("Disable the usage of huge pages"),
-		)
-		.arg(
-			Arg::with_name("MERGEABLE")
-				.long("mergeable")
-				.help("Enable kernel feature to merge same pages"),
-		)
-		.arg(
-			Arg::with_name("MEM")
-				.short("m")
-				.long("memsize")
-				.value_name("MEM")
-				.help("Memory size of the guest")
-				.takes_value(true)
-				.env("HERMIT_MEM"),
-		)
-		.arg(
-			Arg::with_name("CPUS")
-				.short("c")
-				.long("cpus")
-				.value_name("CPUS")
-				.help("Number of guest processors")
-				.takes_value(true)
-				.env("HERMIT_CPUS"),
-		)
-		.arg(
-			Arg::with_name("CPU_AFFINITY")
-				.short("a")
-				.long("affinity")
-				.value_name("cpulist")
-				.help("CPU Affinity of guest CPUs on Host")
-				.long_help(
-					"A list of CPUs delimited by commas onto which
-					 the virtual CPUs should be bound. This may improve 
-					performance.
-					",
-				),
-		)
-		.arg(
-			Arg::with_name("GDB_PORT")
-				.short("s")
-				.long("gdb_port")
-				.value_name("GDB_PORT")
-				.help("Enables GDB-Stub on given port")
-				.takes_value(true)
-				.env("HERMIT_GDB_PORT"),
-		)
-		.arg(
-			Arg::with_name("NETIF")
-				.long("nic")
-				.value_name("NETIF")
-				.help("Name of the network interface")
-				.takes_value(true)
-				.env("HERMIT_NETIF"),
-		)
-		/*.arg(
-			Arg::with_name("IP")
-				.long("ip")
-				.value_name("IP")
-				.help("IP address of the guest")
-				.takes_value(true)
-				.env("HERMIT_IP"),
-		)
-		.arg(
-			Arg::with_name("GATEWAY")
-				.long("gateway")
-				.value_name("GATEWAY")
-				.help("Gateway address")
-				.takes_value(true)
-				.env("HERMIT_GATEWAY"),
-		)
-		.arg(
-			Arg::with_name("MASK")
-				.long("mask")
-				.value_name("MASK")
-				.help("Network mask")
-				.takes_value(true)
-				.env("HERMIT_MASK"),
-		)
-		.arg(
-			Arg::with_name("MAC")
-				.long("mac")
-				.value_name("MAC")
-				.help("MAC address of the network interface")
-				.takes_value(true)
-				.env("HERMIT_MASK"),
-		)*/
-		.arg(
-			Arg::with_name("KERNEL")
-				.help("Sets path to the kernel")
-				.required(true)
-				.index(1),
-		)
-		.arg(
-			Arg::with_name("ARGUMENTS")
-				.help("Arguments of the unikernel")
-				.required(false)
-				.multiple(true)
-				.max_values(255),
-		)
-		.get_matches();
+	let mut app = Args::into_app();
+	let args = Args::parse();
+	let kernel = args.kernel.clone();
+	let affinity = args.cpu_args.clone().get_affinity(&mut app);
+	let params = Params::from(args);
 
-	let path = PathBuf::from_str(
-		matches
-			.value_of("KERNEL")
-			.expect("Expect path to the kernel!"),
-	)
-	.expect("Invalid kernel path");
-	let mem_size: usize = matches
-		.value_of("MEM")
-		.map(|s| {
-			let mem = Byte::from_str(s)
-				.expect("Invalid MEM specified")
-				.get_bytes()
-				.try_into()
-				.unwrap();
-			if mem < MINIMAL_GUEST_SIZE {
-				warn!(
-					"Resize guest memory to {}",
-					Byte::from_bytes(MINIMAL_GUEST_SIZE.try_into().unwrap())
-				);
-				MINIMAL_GUEST_SIZE
-			} else {
-				mem
-			}
-		})
-		.unwrap_or(DEFAULT_GUEST_SIZE);
-	let num_cpus = matches
-		.value_of("CPUS")
-		.and_then(|cpus| cpus.parse().ok())
-		.unwrap_or(1);
-
-	let cpu_affinity = matches.values_of("CPU_AFFINITY").map(|affinity| {
-		let parsed_affinity = utils::parse_ranges(affinity)
-			.collect::<Result<HashSet<_>, _>>()
-			.expect("Invalid parameters passed for CPU_AFFINITY");
-
-		// According to https://github.com/Elzair/core_affinity_rs/issues/3
-		// on linux this gives a list of CPUs the process is allowed to run on
-		// (as opposed to all CPUs available on the system as the docs suggest)
-		let core_ids = core_affinity::get_core_ids()
-			.expect("Dependency core_affinity failed to find any available CPUs")
-			.into_iter()
-			.filter(|core_id| parsed_affinity.contains(&core_id.id))
-			.collect::<Vec<_>>();
-		assert_eq!(core_ids.len(), num_cpus as usize);
-		core_ids
-	});
-
-	let ip = None; //matches.value_of("IP").or(None);
-	let gateway = None; // matches.value_of("GATEWAY").or(None);
-	let mask = None; //matches.value_of("MASK").or(None);
-	let nic = None; //matches.value_of("NETIF").or(None);
-
-	let mut mergeable = envmnt::is_or("HERMIT_MERGEABLE", false);
-	if matches.is_present("MERGEABLE") {
-		mergeable = true;
-	}
-	// per default we use huge page to improve the performance,
-	// if the kernel supports transparent hugepages
-	let hugepage_default = true;
-	info!("Default hugepages set to: {}", hugepage_default);
-	// HERMIT_HUGEPAGES overrides the default we detected.
-	let mut hugepage = envmnt::is_or("HERMIT_HUGEPAGE", hugepage_default);
-	if matches.is_present("DISABLE_HUGEPAGE") {
-		hugepage = false;
-	}
-	let mut verbose = envmnt::is_or("HERMIT_VERBOSE", false);
-	if matches.is_present("VERBOSE") {
-		verbose = true;
-	}
-	let gdbport = matches
-		.value_of("GDB_PORT")
-		.map(|p| p.parse::<u16>().expect("Could not parse gdb port"))
-		.or_else(|| {
-			env::var("HERMIT_GDB_PORT")
-				.ok()
-				.map(|p| p.parse::<u16>().expect("Could not parse gdb port"))
-		});
-
-	let params = vm::Parameter {
-		mem_size,
-		num_cpus,
-		verbose,
-		hugepage,
-		mergeable,
-		ip,
-		gateway,
-		mask,
-		nic,
-		gdbport,
-	};
-
-	let code = Uhyve::new(path, &params)
+	Uhyve::new(kernel, params)
 		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?")
-		.run(cpu_affinity);
-	std::process::exit(code);
+		.run(affinity)
+}
+
+fn main() {
+	process::exit(run_uhyve())
 }
