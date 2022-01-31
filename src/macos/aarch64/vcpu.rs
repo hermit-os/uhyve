@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+#![allow(clippy::identity_op)]
 
 use crate::aarch64::{
 	mair, tcr_size, MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_DEVICE_GRE, MT_NORMAL, MT_NORMAL_NC, PSR,
