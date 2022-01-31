@@ -127,9 +127,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "3.0.10"
+version = "3.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a30c3bf9ff12dfe5dae53f0a96e0febcd18420d1c0e7fad77796d9d5c4b5375"
+checksum = "08799f92c961c7a1cf0cc398a9073da99e21ce388b46372c37f3191f2f3eed3e"
 dependencies = [
  "atty",
  "bitflags",
@@ -347,9 +347,9 @@ dependencies = [
 
 [[package]]
 name = "gdbstub_arch"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40d34d4fe3f10e9741e20f9b576d980a1f3f4918ba4f629ef3dbf932ac1b55db"
+checksum = "76c5a510987e0a2d2ee994f0e478e025bddf6e8a1a0aca0fc23c93927aeb2ae0"
 dependencies = [
  "gdbstub",
  "num-traits",
@@ -545,11 +545,11 @@ dependencies = [
 
 [[package]]
 name = "mac_address"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89544d9544366f6cda81244514a80809b137b5a179947b73bfa9f2797480de69"
+checksum = "df1d1bc1084549d60725ccc53a2bfa07f67fe4689fda07b05a36531f2988104a"
 dependencies = [
- "nix 0.22.0",
+ "nix",
  "winapi 0.3.9",
 ]
 
@@ -572,19 +572,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5aa361d4faea93603064a027415f07bd8e1d5c88c9fbf68bf56a285428fd79ce"
 dependencies = [
  "autocfg",
-]
-
-[[package]]
-name = "nix"
-version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf1e25ee6b412c2a1e3fcb6a4499a5c1bfe7f43e014bdce9a6b6666e5aa2d187"
-dependencies = [
- "bitflags",
- "cc",
- "cfg-if",
- "libc",
- "memoffset",
 ]
 
 [[package]]
@@ -1103,7 +1090,7 @@ dependencies = [
  "burst",
  "byte-unit",
  "byteorder",
- "clap 3.0.10",
+ "clap 3.0.13",
  "core_affinity",
  "criterion",
  "either",
@@ -1118,7 +1105,7 @@ dependencies = [
  "libc",
  "log",
  "mac_address",
- "nix 0.23.1",
+ "nix",
  "raw-cpuid",
  "rftrace",
  "rftrace-frontend",
