@@ -1,6 +1,9 @@
 #![allow(non_snake_case)]
 
-use crate::aarch64::PSR;
+use crate::aarch64::{
+	mair, tcr_size, MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_DEVICE_GRE, MT_NORMAL, MT_NORMAL_NC, PSR,
+	TCR_FLAGS, TCR_TG1_4K, VA_BITS,
+};
 use crate::consts::*;
 use crate::vm::HypervisorResult;
 use crate::vm::VcpuStopReason;
@@ -41,6 +44,98 @@ impl VirtualCPU for UhyveCPU {
 		self.vcpu.write_register(Register::CPSR, pstate.bits())?;
 		self.vcpu.write_register(Register::PC, entry_point)?;
 		self.vcpu.write_register(Register::X0, BOOT_INFO_ADDR)?;
+
+		/*
+		 * Setup memory attribute type tables
+		 *
+		 * Memory regioin attributes for LPAE:
+		 *
+		 *   n = AttrIndx[2:0]
+		 *                      n       MAIR
+		 *   DEVICE_nGnRnE      000     00000000 (0x00)
+		 *   DEVICE_nGnRE       001     00000100 (0x04)
+		 *   DEVICE_GRE         010     00001100 (0x0c)
+		 *   NORMAL_NC          011     01000100 (0x44)
+		 *   NORMAL             100     11111111 (0xff)
+		 */
+		let mair_el1 = mair(0x00, MT_DEVICE_nGnRnE)
+			| mair(0x04, MT_DEVICE_nGnRE)
+			| mair(0x0c, MT_DEVICE_GRE)
+			| mair(0x44, MT_NORMAL_NC)
+			| mair(0xff, MT_NORMAL);
+		self.vcpu
+			.write_system_register(SystemRegister::MAIR_EL1, mair_el1)?;
+
+		/*
+		 * Setup translation control register (TCR)
+		 */
+		let aa64mmfr0_el1 = self
+			.vcpu
+			.read_system_register(SystemRegister::ID_AA64MMFR0_EL1)?;
+		let tcr = ((aa64mmfr0_el1 & 0xF) << 32) | (tcr_size(VA_BITS) | TCR_TG1_4K | TCR_FLAGS);
+		let tcr_el1 = (tcr & 0xFFFFFFF0FFFFFFFFu64) | ((aa64mmfr0_el1 & 0xFu64) << 32);
+		self.vcpu
+			.write_system_register(SystemRegister::TCR_EL1, tcr_el1)?;
+
+		/*
+		 * Enable FP/ASIMD in Architectural Feature Access Control Register,
+		 */
+		let cpacr_el1 = self.vcpu.read_system_register(SystemRegister::CPACR_EL1)? | (3 << 20);
+		self.vcpu
+			.write_system_register(SystemRegister::CPACR_EL1, cpacr_el1)?;
+
+		/*
+		 * Reset debug control register
+		 */
+		self.vcpu
+			.write_system_register(SystemRegister::MDSCR_EL1, 0)?;
+
+		// Load TTBRx
+		self.vcpu
+			.write_system_register(SystemRegister::TTBR1_EL1, 0)?;
+		self.vcpu
+			.write_system_register(SystemRegister::TTBR0_EL1, BOOT_PGT)?;
+
+		/*
+		* Prepare system control register (SCTRL)
+		* Todo: - Verify if all of these bits actually should be explicitly set
+			   - Link origin of this documentation and check to which instruction set versions
+				 it applies (if applicable)
+			   - Fill in the missing Documentation for some of the bits and verify if we care about them
+				 or if loading and not setting them would be the appropriate action.
+		*/
+		let sctrl_el1: u64 = 0
+		 | (1 << 26) 	    /* UCI	Enables EL0 access in AArch64 for DC CVAU, DC CIVAC,
+									DC CVAC and IC IVAU instructions */
+		 | (0 << 25)		/* EE	Explicit data accesses at EL1 and Stage 1 translation
+									table walks at EL1 & EL0 are little-endian */
+		 | (0 << 24)		/* EOE	Explicit data accesses at EL0 are little-endian */
+		 | (1 << 23)
+		 | (1 << 22)
+		 | (1 << 20)
+		 | (0 << 19)		/* WXN	Regions with write permission are not forced to XN */
+		 | (1 << 18)		/* nTWE	WFE instructions are executed as normal */
+		 | (0 << 17)
+		 | (1 << 16)		/* nTWI	WFI instructions are executed as normal */
+		 | (1 << 15)		/* UCT	Enables EL0 access in AArch64 to the CTR_EL0 register */
+		 | (1 << 14)		/* DZE	Execution of the DC ZVA instruction is allowed at EL0 */
+		 | (0 << 13)
+		 | (1 << 12)		/* I	Instruction caches enabled at EL0 and EL1 */
+		 | (1 << 11)
+		 | (0 << 10)
+		 | (0 << 9)			/* UMA	Disable access to the interrupt masks from EL0 */
+		 | (1 << 8)			/* SED	The SETEND instruction is available */
+		 | (0 << 7)			/* ITD	The IT instruction functionality is available */
+		 | (0 << 6)			/* THEE	ThumbEE is disabled */
+		 | (0 << 5)			/* CP15BEN	CP15 barrier operations disabled */
+		 | (1 << 4)			/* SA0	Stack Alignment check for EL0 enabled */
+		 | (1 << 3)			/* SA	Stack Alignment check enabled */
+		 | (1 << 2)			/* C	Data and unified enabled */
+		 | (0 << 1)			/* A	Alignment fault checking disabled */
+		 | (1 << 0)			/* M	MMU enable */
+		;
+		self.vcpu
+			.write_system_register(SystemRegister::SCTLR_EL1, sctrl_el1)?;
 
 		Ok(())
 	}
