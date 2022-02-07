@@ -74,7 +74,7 @@ const MAX_ARGC: usize = 128;
 const MAX_ENVC: usize = 128;
 
 #[repr(C, packed)]
-struct SysCmdsize {
+pub struct SysCmdsize {
 	argc: i32,
 	argsz: [i32; MAX_ARGC],
 	envc: i32,
@@ -143,8 +143,7 @@ pub trait VirtualCPU {
 
 	fn args(&self) -> &[OsString];
 
-	fn cmdsize(&self, args_ptr: usize) {
-		let syssize = unsafe { &mut *(args_ptr as *mut SysCmdsize) };
+	fn cmdsize(&self, syssize: &mut SysCmdsize) {
 		syssize.argc = 0;
 		syssize.envc = 0;
 

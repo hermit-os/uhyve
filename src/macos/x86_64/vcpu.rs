@@ -3,6 +3,7 @@
 use crate::consts::*;
 use crate::macos::x86_64::ioapic::IoApic;
 use crate::vm::HypervisorResult;
+use crate::vm::SysCmdsize;
 use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
@@ -751,7 +752,10 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_CMDSIZE => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							self.cmdsize(self.host_address(data_addr as usize));
+							let syssize = unsafe {
+								&mut *(self.host_address(data_addr as usize) as *mut SysCmdsize)
+							};
+							self.cmdsize(syssize);
 							self.vcpu.write_register(&Register::RIP, rip + len)?;
 						}
 						UHYVE_PORT_CMDVAL => {
