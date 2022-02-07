@@ -3,6 +3,7 @@ use crate::linux::virtio::*;
 use crate::linux::KVM;
 use crate::vm::HypervisorResult;
 use crate::vm::SysCmdsize;
+use crate::vm::SysCmdval;
 use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
 use kvm_bindings::*;
@@ -365,7 +366,9 @@ impl VirtualCPU for UhyveCPU {
 							UHYVE_PORT_CMDVAL => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								self.cmdval(self.host_address(data_addr));
+								let syscmdval =
+									unsafe { &*(self.host_address(data_addr) as *const SysCmdval) };
+								self.cmdval(syscmdval);
 							}
 							UHYVE_PORT_NETWRITE => {
 								match &self.tx {

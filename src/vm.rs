@@ -82,7 +82,7 @@ pub struct SysCmdsize {
 }
 
 #[repr(C, packed)]
-struct SysCmdval {
+pub struct SysCmdval {
 	argv: *const u8,
 	envp: *const u8,
 }
@@ -174,8 +174,7 @@ pub trait VirtualCPU {
 	}
 
 	/// Copies the arguments end environment of the application into the VM's memory.
-	fn cmdval(&self, args_ptr: usize) {
-		let syscmdval = unsafe { &*(args_ptr as *const SysCmdval) };
+	fn cmdval(&self, syscmdval: &SysCmdval) {
 		let argv = self.host_address(syscmdval.argv as usize);
 
 		// copy kernel path as first argument
