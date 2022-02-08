@@ -5,6 +5,7 @@ use crate::vm::HypervisorResult;
 use crate::vm::SysCmdsize;
 use crate::vm::SysCmdval;
 use crate::vm::SysExit;
+use crate::vm::SysOpen;
 use crate::vm::SysUnlink;
 use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
@@ -389,7 +390,9 @@ impl VirtualCPU for UhyveCPU {
 							UHYVE_PORT_OPEN => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								self.open(self.host_address(data_addr));
+								let sysopen =
+									unsafe { &mut *(self.host_address(data_addr) as *mut SysOpen) };
+								self.open(sysopen);
 							}
 							UHYVE_PORT_WRITE => {
 								let data_addr: usize =

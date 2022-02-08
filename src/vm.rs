@@ -49,7 +49,7 @@ struct SysClose {
 }
 
 #[repr(C, packed)]
-struct SysOpen {
+pub struct SysOpen {
 	name: *const u8,
 	flags: i32,
 	mode: i32,
@@ -244,9 +244,8 @@ pub trait VirtualCPU {
 	}
 
 	/// Handles an open syscall by opening a file on the host.
-	fn open(&self, args_ptr: usize) {
+	fn open(&self, sysopen: &mut SysOpen) {
 		unsafe {
-			let sysopen = &mut *(args_ptr as *mut SysOpen);
 			sysopen.ret = libc::open(
 				self.host_address(sysopen.name as usize) as *const i8,
 				sysopen.flags,
