@@ -35,7 +35,7 @@ struct SysWrite {
 }
 
 #[repr(C, packed)]
-struct SysRead {
+pub struct SysRead {
 	fd: i32,
 	buf: *const u8,
 	len: usize,
@@ -262,9 +262,8 @@ pub trait VirtualCPU {
 	}
 
 	/// Handles an read syscall on the host.
-	fn read(&self, args_ptr: usize) {
+	fn read(&self, sysread: &mut SysRead) {
 		unsafe {
-			let sysread = &mut *(args_ptr as *mut SysRead);
 			let buffer = self.virt_to_phys(sysread.buf as usize);
 
 			let bytes_read = libc::read(
