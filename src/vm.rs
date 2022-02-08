@@ -88,7 +88,7 @@ pub struct SysCmdval {
 }
 
 #[repr(C, packed)]
-struct SysUnlink {
+pub struct SysUnlink {
 	name: *const u8,
 	ret: i32,
 }
@@ -232,9 +232,8 @@ pub trait VirtualCPU {
 
 	/// unlink deletes a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
 	/// TODO: UNSAFE AS *%@#. It has to be checked that the VM is allowed to unlink that file!
-	fn unlink(&self, args_ptr: usize) {
+	fn unlink(&self, sysunlink: &mut SysUnlink) {
 		unsafe {
-			let sysunlink = &mut *(args_ptr as *mut SysUnlink);
 			sysunlink.ret = libc::unlink(self.host_address(sysunlink.name as usize) as *const i8);
 		}
 	}

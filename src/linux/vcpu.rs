@@ -4,6 +4,7 @@ use crate::linux::KVM;
 use crate::vm::HypervisorResult;
 use crate::vm::SysCmdsize;
 use crate::vm::SysCmdval;
+use crate::vm::SysUnlink;
 use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
 use kvm_bindings::*;
@@ -402,7 +403,10 @@ impl VirtualCPU for UhyveCPU {
 							UHYVE_PORT_UNLINK => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								self.unlink(self.host_address(data_addr));
+								let sysunlink = unsafe {
+									&mut *(self.host_address(data_addr) as *mut SysUnlink)
+								};
+								self.unlink(sysunlink);
 							}
 							UHYVE_PORT_LSEEK => {
 								let data_addr: usize =
