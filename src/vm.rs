@@ -57,7 +57,7 @@ pub struct SysOpen {
 }
 
 #[repr(C, packed)]
-struct SysLseek {
+pub struct SysLseek {
 	fd: i32,
 	offset: isize,
 	whence: i32,
@@ -303,9 +303,8 @@ pub trait VirtualCPU {
 	}
 
 	/// Handles an write syscall on the host.
-	fn lseek(&self, args_ptr: usize) {
+	fn lseek(&self, syslseek: &mut SysLseek) {
 		unsafe {
-			let syslseek = &mut *(args_ptr as *mut SysLseek);
 			syslseek.offset =
 				libc::lseek(syslseek.fd, syslseek.offset as i64, syslseek.whence) as isize;
 		}

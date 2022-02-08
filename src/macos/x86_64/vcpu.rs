@@ -7,6 +7,7 @@ use crate::vm::SysClose;
 use crate::vm::SysCmdsize;
 use crate::vm::SysCmdval;
 use crate::vm::SysExit;
+use crate::vm::SysLseek;
 use crate::vm::SysOpen;
 use crate::vm::SysRead;
 use crate::vm::SysUnlink;
@@ -821,7 +822,10 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_LSEEK => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							self.lseek(self.host_address(data_addr as usize));
+							let syslseek = unsafe {
+								&mut *(self.host_address(data_addr as usize) as *mut SysLseek)
+							};
+							self.lseek(syslseek);
 							self.vcpu.write_register(&Register::RIP, rip + len)?;
 						}
 						UHYVE_PORT_CLOSE => {
