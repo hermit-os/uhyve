@@ -64,7 +64,7 @@ struct SysLseek {
 }
 
 #[repr(C, packed)]
-struct SysExit {
+pub struct SysExit {
 	arg: i32,
 }
 
@@ -239,8 +239,7 @@ pub trait VirtualCPU {
 	}
 
 	/// Reads the exit code from an VM and returns it
-	fn exit(&self, args_ptr: usize) -> i32 {
-		let sysexit = unsafe { &*(args_ptr as *const SysExit) };
+	fn exit(&self, sysexit: &SysExit) -> i32 {
 		sysexit.arg
 	}
 

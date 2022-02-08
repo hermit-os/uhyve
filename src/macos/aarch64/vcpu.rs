@@ -7,6 +7,7 @@ use crate::aarch64::{
 };
 use crate::consts::*;
 use crate::vm::HypervisorResult;
+use crate::vm::SysExit;
 use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
 use log::debug;
@@ -180,9 +181,10 @@ impl VirtualCPU for UhyveCPU {
 							}
 							UHYVE_PORT_EXIT => {
 								let data_addr = self.vcpu.read_register(Register::X8)?;
-								return Ok(VcpuStopReason::Exit(
-									self.exit(self.host_address(data_addr as usize)),
-								));
+								let sysexit = unsafe {
+									&*(self.host_address(data_addr as usize) as *const SysExit)
+								};
+								return Ok(VcpuStopReason::Exit(self.exit(sysexit)));
 							}
 							_ => {
 								error!("Unable to handle exception {:?}", exception);
