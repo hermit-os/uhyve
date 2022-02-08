@@ -28,7 +28,7 @@ use crate::os::DebugExitInfo;
 use crate::os::HypervisorError;
 
 #[repr(C, packed)]
-struct SysWrite {
+pub struct SysWrite {
 	fd: i32,
 	buf: *const u8,
 	len: usize,
@@ -280,8 +280,7 @@ pub trait VirtualCPU {
 	}
 
 	/// Handles an write syscall on the host.
-	fn write(&self, args_ptr: usize) -> io::Result<()> {
-		let syswrite = unsafe { &*(args_ptr as *const SysWrite) };
+	fn write(&self, syswrite: &SysWrite) -> io::Result<()> {
 		let mut bytes_written: usize = 0;
 		let buffer = self.virt_to_phys(syswrite.buf as usize);
 

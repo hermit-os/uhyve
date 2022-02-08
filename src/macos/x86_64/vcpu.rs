@@ -10,6 +10,7 @@ use crate::vm::SysExit;
 use crate::vm::SysOpen;
 use crate::vm::SysRead;
 use crate::vm::SysUnlink;
+use crate::vm::SysWrite;
 use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
@@ -793,7 +794,10 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_WRITE => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							self.write(self.host_address(data_addr as usize)).unwrap();
+							let syswrite = unsafe {
+								&*(self.host_address(data_addr as usize) as *const SysWrite)
+							};
+							self.write(syswrite).unwrap();
 							self.vcpu.write_register(&Register::RIP, rip + len)?;
 						}
 						UHYVE_PORT_READ => {
