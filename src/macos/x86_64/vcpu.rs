@@ -3,6 +3,7 @@
 use crate::consts::*;
 use crate::macos::x86_64::ioapic::IoApic;
 use crate::vm::HypervisorResult;
+use crate::vm::SysClose;
 use crate::vm::SysCmdsize;
 use crate::vm::SysCmdval;
 use crate::vm::SysExit;
@@ -818,7 +819,10 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_CLOSE => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							self.close(self.host_address(data_addr as usize));
+							let sysclose = unsafe {
+								&mut *(self.host_address(data_addr as usize) as *mut SysClose)
+							};
+							self.close(sysclose);
 							self.vcpu.write_register(&Register::RIP, rip + len)?;
 						}
 						_ => {

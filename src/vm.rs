@@ -43,7 +43,7 @@ struct SysRead {
 }
 
 #[repr(C, packed)]
-struct SysClose {
+pub struct SysClose {
 	fd: i32,
 	ret: i32,
 }
@@ -255,9 +255,8 @@ pub trait VirtualCPU {
 	}
 
 	/// Handles an close syscall by closing the file on the host.
-	fn close(&self, args_ptr: usize) {
+	fn close(&self, sysclose: &mut SysClose) {
 		unsafe {
-			let sysclose = &mut *(args_ptr as *mut SysClose);
 			sysclose.ret = libc::close(sysclose.fd);
 		}
 	}

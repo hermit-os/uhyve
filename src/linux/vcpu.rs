@@ -2,6 +2,7 @@ use crate::consts::*;
 use crate::linux::virtio::*;
 use crate::linux::KVM;
 use crate::vm::HypervisorResult;
+use crate::vm::SysClose;
 use crate::vm::SysCmdsize;
 use crate::vm::SysCmdval;
 use crate::vm::SysExit;
@@ -420,7 +421,10 @@ impl VirtualCPU for UhyveCPU {
 							UHYVE_PORT_CLOSE => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								self.close(self.host_address(data_addr));
+								let sysclose = unsafe {
+									&mut *(self.host_address(data_addr) as *mut SysClose)
+								};
+								self.close(sysclose);
 							}
 							//TODO:
 							PCI_CONFIG_DATA_PORT => {
