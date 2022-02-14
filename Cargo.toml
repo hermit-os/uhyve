@@ -51,7 +51,7 @@ env_logger = "0.9"
 envmnt = "0.9"
 gdbstub = "0.6"
 gdbstub_arch = "0.2"
-goblin = { version = "0.4", default-features = false, features = ["elf64", "elf32", "endian_fd", "std"] }
+goblin = { version = "0.5", default-features = false, features = ["elf64", "elf32", "endian_fd", "std"] }
 lazy_static = "1.4"
 libc = "0.2"
 log = "0.4"
