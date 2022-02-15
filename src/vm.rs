@@ -28,14 +28,14 @@ use crate::os::DebugExitInfo;
 use crate::os::HypervisorError;
 
 #[repr(C, packed)]
-struct SysWrite {
+pub struct SysWrite {
 	fd: i32,
 	buf: *const u8,
 	len: usize,
 }
 
 #[repr(C, packed)]
-struct SysRead {
+pub struct SysRead {
 	fd: i32,
 	buf: *const u8,
 	len: usize,
@@ -43,13 +43,13 @@ struct SysRead {
 }
 
 #[repr(C, packed)]
-struct SysClose {
+pub struct SysClose {
 	fd: i32,
 	ret: i32,
 }
 
 #[repr(C, packed)]
-struct SysOpen {
+pub struct SysOpen {
 	name: *const u8,
 	flags: i32,
 	mode: i32,
@@ -57,14 +57,14 @@ struct SysOpen {
 }
 
 #[repr(C, packed)]
-struct SysLseek {
+pub struct SysLseek {
 	fd: i32,
 	offset: isize,
 	whence: i32,
 }
 
 #[repr(C, packed)]
-struct SysExit {
+pub struct SysExit {
 	arg: i32,
 }
 
@@ -74,7 +74,7 @@ const MAX_ARGC: usize = 128;
 const MAX_ENVC: usize = 128;
 
 #[repr(C, packed)]
-struct SysCmdsize {
+pub struct SysCmdsize {
 	argc: i32,
 	argsz: [i32; MAX_ARGC],
 	envc: i32,
@@ -82,13 +82,13 @@ struct SysCmdsize {
 }
 
 #[repr(C, packed)]
-struct SysCmdval {
+pub struct SysCmdval {
 	argv: *const u8,
 	envp: *const u8,
 }
 
 #[repr(C, packed)]
-struct SysUnlink {
+pub struct SysUnlink {
 	name: *const u8,
 	ret: i32,
 }
@@ -143,8 +143,7 @@ pub trait VirtualCPU {
 
 	fn args(&self) -> &[OsString];
 
-	fn cmdsize(&self, args_ptr: usize) {
-		let syssize = unsafe { &mut *(args_ptr as *mut SysCmdsize) };
+	fn cmdsize(&self, syssize: &mut SysCmdsize) {
 		syssize.argc = 0;
 		syssize.envc = 0;
 
@@ -175,8 +174,7 @@ pub trait VirtualCPU {
 	}
 
 	/// Copies the arguments end environment of the application into the VM's memory.
-	fn cmdval(&self, args_ptr: usize) {
-		let syscmdval = unsafe { &*(args_ptr as *const SysCmdval) };
+	fn cmdval(&self, syscmdval: &SysCmdval) {
 		let argv = self.host_address(syscmdval.argv as usize);
 
 		// copy kernel path as first argument
@@ -234,23 +232,20 @@ pub trait VirtualCPU {
 
 	/// unlink deletes a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
 	/// TODO: UNSAFE AS *%@#. It has to be checked that the VM is allowed to unlink that file!
-	fn unlink(&self, args_ptr: usize) {
+	fn unlink(&self, sysunlink: &mut SysUnlink) {
 		unsafe {
-			let sysunlink = &mut *(args_ptr as *mut SysUnlink);
 			sysunlink.ret = libc::unlink(self.host_address(sysunlink.name as usize) as *const i8);
 		}
 	}
 
 	/// Reads the exit code from an VM and returns it
-	fn exit(&self, args_ptr: usize) -> i32 {
-		let sysexit = unsafe { &*(args_ptr as *const SysExit) };
+	fn exit(&self, sysexit: &SysExit) -> i32 {
 		sysexit.arg
 	}
 
 	/// Handles an open syscall by opening a file on the host.
-	fn open(&self, args_ptr: usize) {
+	fn open(&self, sysopen: &mut SysOpen) {
 		unsafe {
-			let sysopen = &mut *(args_ptr as *mut SysOpen);
 			sysopen.ret = libc::open(
 				self.host_address(sysopen.name as usize) as *const i8,
 				sysopen.flags,
@@ -260,17 +255,15 @@ pub trait VirtualCPU {
 	}
 
 	/// Handles an close syscall by closing the file on the host.
-	fn close(&self, args_ptr: usize) {
+	fn close(&self, sysclose: &mut SysClose) {
 		unsafe {
-			let sysclose = &mut *(args_ptr as *mut SysClose);
 			sysclose.ret = libc::close(sysclose.fd);
 		}
 	}
 
 	/// Handles an read syscall on the host.
-	fn read(&self, args_ptr: usize) {
+	fn read(&self, sysread: &mut SysRead) {
 		unsafe {
-			let sysread = &mut *(args_ptr as *mut SysRead);
 			let buffer = self.virt_to_phys(sysread.buf as usize);
 
 			let bytes_read = libc::read(
@@ -287,8 +280,7 @@ pub trait VirtualCPU {
 	}
 
 	/// Handles an write syscall on the host.
-	fn write(&self, args_ptr: usize) -> io::Result<()> {
-		let syswrite = unsafe { &*(args_ptr as *const SysWrite) };
+	fn write(&self, syswrite: &SysWrite) -> io::Result<()> {
 		let mut bytes_written: usize = 0;
 		let buffer = self.virt_to_phys(syswrite.buf as usize);
 
@@ -311,9 +303,8 @@ pub trait VirtualCPU {
 	}
 
 	/// Handles an write syscall on the host.
-	fn lseek(&self, args_ptr: usize) {
+	fn lseek(&self, syslseek: &mut SysLseek) {
 		unsafe {
-			let syslseek = &mut *(args_ptr as *mut SysLseek);
 			syslseek.offset =
 				libc::lseek(syslseek.fd, syslseek.offset as i64, syslseek.whence) as isize;
 		}

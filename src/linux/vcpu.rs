@@ -2,6 +2,15 @@ use crate::consts::*;
 use crate::linux::virtio::*;
 use crate::linux::KVM;
 use crate::vm::HypervisorResult;
+use crate::vm::SysClose;
+use crate::vm::SysCmdsize;
+use crate::vm::SysCmdval;
+use crate::vm::SysExit;
+use crate::vm::SysLseek;
+use crate::vm::SysOpen;
+use crate::vm::SysRead;
+use crate::vm::SysUnlink;
+use crate::vm::SysWrite;
 use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
 use kvm_bindings::*;
@@ -356,12 +365,17 @@ impl VirtualCPU for UhyveCPU {
 							UHYVE_PORT_CMDSIZE => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								self.cmdsize(self.host_address(data_addr));
+								let syssize = unsafe {
+									&mut *(self.host_address(data_addr) as *mut SysCmdsize)
+								};
+								self.cmdsize(syssize);
 							}
 							UHYVE_PORT_CMDVAL => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								self.cmdval(self.host_address(data_addr));
+								let syscmdval =
+									unsafe { &*(self.host_address(data_addr) as *const SysCmdval) };
+								self.cmdval(syscmdval);
 							}
 							UHYVE_PORT_NETWRITE => {
 								match &self.tx {
@@ -373,39 +387,54 @@ impl VirtualCPU for UhyveCPU {
 							UHYVE_PORT_EXIT => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								return Ok(VcpuStopReason::Exit(
-									self.exit(self.host_address(data_addr)),
-								));
+								let sysexit =
+									unsafe { &*(self.host_address(data_addr) as *const SysExit) };
+								return Ok(VcpuStopReason::Exit(self.exit(sysexit)));
 							}
 							UHYVE_PORT_OPEN => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								self.open(self.host_address(data_addr));
+								let sysopen =
+									unsafe { &mut *(self.host_address(data_addr) as *mut SysOpen) };
+								self.open(sysopen);
 							}
 							UHYVE_PORT_WRITE => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								self.write(self.host_address(data_addr))?;
+								let syswrite =
+									unsafe { &*(self.host_address(data_addr) as *const SysWrite) };
+								self.write(syswrite)?;
 							}
 							UHYVE_PORT_READ => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								self.read(self.host_address(data_addr));
+								let sysread =
+									unsafe { &mut *(self.host_address(data_addr) as *mut SysRead) };
+								self.read(sysread);
 							}
 							UHYVE_PORT_UNLINK => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								self.unlink(self.host_address(data_addr));
+								let sysunlink = unsafe {
+									&mut *(self.host_address(data_addr) as *mut SysUnlink)
+								};
+								self.unlink(sysunlink);
 							}
 							UHYVE_PORT_LSEEK => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								self.lseek(self.host_address(data_addr));
+								let syslseek = unsafe {
+									&mut *(self.host_address(data_addr) as *mut SysLseek)
+								};
+								self.lseek(syslseek);
 							}
 							UHYVE_PORT_CLOSE => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								self.close(self.host_address(data_addr));
+								let sysclose = unsafe {
+									&mut *(self.host_address(data_addr) as *mut SysClose)
+								};
+								self.close(sysclose);
 							}
 							//TODO:
 							PCI_CONFIG_DATA_PORT => {

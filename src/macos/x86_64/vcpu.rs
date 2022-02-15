@@ -3,6 +3,15 @@
 use crate::consts::*;
 use crate::macos::x86_64::ioapic::IoApic;
 use crate::vm::HypervisorResult;
+use crate::vm::SysClose;
+use crate::vm::SysCmdsize;
+use crate::vm::SysCmdval;
+use crate::vm::SysExit;
+use crate::vm::SysLseek;
+use crate::vm::SysOpen;
+use crate::vm::SysRead;
+use crate::vm::SysUnlink;
+use crate::vm::SysWrite;
 use crate::vm::VcpuStopReason;
 use crate::vm::VirtualCPU;
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
@@ -751,56 +760,81 @@ impl VirtualCPU for UhyveCPU {
 						UHYVE_PORT_CMDSIZE => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							self.cmdsize(self.host_address(data_addr as usize));
+							let syssize = unsafe {
+								&mut *(self.host_address(data_addr as usize) as *mut SysCmdsize)
+							};
+							self.cmdsize(syssize);
 							self.vcpu.write_register(&Register::RIP, rip + len)?;
 						}
 						UHYVE_PORT_CMDVAL => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							self.cmdval(self.host_address(data_addr as usize));
+							let syscmdval = unsafe {
+								&*(self.host_address(data_addr as usize) as *const SysCmdval)
+							};
+							self.cmdval(syscmdval);
 							self.vcpu.write_register(&Register::RIP, rip + len)?;
 						}
 						UHYVE_PORT_EXIT => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							return Ok(VcpuStopReason::Exit(
-								self.exit(self.host_address(data_addr as usize)),
-							));
+							let sysexit = unsafe {
+								&*(self.host_address(data_addr as usize) as *const SysExit)
+							};
+							return Ok(VcpuStopReason::Exit(self.exit(sysexit)));
 						}
 						UHYVE_PORT_OPEN => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							self.open(self.host_address(data_addr as usize));
+							let sysopen = unsafe {
+								&mut *(self.host_address(data_addr as usize) as *mut SysOpen)
+							};
+							self.open(sysopen);
 							self.vcpu.write_register(&Register::RIP, rip + len)?;
 						}
 						UHYVE_PORT_WRITE => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							self.write(self.host_address(data_addr as usize)).unwrap();
+							let syswrite = unsafe {
+								&*(self.host_address(data_addr as usize) as *const SysWrite)
+							};
+							self.write(syswrite).unwrap();
 							self.vcpu.write_register(&Register::RIP, rip + len)?;
 						}
 						UHYVE_PORT_READ => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							self.read(self.host_address(data_addr as usize));
+							let sysread = unsafe {
+								&mut *(self.host_address(data_addr as usize) as *mut SysRead)
+							};
+							self.read(sysread);
 							self.vcpu.write_register(&Register::RIP, rip + len)?;
 						}
 						UHYVE_PORT_UNLINK => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							self.unlink(self.host_address(data_addr as usize));
+							let sysunlink = unsafe {
+								&mut *(self.host_address(data_addr as usize) as *mut SysUnlink)
+							};
+							self.unlink(sysunlink);
 							self.vcpu.write_register(&Register::RIP, rip + len)?;
 						}
 						UHYVE_PORT_LSEEK => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							self.lseek(self.host_address(data_addr as usize));
+							let syslseek = unsafe {
+								&mut *(self.host_address(data_addr as usize) as *mut SysLseek)
+							};
+							self.lseek(syslseek);
 							self.vcpu.write_register(&Register::RIP, rip + len)?;
 						}
 						UHYVE_PORT_CLOSE => {
 							let data_addr: u64 =
 								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							self.close(self.host_address(data_addr as usize));
+							let sysclose = unsafe {
+								&mut *(self.host_address(data_addr as usize) as *mut SysClose)
+							};
+							self.close(sysclose);
 							self.vcpu.write_register(&Register::RIP, rip + len)?;
 						}
 						_ => {
