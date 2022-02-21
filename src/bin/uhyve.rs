@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::process;
 use std::str::FromStr;
 
-use clap::{App, ErrorKind, IntoApp, Parser};
+use clap::{Command, ErrorKind, IntoApp, Parser};
 use core_affinity::CoreId;
 use either::Either;
 use mac_address::MacAddress;
@@ -49,10 +49,10 @@ struct Args {
 	#[clap(short, long)]
 	verbose: bool,
 
-	#[clap(flatten, help_heading = "MEMORY")]
+	#[clap(flatten, next_help_heading = "MEMORY")]
 	memory_args: MemoryArgs,
 
-	#[clap(flatten, help_heading = "CPU")]
+	#[clap(flatten, next_help_heading = "CPU")]
 	cpu_args: CpuArgs,
 
 	/// GDB server port
@@ -205,18 +205,18 @@ struct CpuArgs {
 }
 
 impl CpuArgs {
-	fn get_affinity(self, app: &mut App<'_>) -> Option<Vec<CoreId>> {
+	fn get_affinity(self, app: &mut Command<'_>) -> Option<Vec<CoreId>> {
 		self.affinity.map(|affinity| {
 			let affinity_num_vals = affinity.0.len();
 			let cpus_num_vals = self.cpu_count.get().try_into().unwrap();
 			if affinity_num_vals != cpus_num_vals {
 				let affinity_arg = app
 					.get_arguments()
-					.find(|arg| arg.get_name() == "affinity")
+					.find(|arg| arg.get_id() == "affinity")
 					.unwrap();
 				let cpus_arg = app
 					.get_arguments()
-					.find(|arg| arg.get_name() == "cpus")
+					.find(|arg| arg.get_id() == "cpus")
 					.unwrap();
 				let verb = if affinity_num_vals > 1 { "were" } else { "was" };
 				let message = format!(
@@ -316,7 +316,7 @@ fn run_uhyve() -> i32 {
 
 	env_logger::init();
 
-	let mut app = Args::into_app();
+	let mut app = Args::command();
 	let args = Args::parse();
 	let kernel = args.kernel.clone();
 	let affinity = args.cpu_args.clone().get_affinity(&mut app);
