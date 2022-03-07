@@ -25,7 +25,7 @@ jobs:
           - arch: aarch64
             os: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-target
         with:
           arch: ${{ matrix.arch }}
@@ -39,7 +39,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Test
         run: |
           cargo test --lib
@@ -54,7 +54,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends gdb
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Integration Tests
         run: cargo test --test '*'
 
@@ -62,10 +62,10 @@ jobs:
     name: rusty_demo
     runs-on: [self-hosted]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           path: uhyve
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           repository: hermitcore/rusty-hermit
           path: rusty-hermit
@@ -84,7 +84,7 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Format
         run: cargo fmt --all -- --check
       - name: Format Test Kernels
@@ -102,7 +102,7 @@ jobs:
           - arch: aarch64
             os: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-target
         with:
           arch: ${{ matrix.arch }}
@@ -116,7 +116,7 @@ jobs:
     steps:
       - name: Install rusty-hermit dependencies
         run: cargo install cargo-download cargo-binutils
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Clippy Test Kernels
         run: cargo clippy --all-targets -- -D warnings
         working-directory: tests/test-kernels
@@ -129,7 +129,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends gdb
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Install cargo-llvm-cov
         run: curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin
       - name: Generate code coverage
