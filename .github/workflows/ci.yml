@@ -71,7 +71,7 @@ jobs:
           path: rusty-hermit
           submodules: true
       - name: Build rusty_demo
-        run: cargo build -p rusty_demo
+        run: cargo build -Zbuild-std=core,alloc,std,panic_abort -Zbuild-std-features=compiler-builtins-mem --target x86_64-unknown-hermit --package rusty_demo
         working-directory: rusty-hermit
       - name: Run rusty_demo
         run: RUST_LOG=debug cargo run -- --verbose ../rusty-hermit/target/x86_64-unknown-hermit/debug/rusty_demo
