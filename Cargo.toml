@@ -48,7 +48,7 @@ clap = { version = "3.1", features = ["derive", "env"] }
 core_affinity = "0.5"
 either = "1.6"
 env_logger = "0.9"
-envmnt = "0.9"
+envmnt = "0.10"
 gdbstub = "0.6"
 gdbstub_arch = "0.2"
 goblin = { version = "0.5", default-features = false, features = ["elf64", "elf32", "endian_fd", "std"] }
@@ -65,7 +65,7 @@ rftrace-frontend = { version = "0.1", optional = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.5"
 kvm-ioctls = "0.10"
-nix = "0.23"
+nix = "0.24"
 tun-tap = { version = "0.1", default-features = false }
 virtio-bindings = { version = "0.1", features = ["virtio-v4_14_0"] }
 vmm-sys-util = "0.9"
