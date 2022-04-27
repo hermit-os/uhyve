@@ -53,7 +53,11 @@ jobs:
       - name: Install gdb
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gdb
+          sudo apt-get install gdb
+      - name: Install cargo-binutils, cargo-download
+        run: |
+          cargo install cargo-binutils
+          cargo install cargo-download
       - uses: actions/checkout@v3
       - name: Integration Tests
         run: cargo test --test '*'
@@ -62,6 +66,10 @@ jobs:
     name: rusty_demo
     runs-on: [self-hosted]
     steps:
+      - name: Install NASM
+        run: |
+          sudo apt-get update
+          sudo apt-get install nasm
       - uses: actions/checkout@v3
         with:
           path: uhyve
@@ -128,7 +136,11 @@ jobs:
       - name: Install gdb
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gdb
+          sudo apt-get install gdb
+      - name: Install cargo-binutils, cargo-download
+        run: |
+          cargo install cargo-binutils
+          cargo install cargo-download
       - uses: actions/checkout@v3
       - name: Install cargo-llvm-cov
         run: curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin
