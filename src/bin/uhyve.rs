@@ -189,6 +189,11 @@ struct CpuArgs {
 	#[clap(short, long, default_value_t, env = "HERMIT_CPU_COUNT")]
 	cpu_count: CpuCount,
 
+	/// Create a PIT
+	#[clap(long)]
+	#[cfg(target_os = "linux")]
+	pit: bool,
+
 	/// Bind guest vCPUs to host cpus
 	///
 	/// A list of host CPU numbers onto which the guest vCPUs should be bound to obtain performance benefits.
@@ -270,10 +275,13 @@ impl From<Args> for Params {
 					#[cfg(target_os = "linux")]
 					ksm,
 				},
-			cpu_args: CpuArgs {
-				cpu_count,
-				affinity: _,
-			},
+			cpu_args:
+				CpuArgs {
+					cpu_count,
+					#[cfg(target_os = "linux")]
+					pit,
+					affinity: _,
+				},
 			#[cfg(target_os = "linux")]
 			gdb_port,
 			#[cfg(target_os = "linux")]
@@ -295,6 +303,8 @@ impl From<Args> for Params {
 			#[cfg(target_os = "linux")]
 			ksm,
 			cpu_count,
+			#[cfg(target_os = "linux")]
+			pit,
 			#[cfg(target_os = "linux")]
 			ip,
 			#[cfg(target_os = "linux")]
