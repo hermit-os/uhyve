@@ -38,7 +38,6 @@ instrument = ["rftrace", "rftrace-frontend"]
 
 [patch.crates-io]
 x86_64 = { git = "https://github.com/mkroening/x86_64", branch = "debug-stable" }
-xhypervisor = { git = "https://github.com/RWTH-OS/xhypervisor.git", branch = "aarch64" }
 
 [dependencies]
 bitflags = "1.3"
@@ -72,7 +71,7 @@ vmm-sys-util = "0.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 burst = "0.0"
-xhypervisor = "0"
+xhypervisor = "0.2"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = { version = "0.14", default-features = false }
