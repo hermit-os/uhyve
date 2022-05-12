@@ -82,14 +82,14 @@ struct MemoryArgs {
 	#[clap(short = 'm', long, default_value_t, env = "HERMIT_MEMORY_SIZE")]
 	memory_size: GuestMemorySize,
 
-	/// No Transparent Hugepages
+	/// Transparent Hugepages
 	///
-	/// Don't advise the kernel to enable Transparent Hugepages [THP] on the virtual RAM.
+	/// Advise the kernel to enable Transparent Hugepages [THP] on the virtual RAM.
 	///
 	/// [THP]: https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html
 	#[clap(long)]
 	#[cfg(target_os = "linux")]
-	no_thp: bool,
+	thp: bool,
 
 	/// Kernel Samepage Merging
 	///
@@ -266,7 +266,7 @@ impl From<Args> for Params {
 				MemoryArgs {
 					memory_size,
 					#[cfg(target_os = "linux")]
-					no_thp,
+					thp,
 					#[cfg(target_os = "linux")]
 					ksm,
 				},
@@ -291,7 +291,7 @@ impl From<Args> for Params {
 			verbose,
 			memory_size,
 			#[cfg(target_os = "linux")]
-			thp: !no_thp,
+			thp,
 			#[cfg(target_os = "linux")]
 			ksm,
 			cpu_count,
