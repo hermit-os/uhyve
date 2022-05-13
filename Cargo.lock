@@ -873,6 +873,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustversion"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2cc38e8fa666e2de3c4aba7edeb5ffc5246c1c2ed0e3d17e560aeeba736b23f"
+
+[[package]]
 name = "ryu"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1270,11 +1276,12 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "x86_64"
-version = "0.14.4"
-source = "git+https://github.com/mkroening/x86_64?branch=debug-stable#6da998935e7ea79a8db33c7149198a67f95696ec"
+version = "0.14.9"
+source = "git+https://github.com/rust-osdev/x86_64#3a8f380174a3ced2c4d623099ca7ad1353dc9c53"
 dependencies = [
  "bit_field",
  "bitflags",
+ "rustversion",
  "volatile",
 ]
 

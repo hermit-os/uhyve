@@ -3,8 +3,8 @@
 use gdbstub::{stub::SingleThreadStopReason, target::ext::breakpoints::WatchKind};
 use x86_64::{
 	registers::debug::{
-		DebugAddressRegisterNumber, Dr6Flags, Dr7Flags, Dr7Value, HwBreakpointCondition,
-		HwBreakpointSize, TryFromIntError,
+		BreakpointCondition, BreakpointSize, DebugAddressRegisterNumber, Dr6Flags, Dr7Flags,
+		Dr7Value,
 	},
 	VirtAddr,
 };
@@ -12,29 +12,29 @@ use x86_64::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HwBreakpoint {
 	addr: VirtAddr,
-	size: HwBreakpointSize,
-	condition: HwBreakpointCondition,
+	size: BreakpointSize,
+	condition: BreakpointCondition,
 }
 
 impl HwBreakpoint {
-	pub fn new_breakpoint(addr: u64, kind: usize) -> Result<Self, TryFromIntError> {
-		Ok(Self {
+	pub fn new_breakpoint(addr: u64, kind: usize) -> Option<Self> {
+		Some(Self {
 			addr: VirtAddr::new(addr),
-			size: kind.try_into()?,
-			condition: HwBreakpointCondition::InstructionExecution,
+			size: BreakpointSize::new(kind)?,
+			condition: BreakpointCondition::InstructionExecution,
 		})
 	}
 
 	pub fn new_watchpoint(addr: u64, len: u64, kind: WatchKind) -> Option<Self> {
 		let condition = match kind {
-			WatchKind::Write => Some(HwBreakpointCondition::DataWrites),
+			WatchKind::Write => Some(BreakpointCondition::DataWrites),
 			WatchKind::Read => None,
-			WatchKind::ReadWrite => Some(HwBreakpointCondition::DataReadsWrites),
+			WatchKind::ReadWrite => Some(BreakpointCondition::DataReadsWrites),
 		}?;
 
 		let ret = Self {
 			addr: VirtAddr::new(addr),
-			size: usize::try_from(len).ok()?.try_into().ok()?,
+			size: BreakpointSize::new(len.try_into().ok()?)?,
 			condition,
 		};
 
@@ -81,9 +81,7 @@ impl HwBreakpoints {
 			}) {
 			let n = DebugAddressRegisterNumber::new(i.try_into().unwrap()).unwrap();
 
-			dr7_value
-				.flags_mut()
-				.insert(Dr7Flags::global_breakpoint_enable(n));
+			dr7_value.insert_flags(Dr7Flags::global_breakpoint_enable(n));
 			dr7_value.set_condition(n, hw_breakpoint.condition);
 			dr7_value.set_size(n, hw_breakpoint.size);
 		}
@@ -123,18 +121,18 @@ impl HwBreakpoints {
 			let breakpoint = self.0[usize::from(n)].unwrap();
 
 			match breakpoint.condition {
-				HwBreakpointCondition::InstructionExecution => SingleThreadStopReason::HwBreak(()),
-				HwBreakpointCondition::DataWrites => SingleThreadStopReason::Watch {
+				BreakpointCondition::InstructionExecution => SingleThreadStopReason::HwBreak(()),
+				BreakpointCondition::DataWrites => SingleThreadStopReason::Watch {
 					tid: (),
 					kind: WatchKind::Write,
 					addr: breakpoint.addr.as_u64(),
 				},
-				HwBreakpointCondition::DataReadsWrites => SingleThreadStopReason::Watch {
+				BreakpointCondition::DataReadsWrites => SingleThreadStopReason::Watch {
 					tid: (),
 					kind: WatchKind::ReadWrite,
 					addr: breakpoint.addr.as_u64(),
 				},
-				HwBreakpointCondition::IoReadsWrites => unreachable!(),
+				BreakpointCondition::IoReadsWrites => unreachable!(),
 			}
 		}
 	}
