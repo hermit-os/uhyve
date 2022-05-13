@@ -60,7 +60,7 @@ impl Default for Params {
 			verbose: Default::default(),
 			memory_size: Default::default(),
 			#[cfg(target_os = "linux")]
-			thp: true,
+			thp: false,
 			#[cfg(target_os = "linux")]
 			ksm: false,
 			cpu_count: Default::default(),
