@@ -29,6 +29,10 @@ pub struct Params {
 	/// Number of guest CPUs
 	pub cpu_count: CpuCount,
 
+	/// Create a PIT
+	#[cfg(target_os = "linux")]
+	pub pit: bool,
+
 	/// GDB server port
 	#[cfg(target_os = "linux")]
 	pub gdb_port: Option<u16>,
@@ -63,6 +67,8 @@ impl Default for Params {
 			thp: false,
 			#[cfg(target_os = "linux")]
 			ksm: false,
+			#[cfg(target_os = "linux")]
+			pit: false,
 			cpu_count: Default::default(),
 			#[cfg(target_os = "linux")]
 			gdb_port: Default::default(),

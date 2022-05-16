@@ -205,6 +205,10 @@ impl Uhyve {
 		// create basic interrupt controller
 		vm.create_irq_chip()?;
 
+		if params.pit {
+			vm.create_pit2(kvm_pit_config::default()).unwrap();
+		}
+
 		// enable x2APIC support
 		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
 			cap: KVM_CAP_X2APIC_API,
