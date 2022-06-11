@@ -1,4 +1,3 @@
-use crate::arch::x86_64::BootInfo;
 use crate::consts::*;
 use crate::macos::x86_64::ioapic::IoApic;
 use crate::macos::x86_64::vcpu::*;
@@ -6,6 +5,7 @@ use crate::params::Params;
 use crate::vm::HypervisorResult;
 use crate::vm::Vm;
 use crate::x86_64::create_gdt_entry;
+use hermit_entry::RawBootInfo;
 use libc;
 use libc::c_void;
 use log::debug;
@@ -15,7 +15,6 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 use std::path::PathBuf;
 use std::ptr;
-use std::ptr::read_volatile;
 use std::sync::{Arc, Mutex};
 use x86_64::structures::paging::{Page, PageTable, PageTableFlags, Size2MiB};
 use x86_64::PhysAddr;
@@ -29,7 +28,7 @@ pub struct Uhyve {
 	num_cpus: u32,
 	path: PathBuf,
 	args: Vec<OsString>,
-	boot_info: *const BootInfo,
+	boot_info: *const RawBootInfo,
 	ioapic: Arc<Mutex<IoApic>>,
 	verbose: bool,
 }
@@ -154,16 +153,15 @@ impl Vm for Uhyve {
 		None
 	}
 
-	fn set_boot_info(&mut self, header: *const BootInfo) {
+	fn set_boot_info(&mut self, header: *const RawBootInfo) {
 		self.boot_info = header;
 	}
 
 	fn cpu_online(&self) -> u32 {
-		if self.boot_info.is_null() {
-			0
-		} else {
-			unsafe { read_volatile(&(*self.boot_info).cpu_online) }
-		}
+		let boot_info = unsafe { self.boot_info.as_ref() };
+		boot_info
+			.map(RawBootInfo::load_cpu_online)
+			.unwrap_or_default()
 	}
 
 	/// Initialize the page tables for the guest
