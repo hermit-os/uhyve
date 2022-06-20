@@ -68,11 +68,11 @@ struct Args {
 	network_args: NetworkArgs,
 
 	/// The kernel to execute
-	#[clap(parse(from_os_str))]
+	#[clap(value_parser)]
 	kernel: PathBuf,
 
 	/// Arguments to forward to the kernel
-	#[clap(parse(from_os_str))]
+	#[clap(value_parser)]
 	kernel_args: Vec<OsString>,
 }
 
