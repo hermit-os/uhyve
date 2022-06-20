@@ -2,13 +2,13 @@ use goblin::elf;
 use goblin::elf64::header::ET_DYN;
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
 use goblin::elf64::reloc::*;
+use hermit_entry::{BootInfo, NetInfo, RawBootInfo, TlsInfo};
 use log::{debug, error, warn};
 use std::ffi::OsString;
 use std::io::Write;
 use std::net::Ipv4Addr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
-use std::ptr::write;
 use std::time::SystemTime;
 use std::{fs, io, mem, slice};
 use thiserror::Error;
@@ -16,11 +16,11 @@ use thiserror::Error;
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::{
 	detect_freq_from_cpuid, detect_freq_from_cpuid_hypervisor_info, get_cpu_frequency_from_os,
-	BootInfo, ELF_HOST_ARCH,
+	ELF_HOST_ARCH,
 };
 
 #[cfg(target_arch = "aarch64")]
-use crate::arch::aarch64::{BootInfo, ELF_HOST_ARCH};
+use crate::arch::aarch64::ELF_HOST_ARCH;
 
 use crate::consts::*;
 use crate::os::vcpu::UhyveCPU;
@@ -330,7 +330,7 @@ pub trait Vm {
 	fn get_entry_point(&self) -> u64;
 	fn kernel_path(&self) -> &Path;
 	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU>;
-	fn set_boot_info(&mut self, header: *const BootInfo);
+	fn set_boot_info(&mut self, header: *const RawBootInfo);
 	fn cpu_online(&self) -> u32;
 	fn get_ip(&self) -> Option<Ipv4Addr>;
 	fn get_gateway(&self) -> Option<Ipv4Addr>;
@@ -362,24 +362,23 @@ pub trait Vm {
 		// acquire the slices of the user memory
 		let (vm_mem, vm_mem_length) = self.guest_mem();
 
-		// create default bootinfo
-		#[allow(clippy::cast_ptr_alignment)]
-		let boot_info = vm_mem.offset(BOOT_INFO_ADDR as isize) as *mut BootInfo;
-		*boot_info = BootInfo::new();
+		// Collect BootInfo, starting with NetInfo
+
+		let mut net_info = NetInfo::default();
 
 		// forward IP address to kernel
 		if let Some(ip) = self.get_ip() {
-			write(&mut (*boot_info).hcip, ip.octets());
+			net_info.ip = ip.octets();
 		}
 
 		// forward gateway address to kernel
 		if let Some(gateway) = self.get_gateway() {
-			write(&mut (*boot_info).hcgateway, gateway.octets());
+			net_info.gateway = gateway.octets();
 		}
 
 		// forward mask to kernel
 		if let Some(mask) = self.get_mask() {
-			write(&mut (*boot_info).hcmask, mask.octets());
+			net_info.mask = mask.octets();
 		}
 
 		let (start_address, elf_entry) = if is_dyn {
@@ -394,38 +393,9 @@ pub trait Vm {
 		self.set_entry_point(elf_entry);
 		debug!("ELF entry point at 0x{:x}", elf_entry);
 
-		debug!("Set HermitCore header at 0x{:x}", BOOT_INFO_ADDR as usize);
-		self.set_boot_info(boot_info);
-
-		write(&mut (*boot_info).base, start_address);
-		write(&mut (*boot_info).limit, vm_mem_length as u64); // memory size
-		write(&mut (*boot_info).possible_cpus, 1);
-		#[cfg(target_os = "linux")]
-		write(&mut (*boot_info).uhyve, 0x3); // announce uhyve and pci support
-		#[cfg(not(target_os = "linux"))]
-		write(&mut (*boot_info).uhyve, 0x1); // announce uhyve
-		write(&mut (*boot_info).current_boot_id, 0);
-		if self.verbose() {
-			write(&mut (*boot_info).uartport, UHYVE_UART_PORT.into());
-		} else {
-			write(&mut (*boot_info).uartport, 0);
-		}
-
-		debug!(
-			"Set stack base to 0x{:x}",
-			start_address - KERNEL_STACK_SIZE
-		);
-		write(
-			&mut (*boot_info).current_stack_address,
-			start_address - KERNEL_STACK_SIZE,
-		);
-
-		write(&mut (*boot_info).host_logical_addr, vm_mem.offset(0) as u64);
-
 		let n = SystemTime::now()
 			.duration_since(SystemTime::UNIX_EPOCH)
 			.expect("SystemTime before UNIX EPOCH!");
-		write(&mut (*boot_info).boot_gtod, n.as_secs() * 1000000);
 
 		#[cfg(target_arch = "aarch64")]
 		let mhz: u32 = 0;
@@ -443,16 +413,14 @@ pub trait Vm {
 
 			mhz
 		};
-
-		debug!("detected a cpu frequency of {} Mhz", mhz);
-		write(&mut (*boot_info).cpu_freq, mhz);
-		if (*boot_info).cpu_freq == 0 {
+		if mhz == 0 {
 			warn!("Unable to determine processor frequency");
 		}
 
 		// load kernel and determine image size
 		let vm_slice = std::slice::from_raw_parts_mut(vm_mem, vm_mem_length);
 		let mut image_size = 0;
+		let mut tls_info = TlsInfo::default();
 		elf.program_headers
 			.iter()
 			.try_for_each(|program_header| match program_header.p_type {
@@ -491,7 +459,6 @@ pub trait Vm {
 					} else {
 						image_size + program_header.p_memsz
 					};
-					write(&mut (*boot_info).image_size, image_size);
 
 					Ok(())
 				}
@@ -504,10 +471,12 @@ pub trait Vm {
 						program_header.p_vaddr
 					};
 
-					write(&mut (*boot_info).tls_start, tls_start);
-					write(&mut (*boot_info).tls_filesz, program_header.p_filesz);
-					write(&mut (*boot_info).tls_memsz, program_header.p_memsz);
-					write(&mut (*boot_info).tls_align, program_header.p_align);
+					tls_info = TlsInfo {
+						start: tls_start,
+						filesz: program_header.p_filesz,
+						memsz: program_header.p_memsz,
+						align: program_header.p_align,
+					};
 
 					Ok(())
 				}
@@ -531,7 +500,36 @@ pub trait Vm {
 			debug!("rel {:?}", rel);
 		});
 
-		debug!("Boot header: {:?}", *boot_info);
+		let boot_info = BootInfo {
+			base: start_address,
+			limit: vm_mem_length as u64, // memory size
+			image_size,
+			tls_info,
+			current_stack_address: start_address - KERNEL_STACK_SIZE,
+			host_logical_addr: vm_mem as u64,
+			boot_gtod: n.as_micros().try_into().unwrap(),
+			cpu_freq: mhz,
+			possible_cpus: 1,
+			uartport: self
+				.verbose()
+				.then(|| UHYVE_UART_PORT.into())
+				.unwrap_or_default(),
+			uhyve: if cfg!(target_os = "linux") {
+				0b11 // announce uhyve and pci support
+			} else {
+				0b01 // announce uhyve
+			},
+			net_info,
+			#[cfg(target_arch = "aarch64")]
+			ram_start: crate::arch::aarch64::RAM_START,
+			..Default::default()
+		};
+
+		debug!("Boot header: {:?}", boot_info);
+		let raw_boot_info = vm_mem.offset(BOOT_INFO_ADDR as isize) as *mut RawBootInfo;
+		*raw_boot_info = boot_info.into();
+		debug!("Set HermitCore header at 0x{:x}", BOOT_INFO_ADDR as usize);
+		self.set_boot_info(raw_boot_info);
 
 		debug!("Kernel loaded");
 

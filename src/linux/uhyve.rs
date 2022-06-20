@@ -1,7 +1,6 @@
 //! This file contains the entry point to the Hypervisor. The Uhyve utilizes KVM to
 //! create a Virtual Machine and load the kernel.
 
-use crate::arch::x86_64::BootInfo;
 use crate::consts::*;
 use crate::linux::vcpu::*;
 use crate::linux::virtio::*;
@@ -11,6 +10,7 @@ use crate::shared_queue::*;
 use crate::vm::HypervisorResult;
 use crate::vm::Vm;
 use crate::x86_64::create_gdt_entry;
+use hermit_entry::RawBootInfo;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use log::debug;
@@ -135,7 +135,7 @@ pub struct Uhyve {
 	num_cpus: u32,
 	path: PathBuf,
 	args: Vec<OsString>,
-	boot_info: *const BootInfo,
+	boot_info: *const RawBootInfo,
 	verbose: bool,
 	ip: Option<Ipv4Addr>,
 	gateway: Option<Ipv4Addr>,
@@ -354,16 +354,15 @@ impl Vm for Uhyve {
 		))
 	}
 
-	fn set_boot_info(&mut self, header: *const BootInfo) {
+	fn set_boot_info(&mut self, header: *const RawBootInfo) {
 		self.boot_info = header;
 	}
 
 	fn cpu_online(&self) -> u32 {
-		if self.boot_info.is_null() {
-			0
-		} else {
-			unsafe { read_volatile(&(*self.boot_info).cpu_online) }
-		}
+		let boot_info = unsafe { self.boot_info.as_ref() };
+		boot_info
+			.map(RawBootInfo::load_cpu_online)
+			.unwrap_or_default()
 	}
 
 	/// Initialize the page tables for the guest

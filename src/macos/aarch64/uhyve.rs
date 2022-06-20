@@ -1,10 +1,11 @@
-use crate::aarch64::{BootInfo, PT_MEM, PT_MEM_CD, PT_PT, PT_SELF};
+use crate::aarch64::{PT_MEM, PT_MEM_CD, PT_PT, PT_SELF};
 use crate::consts::{BOOT_INFO_ADDR, BOOT_PGT, PAGE_SIZE};
 use crate::macos::aarch64::vcpu::*;
 use crate::macos::aarch64::HYPERVISOR_PAGE_SIZE;
 use crate::params::Params;
 use crate::vm::HypervisorResult;
 use crate::vm::Vm;
+use hermit_entry::RawBootInfo;
 use libc;
 use libc::c_void;
 use log::debug;
@@ -13,7 +14,6 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 use std::path::PathBuf;
 use std::ptr;
-use std::ptr::read_volatile;
 use xhypervisor::{create_vm, map_mem, unmap_mem, MemPerm};
 
 pub struct Uhyve {
@@ -24,7 +24,7 @@ pub struct Uhyve {
 	num_cpus: u32,
 	path: PathBuf,
 	args: Vec<OsString>,
-	boot_info: *const BootInfo,
+	boot_info: *const RawBootInfo,
 	verbose: bool,
 }
 
@@ -156,16 +156,15 @@ impl Vm for Uhyve {
 		None
 	}
 
-	fn set_boot_info(&mut self, header: *const BootInfo) {
+	fn set_boot_info(&mut self, header: *const RawBootInfo) {
 		self.boot_info = header;
 	}
 
 	fn cpu_online(&self) -> u32 {
-		if self.boot_info.is_null() {
-			0
-		} else {
-			unsafe { read_volatile(&(*self.boot_info).cpu_online) }
-		}
+		let boot_info = unsafe { self.boot_info.as_ref() };
+		boot_info
+			.map(RawBootInfo::load_cpu_online)
+			.unwrap_or_default()
 	}
 
 	fn init_guest_mem(&self) {
