@@ -75,8 +75,8 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 impl target::ext::breakpoints::HwBreakpoint for GdbUhyve {
 	fn add_hw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
 		let hw_breakpoint = match registers::debug::HwBreakpoint::new_breakpoint(addr, kind) {
-			Ok(hw_breakpoint) => hw_breakpoint,
-			Err(_) => return Ok(false),
+			Some(hw_breakpoint) => hw_breakpoint,
+			None => return Ok(false),
 		};
 
 		let success = self.hw_breakpoints.try_insert(hw_breakpoint).is_ok();
@@ -85,8 +85,8 @@ impl target::ext::breakpoints::HwBreakpoint for GdbUhyve {
 
 	fn remove_hw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
 		let hw_breakpoint = match registers::debug::HwBreakpoint::new_breakpoint(addr, kind) {
-			Ok(hw_breakpoint) => hw_breakpoint,
-			Err(_) => return Ok(false),
+			Some(hw_breakpoint) => hw_breakpoint,
+			None => return Ok(false),
 		};
 
 		let success = self.hw_breakpoints.take(&hw_breakpoint).is_some();

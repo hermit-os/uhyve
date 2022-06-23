@@ -37,7 +37,7 @@ default = []
 instrument = ["rftrace", "rftrace-frontend"]
 
 [patch.crates-io]
-x86_64 = { git = "https://github.com/mkroening/x86_64", branch = "debug-stable" }
+x86_64 = { git = "https://github.com/rust-osdev/x86_64" }
 
 [dependencies]
 bitflags = "1.3"
