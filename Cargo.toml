@@ -30,6 +30,7 @@ name = "uhyvelib"
 
 [[bench]]
 name = "benchmarks"
+path = "benches/benchmarks.rs"
 harness = false
 
 [features]
