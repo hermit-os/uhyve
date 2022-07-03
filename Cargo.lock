@@ -1077,6 +1077,7 @@ name = "uhyve"
 version = "0.0.29"
 dependencies = [
  "assert_fs",
+ "bit_field",
  "bitflags",
  "burst",
  "byte-unit",
@@ -1277,7 +1278,8 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "x86_64"
 version = "0.14.9"
-source = "git+https://github.com/rust-osdev/x86_64#3a8f380174a3ced2c4d623099ca7ad1353dc9c53"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "958cd5cb28e720db2f59ee9dc4235b5f82a183d079fb0e6caf43ad074cfdc66a"
 dependencies = [
  "bit_field",
  "bitflags",
