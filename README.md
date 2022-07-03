@@ -15,17 +15,10 @@ Thus, it should not be used for applications which require isolation from the ho
 An installation of the Rust toolchain is required.
 Please visit the [Rust website](https://www.rust-lang.org/) and follow the installation instructions.
 
-You can install the latest git commit with:
-
-```
-$ cargo install --git https://github.com/hermitcore/uhyve.git --locked uhyve
-```
-
-You can install the last release (outdated, not recommended) with:
+Install uhyve with
 
 ```console
-$ rustup install nightly-2022-01-17
-$ cargo +nightly-2022-01-17 install --locked uhyve
+$ cargo install uhyve
 ```
 
 ## Requirements
