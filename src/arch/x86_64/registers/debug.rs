@@ -1,10 +1,13 @@
 //! Functions to read and write debug registers.
 
-use crate::arch::x86_64::registers::debug_vendor::{
-	BreakpointCondition, BreakpointSize, DebugAddressRegisterNumber, Dr6Flags, Dr7Flags, Dr7Value,
-};
 use gdbstub::{stub::SingleThreadStopReason, target::ext::breakpoints::WatchKind};
-use x86_64::VirtAddr;
+use x86_64::{
+	registers::debug::{
+		BreakpointCondition, BreakpointSize, DebugAddressRegisterNumber, Dr6Flags, Dr7Flags,
+		Dr7Value,
+	},
+	VirtAddr,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HwBreakpoint {

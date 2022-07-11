@@ -2,7 +2,6 @@ mod breakpoints;
 mod regs;
 mod section_offsets;
 
-use crate::arch::x86_64::registers::debug_vendor::Dr6Flags;
 use gdbstub::{
 	common::Signal,
 	conn::{Connection, ConnectionExt},
@@ -17,6 +16,7 @@ use kvm_bindings::{
 use libc::EINVAL;
 use nix::sys::pthread::pthread_self;
 use std::{io::Read, net::TcpStream, sync::Once, thread, time::Duration};
+use x86_64::registers::debug::Dr6Flags;
 
 use crate::linux::{vcpu::UhyveCPU, KickSignal};
 use crate::vm::{VcpuStopReason, VirtualCPU};
