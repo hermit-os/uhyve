@@ -1,5 +1,3 @@
-#![feature(asm)]
-
 #[cfg(target_os = "hermit")]
 use hermit_sys as _;
 
@@ -14,7 +12,7 @@ fn main() {
 
 	let _x: u64;
 	unsafe {
-		asm!("mov rax, rcx", out("rax") _x, out("rcx") _);
+		std::arch::asm!("mov rax, rcx", out("rax") _x, out("rcx") _);
 	}
 
 	let mut _x = 0;
