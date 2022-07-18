@@ -133,9 +133,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "3.2.11"
+version = "3.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d646c7ade5eb07c4aa20e907a922750df0c448892513714fd3e4acbc7130829f"
+checksum = "ab8b79fe3946ceb4a0b1c080b4018992b8d27e9ff363644c1c9b6387c854614d"
 dependencies = [
  "atty",
  "bitflags",
@@ -406,9 +406,9 @@ dependencies = [
 
 [[package]]
 name = "goblin"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfeb764aa29a0774d290c2df134a37ab2e3c1ba59009162626658aabefda321a"
+checksum = "91766b1121940d622933a13e20665857648681816089c9bc2075c4b75a6e4f6b"
 dependencies = [
  "log",
  "plain",
@@ -618,9 +618,9 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.24.1"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f17df307904acd05aa8e32e97bb20f2a0df1728bbc2d771ae8f9a90463441e9"
+checksum = "195cdbc1741b8134346d515b3a56a1c94b0912758009cfd53f99ea0f57b065fc"
 dependencies = [
  "bitflags",
  "cfg-if",
@@ -1087,7 +1087,7 @@ dependencies = [
  "burst",
  "byte-unit",
  "byteorder",
- "clap 3.2.11",
+ "clap 3.2.12",
  "core_affinity",
  "criterion",
  "either",
@@ -1103,7 +1103,7 @@ dependencies = [
  "libc",
  "log",
  "mac_address",
- "nix 0.24.1",
+ "nix 0.24.2",
  "raw-cpuid",
  "rftrace",
  "rftrace-frontend",
