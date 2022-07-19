@@ -54,10 +54,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install gdb
-      - name: Install cargo-binutils, cargo-download
-        run: |
-          cargo install cargo-binutils
-          cargo install cargo-download
       - uses: actions/checkout@v3
       - name: Integration Tests
         run: cargo test --test '*'
@@ -122,8 +118,6 @@ jobs:
     name: Clippy test-kernels
     runs-on: ubuntu-latest
     steps:
-      - name: Install rusty-hermit dependencies
-        run: cargo install cargo-download cargo-binutils
       - uses: actions/checkout@v3
       - name: Clippy Test Kernels
         run: cargo clippy --all-targets -- -D warnings
@@ -137,10 +131,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install gdb
-      - name: Install cargo-binutils, cargo-download
-        run: |
-          cargo install cargo-binutils
-          cargo install cargo-download
       - uses: actions/checkout@v3
       - name: Install cargo-llvm-cov
         run: curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin
