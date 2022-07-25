@@ -364,7 +364,7 @@ pub trait Vm {
 				note.as_ref().unwrap().name == "HERMIT"
 					&& note.as_ref().unwrap().n_type == hermit_entry::NT_HERMIT_ENTRY_VERSION
 			}) {
-				let expected = 1;
+				let expected = hermit_entry::HERMIT_ENTRY_VERSION;
 				let found = note.unwrap().desc[0];
 				if found != expected {
 					error!("Expected hermit entry version {expected}, found {found}");
