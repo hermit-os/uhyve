@@ -8,7 +8,7 @@ pub type HypervisorError = kvm_ioctls::Error;
 pub type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
 
 use std::{
-	hint, io, mem,
+	io, mem,
 	net::{TcpListener, TcpStream},
 	os::unix::prelude::JoinHandleExt,
 	sync::{Arc, Barrier},
@@ -110,13 +110,7 @@ impl Uhyve {
 					}
 
 					let mut cpu = vm.create_cpu(cpu_id).unwrap();
-					cpu.init(vm.get_entry_point()).unwrap();
-
-					// only one core is able to enter startup code
-					// => the wait for the predecessor core
-					while cpu_id != vm.cpu_online() {
-						hint::spin_loop();
-					}
+					cpu.init(vm.get_entry_point(), cpu_id).unwrap();
 
 					// jump into the VM and execute code of the guest
 					match cpu.run() {
@@ -170,7 +164,7 @@ impl Uhyve {
 		}
 
 		let mut cpu = self.create_cpu(cpu_id).unwrap();
-		cpu.init(self.get_entry_point()).unwrap();
+		cpu.init(self.get_entry_point(), cpu_id).unwrap();
 
 		let connection = wait_for_gdb_connection(self.gdb_port.unwrap()).unwrap();
 		let debugger = GdbStub::new(connection);

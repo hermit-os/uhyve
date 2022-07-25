@@ -10,7 +10,6 @@ use crate::vm::VirtualCPU;
 use crate::vm::Vm;
 
 use std::{
-	hint,
 	sync::{mpsc, Arc},
 	thread,
 };
@@ -56,13 +55,7 @@ impl uhyve::Uhyve {
 				}
 
 				let mut cpu = vm.create_cpu(cpu_id).unwrap();
-				cpu.init(vm.get_entry_point()).unwrap();
-
-				// only one core is able to enter startup code
-				// => the wait for the predecessor core
-				while cpu_id != vm.cpu_online() {
-					hint::spin_loop();
-				}
+				cpu.init(vm.get_entry_point(), cpu_id).unwrap();
 
 				// jump into the VM and execute code of the guest
 				let result = cpu.run();

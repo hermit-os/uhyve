@@ -327,13 +327,6 @@ impl Vm for Uhyve {
 		self.boot_info = header;
 	}
 
-	fn cpu_online(&self) -> u32 {
-		let boot_info = unsafe { self.boot_info.as_ref() };
-		boot_info
-			.map(RawBootInfo::load_cpu_online)
-			.unwrap_or_default()
-	}
-
 	/// Initialize the page tables for the guest
 	fn init_guest_mem(&self) {
 		debug!("Initialize guest memory");

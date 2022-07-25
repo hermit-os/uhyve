@@ -596,7 +596,7 @@ impl UhyveCPU {
 }
 
 impl VirtualCPU for UhyveCPU {
-	fn init(&mut self, entry_point: u64) -> HypervisorResult<()> {
+	fn init(&mut self, entry_point: u64, cpu_id: u32) -> HypervisorResult<()> {
 		self.setup_capabilities()?;
 		self.setup_msr()?;
 
@@ -617,7 +617,7 @@ impl VirtualCPU for UhyveCPU {
 		self.vcpu.write_register(&Register::RBX, 0)?;
 		self.vcpu.write_register(&Register::RCX, 0)?;
 		self.vcpu.write_register(&Register::RDX, 0)?;
-		self.vcpu.write_register(&Register::RSI, 0)?;
+		self.vcpu.write_register(&Register::RSI, cpu_id.into())?;
 		self.vcpu.write_register(&Register::RDI, BOOT_INFO_ADDR)?;
 		self.vcpu.write_register(&Register::R8, 0)?;
 		self.vcpu.write_register(&Register::R9, 0)?;
