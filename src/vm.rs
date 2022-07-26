@@ -2,7 +2,7 @@ use goblin::elf;
 use goblin::elf64::header::ET_DYN;
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
 use goblin::elf64::reloc::*;
-use hermit_entry::{BootInfo, NetInfo, RawBootInfo, TlsInfo};
+use hermit_entry::{BootInfoBuilder, NetInfo, RawBootInfo, TlsInfo};
 use log::{debug, error, warn};
 use std::ffi::OsString;
 use std::io::Write;
@@ -518,7 +518,7 @@ pub trait Vm {
 			debug!("rel {:?}", rel);
 		});
 
-		let boot_info = BootInfo {
+		let boot_info = BootInfoBuilder {
 			base: start_address,
 			limit: vm_mem_length as u64, // memory size
 			image_size,
