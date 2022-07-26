@@ -527,7 +527,7 @@ pub trait Vm {
 			host_logical_addr: vm_mem as u64,
 			boot_gtod: n.as_micros().try_into().unwrap(),
 			cpu_freq: mhz,
-			possible_cpus: 1,
+			possible_cpus: self.num_cpus(),
 			uartport: self
 				.verbose()
 				.then(|| UHYVE_UART_PORT.into())
