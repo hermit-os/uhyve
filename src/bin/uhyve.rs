@@ -2,7 +2,6 @@
 
 use std::ffi::OsString;
 use std::iter;
-use std::net::Ipv4Addr;
 use std::num::ParseIntError;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
@@ -12,7 +11,6 @@ use std::str::FromStr;
 use clap::{Command, ErrorKind, IntoApp, Parser};
 use core_affinity::CoreId;
 use either::Either;
-use mac_address::MacAddress;
 use thiserror::Error;
 
 use uhyvelib::params::{CpuCount, GuestMemorySize, Params};
@@ -61,11 +59,6 @@ struct Args {
 	#[clap(short = 's', long, env = "HERMIT_GDB_PORT")]
 	#[cfg(target_os = "linux")]
 	gdb_port: Option<u16>,
-
-	// #[clap(flatten, help_heading = "NETWORK")]
-	#[clap(skip)]
-	#[cfg(target_os = "linux")]
-	network_args: NetworkArgs,
 
 	/// The kernel to execute
 	#[clap(value_parser)]
@@ -240,29 +233,6 @@ impl CpuArgs {
 	}
 }
 
-#[derive(Parser, Debug, Default)]
-struct NetworkArgs {
-	/// Guest IP address
-	#[clap(long, env = "HERMIT_IP")]
-	ip: Option<Ipv4Addr>,
-
-	/// Guest gateway address
-	#[clap(long, env = "HERMIT_GATEWAY")]
-	gateway: Option<Ipv4Addr>,
-
-	/// Guest network mask
-	#[clap(long, env = "HERMIT_MASK")]
-	mask: Option<Ipv4Addr>,
-
-	/// Name of the network interface
-	#[clap(long, env = "HERMIT_NETIF")]
-	nic: Option<String>,
-
-	/// MAC address of the network interface
-	#[clap(long, env = "HERMIT_MAC")]
-	_mac: Option<MacAddress>,
-}
-
 impl From<Args> for Params {
 	fn from(args: Args) -> Self {
 		let Args {
@@ -284,14 +254,6 @@ impl From<Args> for Params {
 				},
 			#[cfg(target_os = "linux")]
 			gdb_port,
-			#[cfg(target_os = "linux")]
-				network_args: NetworkArgs {
-				ip,
-				gateway,
-				mask,
-				nic,
-				_mac,
-			},
 			kernel: _,
 			kernel_args,
 		} = args;
@@ -305,14 +267,6 @@ impl From<Args> for Params {
 			cpu_count,
 			#[cfg(target_os = "linux")]
 			pit,
-			#[cfg(target_os = "linux")]
-			ip,
-			#[cfg(target_os = "linux")]
-			gateway,
-			#[cfg(target_os = "linux")]
-			mask,
-			#[cfg(target_os = "linux")]
-			nic,
 			#[cfg(target_os = "linux")]
 			gdb_port,
 			kernel_args,

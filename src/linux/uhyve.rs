@@ -20,7 +20,6 @@ use std::ffi::OsString;
 use std::fmt;
 use std::hint;
 use std::mem;
-use std::net::Ipv4Addr;
 use std::os::raw::c_void;
 use std::path::Path;
 use std::path::PathBuf;
@@ -48,9 +47,9 @@ struct UhyveNetwork {
 }
 
 impl UhyveNetwork {
-	pub fn new(evtfd: EventFd, name: String, start: usize) -> Self {
+	pub fn new(evtfd: EventFd, start: usize) -> Self {
 		let iface = Arc::new(
-			Iface::without_packet_info(&name, Mode::Tap).expect("Unable to creat TUN/TAP device"),
+			Iface::without_packet_info("", Mode::Tap).expect("Unable to creat TUN/TAP device"),
 		);
 
 		let iface_writer = Arc::clone(&iface);
@@ -137,9 +136,6 @@ pub struct Uhyve {
 	args: Vec<OsString>,
 	boot_info: *const RawBootInfo,
 	verbose: bool,
-	ip: Option<Ipv4Addr>,
-	gateway: Option<Ipv4Addr>,
-	mask: Option<Ipv4Addr>,
 	uhyve_device: Option<UhyveNetwork>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	pub(super) gdb_port: Option<u16>,
@@ -154,9 +150,6 @@ impl fmt::Debug for Uhyve {
 			.field("path", &self.path)
 			.field("boot_info", &self.boot_info)
 			.field("verbose", &self.verbose)
-			.field("ip", &self.ip)
-			.field("gateway", &self.gateway)
-			.field("mask", &self.mask)
 			.field("uhyve_device", &self.uhyve_device)
 			.field("virtio_device", &self.virtio_device)
 			.finish()
@@ -251,17 +244,8 @@ impl Uhyve {
 		let evtfd = EventFd::new(0).unwrap();
 		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET)?;
 		// create TUN/TAP device
-		let uhyve_device = match &params.nic {
-			Some(nic) => {
-				debug!("Initialize network interface");
-				Some(UhyveNetwork::new(
-					evtfd,
-					nic.to_string(),
-					mem.host_address + SHAREDQUEUE_START,
-				))
-			}
-			_ => None,
-		};
+		let uhyve_device =
+			false.then(|| UhyveNetwork::new(evtfd, mem.host_address + SHAREDQUEUE_START));
 
 		let cpu_count = params.cpu_count.get();
 
@@ -280,9 +264,6 @@ impl Uhyve {
 			args: params.kernel_args,
 			boot_info: ptr::null(),
 			verbose: params.verbose,
-			ip: params.ip,
-			gateway: params.gateway,
-			mask: params.mask,
 			uhyve_device,
 			virtio_device,
 			gdb_port: params.gdb_port,
@@ -313,18 +294,6 @@ impl Vm for Uhyve {
 
 	fn get_entry_point(&self) -> u64 {
 		self.entry_point
-	}
-
-	fn get_ip(&self) -> Option<Ipv4Addr> {
-		self.ip
-	}
-
-	fn get_gateway(&self) -> Option<Ipv4Addr> {
-		self.gateway
-	}
-
-	fn get_mask(&self) -> Option<Ipv4Addr> {
-		self.mask
 	}
 
 	fn num_cpus(&self) -> u32 {

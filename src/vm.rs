@@ -2,11 +2,10 @@ use goblin::elf;
 use goblin::elf64::header::ET_DYN;
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
 use goblin::elf64::reloc::*;
-use hermit_entry::{BootInfoBuilder, NetInfo, RawBootInfo, TlsInfo};
+use hermit_entry::{BootInfoBuilder, RawBootInfo, TlsInfo};
 use log::{debug, error, warn};
 use std::ffi::OsString;
 use std::io::Write;
-use std::net::Ipv4Addr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::time::SystemTime;
@@ -332,9 +331,6 @@ pub trait Vm {
 	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU>;
 	fn set_boot_info(&mut self, header: *const RawBootInfo);
 	fn cpu_online(&self) -> u32;
-	fn get_ip(&self) -> Option<Ipv4Addr>;
-	fn get_gateway(&self) -> Option<Ipv4Addr>;
-	fn get_mask(&self) -> Option<Ipv4Addr>;
 	fn verbose(&self) -> bool;
 	fn init_guest_mem(&self);
 
@@ -380,24 +376,7 @@ pub trait Vm {
 		// acquire the slices of the user memory
 		let (vm_mem, vm_mem_length) = self.guest_mem();
 
-		// Collect BootInfo, starting with NetInfo
-
-		let mut net_info = NetInfo::default();
-
-		// forward IP address to kernel
-		if let Some(ip) = self.get_ip() {
-			net_info.ip = ip.octets();
-		}
-
-		// forward gateway address to kernel
-		if let Some(gateway) = self.get_gateway() {
-			net_info.gateway = gateway.octets();
-		}
-
-		// forward mask to kernel
-		if let Some(mask) = self.get_mask() {
-			net_info.mask = mask.octets();
-		}
+		// Collect BootInfo
 
 		let (start_address, elf_entry) = if is_dyn {
 			// TODO: should be a random start address, if we have a relocatable executable
@@ -537,7 +516,6 @@ pub trait Vm {
 			} else {
 				0b01 // announce uhyve
 			},
-			net_info,
 			#[cfg(target_arch = "aarch64")]
 			ram_start: crate::arch::aarch64::RAM_START,
 			..Default::default()

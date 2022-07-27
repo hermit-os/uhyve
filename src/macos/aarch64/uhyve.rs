@@ -10,7 +10,6 @@ use libc;
 use libc::c_void;
 use log::debug;
 use std::ffi::OsString;
-use std::net::Ipv4Addr;
 use std::path::Path;
 use std::path::PathBuf;
 use std::ptr;
@@ -142,18 +141,6 @@ impl Vm for Uhyve {
 			self.args.clone(),
 			self.guest_mem as usize,
 		))
-	}
-
-	fn get_ip(&self) -> Option<Ipv4Addr> {
-		None
-	}
-
-	fn get_gateway(&self) -> Option<Ipv4Addr> {
-		None
-	}
-
-	fn get_mask(&self) -> Option<Ipv4Addr> {
-		None
 	}
 
 	fn set_boot_info(&mut self, header: *const RawBootInfo) {

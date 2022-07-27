@@ -1,5 +1,3 @@
-#[cfg(target_os = "linux")]
-use std::net::Ipv4Addr;
 use std::{
 	ffi::OsString,
 	fmt,
@@ -37,22 +35,6 @@ pub struct Params {
 	#[cfg(target_os = "linux")]
 	pub gdb_port: Option<u16>,
 
-	/// Guest IP address
-	#[cfg(target_os = "linux")]
-	pub ip: Option<Ipv4Addr>,
-
-	/// Guest gateway address
-	#[cfg(target_os = "linux")]
-	pub gateway: Option<Ipv4Addr>,
-
-	/// Guest network mask
-	#[cfg(target_os = "linux")]
-	pub mask: Option<Ipv4Addr>,
-
-	/// Name of the network interface
-	#[cfg(target_os = "linux")]
-	pub nic: Option<String>,
-
 	/// Arguments to forward to the kernel
 	pub kernel_args: Vec<OsString>,
 }
@@ -72,14 +54,6 @@ impl Default for Params {
 			cpu_count: Default::default(),
 			#[cfg(target_os = "linux")]
 			gdb_port: Default::default(),
-			#[cfg(target_os = "linux")]
-			ip: Default::default(),
-			#[cfg(target_os = "linux")]
-			gateway: Default::default(),
-			#[cfg(target_os = "linux")]
-			mask: Default::default(),
-			#[cfg(target_os = "linux")]
-			nic: Default::default(),
 			kernel_args: Default::default(),
 		}
 	}
