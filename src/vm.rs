@@ -2,7 +2,7 @@ use goblin::elf;
 use goblin::elf64::header::ET_DYN;
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
 use goblin::elf64::reloc::*;
-use hermit_entry::{BootInfoBuilder, RawBootInfo, TlsInfo};
+use hermit_entry::{BootInfo, PlatformInfo, RawBootInfo, TlsInfo};
 use log::{debug, error, warn};
 use std::ffi::OsString;
 use std::io::Write;
@@ -417,7 +417,7 @@ pub trait Vm {
 		// load kernel and determine image size
 		let vm_slice = std::slice::from_raw_parts_mut(vm_mem, vm_mem_length);
 		let mut image_size = 0;
-		let mut tls_info = TlsInfo::default();
+		let mut tls_info = None;
 		elf.program_headers
 			.iter()
 			.try_for_each(|program_header| match program_header.p_type {
@@ -468,12 +468,12 @@ pub trait Vm {
 						program_header.p_vaddr
 					};
 
-					tls_info = TlsInfo {
+					tls_info = Some(TlsInfo {
 						start: tls_start,
 						filesz: program_header.p_filesz,
 						memsz: program_header.p_memsz,
 						align: program_header.p_align,
-					};
+					});
 
 					Ok(())
 				}
@@ -497,35 +497,31 @@ pub trait Vm {
 			debug!("rel {:?}", rel);
 		});
 
-		let boot_info = BootInfoBuilder {
-			base: start_address,
-			limit: vm_mem_length as u64, // memory size
-			image_size,
-			tls_info,
-			current_stack_address: start_address - KERNEL_STACK_SIZE,
-			host_logical_addr: vm_mem as u64,
-			boot_gtod: n.as_micros().try_into().unwrap(),
-			cpu_freq: mhz,
-			possible_cpus: self.num_cpus(),
-			uartport: self
-				.verbose()
-				.then(|| UHYVE_UART_PORT.into())
-				.unwrap_or_default(),
-			uhyve: if cfg!(target_os = "linux") {
-				0b11 // announce uhyve and pci support
-			} else {
-				0b01 // announce uhyve
-			},
-			#[cfg(target_arch = "aarch64")]
-			ram_start: crate::arch::aarch64::RAM_START,
-			..Default::default()
-		};
+		#[cfg(target_arch = "aarch64")]
+		let ram_start = crate::arch::aarch64::RAM_START;
+		#[cfg(target_arch = "x86_64")]
+		let ram_start = 0;
 
+		let boot_info = BootInfo {
+			phys_addr_range: ram_start..vm_mem_length as u64,
+			kernel_image_addr_range: start_address..start_address + image_size,
+			tls_info,
+			uartport: self.verbose().then(|| UHYVE_UART_PORT.into()),
+			platform_info: PlatformInfo::Uhyve {
+				pci: cfg!(target_os = "linux"),
+				cpu_count: self.num_cpus(),
+				cpu_freq: mhz.try_into().unwrap(),
+				boot_time: n.as_micros().try_into().unwrap(),
+			},
+		};
 		debug!("Boot header: {:?}", boot_info);
-		let raw_boot_info = vm_mem.offset(BOOT_INFO_ADDR as isize) as *mut RawBootInfo;
-		*raw_boot_info = boot_info.into();
+		let raw_boot_info = RawBootInfo::from(boot_info);
+		raw_boot_info.store_current_stack_address(start_address - KERNEL_STACK_SIZE);
+
+		let raw_boot_info_ptr = vm_mem.offset(BOOT_INFO_ADDR as isize) as *mut RawBootInfo;
+		*raw_boot_info_ptr = raw_boot_info;
 		debug!("Set HermitCore header at 0x{:x}", BOOT_INFO_ADDR as usize);
-		self.set_boot_info(raw_boot_info);
+		self.set_boot_info(raw_boot_info_ptr);
 
 		debug!("Kernel loaded");
 
