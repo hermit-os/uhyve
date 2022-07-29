@@ -49,13 +49,14 @@ envmnt = "0.10"
 gdbstub = "0.6"
 gdbstub_arch = "0.2"
 goblin = { version = "0.5", default-features = false, features = ["elf64", "elf32", "endian_fd", "std"] }
-hermit-entry = { version = "0.5", features = ["loader"] }
+hermit-entry = { version = "0.6", features = ["loader"] }
 lazy_static = "1.4"
 libc = "0.2"
 log = "0.4"
 mac_address = "1.1"
 rustc-serialize = "0.3"
 thiserror = "1.0"
+time = "0.3"
 
 rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }
