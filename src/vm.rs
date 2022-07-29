@@ -2,7 +2,7 @@ use goblin::elf;
 use goblin::elf64::header::ET_DYN;
 use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
 use goblin::elf64::reloc::*;
-use hermit_entry::{BootInfo, PlatformInfo, RawBootInfo, TlsInfo};
+use hermit_entry::{BootInfo, PlatformInfo, RawBootInfo, SerialPortBase, TlsInfo};
 use log::{debug, error, warn};
 use std::ffi::OsString;
 use std::io::Write;
@@ -390,10 +390,6 @@ pub trait Vm {
 		self.set_entry_point(elf_entry);
 		debug!("ELF entry point at 0x{:x}", elf_entry);
 
-		let n = SystemTime::now()
-			.duration_since(SystemTime::UNIX_EPOCH)
-			.expect("SystemTime before UNIX EPOCH!");
-
 		#[cfg(target_arch = "aarch64")]
 		let mhz: u32 = 0;
 		#[cfg(target_arch = "x86_64")]
@@ -506,12 +502,14 @@ pub trait Vm {
 			phys_addr_range: ram_start..vm_mem_length as u64,
 			kernel_image_addr_range: start_address..start_address + image_size,
 			tls_info,
-			uartport: self.verbose().then(|| UHYVE_UART_PORT.into()),
+			serial_port_base: self
+				.verbose()
+				.then(|| SerialPortBase::new(UHYVE_UART_PORT.into()).unwrap()),
 			platform_info: PlatformInfo::Uhyve {
-				pci: cfg!(target_os = "linux"),
-				cpu_count: self.num_cpus(),
-				cpu_freq: mhz.try_into().unwrap(),
-				boot_time: n.as_micros().try_into().unwrap(),
+				has_pci: cfg!(target_os = "linux"),
+				num_cpus: u64::from(self.num_cpus()).try_into().unwrap(),
+				cpu_freq: mhz * 1000,
+				boot_time: SystemTime::now().into(),
 			},
 		};
 		debug!("Boot header: {:?}", boot_info);

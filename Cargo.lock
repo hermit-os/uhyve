@@ -435,9 +435,12 @@ dependencies = [
 
 [[package]]
 name = "hermit-entry"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c0c466f76c635a6906dc569341ebeec8e7d011bea7ece7debf44913f6e45c28"
+checksum = "b486a14d71178dea479e5fef5e27afedd3b7b08067e00c02ec4a8fb0acb978a8"
+dependencies = [
+ "time",
+]
 
 [[package]]
 name = "humantime"
@@ -635,6 +638,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19e64526ebdee182341572e50e9ad03965aa510cd94427a4549448f285e957a1"
 dependencies = [
  "hermit-abi",
+ "libc",
+]
+
+[[package]]
+name = "num_threads"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2819ce041d2ee131036f4fc9d6ae7ae125a3a40e97ba64d04fe799ad9dabbb44"
+dependencies = [
  "libc",
 ]
 
@@ -1036,6 +1048,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "time"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72c91f41dcb2f096c05f0873d667dceec1087ce5bcf984ec8ffb19acddbb3217"
+dependencies = [
+ "libc",
+ "num_threads",
+]
+
+[[package]]
 name = "tinytemplate"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1085,6 +1107,7 @@ dependencies = [
  "rftrace-frontend",
  "rustc-serialize",
  "thiserror",
+ "time",
  "tun-tap",
  "virtio-bindings",
  "vmm-sys-util",
