@@ -289,12 +289,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
-name = "dunce"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "453440c271cf5577fd2a40e4942540cb7d0d2f85e27c8d07dd0023c925a67541"
-
-[[package]]
 name = "either"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -314,16 +308,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "envmnt"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fbb2fcaad9e6c9e3388dfcc1b44ae5508ae864b7af36f163a8a7c1a48796eee"
-dependencies = [
- "fsio",
- "indexmap",
-]
-
-[[package]]
 name = "fastrand"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -337,15 +321,6 @@ name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
-
-[[package]]
-name = "fsio"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de6fce87c901c64837f745e7fffddeca1de8e054b544ba82c419905d40a0e1be"
-dependencies = [
- "dunce",
-]
 
 [[package]]
 name = "gdbstub"
@@ -867,12 +842,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustc-serialize"
-version = "0.3.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcf128d1287d2ea9d80910b5f1120d0b8eede3fbf1abe91c40d39ea7d51e6fda"
-
-[[package]]
 name = "rustversion"
 version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1084,13 +1053,11 @@ dependencies = [
  "bitflags",
  "burst",
  "byte-unit",
- "byteorder",
  "clap 3.2.16",
  "core_affinity",
  "criterion",
  "either",
  "env_logger",
- "envmnt",
  "gdbstub",
  "gdbstub_arch",
  "goblin",
@@ -1105,7 +1072,6 @@ dependencies = [
  "raw-cpuid",
  "rftrace",
  "rftrace-frontend",
- "rustc-serialize",
  "thiserror",
  "time",
  "tun-tap",

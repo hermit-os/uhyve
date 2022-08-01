@@ -38,14 +38,11 @@ default = []
 instrument = ["rftrace", "rftrace-frontend"]
 
 [dependencies]
-bitflags = "1.3"
-byteorder = "1.4"
 byte-unit = { version = "4.0", default-features = false, features = ["std"] }
 clap = { version = "3.2", features = ["derive", "env"] }
 core_affinity = "0.5"
 either = "1.6"
 env_logger = "0.9"
-envmnt = "0.10"
 gdbstub = "0.6"
 gdbstub_arch = "0.2"
 goblin = { version = "0.5", default-features = false, features = ["elf64", "elf32", "endian_fd", "std"] }
@@ -53,8 +50,6 @@ hermit-entry = { version = "0.6", features = ["loader"] }
 lazy_static = "1.4"
 libc = "0.2"
 log = "0.4"
-mac_address = "1.1"
-rustc-serialize = "0.3"
 thiserror = "1.0"
 time = "0.3"
 
@@ -64,6 +59,7 @@ rftrace-frontend = { version = "0.1", optional = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.5"
 kvm-ioctls = "0.11"
+mac_address = "1.1"
 nix = "0.24"
 tun-tap = { version = "0.1", default-features = false }
 virtio-bindings = { version = "0.1", features = ["virtio-v4_14_0"] }
@@ -76,6 +72,9 @@ xhypervisor = "0.2"
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = { version = "0.14", default-features = false }
 raw-cpuid = "10.3"
+
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+bitflags = "1.3"
 
 [dev-dependencies]
 assert_fs = "1"
