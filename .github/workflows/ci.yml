@@ -58,6 +58,19 @@ jobs:
       - name: Integration Tests
         run: cargo test --test '*'
 
+  run_images:
+    name: Run images
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          lfs: true
+      - run: git lfs checkout
+      - name: Run images
+        run: |
+          cargo run -- -v data/x86_64/hello_world
+          cargo run -- -v data/x86_64/hello_c
+
   rusty_demo:
     name: rusty_demo
     runs-on: [self-hosted]
