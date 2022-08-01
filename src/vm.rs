@@ -1,11 +1,12 @@
-use goblin::elf;
-use goblin::elf64::header::ET_DYN;
-use goblin::elf64::program_header::{PT_LOAD, PT_TLS};
-use goblin::elf64::reloc::*;
-use hermit_entry::{BootInfo, PlatformInfo, RawBootInfo, SerialPortBase, TlsInfo};
-use log::{debug, error, warn};
+use hermit_entry::{
+	BootInfo, HardwareInfo, KernelObject, LoadedKernel, ParseKernelError, PlatformInfo,
+	RawBootInfo, SerialPortBase,
+};
+use log::{error, warn};
 use std::ffi::OsString;
 use std::io::Write;
+use std::mem::MaybeUninit;
+use std::num::NonZeroU32;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::time::SystemTime;
@@ -15,16 +16,12 @@ use thiserror::Error;
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::{
 	detect_freq_from_cpuid, detect_freq_from_cpuid_hypervisor_info, get_cpu_frequency_from_os,
-	ELF_HOST_ARCH,
 };
 
-#[cfg(target_arch = "aarch64")]
-use crate::arch::aarch64::ELF_HOST_ARCH;
-
-use crate::consts::*;
 use crate::os::vcpu::UhyveCPU;
 use crate::os::DebugExitInfo;
 use crate::os::HypervisorError;
+use crate::{arch, consts::*};
 
 #[repr(C, packed)]
 pub struct SysWrite {
@@ -98,8 +95,8 @@ pub type HypervisorResult<T> = Result<T, HypervisorError>;
 pub enum LoadKernelError {
 	#[error(transparent)]
 	Io(#[from] io::Error),
-	#[error(transparent)]
-	Goblin(#[from] goblin::error::Error),
+	#[error("{0}")]
+	ParseKernelError(ParseKernelError),
 	#[error("guest memory size is not large enough")]
 	InsufficientMemory,
 }
@@ -335,194 +332,75 @@ pub trait Vm {
 	fn init_guest_mem(&self);
 
 	unsafe fn load_kernel(&mut self) -> LoadKernelResult<()> {
-		debug!("Load kernel from {}", self.kernel_path().display());
+		let elf = fs::read(self.kernel_path())?;
+		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
-		let buffer = fs::read(self.kernel_path())?;
-		let elf = elf::Elf::parse(&buffer)?;
-
-		if !elf.libraries.is_empty() {
-			warn!(
-				"Error: file depends on following libraries: {:?}",
-				elf.libraries
-			);
-			return Err(LoadKernelError::Io(io::ErrorKind::InvalidData.into()));
-		}
-
-		let is_dyn = elf.header.e_type == ET_DYN;
-		debug!("ELF file is a shared object file: {}", is_dyn);
-
-		if elf.header.e_machine != ELF_HOST_ARCH {
-			return Err(LoadKernelError::Io(io::ErrorKind::InvalidData.into()));
-		}
-
-		if let Some(mut note_headers) = elf.iter_note_headers(&buffer) {
-			if let Some(note) = note_headers.find(|note| {
-				note.as_ref().unwrap().name == "HERMIT"
-					&& note.as_ref().unwrap().n_type == hermit_entry::NT_HERMIT_ENTRY_VERSION
-			}) {
-				let expected = hermit_entry::HERMIT_ENTRY_VERSION;
-				let found = note.unwrap().desc[0];
-				if found != expected {
-					error!("Expected hermit entry version {expected}, found {found}");
-					return Err(LoadKernelError::Io(io::ErrorKind::InvalidData.into()));
-				}
-			} else {
-				error!("Kernel does not specify hermit entry version! - This might lead to undefined behaviour and will be deprecated in the future.");
-			}
-		} else {
-			error!("Kernel elf does not contain notes section to specify hermit entry version! - This might lead to undefined behaviour and will be deprecated in the future.");
-		}
-
-		// acquire the slices of the user memory
-		let (vm_mem, vm_mem_length) = self.guest_mem();
-
-		// Collect BootInfo
-
-		let (start_address, elf_entry) = if is_dyn {
-			// TODO: should be a random start address, if we have a relocatable executable
-			(0x400000u64, 0x400000u64 + elf.entry)
-		} else {
-			// default location of a non-relocatable binary
-			(0x800000u64, elf.entry)
-		};
-
+		// TODO: should be a random start address, if we have a relocatable executable
+		let start_address = object.start_addr().unwrap_or(0x400000);
 		self.set_offset(start_address);
-		self.set_entry_point(elf_entry);
-		debug!("ELF entry point at 0x{:x}", elf_entry);
 
-		#[cfg(target_arch = "aarch64")]
-		let mhz: u32 = 0;
-		#[cfg(target_arch = "x86_64")]
-		let mhz = {
-			let cpuid = raw_cpuid::CpuId::new();
-			let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
-				debug!("Failed to detect from cpuid");
-				detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
-					debug!("Failed to detect from hypervisor_info");
-					get_cpu_frequency_from_os().unwrap_or(0)
-				})
-			});
-			debug!("detected a cpu frequency of {} Mhz", mhz);
-
-			mhz
-		};
-		if mhz == 0 {
-			warn!("Unable to determine processor frequency");
+		let (vm_mem, vm_mem_len) = self.guest_mem();
+		if start_address as usize + object.mem_size() > vm_mem_len {
+			return Err(LoadKernelError::InsufficientMemory);
 		}
 
-		// load kernel and determine image size
-		let vm_slice = std::slice::from_raw_parts_mut(vm_mem, vm_mem_length);
-		let mut image_size = 0;
-		let mut tls_info = None;
-		elf.program_headers
-			.iter()
-			.try_for_each(|program_header| match program_header.p_type {
-				PT_LOAD => {
-					let region_start = if is_dyn {
-						(start_address + program_header.p_vaddr) as usize
-					} else {
-						program_header.p_vaddr as usize
-					};
-					let region_end = region_start + program_header.p_filesz as usize;
-					let kernel_start = program_header.p_offset as usize;
-					let kernel_end = kernel_start + program_header.p_filesz as usize;
+		let vm_slice = {
+			let vm_slice = slice::from_raw_parts_mut(vm_mem as *mut MaybeUninit<u8>, vm_mem_len);
+			&mut vm_slice[start_address as usize..][..object.mem_size()]
+		};
 
-					debug!(
-						"Load segment with start addr 0x{:x} and size 0x{:x}, offset 0x{:x}",
-						program_header.p_vaddr, program_header.p_filesz, program_header.p_offset
-					);
-
-					if region_start + program_header.p_memsz as usize > vm_mem_length {
-						return Err(LoadKernelError::InsufficientMemory);
-					}
-
-					vm_slice[region_start..region_end]
-						.copy_from_slice(&buffer[kernel_start..kernel_end]);
-
-					if program_header.p_memsz > program_header.p_filesz {
-						vm_slice[region_end
-							..region_end
-								+ (program_header.p_memsz - program_header.p_filesz) as usize]
-							.iter_mut()
-							.for_each(|x| *x = 0);
-					}
-
-					image_size = if is_dyn {
-						program_header.p_vaddr + program_header.p_memsz
-					} else {
-						image_size + program_header.p_memsz
-					};
-
-					Ok(())
-				}
-				PT_TLS => {
-					// determine TLS section
-					debug!("Found TLS section with size {}", program_header.p_memsz);
-					let tls_start = if is_dyn {
-						start_address + program_header.p_vaddr
-					} else {
-						program_header.p_vaddr
-					};
-
-					tls_info = Some(TlsInfo {
-						start: tls_start,
-						filesz: program_header.p_filesz,
-						memsz: program_header.p_memsz,
-						align: program_header.p_align,
-					});
-
-					Ok(())
-				}
-				_ => Ok(()),
-			})?;
-
-		// relocate entries (strings, copy-data, etc.) with an addend
-		elf.dynrelas.iter().for_each(|rela| match rela.r_type {
-			R_X86_64_RELATIVE | R_AARCH64_RELATIVE => {
-				let offset = (vm_mem as u64 + start_address + rela.r_offset) as *mut u64;
-				*offset = (start_address as i64 + rela.r_addend.unwrap_or(0))
-					.try_into()
-					.unwrap();
-			}
-			_ => {
-				debug!("Unsupported relocation type {}", rela.r_type);
-			}
-		});
-
-		elf.dynrels.iter().for_each(|rel| {
-			debug!("rel {:?}", rel);
-		});
-
-		#[cfg(target_arch = "aarch64")]
-		let ram_start = crate::arch::aarch64::RAM_START;
-		#[cfg(target_arch = "x86_64")]
-		let ram_start = 0;
+		let LoadedKernel {
+			load_info,
+			entry_point,
+		} = object.load_kernel(vm_slice, start_address);
+		self.set_entry_point(entry_point);
 
 		let boot_info = BootInfo {
-			phys_addr_range: ram_start..vm_mem_length as u64,
-			kernel_image_addr_range: start_address..start_address + image_size,
-			tls_info,
-			serial_port_base: self
-				.verbose()
-				.then(|| SerialPortBase::new(UHYVE_UART_PORT.into()).unwrap()),
+			hardware_info: HardwareInfo {
+				phys_addr_range: arch::RAM_START..arch::RAM_START + vm_mem_len as u64,
+				serial_port_base: self
+					.verbose()
+					.then(|| SerialPortBase::new(UHYVE_UART_PORT.into()).unwrap()),
+			},
+			load_info,
 			platform_info: PlatformInfo::Uhyve {
 				has_pci: cfg!(target_os = "linux"),
 				num_cpus: u64::from(self.num_cpus()).try_into().unwrap(),
-				cpu_freq: mhz * 1000,
+				cpu_freq: NonZeroU32::new(detect_cpu_freq() * 1000),
 				boot_time: SystemTime::now().into(),
 			},
 		};
-		debug!("Boot header: {:?}", boot_info);
-		let raw_boot_info = RawBootInfo::from(boot_info);
-		raw_boot_info.store_current_stack_address(start_address - KERNEL_STACK_SIZE);
-
-		let raw_boot_info_ptr = vm_mem.offset(BOOT_INFO_ADDR as isize) as *mut RawBootInfo;
-		*raw_boot_info_ptr = raw_boot_info;
-		debug!("Set HermitCore header at 0x{:x}", BOOT_INFO_ADDR as usize);
+		let raw_boot_info_ptr = vm_mem.add(BOOT_INFO_ADDR as usize) as *mut RawBootInfo;
+		*raw_boot_info_ptr = {
+			let raw_boot_info = RawBootInfo::from(boot_info);
+			raw_boot_info.store_current_stack_address(start_address - KERNEL_STACK_SIZE);
+			raw_boot_info
+		};
 		self.set_boot_info(raw_boot_info_ptr);
-
-		debug!("Kernel loaded");
 
 		Ok(())
 	}
+}
+
+fn detect_cpu_freq() -> u32 {
+	#[cfg(target_arch = "aarch64")]
+	let mhz: u32 = 0;
+	#[cfg(target_arch = "x86_64")]
+	let mhz = {
+		let cpuid = raw_cpuid::CpuId::new();
+		let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
+			debug!("Failed to detect from cpuid");
+			detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
+				debug!("Failed to detect from hypervisor_info");
+				get_cpu_frequency_from_os().unwrap_or(0)
+			})
+		});
+		debug!("detected a cpu frequency of {} Mhz", mhz);
+
+		mhz
+	};
+	if mhz == 0 {
+		warn!("Unable to determine processor frequency");
+	}
+	mhz
 }

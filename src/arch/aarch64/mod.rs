@@ -1,8 +1,6 @@
 use bitflags::bitflags;
-use goblin::elf64::header::EM_AARCH64;
 
 pub const RAM_START: u64 = 0x00;
-pub const ELF_HOST_ARCH: u16 = EM_AARCH64;
 
 pub const PT_DEVICE: u64 = 0x707;
 pub const PT_PT: u64 = 0x713;
