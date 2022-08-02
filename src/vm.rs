@@ -1,6 +1,6 @@
 use hermit_entry::{
-	BootInfo, HardwareInfo, KernelObject, LoadedKernel, ParseKernelError, PlatformInfo,
-	RawBootInfo, SerialPortBase,
+	boot_info::{BootInfo, HardwareInfo, PlatformInfo, RawBootInfo, SerialPortBase},
+	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
 use log::{error, warn};
 use std::ffi::OsString;

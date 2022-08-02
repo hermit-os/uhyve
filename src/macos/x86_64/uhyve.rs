@@ -5,7 +5,7 @@ use crate::params::Params;
 use crate::vm::HypervisorResult;
 use crate::vm::Vm;
 use crate::x86_64::create_gdt_entry;
-use hermit_entry::RawBootInfo;
+use hermit_entry::boot_info::RawBootInfo;
 use libc;
 use libc::c_void;
 use log::debug;

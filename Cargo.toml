@@ -45,7 +45,7 @@ either = "1.6"
 env_logger = "0.9"
 gdbstub = "0.6"
 gdbstub_arch = "0.2"
-hermit-entry = { version = "0.7", features = ["loader"] }
+hermit-entry = { version = "0.8", features = ["loader"] }
 lazy_static = "1.4"
 libc = "0.2"
 log = "0.4"

@@ -5,7 +5,7 @@ use crate::macos::aarch64::HYPERVISOR_PAGE_SIZE;
 use crate::params::Params;
 use crate::vm::HypervisorResult;
 use crate::vm::Vm;
-use hermit_entry::RawBootInfo;
+use hermit_entry::boot_info::RawBootInfo;
 use libc;
 use libc::c_void;
 use log::debug;
