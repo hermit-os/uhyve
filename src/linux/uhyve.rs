@@ -10,7 +10,7 @@ use crate::shared_queue::*;
 use crate::vm::HypervisorResult;
 use crate::vm::Vm;
 use crate::x86_64::create_gdt_entry;
-use hermit_entry::RawBootInfo;
+use hermit_entry::boot_info::RawBootInfo;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use log::debug;
