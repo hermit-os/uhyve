@@ -110,7 +110,10 @@ impl Uhyve {
 					}
 
 					let mut cpu = vm.create_cpu(cpu_id).unwrap();
-					cpu.init(vm.get_entry_point(), cpu_id).unwrap();
+					cpu.init(vm.get_entry_point(), vm.stack_address(), cpu_id)
+						.unwrap();
+
+					thread::sleep(std::time::Duration::from_millis(cpu_id as u64 * 50));
 
 					// jump into the VM and execute code of the guest
 					match cpu.run() {
@@ -132,6 +135,8 @@ impl Uhyve {
 
 		// Wait for one vCPU to return with an exit code.
 		barrier.wait();
+		// thread::sleep(std::time::Duration::from_secs(1));
+
 		for thread in &threads {
 			KickSignal::pthread_kill(thread.as_pthread_t()).unwrap();
 		}
@@ -164,7 +169,8 @@ impl Uhyve {
 		}
 
 		let mut cpu = self.create_cpu(cpu_id).unwrap();
-		cpu.init(self.get_entry_point(), cpu_id).unwrap();
+		cpu.init(self.get_entry_point(), self.stack_address(), cpu_id)
+			.unwrap();
 
 		let connection = wait_for_gdb_connection(self.gdb_port.unwrap()).unwrap();
 		let debugger = GdbStub::new(connection);

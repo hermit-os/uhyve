@@ -596,7 +596,7 @@ impl UhyveCPU {
 }
 
 impl VirtualCPU for UhyveCPU {
-	fn init(&mut self, entry_point: u64, cpu_id: u32) -> HypervisorResult<()> {
+	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
 		self.setup_capabilities()?;
 		self.setup_msr()?;
 
@@ -609,9 +609,7 @@ impl VirtualCPU for UhyveCPU {
 		debug!("Setup general purpose registers");
 		self.vcpu.write_register(&Register::RIP, entry_point)?;
 		self.vcpu.write_register(&Register::RFLAGS, 0x2)?;
-		// create temporary stack to boot the kernel
-		self.vcpu
-			.write_register(&Register::RSP, 0x200000 - 0x1000)?;
+		self.vcpu.write_register(&Register::RSP, stack_address)?;
 		self.vcpu.write_register(&Register::RBP, 0)?;
 		self.vcpu.write_register(&Register::RAX, 0)?;
 		self.vcpu.write_register(&Register::RBX, 0)?;

@@ -55,7 +55,8 @@ impl uhyve::Uhyve {
 				}
 
 				let mut cpu = vm.create_cpu(cpu_id).unwrap();
-				cpu.init(vm.get_entry_point(), cpu_id).unwrap();
+				cpu.init(vm.get_entry_point(), vm.stack_address(), cpu_id)
+					.unwrap();
 
 				// jump into the VM and execute code of the guest
 				let result = cpu.run();
