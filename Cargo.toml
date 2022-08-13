@@ -1,6 +1,6 @@
 [package]
 name = "uhyve"
-version = "0.1.3"
+version = "0.2.0"
 authors = [
     "Stefan Lankes <slankes@eonerc.rwth-aachen.de>",
     "Martin Kröning <mkroening@posteo.net>",
