@@ -22,6 +22,7 @@ use xhypervisor::{create_vm, map_mem, unmap_mem, MemPerm};
 pub struct Uhyve {
 	offset: u64,
 	entry_point: u64,
+	stack_address: u64,
 	mem_size: usize,
 	guest_mem: *mut c_void,
 	num_cpus: u32,
@@ -36,6 +37,7 @@ impl std::fmt::Debug for Uhyve {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Uhyve")
 			.field("entry_point", &self.entry_point)
+			.field("stack_address", &self.stack_address)
 			.field("mem_size", &self.mem_size)
 			.field("guest_mem", &self.guest_mem)
 			.field("num_cpus", &self.num_cpus)
@@ -81,6 +83,7 @@ impl Uhyve {
 		let hyve = Uhyve {
 			offset: 0,
 			entry_point: 0,
+			stack_address: 0,
 			mem_size: memory_size,
 			guest_mem: mem,
 			num_cpus: params.cpu_count.get(),
@@ -118,6 +121,14 @@ impl Vm for Uhyve {
 		self.entry_point
 	}
 
+	fn set_stack_address(&mut self, stack_address: u64) {
+		self.stack_address = stack_address;
+	}
+
+	fn stack_address(&self) -> u64 {
+		self.stack_address
+	}
+
 	fn num_cpus(&self) -> u32 {
 		self.num_cpus
 	}
@@ -142,13 +153,6 @@ impl Vm for Uhyve {
 
 	fn set_boot_info(&mut self, header: *const RawBootInfo) {
 		self.boot_info = header;
-	}
-
-	fn cpu_online(&self) -> u32 {
-		let boot_info = unsafe { self.boot_info.as_ref() };
-		boot_info
-			.map(RawBootInfo::load_cpu_online)
-			.unwrap_or_default()
 	}
 
 	/// Initialize the page tables for the guest

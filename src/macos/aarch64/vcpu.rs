@@ -38,14 +38,17 @@ impl UhyveCPU {
 }
 
 impl VirtualCPU for UhyveCPU {
-	fn init(&mut self, entry_point: u64) -> HypervisorResult<()> {
+	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
 		debug!("Initialize VirtualCPU");
 
 		/* pstate = all interrupts masked */
 		let pstate: PSR = PSR::D_BIT | PSR::A_BIT | PSR::I_BIT | PSR::F_BIT | PSR::MODE_EL1H;
 		self.vcpu.write_register(Register::CPSR, pstate.bits())?;
 		self.vcpu.write_register(Register::PC, entry_point)?;
+		self.vcpu
+			.write_system_register(SystemRegister::SP_EL1, stack_address)?;
 		self.vcpu.write_register(Register::X0, BOOT_INFO_ADDR)?;
+		self.vcpu.write_register(Register::X1, cpu_id.into())?;
 
 		/*
 		 * Setup memory attribute type tables

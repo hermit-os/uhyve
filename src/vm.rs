@@ -117,7 +117,7 @@ pub enum VcpuStopReason {
 
 pub trait VirtualCPU {
 	/// Initialize the cpu to start running the code ad entry_point.
-	fn init(&mut self, entry_point: u64) -> HypervisorResult<()>;
+	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()>;
 
 	/// Continues execution.
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason>;
@@ -324,10 +324,11 @@ pub trait Vm {
 	/// Sets the elf entry point.
 	fn set_entry_point(&mut self, entry: u64);
 	fn get_entry_point(&self) -> u64;
+	fn set_stack_address(&mut self, stack_addresss: u64);
+	fn stack_address(&self) -> u64;
 	fn kernel_path(&self) -> &Path;
 	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU>;
 	fn set_boot_info(&mut self, header: *const RawBootInfo);
-	fn cpu_online(&self) -> u32;
 	fn verbose(&self) -> bool;
 	fn init_guest_mem(&self);
 
@@ -371,12 +372,9 @@ pub trait Vm {
 			},
 		};
 		let raw_boot_info_ptr = vm_mem.add(BOOT_INFO_ADDR as usize) as *mut RawBootInfo;
-		*raw_boot_info_ptr = {
-			let raw_boot_info = RawBootInfo::from(boot_info);
-			raw_boot_info.store_current_stack_address(start_address - KERNEL_STACK_SIZE);
-			raw_boot_info
-		};
+		*raw_boot_info_ptr = RawBootInfo::from(boot_info);
 		self.set_boot_info(raw_boot_info_ptr);
+		self.set_stack_address(start_address - KERNEL_STACK_SIZE);
 
 		Ok(())
 	}

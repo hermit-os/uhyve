@@ -173,7 +173,12 @@ impl UhyveCPU {
 		Ok(())
 	}
 
-	fn setup_long_mode(&self, entry_point: u64) -> Result<(), kvm_ioctls::Error> {
+	fn setup_long_mode(
+		&self,
+		entry_point: u64,
+		stack_address: u64,
+		cpu_id: u32,
+	) -> Result<(), kvm_ioctls::Error> {
 		//debug!("Setup long mode");
 
 		let mut sregs = self.vcpu.get_sregs()?;
@@ -224,6 +229,8 @@ impl UhyveCPU {
 		regs.rflags = 2;
 		regs.rip = entry_point;
 		regs.rdi = BOOT_INFO_ADDR;
+		regs.rsi = cpu_id.into();
+		regs.rsp = stack_address;
 
 		self.vcpu.set_regs(&regs)?;
 
@@ -248,8 +255,8 @@ impl UhyveCPU {
 }
 
 impl VirtualCPU for UhyveCPU {
-	fn init(&mut self, entry_point: u64) -> HypervisorResult<()> {
-		self.setup_long_mode(entry_point)?;
+	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
+		self.setup_long_mode(entry_point, stack_address, cpu_id)?;
 		self.setup_cpuid()?;
 
 		// be sure that the multiprocessor is runable

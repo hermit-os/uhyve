@@ -130,6 +130,7 @@ pub struct Uhyve {
 	vm: VmFd,
 	offset: u64,
 	entry_point: u64,
+	stack_address: u64,
 	mem: MmapMemory,
 	num_cpus: u32,
 	path: PathBuf,
@@ -145,6 +146,7 @@ impl fmt::Debug for Uhyve {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		f.debug_struct("Uhyve")
 			.field("entry_point", &self.entry_point)
+			.field("stack_address", &self.stack_address)
 			.field("mem", &self.mem)
 			.field("num_cpus", &self.num_cpus)
 			.field("path", &self.path)
@@ -258,6 +260,7 @@ impl Uhyve {
 			vm,
 			offset: 0,
 			entry_point: 0,
+			stack_address: 0,
 			mem,
 			num_cpus: cpu_count,
 			path: kernel_path,
@@ -296,6 +299,14 @@ impl Vm for Uhyve {
 		self.entry_point
 	}
 
+	fn set_stack_address(&mut self, stack_addresss: u64) {
+		self.stack_address = stack_addresss;
+	}
+
+	fn stack_address(&self) -> u64 {
+		self.stack_address
+	}
+
 	fn num_cpus(&self) -> u32 {
 		self.num_cpus
 	}
@@ -325,13 +336,6 @@ impl Vm for Uhyve {
 
 	fn set_boot_info(&mut self, header: *const RawBootInfo) {
 		self.boot_info = header;
-	}
-
-	fn cpu_online(&self) -> u32 {
-		let boot_info = unsafe { self.boot_info.as_ref() };
-		boot_info
-			.map(RawBootInfo::load_cpu_online)
-			.unwrap_or_default()
 	}
 
 	/// Initialize the page tables for the guest
