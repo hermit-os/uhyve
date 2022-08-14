@@ -6,4 +6,4 @@ edition = "2018"
 publish = false
 
 [target.'cfg(target_os = "hermit")'.dependencies]
-hermit-sys = { version = "0.2", git = "https://github.com/hermitcore/rusty-hermit", branch = "entry-next" }
+hermit-sys = "0.3"
