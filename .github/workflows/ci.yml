@@ -85,7 +85,6 @@ jobs:
       - uses: actions/checkout@v3
         with:
           repository: hermitcore/rusty-hermit
-          ref: entry-fix
           path: rusty-hermit
           submodules: true
       - name: Build rusty_demo
