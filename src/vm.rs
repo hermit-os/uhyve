@@ -374,7 +374,9 @@ pub trait Vm {
 		let raw_boot_info_ptr = vm_mem.add(BOOT_INFO_ADDR as usize) as *mut RawBootInfo;
 		*raw_boot_info_ptr = RawBootInfo::from(boot_info);
 		self.set_boot_info(raw_boot_info_ptr);
-		self.set_stack_address(start_address - KERNEL_STACK_SIZE);
+		self.set_stack_address(start_address.checked_sub(KERNEL_STACK_SIZE).expect(
+			"there should be enough space for the boot stack before the kernel start address",
+		));
 
 		Ok(())
 	}
