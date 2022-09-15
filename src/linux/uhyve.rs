@@ -120,12 +120,6 @@ impl UhyveNetwork {
 	}
 }
 
-impl Drop for UhyveNetwork {
-	fn drop(&mut self) {
-		debug!("Dropping network interface!");
-	}
-}
-
 pub struct Uhyve {
 	vm: VmFd,
 	offset: u64,
@@ -386,12 +380,6 @@ impl Vm for Uhyve {
 				);
 			}
 		}
-	}
-}
-
-impl Drop for Uhyve {
-	fn drop(&mut self) {
-		debug!("Drop virtual machine");
 	}
 }
 
