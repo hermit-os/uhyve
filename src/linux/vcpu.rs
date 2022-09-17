@@ -543,10 +543,3 @@ impl VirtualCPU for UhyveCPU {
 		);
 	}
 }
-
-impl Drop for UhyveCPU {
-	fn drop(&mut self) {
-		debug!("Drop vCPU {}", self.id);
-		//self.print_registers();
-	}
-}

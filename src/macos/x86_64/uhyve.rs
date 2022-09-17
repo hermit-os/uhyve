@@ -208,8 +208,6 @@ impl Vm for Uhyve {
 
 impl Drop for Uhyve {
 	fn drop(&mut self) {
-		debug!("Drop virtual machine");
-
 		unmap_mem(0, self.mem_size).unwrap();
 
 		unsafe {

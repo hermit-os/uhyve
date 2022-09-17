@@ -322,9 +322,6 @@ impl VirtualCPU for UhyveCPU {
 
 impl Drop for UhyveCPU {
 	fn drop(&mut self) {
-		debug!("Drop virtual CPU {}", self.id);
-		//self.print_registers();
-
-		let _ = self.vcpu.destroy();
+		self.vcpu.destroy().unwrap();
 	}
 }
