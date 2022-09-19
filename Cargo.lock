@@ -74,9 +74,9 @@ checksum = "c1ad822118d20d2c234f427000d5acc36eabe1e29a348c89b63dd60b13f28e5d"
 
 [[package]]
 name = "burst"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3ed49bfa95f5c856ee30faaff63ed51555423227626c9f1787ffc262fd27b79"
+checksum = "2126f73a8916d144752737656d641afbcf2d2a0227ec457fc9e60151b27b54ab"
 
 [[package]]
 name = "byte-unit"
