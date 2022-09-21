@@ -135,7 +135,6 @@ impl Uhyve {
 
 		// Wait for one vCPU to return with an exit code.
 		barrier.wait();
-		// thread::sleep(std::time::Duration::from_secs(1));
 
 		for thread in &threads {
 			KickSignal::pthread_kill(thread.as_pthread_t()).unwrap();
