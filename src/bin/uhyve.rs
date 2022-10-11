@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process;
 use std::str::FromStr;
 
-use clap::{Command, ErrorKind, IntoApp, Parser};
+use clap::{error::ErrorKind, Command, CommandFactory, Parser};
 use core_affinity::CoreId;
 use either::Either;
 use thiserror::Error;
@@ -203,7 +203,7 @@ struct CpuArgs {
 }
 
 impl CpuArgs {
-	fn get_affinity(self, app: &mut Command<'_>) -> Option<Vec<CoreId>> {
+	fn get_affinity(self, app: &mut Command) -> Option<Vec<CoreId>> {
 		self.affinity.map(|affinity| {
 			let affinity_num_vals = affinity.0.len();
 			let cpus_num_vals = self.cpu_count.get().try_into().unwrap();
