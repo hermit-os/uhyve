@@ -155,9 +155,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.0.12"
+version = "4.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "385007cbbed899260395a4107435fead4cad80684461b3cc78238bdcb0bad58f"
+checksum = "6bf8832993da70a4c6d13c581f4463c2bdda27b9bf1c5498dc4365543abe6d6f"
 dependencies = [
  "atty",
  "bitflags",
@@ -170,9 +170,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.0.10"
+version = "4.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db342ce9fda24fb191e2ed4e102055a4d381c1086a06630174cd8da8d5d917ce"
+checksum = "c42f169caba89a7d512b5418b09864543eeb4d497416c917d7137863bd2076ad"
 dependencies = [
  "heck",
  "proc-macro-error",
@@ -540,9 +540,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.134"
+version = "0.2.135"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "329c933548736bc49fd575ee68c89e8be4d260064184389a5b77517cddd99ffb"
+checksum = "68783febc7782c6c5cb401fbda4de5a9898be1762314da0bb2c10ced61f18b0c"
 
 [[package]]
 name = "log"
@@ -1037,7 +1037,7 @@ dependencies = [
  "bitflags",
  "burst",
  "byte-unit",
- "clap 4.0.12",
+ "clap 4.0.15",
  "core_affinity",
  "criterion",
  "either",
