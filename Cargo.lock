@@ -19,9 +19,9 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "assert_fs"
-version = "1.0.7"
+version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf09bb72e00da477c2596865e8873227e2196d263cca35414048875dbbeea1be"
+checksum = "d4dffb8bc45691cce7af186e8d97ab5e7a170f5b5f325739f5ba6f38d3bcb053"
 dependencies = [
  "doc-comment",
  "globwalk",
