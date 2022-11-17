@@ -18,7 +18,7 @@ Please visit the [Rust website](https://www.rust-lang.org/) and follow the insta
 Install uhyve with
 
 ```console
-$ cargo install uhyve
+$ cargo install --locked uhyve
 ```
 
 ## Requirements
