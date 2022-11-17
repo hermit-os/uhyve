@@ -1,6 +1,6 @@
 [package]
 name = "uhyve"
-version = "0.2.0"
+version = "0.2.1"
 authors = [
     "Stefan Lankes <slankes@eonerc.rwth-aachen.de>",
     "Martin Kröning <mkroening@posteo.net>",
@@ -56,8 +56,8 @@ rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-kvm-bindings = "0.5"
-kvm-ioctls = "0.11"
+kvm-bindings = "0.6"
+kvm-ioctls = "0.12"
 mac_address = "1.1"
 nix = "0.25"
 tun-tap = { version = "0.1", default-features = false }
