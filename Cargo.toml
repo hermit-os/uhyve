@@ -42,7 +42,7 @@ byte-unit = { version = "4.0", default-features = false, features = ["std"] }
 clap = { version = "4.0", features = ["derive", "env"] }
 core_affinity = "0.5"
 either = "1.8"
-env_logger = "0.9"
+env_logger = "0.10"
 gdbstub = "0.6"
 gdbstub_arch = "0.2"
 hermit-entry = { version = "0.9", features = ["loader"] }
