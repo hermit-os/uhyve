@@ -190,8 +190,7 @@ pub trait VirtualCPU {
 		for (counter, argument) in self.args().iter().enumerate() {
 			let argvptr = unsafe {
 				self.host_address(
-					*((argv + (counter + 1) as usize * mem::size_of::<usize>()) as *mut *mut u8)
-						as usize,
+					*((argv + (counter + 1) * mem::size_of::<usize>()) as *mut *mut u8) as usize,
 				)
 			};
 			let len = argument.len();

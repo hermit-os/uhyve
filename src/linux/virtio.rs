@@ -109,7 +109,7 @@ impl VirtioNetPciDevice {
 		write_u16!(registers, VENDOR_ID_REGISTER, 0x1AF4);
 		write_u16!(registers, DEVICE_ID_REGISTER, 0x1000);
 		write_u16!(registers, CLASS_REGISTER + 2, 0x0200);
-		write_u16!(registers, BAR0_REGISTER, IOBASE as u16);
+		write_u16!(registers, BAR0_REGISTER, IOBASE);
 		registers[STATUS_REGISTER as usize] = STATUS_DRIVER_NEEDS_RESET;
 		let virt_queues: Vec<Virtqueue> = Vec::new();
 		VirtioNetPciDevice {

@@ -222,27 +222,27 @@ impl UhyveCPU {
 		// Reload the segment descriptors
 		self.vcpu.write_register(
 			&Register::CS,
-			SegmentSelector::new(GDT_KERNEL_CODE as u16, PrivilegeLevel::Ring0).0 as u64,
+			SegmentSelector::new(GDT_KERNEL_CODE, PrivilegeLevel::Ring0).0 as u64,
 		)?;
 		self.vcpu.write_register(
 			&Register::DS,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).0 as u64,
+			SegmentSelector::new(GDT_KERNEL_DATA, PrivilegeLevel::Ring0).0 as u64,
 		)?;
 		self.vcpu.write_register(
 			&Register::ES,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).0 as u64,
+			SegmentSelector::new(GDT_KERNEL_DATA, PrivilegeLevel::Ring0).0 as u64,
 		)?;
 		self.vcpu.write_register(
 			&Register::SS,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).0 as u64,
+			SegmentSelector::new(GDT_KERNEL_DATA, PrivilegeLevel::Ring0).0 as u64,
 		)?;
 		self.vcpu.write_register(
 			&Register::FS,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).0 as u64,
+			SegmentSelector::new(GDT_KERNEL_DATA, PrivilegeLevel::Ring0).0 as u64,
 		)?;
 		self.vcpu.write_register(
 			&Register::GS,
-			SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0).0 as u64,
+			SegmentSelector::new(GDT_KERNEL_DATA, PrivilegeLevel::Ring0).0 as u64,
 		)?;
 
 		Ok(())
@@ -458,14 +458,14 @@ impl UhyveCPU {
 			IA32_EFER => {
 				let rax = self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
 				let rdx = self.vcpu.read_register(&Register::RDX)? & 0xFFFFFFFF;
-				let efer = ((rdx as u64) << 32) | rax as u64;
+				let efer = (rdx << 32) | rax;
 
 				self.vcpu.write_vmcs(VMCS_GUEST_IA32_EFER, efer)?;
 			}
 			IA32_APIC_BASE => {
 				let rax = self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
 				let rdx = self.vcpu.read_register(&Register::RDX)? & 0xFFFFFFFF;
-				let base = ((rdx as u64) << 32) | rax as u64;
+				let base = (rdx << 32) | rax;
 
 				self.apic_base = base;
 				self.vcpu.set_apic_addr(base & !0xFFF)?;
@@ -494,7 +494,7 @@ impl UhyveCPU {
 		let len = self.vcpu.read_vmcs(VMCS_RO_VMEXIT_INSTR_LEN)?;
 		let eax = self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
 		let edx = self.vcpu.read_register(&Register::RDX)? & 0xFFFFFFFF;
-		let xcr0: u64 = ((edx as u64) << 32) | eax as u64;
+		let xcr0: u64 = (edx << 32) | eax;
 
 		self.vcpu.write_register(&Register::XCR0, xcr0)?;
 		self.vcpu.write_register(&Register::RIP, rip + len)?;
