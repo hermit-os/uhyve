@@ -99,8 +99,7 @@ impl GdbUhyve {
 				vector => unreachable!("unknown KVM exception vector: {}", vector),
 			},
 			VcpuStopReason::Exit(code) => {
-				let status = if code == 0 { 0 } else { 1 };
-				SingleThreadStopReason::Exited(status)
+				SingleThreadStopReason::Exited(code.try_into().unwrap())
 			}
 			VcpuStopReason::Kick => SingleThreadStopReason::Signal(Signal::SIGINT),
 		};
