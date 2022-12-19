@@ -98,9 +98,7 @@ impl GdbUhyve {
 				BP_VECTOR => SingleThreadStopReason::SwBreak(()),
 				vector => unreachable!("unknown KVM exception vector: {}", vector),
 			},
-			VcpuStopReason::Exit(code) => {
-				SingleThreadStopReason::Exited(code.try_into().unwrap())
-			}
+			VcpuStopReason::Exit(code) => SingleThreadStopReason::Exited(code.try_into().unwrap()),
 			VcpuStopReason::Kick => SingleThreadStopReason::Signal(Signal::SIGINT),
 		};
 		Ok(stop_reason)

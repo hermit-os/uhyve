@@ -314,7 +314,6 @@ impl Vm for Uhyve {
 	}
 
 	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU> {
-		let vm_start = self.mem.host_address as usize;
 		let tx = self.uhyve_device.as_ref().map(|dev| dev.tx.clone());
 
 		Ok(UhyveCPU::new(
@@ -322,7 +321,7 @@ impl Vm for Uhyve {
 			self.path.clone(),
 			self.args.clone(),
 			self.vm.create_vcpu(id.try_into().unwrap())?,
-			vm_start,
+			self.mem.host_address,
 			tx,
 			self.virtio_device.clone(),
 		))
