@@ -50,6 +50,7 @@ libc = "0.2"
 log = "0.4"
 thiserror = "1.0"
 time = "0.3"
+uhypercall-interface = {path = "./uhypercall-interface"}
 
 rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }

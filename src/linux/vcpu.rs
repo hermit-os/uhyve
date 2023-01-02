@@ -7,6 +7,7 @@ use std::{
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
+use uhypercall_interface::*;
 use x86_64::{
 	registers::control::{Cr0Flags, Cr4Flags},
 	structures::paging::PageTableFlags,
@@ -15,10 +16,7 @@ use x86_64::{
 use crate::{
 	consts::*,
 	linux::{virtio::*, KVM},
-	vm::{
-		HypervisorResult, SysClose, SysCmdsize, SysCmdval, SysExit, SysLseek, SysOpen, SysRead,
-		SysUnlink, SysWrite, VcpuStopReason, VirtualCPU,
-	},
+	vm::{HypervisorResult, VcpuStopReason, VirtualCPU},
 };
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
