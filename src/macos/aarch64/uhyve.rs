@@ -1,19 +1,21 @@
-use crate::aarch64::{PT_MEM, PT_MEM_CD, PT_PT, PT_SELF};
-use crate::consts::{BOOT_INFO_ADDR, BOOT_PGT, PAGE_SIZE};
-use crate::macos::aarch64::vcpu::*;
-use crate::macos::aarch64::HYPERVISOR_PAGE_SIZE;
-use crate::params::Params;
-use crate::vm::HypervisorResult;
-use crate::vm::Vm;
+use std::{
+	ffi::OsString,
+	path::{Path, PathBuf},
+	ptr,
+};
+
 use hermit_entry::boot_info::RawBootInfo;
-use libc;
-use libc::c_void;
+use libc::{self, c_void};
 use log::debug;
-use std::ffi::OsString;
-use std::path::Path;
-use std::path::PathBuf;
-use std::ptr;
 use xhypervisor::{create_vm, map_mem, unmap_mem, MemPerm};
+
+use crate::{
+	aarch64::{PT_MEM, PT_MEM_CD, PT_PT, PT_SELF},
+	consts::{BOOT_INFO_ADDR, BOOT_PGT, PAGE_SIZE},
+	macos::aarch64::{vcpu::*, HYPERVISOR_PAGE_SIZE},
+	params::Params,
+	vm::{HypervisorResult, Vm},
+};
 
 pub struct Uhyve {
 	offset: u64,

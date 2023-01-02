@@ -1,8 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use std::fs::File;
-use std::io::prelude::*;
+use std::{fs::File, io::prelude::*};
 
 #[cfg(target_os = "hermit")]
 extern crate hermit_sys;

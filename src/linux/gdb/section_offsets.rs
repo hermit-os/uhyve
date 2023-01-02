@@ -1,8 +1,10 @@
-use gdbstub::target::{self, ext::section_offsets::Offsets};
-
-use crate::vm::Vm;
+use gdbstub::target::{
+	ext::section_offsets::Offsets,
+	{self},
+};
 
 use super::GdbUhyve;
+use crate::vm::Vm;
 
 impl target::ext::section_offsets::SectionOffsets for GdbUhyve {
 	fn get_section_offsets(&mut self) -> Result<Offsets<u64>, Self::Error> {

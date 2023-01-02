@@ -1,14 +1,11 @@
-use crate::linux::virtqueue::*;
-use crate::vm::VirtualCPU;
+use std::{fmt, mem::size_of, ptr::copy_nonoverlapping, sync::Mutex, vec::Vec};
+
 use log::info;
 use mac_address::*;
-use std::fmt;
-use std::mem::size_of;
-use std::ptr::copy_nonoverlapping;
-use std::sync::Mutex;
-use std::vec::Vec;
 use tun_tap::*;
 use virtio_bindings::bindings::virtio_net::*;
+
+use crate::{linux::virtqueue::*, vm::VirtualCPU};
 
 const STATUS_ACKNOWLEDGE: u8 = 0b00000001;
 const STATUS_DRIVER: u8 = 0b00000010;

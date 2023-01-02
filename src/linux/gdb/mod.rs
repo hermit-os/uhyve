@@ -2,6 +2,8 @@ mod breakpoints;
 mod regs;
 mod section_offsets;
 
+use std::{io::Read, net::TcpStream, sync::Once, thread, time::Duration};
+
 use gdbstub::{
 	common::Signal,
 	conn::{Connection, ConnectionExt},
@@ -15,16 +17,16 @@ use kvm_bindings::{
 };
 use libc::EINVAL;
 use nix::sys::pthread::pthread_self;
-use std::{io::Read, net::TcpStream, sync::Once, thread, time::Duration};
 use x86_64::registers::debug::Dr6Flags;
 
-use crate::linux::{vcpu::UhyveCPU, KickSignal};
-use crate::vm::{VcpuStopReason, VirtualCPU};
-use crate::{arch::x86_64::registers::debug::HwBreakpoints, Uhyve};
-
 use self::breakpoints::SwBreakpoints;
-
 use super::HypervisorError;
+use crate::{
+	arch::x86_64::registers::debug::HwBreakpoints,
+	linux::{vcpu::UhyveCPU, KickSignal},
+	vm::{VcpuStopReason, VirtualCPU},
+	Uhyve,
+};
 
 pub struct GdbUhyve {
 	vm: Uhyve,

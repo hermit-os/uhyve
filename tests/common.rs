@@ -1,9 +1,10 @@
-use byte_unit::Byte;
 use std::{
 	env,
 	path::{Path, PathBuf},
 	process::Command,
 };
+
+use byte_unit::Byte;
 use uhyvelib::{params::Params, Uhyve};
 
 /// Uses Cargo to build a kernel in the `tests/test-kernels` directory.

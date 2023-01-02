@@ -1,10 +1,11 @@
 mod common;
 
-use common::{build_hermit_bin, run_simple_vm};
 use std::{
 	fs::{read, remove_file},
 	path::PathBuf,
 };
+
+use common::{build_hermit_bin, run_simple_vm};
 
 #[test]
 fn new_file_test() {

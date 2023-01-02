@@ -1,27 +1,24 @@
+use std::{
+	ffi::OsString, fs, io, io::Write, mem, mem::MaybeUninit, num::NonZeroU32,
+	os::unix::ffi::OsStrExt, path::Path, slice, time::SystemTime,
+};
+
 use hermit_entry::{
 	boot_info::{BootInfo, HardwareInfo, PlatformInfo, RawBootInfo, SerialPortBase},
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
 use log::{error, warn};
-use std::ffi::OsString;
-use std::io::Write;
-use std::mem::MaybeUninit;
-use std::num::NonZeroU32;
-use std::os::unix::ffi::OsStrExt;
-use std::path::Path;
-use std::time::SystemTime;
-use std::{fs, io, mem, slice};
 use thiserror::Error;
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::{
 	detect_freq_from_cpuid, detect_freq_from_cpuid_hypervisor_info, get_cpu_frequency_from_os,
 };
-
-use crate::os::vcpu::UhyveCPU;
-use crate::os::DebugExitInfo;
-use crate::os::HypervisorError;
-use crate::{arch, consts::*};
+use crate::{
+	arch,
+	consts::*,
+	os::{vcpu::UhyveCPU, DebugExitInfo, HypervisorError},
+};
 
 #[repr(C, packed)]
 pub struct SysWrite {

@@ -1,7 +1,6 @@
+use std::{marker::PhantomData, mem, mem::size_of};
+
 use crate::consts::PAGE_SIZE;
-use std::marker::PhantomData;
-use std::mem;
-use std::mem::size_of;
 
 pub const QUEUE_LIMIT: usize = 256;
 
