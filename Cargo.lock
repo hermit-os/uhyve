@@ -1117,6 +1117,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "uhypercall-interface"
+version = "0.1.0"
+dependencies = [
+ "x86_64",
+]
+
+[[package]]
 name = "uhyve"
 version = "0.2.2"
 dependencies = [
@@ -1146,6 +1153,7 @@ dependencies = [
  "spin",
  "thiserror",
  "time",
+ "uhypercall-interface",
  "virtio-bindings",
  "virtio-queue",
  "vm-memory",

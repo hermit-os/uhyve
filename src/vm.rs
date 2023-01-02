@@ -9,6 +9,7 @@ use hermit_entry::{
 };
 use log::{error, warn};
 use thiserror::Error;
+use uhypercall_interface::*;
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::{
@@ -19,72 +20,6 @@ use crate::{
 	consts::*,
 	os::{vcpu::UhyveCPU, DebugExitInfo, HypervisorError},
 };
-
-#[repr(C, packed)]
-pub struct SysWrite {
-	fd: i32,
-	buf: *const u8,
-	len: usize,
-}
-
-#[repr(C, packed)]
-pub struct SysRead {
-	fd: i32,
-	buf: *const u8,
-	len: usize,
-	ret: isize,
-}
-
-#[repr(C, packed)]
-pub struct SysClose {
-	fd: i32,
-	ret: i32,
-}
-
-#[repr(C, packed)]
-pub struct SysOpen {
-	name: *const u8,
-	flags: i32,
-	mode: i32,
-	ret: i32,
-}
-
-#[repr(C, packed)]
-pub struct SysLseek {
-	fd: i32,
-	offset: isize,
-	whence: i32,
-}
-
-#[repr(C, packed)]
-pub struct SysExit {
-	arg: i32,
-}
-
-// FIXME: Do not use a fix number of arguments
-const MAX_ARGC: usize = 128;
-// FIXME: Do not use a fix number of environment variables
-const MAX_ENVC: usize = 128;
-
-#[repr(C, packed)]
-pub struct SysCmdsize {
-	argc: i32,
-	argsz: [i32; MAX_ARGC],
-	envc: i32,
-	envsz: [i32; MAX_ENVC],
-}
-
-#[repr(C, packed)]
-pub struct SysCmdval {
-	argv: *const u8,
-	envp: *const u8,
-}
-
-#[repr(C, packed)]
-pub struct SysUnlink {
-	name: *const u8,
-	ret: i32,
-}
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
 
@@ -154,21 +89,21 @@ pub trait VirtualCPU {
 
 		let mut counter = 0;
 		for (key, value) in std::env::vars_os() {
-			if counter < MAX_ENVC.try_into().unwrap() {
+			if counter < MAX_ARGC_ENVC.try_into().unwrap() {
 				syssize.envsz[counter as usize] = (key.len() + value.len()) as i32 + 2;
 				counter += 1;
 			}
 		}
 		syssize.envc = counter;
 
-		if counter >= MAX_ENVC.try_into().unwrap() {
+		if counter >= MAX_ARGC_ENVC.try_into().unwrap() {
 			warn!("Environment is too large!");
 		}
 	}
 
 	/// Copies the arguments end environment of the application into the VM's memory.
 	fn cmdval(&self, syscmdval: &SysCmdval) {
-		let argv = self.host_address(syscmdval.argv as usize);
+		let argv = self.host_address(syscmdval.argv.as_u64() as usize);
 
 		// copy kernel path as first argument
 		{
@@ -200,9 +135,9 @@ pub trait VirtualCPU {
 
 		// Copy the environment variables into the vm memory
 		let mut counter = 0;
-		let envp = self.host_address(syscmdval.envp as usize);
+		let envp = self.host_address(syscmdval.envp.as_u64() as usize);
 		for (key, value) in std::env::vars_os() {
-			if counter < MAX_ENVC.try_into().unwrap() {
+			if counter < MAX_ARGC_ENVC.try_into().unwrap() {
 				let envptr = unsafe {
 					self.host_address(
 						*((envp + counter as usize * mem::size_of::<usize>()) as *mut *mut u8)
@@ -226,7 +161,8 @@ pub trait VirtualCPU {
 	/// TODO: UNSAFE AS *%@#. It has to be checked that the VM is allowed to unlink that file!
 	fn unlink(&self, sysunlink: &mut SysUnlink) {
 		unsafe {
-			sysunlink.ret = libc::unlink(self.host_address(sysunlink.name as usize) as *const i8);
+			sysunlink.ret =
+				libc::unlink(self.host_address(sysunlink.name.as_u64() as usize) as *const i8);
 		}
 	}
 
