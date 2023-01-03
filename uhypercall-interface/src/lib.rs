@@ -33,7 +33,7 @@ pub enum HypercallPorts {
 	Cmdval = 0x780,
 	FileUnlink = 0x840,
 }
-impl From<Hypercall> for HypercallPorts {
+impl From<Hypercall<'_>> for HypercallPorts {
 	fn from(value: Hypercall) -> Self {
 		match value {
 			Hypercall::Cmdsize(_) => Self::Cmdsize,
@@ -51,19 +51,19 @@ impl From<Hypercall> for HypercallPorts {
 
 /// Hypervisor calls available in uhyve with their respective parameters.
 #[non_exhaustive]
-#[derive(Debug, Copy, Clone)]
-pub enum Hypercall {
-	Cmdsize(SysCmdsize),
-	Cmdval(SysCmdval),
-	Exit(SysExit),
-	FileClose(SysClose),
-	FileLseek(SysLseek),
-	FileOpen(SysOpen),
-	FileRead(SysRead),
-	FileWrite(SysWrite),
-	FileUnlink(SysUnlink),
+#[derive(Debug)]
+pub enum Hypercall<'a> {
+	Cmdsize(&'a mut SysCmdsize),
+	Cmdval(&'a SysCmdval),
+	Exit(&'a SysExit),
+	FileClose(&'a mut SysClose),
+	FileLseek(&'a mut SysLseek),
+	FileOpen(&'a mut SysOpen),
+	FileRead(&'a mut SysRead),
+	FileWrite(&'a SysWrite),
+	FileUnlink(&'a mut SysUnlink),
 }
-impl Hypercall {
+impl<'a> Hypercall<'a> {
 	pub fn port(self) -> u16 {
 		HypercallPorts::from(self) as u16
 	}
