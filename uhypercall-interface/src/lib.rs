@@ -10,6 +10,62 @@
 
 use x86_64::PhysAddr;
 
+/// Enum containing all valid port mappings for hypercalls.
+///
+/// The discriminants of this enum are the respective ports, so one can get the code by calling
+/// e.g., `HypercallPorts::FileWrite as u16`.
+#[non_exhaustive]
+#[repr(u16)]
+pub enum HypercallPorts {
+	FileWrite = 0x400,
+	FileOpen = 0x440,
+	FileClose = 0x480,
+	FileRead = 0x500,
+	Exit = 0x540,
+	FileLseek = 0x580,
+	Netwrite = 0x640,
+	Netread = 0x680,
+	Netstat = 0x700,
+	Cmdsize = 0x740,
+	Cmdval = 0x780,
+	FileUnlink = 0x840,
+}
+impl From<Hypercall> for HypercallPorts {
+	fn from(value: Hypercall) -> Self {
+		match value {
+			Hypercall::Cmdsize(_) => Self::Cmdsize,
+			Hypercall::Cmdval(_) => Self::Cmdval,
+			Hypercall::Exit(_) => Self::Exit,
+			Hypercall::FileClose(_) => Self::FileClose,
+			Hypercall::FileLseek(_) => Self::FileLseek,
+			Hypercall::FileOpen(_) => Self::FileOpen,
+			Hypercall::FileRead(_) => Self::FileRead,
+			Hypercall::FileWrite(_) => Self::FileWrite,
+			Hypercall::FileUnlink(_) => Self::FileUnlink,
+		}
+	}
+}
+
+/// Hypervisor calls available in uhyve with their respective parameters.
+#[non_exhaustive]
+#[derive(Debug, Copy, Clone)]
+pub enum Hypercall {
+	Cmdsize(SysCmdsize),
+	Cmdval(SysCmdval),
+	Exit(SysExit),
+	FileClose(SysClose),
+	FileLseek(SysLseek),
+	FileOpen(SysOpen),
+	FileRead(SysRead),
+	FileWrite(SysWrite),
+	FileUnlink(SysUnlink),
+}
+impl Hypercall {
+	pub fn port(self) -> u16 {
+		HypercallPorts::from(self) as u16
+	}
+}
+
 pub const UHYVE_PORT_WRITE: u16 = 0x400;
 pub const UHYVE_PORT_OPEN: u16 = 0x440;
 pub const UHYVE_PORT_CLOSE: u16 = 0x480;
