@@ -8,6 +8,8 @@
 
 #![no_std]
 
+// TODO: Throw this out, once https://github.com/rust-lang/rfcs/issues/2783 or https://github.com/rust-lang/rust/issues/86772 is resolved
+use num_enum::TryFromPrimitive;
 use x86_64::PhysAddr;
 
 /// Enum containing all valid port mappings for hypercalls.
@@ -16,6 +18,7 @@ use x86_64::PhysAddr;
 /// e.g., `HypercallPorts::FileWrite as u16`.
 #[non_exhaustive]
 #[repr(u16)]
+#[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
 pub enum HypercallPorts {
 	FileWrite = 0x400,
 	FileOpen = 0x440,
