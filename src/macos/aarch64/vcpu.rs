@@ -1,21 +1,22 @@
 #![allow(non_snake_case)]
 #![allow(clippy::identity_op)]
 
-use crate::aarch64::{
-	mair, tcr_size, MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_DEVICE_GRE, MT_NORMAL, MT_NORMAL_NC, PSR,
-	TCR_FLAGS, TCR_TG1_4K, VA_BITS,
+use std::{
+	ffi::OsString,
+	path::{Path, PathBuf},
 };
-use crate::consts::*;
-use crate::vm::HypervisorResult;
-use crate::vm::SysExit;
-use crate::vm::VcpuStopReason;
-use crate::vm::VirtualCPU;
+
 use log::debug;
-use std::ffi::OsString;
-use std::path::Path;
-use std::path::PathBuf;
-use xhypervisor;
-use xhypervisor::{Register, SystemRegister, VirtualCpuExitReason};
+use xhypervisor::{self, Register, SystemRegister, VirtualCpuExitReason};
+
+use crate::{
+	aarch64::{
+		mair, tcr_size, MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_DEVICE_GRE, MT_NORMAL, MT_NORMAL_NC,
+		PSR, TCR_FLAGS, TCR_TG1_4K, VA_BITS,
+	},
+	consts::*,
+	vm::{HypervisorResult, SysExit, VcpuStopReason, VirtualCPU},
+};
 
 pub struct UhyveCPU {
 	id: u32,

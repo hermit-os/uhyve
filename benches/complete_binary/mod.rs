@@ -1,13 +1,13 @@
 extern crate criterion;
 
-use criterion::{criterion_group, Criterion};
+use std::{
+	env, fs,
+	path::{Path, PathBuf},
+	process::{Command, Stdio},
+	time::Duration,
+};
 
-use std::env;
-use std::fs;
-use std::path::Path;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::time::Duration;
+use criterion::{criterion_group, Criterion};
 
 // based on https://stackoverflow.com/questions/35045996/check-if-a-command-is-in-path-executable-as-process#35046243
 fn is_program_in_path(program: &str) -> bool {

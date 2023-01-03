@@ -1,41 +1,43 @@
 #![allow(non_snake_case)]
 
-use crate::consts::*;
-use crate::macos::x86_64::ioapic::IoApic;
-use crate::vm::HypervisorResult;
-use crate::vm::SysClose;
-use crate::vm::SysCmdsize;
-use crate::vm::SysCmdval;
-use crate::vm::SysExit;
-use crate::vm::SysLseek;
-use crate::vm::SysOpen;
-use crate::vm::SysRead;
-use crate::vm::SysUnlink;
-use crate::vm::SysWrite;
-use crate::vm::VcpuStopReason;
-use crate::vm::VirtualCPU;
+use std::{
+	arch::x86_64::__cpuid_count,
+	ffi::OsString,
+	path::{Path, PathBuf},
+	sync::{Arc, Mutex},
+};
+
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use lazy_static::lazy_static;
 use log::{debug, trace};
-use std::arch::x86_64::__cpuid_count;
-use std::ffi::OsString;
-use std::path::Path;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use x86_64::registers::control::Cr0Flags;
-use x86_64::registers::control::Cr4Flags;
-use x86_64::structures::gdt::SegmentSelector;
-use x86_64::structures::paging::PageTableFlags;
-use x86_64::PrivilegeLevel;
-use xhypervisor;
-use xhypervisor::consts::vmcs::*;
-use xhypervisor::consts::vmx_cap::{
-	CPU_BASED2_APIC_REG_VIRT, CPU_BASED2_RDTSCP, CPU_BASED_MONITOR, CPU_BASED_MSR_BITMAPS,
-	CPU_BASED_MWAIT, CPU_BASED_SECONDARY_CTLS, CPU_BASED_TPR_SHADOW, CPU_BASED_TSC_OFFSET,
-	PIN_BASED_INTR, PIN_BASED_NMI, PIN_BASED_VIRTUAL_NMI, VMENTRY_GUEST_IA32E, VMENTRY_LOAD_EFER,
+use x86_64::{
+	registers::control::{Cr0Flags, Cr4Flags},
+	structures::{gdt::SegmentSelector, paging::PageTableFlags},
+	PrivilegeLevel,
 };
-use xhypervisor::consts::vmx_exit;
-use xhypervisor::{read_vmx_cap, Register};
+use xhypervisor::{
+	self,
+	consts::{
+		vmcs::*,
+		vmx_cap::{
+			CPU_BASED2_APIC_REG_VIRT, CPU_BASED2_RDTSCP, CPU_BASED_MONITOR, CPU_BASED_MSR_BITMAPS,
+			CPU_BASED_MWAIT, CPU_BASED_SECONDARY_CTLS, CPU_BASED_TPR_SHADOW, CPU_BASED_TSC_OFFSET,
+			PIN_BASED_INTR, PIN_BASED_NMI, PIN_BASED_VIRTUAL_NMI, VMENTRY_GUEST_IA32E,
+			VMENTRY_LOAD_EFER,
+		},
+		vmx_exit,
+	},
+	read_vmx_cap, Register,
+};
+
+use crate::{
+	consts::*,
+	macos::x86_64::ioapic::IoApic,
+	vm::{
+		HypervisorResult, SysClose, SysCmdsize, SysCmdval, SysExit, SysLseek, SysOpen, SysRead,
+		SysUnlink, SysWrite, VcpuStopReason, VirtualCPU,
+	},
+};
 
 /// Extracted from `x86::msr`.
 mod msr {

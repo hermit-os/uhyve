@@ -1,20 +1,18 @@
 #![warn(rust_2018_idioms)]
 
-use std::ffi::OsString;
-use std::iter;
-use std::num::ParseIntError;
-use std::ops::RangeInclusive;
-use std::path::PathBuf;
-use std::process;
-use std::str::FromStr;
+use std::{
+	ffi::OsString, iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process,
+	str::FromStr,
+};
 
 use clap::{error::ErrorKind, Command, CommandFactory, Parser};
 use core_affinity::CoreId;
 use either::Either;
 use thiserror::Error;
-
-use uhyvelib::params::{CpuCount, GuestMemorySize, Params};
-use uhyvelib::Uhyve;
+use uhyvelib::{
+	params::{CpuCount, GuestMemorySize, Params},
+	Uhyve,
+};
 
 #[cfg(feature = "instrument")]
 fn setup_trace() {

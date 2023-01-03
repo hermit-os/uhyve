@@ -3,14 +3,15 @@
 #[allow(dead_code)]
 mod common;
 
-use assert_fs::{assert::PathAssert, fixture::PathChild, TempDir};
-use common::build_hermit_bin;
 use std::{
 	fs::File,
 	io::{self, Write},
 	process::Command,
 	thread,
 };
+
+use assert_fs::{assert::PathAssert, fixture::PathChild, TempDir};
+use common::build_hermit_bin;
 use uhyvelib::{params::Params, Uhyve};
 
 #[test]

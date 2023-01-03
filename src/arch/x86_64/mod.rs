@@ -1,10 +1,13 @@
 pub mod registers;
 
 use core::arch::x86_64::_rdtsc as rdtsc;
+use std::{
+	convert::TryInto,
+	time::{Duration, Instant},
+};
+
 use log::{debug, warn};
 use raw_cpuid::CpuId;
-use std::convert::TryInto;
-use std::time::{Duration, Instant};
 
 pub const RAM_START: u64 = 0x00;
 const MHZ_TO_HZ: u64 = 1000000;

@@ -2,9 +2,8 @@ use std::collections::{hash_map::Entry, HashMap};
 
 use gdbstub::target::{self, ext::breakpoints::WatchKind, TargetResult};
 
-use crate::arch::x86_64::registers;
-
 use super::GdbUhyve;
+use crate::arch::x86_64::registers;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SwBreakpoint {

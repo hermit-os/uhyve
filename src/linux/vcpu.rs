@@ -1,27 +1,25 @@
-use crate::consts::*;
-use crate::linux::virtio::*;
-use crate::linux::KVM;
-use crate::vm::HypervisorResult;
-use crate::vm::SysClose;
-use crate::vm::SysCmdsize;
-use crate::vm::SysCmdval;
-use crate::vm::SysExit;
-use crate::vm::SysLseek;
-use crate::vm::SysOpen;
-use crate::vm::SysRead;
-use crate::vm::SysUnlink;
-use crate::vm::SysWrite;
-use crate::vm::VcpuStopReason;
-use crate::vm::VirtualCPU;
+use std::{
+	ffi::OsString,
+	path::{Path, PathBuf},
+	slice,
+	sync::{Arc, Mutex},
+};
+
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
-use std::ffi::OsString;
-use std::path::Path;
-use std::path::PathBuf;
-use std::slice;
-use std::sync::{Arc, Mutex};
-use x86_64::registers::control::{Cr0Flags, Cr4Flags};
-use x86_64::structures::paging::PageTableFlags;
+use x86_64::{
+	registers::control::{Cr0Flags, Cr4Flags},
+	structures::paging::PageTableFlags,
+};
+
+use crate::{
+	consts::*,
+	linux::{virtio::*, KVM},
+	vm::{
+		HypervisorResult, SysClose, SysCmdsize, SysCmdval, SysExit, SysLseek, SysOpen, SysRead,
+		SysUnlink, SysWrite, VcpuStopReason, VirtualCPU,
+	},
+};
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
 const CPUID_TSC_DEADLINE: u32 = 1 << 24;

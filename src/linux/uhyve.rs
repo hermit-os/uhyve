@@ -1,37 +1,37 @@
 //! This file contains the entry point to the Hypervisor. The Uhyve utilizes KVM to
 //! create a Virtual Machine and load the kernel.
 
-use crate::consts::*;
-use crate::linux::vcpu::*;
-use crate::linux::virtio::*;
-use crate::linux::KVM;
-use crate::params::Params;
-use crate::shared_queue::*;
-use crate::vm::HypervisorResult;
-use crate::vm::Vm;
-use crate::x86_64::create_gdt_entry;
+use std::{
+	cmp,
+	ffi::OsString,
+	fmt, hint, mem,
+	os::raw::c_void,
+	path::{Path, PathBuf},
+	ptr::{self, read_volatile, write_volatile},
+	sync::{mpsc::sync_channel, Arc, Mutex},
+	thread,
+};
+
 use hermit_entry::boot_info::RawBootInfo;
 use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use log::debug;
 use nix::sys::mman::*;
-use std::cmp;
-use std::ffi::OsString;
-use std::fmt;
-use std::hint;
-use std::mem;
-use std::os::raw::c_void;
-use std::path::Path;
-use std::path::PathBuf;
-use std::ptr;
-use std::ptr::{read_volatile, write_volatile};
-use std::sync::mpsc::sync_channel;
-use std::sync::{Arc, Mutex};
-use std::thread;
 use tun_tap::{Iface, Mode};
 use vmm_sys_util::eventfd::EventFd;
-use x86_64::structures::paging::{Page, PageTable, PageTableFlags, Size2MiB};
-use x86_64::PhysAddr;
+use x86_64::{
+	structures::paging::{Page, PageTable, PageTableFlags, Size2MiB},
+	PhysAddr,
+};
+
+use crate::{
+	consts::*,
+	linux::{vcpu::*, virtio::*, KVM},
+	params::Params,
+	shared_queue::*,
+	vm::{HypervisorResult, Vm},
+	x86_64::create_gdt_entry,
+};
 
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
 const KVM_32BIT_GAP_SIZE: usize = 768 << 20;

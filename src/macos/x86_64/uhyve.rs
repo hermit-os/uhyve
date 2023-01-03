@@ -1,23 +1,27 @@
-use crate::consts::*;
-use crate::macos::x86_64::ioapic::IoApic;
-use crate::macos::x86_64::vcpu::*;
-use crate::params::Params;
-use crate::vm::HypervisorResult;
-use crate::vm::Vm;
-use crate::x86_64::create_gdt_entry;
+use std::{
+	ffi::OsString,
+	mem,
+	path::{Path, PathBuf},
+	ptr,
+	sync::{Arc, Mutex},
+};
+
 use hermit_entry::boot_info::RawBootInfo;
-use libc;
-use libc::c_void;
+use libc::{self, c_void};
 use log::debug;
-use std::ffi::OsString;
-use std::mem;
-use std::path::Path;
-use std::path::PathBuf;
-use std::ptr;
-use std::sync::{Arc, Mutex};
-use x86_64::structures::paging::{Page, PageTable, PageTableFlags, Size2MiB};
-use x86_64::PhysAddr;
+use x86_64::{
+	structures::paging::{Page, PageTable, PageTableFlags, Size2MiB},
+	PhysAddr,
+};
 use xhypervisor::{create_vm, map_mem, unmap_mem, MemPerm};
+
+use crate::{
+	consts::*,
+	macos::x86_64::{ioapic::IoApic, vcpu::*},
+	params::Params,
+	vm::{HypervisorResult, Vm},
+	x86_64::create_gdt_entry,
+};
 
 pub struct Uhyve {
 	offset: u64,

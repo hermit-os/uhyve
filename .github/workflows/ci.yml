@@ -102,6 +102,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      # TODO: Remove this, once https://github.com/rust-lang/rustfmt/issues/4991 is resolved
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
       - name: Format
         run: cargo fmt --all -- --check
       - name: Format Test Kernels
