@@ -95,26 +95,9 @@ impl<'a> Hypercall<'a> {
 	}
 }
 
-pub const UHYVE_PORT_WRITE: u16 = 0x400;
-pub const UHYVE_PORT_OPEN: u16 = 0x440;
-pub const UHYVE_PORT_CLOSE: u16 = 0x480;
-pub const UHYVE_PORT_READ: u16 = 0x500;
-pub const UHYVE_PORT_EXIT: u16 = 0x540;
-pub const UHYVE_PORT_LSEEK: u16 = 0x580;
-
 // Networkports (not used at the moment)
 // TODO: Update interface
 pub const UHYVE_PORT_NETWRITE: u16 = 0x640;
-pub const UHYVE_PORT_NETREAD: u16 = 0x680;
-pub const UHYVE_PORT_NETSTAT: u16 = 0x700;
-
-/* Ports and data structures for uhyve command line arguments and envp
- * forwarding */
-pub const UHYVE_PORT_CMDSIZE: u16 = 0x740;
-pub const UHYVE_PORT_CMDVAL: u16 = 0x780;
-
-pub const UHYVE_UART_PORT: u16 = 0x800;
-pub const UHYVE_PORT_UNLINK: u16 = 0x840;
 
 // FIXME: Do not use a fix number of arguments
 pub const MAX_ARGC_ENVC: usize = 128;
