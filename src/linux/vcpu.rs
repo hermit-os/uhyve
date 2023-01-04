@@ -7,7 +7,7 @@ use std::{
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
-use uhypercall_interface::*;
+use uhypercall_interface::{Hypercall, UHYVE_PORT_NETWRITE, UHYVE_UART_PORT};
 use x86_64::{
 	registers::control::{Cr0Flags, Cr4Flags},
 	structures::paging::PageTableFlags,
@@ -361,118 +361,70 @@ impl VirtualCPU for UhyveCPU {
 						}
 					},
 					VcpuExit::IoOut(port, addr) => {
-						match port {
-							UHYVE_UART_PORT => {
-								self.uart(addr)?;
-							}
-							UHYVE_PORT_CMDSIZE => {
-								let data_addr: usize =
-									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								let syssize = unsafe {
-									&mut *(self.host_address(data_addr) as *mut SysCmdsize)
-								};
-								self.cmdsize(syssize);
-							}
-							UHYVE_PORT_CMDVAL => {
-								let data_addr: usize =
-									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								let syscmdval =
-									unsafe { &*(self.host_address(data_addr) as *const SysCmdval) };
-								self.cmdval(syscmdval);
-							}
-							UHYVE_PORT_NETWRITE => {
-								match &self.tx {
-									Some(tx_channel) => tx_channel.send(1).unwrap(),
+						let data_addr: usize = unsafe { (*(addr.as_ptr() as *const u32)) as usize };
+						if let Some(hypercall) = self.port_to_hypercall(port, data_addr) {
+							match hypercall {
+								Hypercall::Cmdsize(syssize) => self.cmdsize(syssize),
+								Hypercall::Cmdval(syscmdval) => self.cmdval(syscmdval),
+								Hypercall::Exit(sysexit) => {
+									return Ok(VcpuStopReason::Exit(self.exit(sysexit)));
+								}
+								Hypercall::FileClose(sysclose) => self.close(sysclose),
+								Hypercall::FileLseek(syslseek) => self.lseek(syslseek),
+								Hypercall::FileOpen(sysopen) => self.open(sysopen),
+								Hypercall::FileRead(sysread) => self.read(sysread),
+								Hypercall::FileWrite(syswrite) => self.write(syswrite)?,
+								Hypercall::FileUnlink(sysunlink) => self.unlink(sysunlink),
+								_ => panic!("Got unknown hypercall {:?}", hypercall),
+							};
+						} else {
+							match port {
+								UHYVE_UART_PORT => {
+									self.uart(addr)?;
+								}
+								UHYVE_PORT_NETWRITE => {
+									match &self.tx {
+										Some(tx_channel) => tx_channel.send(1).unwrap(),
 
-									None => {}
-								};
-							}
-							UHYVE_PORT_EXIT => {
-								let data_addr: usize =
-									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								let sysexit =
-									unsafe { &*(self.host_address(data_addr) as *const SysExit) };
-								return Ok(VcpuStopReason::Exit(self.exit(sysexit)));
-							}
-							UHYVE_PORT_OPEN => {
-								let data_addr: usize =
-									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								let sysopen =
-									unsafe { &mut *(self.host_address(data_addr) as *mut SysOpen) };
-								self.open(sysopen);
-							}
-							UHYVE_PORT_WRITE => {
-								let data_addr: usize =
-									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								let syswrite =
-									unsafe { &*(self.host_address(data_addr) as *const SysWrite) };
-								self.write(syswrite)?;
-							}
-							UHYVE_PORT_READ => {
-								let data_addr: usize =
-									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								let sysread =
-									unsafe { &mut *(self.host_address(data_addr) as *mut SysRead) };
-								self.read(sysread);
-							}
-							UHYVE_PORT_UNLINK => {
-								let data_addr: usize =
-									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								let sysunlink = unsafe {
-									&mut *(self.host_address(data_addr) as *mut SysUnlink)
-								};
-								self.unlink(sysunlink);
-							}
-							UHYVE_PORT_LSEEK => {
-								let data_addr: usize =
-									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								let syslseek = unsafe {
-									&mut *(self.host_address(data_addr) as *mut SysLseek)
-								};
-								self.lseek(syslseek);
-							}
-							UHYVE_PORT_CLOSE => {
-								let data_addr: usize =
-									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								let sysclose = unsafe {
-									&mut *(self.host_address(data_addr) as *mut SysClose)
-								};
-								self.close(sysclose);
-							}
-							//TODO:
-							PCI_CONFIG_DATA_PORT => {
-								if let Some(pci_addr) = self.pci_addr {
-									if pci_addr & 0x1ff800 == 0 {
-										let mut virtio_device = self.virtio_device.lock().unwrap();
-										virtio_device.handle_write(pci_addr & 0x3ff, addr);
+										None => {}
+									};
+								}
+								//TODO:
+								PCI_CONFIG_DATA_PORT => {
+									if let Some(pci_addr) = self.pci_addr {
+										if pci_addr & 0x1ff800 == 0 {
+											let mut virtio_device =
+												self.virtio_device.lock().unwrap();
+											virtio_device.handle_write(pci_addr & 0x3ff, addr);
+										}
 									}
 								}
-							}
-							PCI_CONFIG_ADDRESS_PORT => {
-								self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
-							}
-							VIRTIO_PCI_STATUS => {
-								let mut virtio_device = self.virtio_device.lock().unwrap();
-								virtio_device.write_status(addr);
-							}
-							VIRTIO_PCI_GUEST_FEATURES => {
-								let mut virtio_device = self.virtio_device.lock().unwrap();
-								virtio_device.write_requested_features(addr);
-							}
-							VIRTIO_PCI_QUEUE_NOTIFY => {
-								let mut virtio_device = self.virtio_device.lock().unwrap();
-								virtio_device.handle_notify_output(addr, self);
-							}
-							VIRTIO_PCI_QUEUE_SEL => {
-								let mut virtio_device = self.virtio_device.lock().unwrap();
-								virtio_device.write_selected_queue(addr);
-							}
-							VIRTIO_PCI_QUEUE_PFN => {
-								let mut virtio_device = self.virtio_device.lock().unwrap();
-								virtio_device.write_pfn(addr, self);
-							}
-							_ => {
-								panic!("Unhandled IO exit: 0x{port:x}");
+								PCI_CONFIG_ADDRESS_PORT => {
+									self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
+								}
+								VIRTIO_PCI_STATUS => {
+									let mut virtio_device = self.virtio_device.lock().unwrap();
+									virtio_device.write_status(addr);
+								}
+								VIRTIO_PCI_GUEST_FEATURES => {
+									let mut virtio_device = self.virtio_device.lock().unwrap();
+									virtio_device.write_requested_features(addr);
+								}
+								VIRTIO_PCI_QUEUE_NOTIFY => {
+									let mut virtio_device = self.virtio_device.lock().unwrap();
+									virtio_device.handle_notify_output(addr, self);
+								}
+								VIRTIO_PCI_QUEUE_SEL => {
+									let mut virtio_device = self.virtio_device.lock().unwrap();
+									virtio_device.write_selected_queue(addr);
+								}
+								VIRTIO_PCI_QUEUE_PFN => {
+									let mut virtio_device = self.virtio_device.lock().unwrap();
+									virtio_device.write_pfn(addr, self);
+								}
+								_ => {
+									panic!("Unhandled IO exit: 0x{:x}", port);
+								}
 							}
 						}
 					}

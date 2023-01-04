@@ -10,6 +10,7 @@ use std::{
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use lazy_static::lazy_static;
 use log::{debug, trace};
+use uhypercall_interface::{Hypercall, UHYVE_UART_PORT};
 use x86_64::{
 	registers::control::{Cr0Flags, Cr4Flags},
 	structures::{gdt::SegmentSelector, paging::PageTableFlags},
@@ -33,10 +34,7 @@ use xhypervisor::{
 use crate::{
 	consts::*,
 	macos::x86_64::ioapic::IoApic,
-	vm::{
-		HypervisorResult, SysClose, SysCmdsize, SysCmdval, SysExit, SysLseek, SysOpen, SysRead,
-		SysUnlink, SysWrite, VcpuStopReason, VirtualCPU,
-	},
+	vm::{HypervisorResult, VcpuStopReason, VirtualCPU},
 };
 
 /// Extracted from `x86::msr`.
@@ -746,96 +744,42 @@ impl VirtualCPU for UhyveCPU {
 
 					assert!(!input, "Invalid I/O operation");
 
-					match port {
-						UHYVE_UART_PORT => {
-							let al = (self.vcpu.read_register(&Register::RAX)? & 0xFF) as u8;
+					let data_addr: u64 = self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
+					if let Some(hypercall) = self.port_to_hypercall(port, data_addr as usize) {
+						match hypercall {
+							Hypercall::Cmdsize(syssize) => self.cmdsize(syssize),
+							Hypercall::Cmdval(syscmdval) => self.cmdval(syscmdval),
+							Hypercall::Exit(sysexit) => {
+								return Ok(VcpuStopReason::Exit(self.exit(sysexit)))
+							}
+							Hypercall::FileClose(sysclose) => self.close(sysclose),
+							Hypercall::FileLseek(syslseek) => self.lseek(syslseek),
+							Hypercall::FileOpen(sysopen) => self.open(sysopen),
+							Hypercall::FileRead(sysread) => self.read(sysread),
+							Hypercall::FileWrite(syswrite) => {
+								// Return an error for proper handling
+								self.write(syswrite).unwrap()
+							}
+							Hypercall::FileUnlink(sysunlink) => self.unlink(sysunlink),
+							_ => panic!("Got unknown hypercall {:?}", hypercall),
+						}
+						self.vcpu.write_register(&Register::RIP, rip + len)?;
+					} else {
+						match port {
+							// TODO: Deprecate (not used in Linux anyway)
+							SHUTDOWN_PORT => {
+								return Ok(VcpuStopReason::Exit(0));
+							}
+							UHYVE_UART_PORT => {
+								let al = (self.vcpu.read_register(&Register::RAX)? & 0xFF) as u8;
 
-							self.uart(&[al]).unwrap();
-							self.vcpu.write_register(&Register::RIP, rip + len)?;
-						}
-						UHYVE_PORT_CMDSIZE => {
-							let data_addr: u64 =
-								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							let syssize = unsafe {
-								&mut *(self.host_address(data_addr as usize) as *mut SysCmdsize)
-							};
-							self.cmdsize(syssize);
-							self.vcpu.write_register(&Register::RIP, rip + len)?;
-						}
-						UHYVE_PORT_CMDVAL => {
-							let data_addr: u64 =
-								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							let syscmdval = unsafe {
-								&*(self.host_address(data_addr as usize) as *const SysCmdval)
-							};
-							self.cmdval(syscmdval);
-							self.vcpu.write_register(&Register::RIP, rip + len)?;
-						}
-						UHYVE_PORT_EXIT => {
-							let data_addr: u64 =
-								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							let sysexit = unsafe {
-								&*(self.host_address(data_addr as usize) as *const SysExit)
-							};
-							return Ok(VcpuStopReason::Exit(self.exit(sysexit)));
-						}
-						UHYVE_PORT_OPEN => {
-							let data_addr: u64 =
-								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							let sysopen = unsafe {
-								&mut *(self.host_address(data_addr as usize) as *mut SysOpen)
-							};
-							self.open(sysopen);
-							self.vcpu.write_register(&Register::RIP, rip + len)?;
-						}
-						UHYVE_PORT_WRITE => {
-							let data_addr: u64 =
-								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							let syswrite = unsafe {
-								&*(self.host_address(data_addr as usize) as *const SysWrite)
-							};
-							self.write(syswrite).unwrap();
-							self.vcpu.write_register(&Register::RIP, rip + len)?;
-						}
-						UHYVE_PORT_READ => {
-							let data_addr: u64 =
-								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							let sysread = unsafe {
-								&mut *(self.host_address(data_addr as usize) as *mut SysRead)
-							};
-							self.read(sysread);
-							self.vcpu.write_register(&Register::RIP, rip + len)?;
-						}
-						UHYVE_PORT_UNLINK => {
-							let data_addr: u64 =
-								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							let sysunlink = unsafe {
-								&mut *(self.host_address(data_addr as usize) as *mut SysUnlink)
-							};
-							self.unlink(sysunlink);
-							self.vcpu.write_register(&Register::RIP, rip + len)?;
-						}
-						UHYVE_PORT_LSEEK => {
-							let data_addr: u64 =
-								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							let syslseek = unsafe {
-								&mut *(self.host_address(data_addr as usize) as *mut SysLseek)
-							};
-							self.lseek(syslseek);
-							self.vcpu.write_register(&Register::RIP, rip + len)?;
-						}
-						UHYVE_PORT_CLOSE => {
-							let data_addr: u64 =
-								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-							let sysclose = unsafe {
-								&mut *(self.host_address(data_addr as usize) as *mut SysClose)
-							};
-							self.close(sysclose);
-							self.vcpu.write_register(&Register::RIP, rip + len)?;
-						}
-						_ => {
-							trace!("Receive unhandled output command at port 0x{:x}", port);
-							self.vcpu.write_register(&Register::RIP, rip + len)?;
+								self.uart(&[al]).unwrap();
+								self.vcpu.write_register(&Register::RIP, rip + len)?;
+							}
+							_ => {
+								error!("Receive unhandled output command at port 0x{:x}", port);
+								self.vcpu.write_register(&Register::RIP, rip + len)?;
+							}
 						}
 					}
 				}
