@@ -76,15 +76,18 @@ pub trait VirtualCPU {
 		if let Ok(hypercall_port) = IoPorts::try_from(port) {
 			Some(match hypercall_port {
 				IoPorts::FileClose => {
-					let sysclose = unsafe { &mut *(self.host_address(data_addr) as *mut CloseParams) };
+					let sysclose =
+						unsafe { &mut *(self.host_address(data_addr) as *mut CloseParams) };
 					Hypercall::FileClose(sysclose)
 				}
 				IoPorts::FileLseek => {
-					let syslseek = unsafe { &mut *(self.host_address(data_addr) as *mut LseekParams) };
+					let syslseek =
+						unsafe { &mut *(self.host_address(data_addr) as *mut LseekParams) };
 					Hypercall::FileLseek(syslseek)
 				}
 				IoPorts::FileOpen => {
-					let sysopen = unsafe { &mut *(self.host_address(data_addr) as *mut OpenParams) };
+					let sysopen =
+						unsafe { &mut *(self.host_address(data_addr) as *mut OpenParams) };
 					Hypercall::FileOpen(sysopen)
 				}
 				IoPorts::FileRead => {
@@ -92,7 +95,8 @@ pub trait VirtualCPU {
 					Hypercall::FileRead(sysread)
 				}
 				IoPorts::FileWrite => {
-					let syswrite = unsafe { &*(self.host_address(data_addr) as *const WriteParams) };
+					let syswrite =
+						unsafe { &*(self.host_address(data_addr) as *const WriteParams) };
 					Hypercall::FileWrite(syswrite)
 				}
 				IoPorts::FileUnlink => {
@@ -110,7 +114,8 @@ pub trait VirtualCPU {
 					Hypercall::Cmdsize(syssize)
 				}
 				IoPorts::Cmdval => {
-					let syscmdval = unsafe { &*(self.host_address(data_addr) as *const CmdvalParams) };
+					let syscmdval =
+						unsafe { &*(self.host_address(data_addr) as *const CmdvalParams) };
 					Hypercall::Cmdval(syscmdval)
 				}
 				IoPorts::Uart => {
