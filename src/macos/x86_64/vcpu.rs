@@ -10,7 +10,7 @@ use std::{
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use lazy_static::lazy_static;
 use log::{debug, trace};
-use uhypercall_interface::{Hypercall, UHYVE_UART_PORT};
+use uhyve_interface::{Hypercall, UHYVE_UART_PORT};
 use x86_64::{
 	registers::control::{Cr0Flags, Cr4Flags},
 	structures::{gdt::SegmentSelector, paging::PageTableFlags},
