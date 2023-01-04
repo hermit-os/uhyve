@@ -1117,14 +1117,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "uhypercall-interface"
-version = "0.1.0"
-dependencies = [
- "num_enum",
- "x86_64",
-]
-
-[[package]]
 name = "uhyve"
 version = "0.2.2"
 dependencies = [
@@ -1153,11 +1145,19 @@ dependencies = [
  "thiserror",
  "time",
  "tun-tap",
- "uhypercall-interface",
+ "uhyve-interface",
  "virtio-bindings",
  "vmm-sys-util",
  "x86_64",
  "xhypervisor",
+]
+
+[[package]]
+name = "uhyve-interface"
+version = "0.1.0"
+dependencies = [
+ "num_enum",
+ "x86_64",
 ]
 
 [[package]]

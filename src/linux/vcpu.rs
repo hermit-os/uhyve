@@ -7,7 +7,7 @@ use std::{
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
-use uhypercall_interface::{Hypercall, UHYVE_PORT_NETWRITE, UHYVE_UART_PORT};
+use uhyve_interface::{Hypercall, UHYVE_PORT_NETWRITE, UHYVE_UART_PORT};
 use x86_64::{
 	registers::control::{Cr0Flags, Cr4Flags},
 	structures::paging::PageTableFlags,

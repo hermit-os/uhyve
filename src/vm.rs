@@ -9,7 +9,7 @@ use hermit_entry::{
 };
 use log::{error, warn};
 use thiserror::Error;
-use uhypercall_interface::*;
+use uhyve_interface::*;
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::{
