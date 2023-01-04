@@ -113,6 +113,10 @@ pub trait VirtualCPU {
 					let syscmdval = unsafe { &*(self.host_address(data_addr) as *const SysCmdval) };
 					Hypercall::Cmdval(syscmdval)
 				}
+				IoPorts::Uart => {
+					let buf = unsafe { &*(self.host_address(data_addr) as *const &[u8]) };
+					Hypercall::SerialWrite(buf)
+				}
 				_ => unimplemented!(),
 			})
 		} else {
@@ -342,7 +346,7 @@ pub trait Vm {
 				phys_addr_range: arch::RAM_START..arch::RAM_START + vm_mem_len as u64,
 				serial_port_base: self
 					.verbose()
-					.then(|| SerialPortBase::new(UHYVE_UART_PORT.into()).unwrap()),
+					.then(|| SerialPortBase::new(uhyve_interface::IoPorts::Uart as u16).unwrap()),
 				device_tree: None,
 			},
 			load_info,

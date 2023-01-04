@@ -7,7 +7,7 @@ use std::{
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
-use uhyve_interface::{Hypercall, UHYVE_PORT_NETWRITE, UHYVE_UART_PORT};
+use uhyve_interface::{Hypercall, UHYVE_PORT_NETWRITE};
 use x86_64::{
 	registers::control::{Cr0Flags, Cr4Flags},
 	structures::paging::PageTableFlags,
@@ -375,17 +375,14 @@ impl VirtualCPU for UhyveCPU {
 								Hypercall::FileRead(sysread) => self.read(sysread),
 								Hypercall::FileWrite(syswrite) => self.write(syswrite)?,
 								Hypercall::FileUnlink(sysunlink) => self.unlink(sysunlink),
+								Hypercall::SerialWrite(buf) => self.uart(buf)?,
 								_ => panic!("Got unknown hypercall {:?}", hypercall),
 							};
 						} else {
 							match port {
-								UHYVE_UART_PORT => {
-									self.uart(addr)?;
-								}
 								UHYVE_PORT_NETWRITE => {
 									match &self.tx {
 										Some(tx_channel) => tx_channel.send(1).unwrap(),
-
 										None => {}
 									};
 								}
