@@ -75,18 +75,18 @@ impl From<Hypercall<'_>> for IoPorts {
 pub enum Hypercall<'a> {
 	/// Get the size of the argument and environment strings. Used to allocate memory for
 	/// [`Hypercall::Cmdval`].
-	Cmdsize(&'a mut SysCmdsize),
+	Cmdsize(&'a mut CmdsizeParams),
 	/// Copy the argument and environment strings into the VM. Usually preceeeded by
 	/// [`Hypercall::Cmdsize`] so that the guest can allocate the memory for this call.
-	Cmdval(&'a SysCmdval),
+	Cmdval(&'a CmdvalParams),
 	/// Exit the VM and return a status.
-	Exit(&'a SysExit),
-	FileClose(&'a mut SysClose),
-	FileLseek(&'a mut SysLseek),
-	FileOpen(&'a mut SysOpen),
-	FileRead(&'a mut SysRead),
-	FileWrite(&'a SysWrite),
-	FileUnlink(&'a mut SysUnlink),
+	Exit(&'a ExitParams),
+	FileClose(&'a mut CloseParams),
+	FileLseek(&'a mut LseekParams),
+	FileOpen(&'a mut OpenParams),
+	FileRead(&'a mut ReadPrams),
+	FileWrite(&'a WriteParams),
+	FileUnlink(&'a mut UnlinkParams),
 	/// Write a buffer to the terminal.
 	SerialWrite(&'a [u8]),
 }
