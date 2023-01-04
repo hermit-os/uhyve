@@ -1,4 +1,4 @@
-//! # Uhyve Hypercall Interface
+//! # Uhyve Hypervisor Interface
 //!
 //! The uhyve hypercall interface works as follows:
 //!
@@ -37,10 +37,13 @@ pub enum IoPorts {
 	Exit = 0x540,
 	/// Port address = `0x580`
 	FileLseek = 0x580,
+	#[deprecated = "was never really in use"]
 	/// Port address = `0x640`
 	Netwrite = 0x640,
+	#[deprecated = "was never really in use"]
 	/// Port address = `0x680`
 	Netread = 0x680,
+	#[deprecated = "was never really in use"]
 	/// Port address = `0x700`
 	Netstat = 0x700,
 	/// Port address = `0x740`
@@ -102,4 +105,5 @@ impl<'a> Hypercall<'a> {
 pub const UHYVE_PORT_NETWRITE: u16 = 0x640;
 
 // FIXME: Do not use a fix number of arguments
+/// The maximum number of items in an argument of environment vector.
 pub const MAX_ARGC_ENVC: usize = 128;
