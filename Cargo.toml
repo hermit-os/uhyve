@@ -1,3 +1,6 @@
+[workspace]
+exclude = ["tests/test-kernels", "rusty-hermit", "rusty-hermit/*", "libhermit-rs"]
+
 [package]
 name = "uhyve"
 version = "0.2.2"
