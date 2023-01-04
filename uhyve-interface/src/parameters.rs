@@ -7,7 +7,7 @@ use x86_64::PhysAddr;
 /// Parameters for a [`Cmdsize`](Hypercall::Cmdsize) hypercall which provides the lengths of the items in the argument end environment vector.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
-pub struct SysCmdsize {
+pub struct CmdsizeParams {
 	/// Nr of items in the kernel command line.
 	pub argc: i32,
 	/// Lengths of the items in the kernel command line.
@@ -21,7 +21,7 @@ pub struct SysCmdsize {
 /// Parameters for a [`Cmdval`](Hypercall::Cmdval) hypercall, which copies the arguments end environment of the application into the VM's memory.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
-pub struct SysCmdval {
+pub struct CmdvalParams {
 	/// Pointer to a memory section in the VM memory large enough to store the argument string.
 	pub argv: PhysAddr,
 	/// Pointer to a memory section in the VM memory large enough to store the environment values.
@@ -31,7 +31,7 @@ pub struct SysCmdval {
 /// Parameters for a [`Exit`](Hypercall::Exit) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
-pub struct SysExit {
+pub struct ExitParams {
 	/// The return code of the guest.
 	pub arg: i32,
 }
@@ -39,7 +39,7 @@ pub struct SysExit {
 /// Parameters for a [`FileUnlink`](Hypercall::FileUnlink) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
-pub struct SysUnlink {
+pub struct UnlinkParams {
 	/// Address of the file that should be unlinked.
 	pub name: PhysAddr,
 	/// On success, `0` is returned.  On error, `-1` is returned.
@@ -49,7 +49,7 @@ pub struct SysUnlink {
 /// Parameters for a [`FileWrite`](Hypercall::FileWrite) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
-pub struct SysWrite {
+pub struct WriteParams {
 	/// File descriptor of the file.
 	pub fd: i32,
 	/// Buffer to be written into the file.
@@ -61,7 +61,7 @@ pub struct SysWrite {
 /// Parameters for a [`FileRead`](Hypercall::FileRead) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
-pub struct SysRead {
+pub struct ReadPrams {
 	/// File descriptor of the file.
 	pub fd: i32,
 	/// Buffer to read the file into.
@@ -75,7 +75,7 @@ pub struct SysRead {
 /// Parameters for a [`FileClose`](Hypercall::FileClose) hypercall
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
-pub struct SysClose {
+pub struct CloseParams {
 	/// File descriptor of the file.
 	pub fd: i32,
 	/// Zero on success, `-1` on failure.
@@ -85,7 +85,7 @@ pub struct SysClose {
 /// Parameters for a [`FileOpen`](Hypercall::FileOpen) hypercall
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
-pub struct SysOpen {
+pub struct OpenParams {
 	/// Pathname of the file to be opened.
 	pub name: PhysAddr,
 	/// Posix file access mode flags.
@@ -99,7 +99,7 @@ pub struct SysOpen {
 /// Parameters for a [`FileLseek`](Hypercall::FileLseek) hypercall
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
-pub struct SysLseek {
+pub struct LseekParams {
 	/// File descriptor of the file.
 	pub fd: i32,
 	/// Offset in the file.
