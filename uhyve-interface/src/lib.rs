@@ -132,17 +132,6 @@ pub struct SysCmdsize {
 	/// Length of the items in the environment.
 	pub envsz: [i32; MAX_ARGC_ENVC],
 }
-impl SysCmdsize {
-	// TODO: Default not new
-	pub fn new() -> SysCmdsize {
-		SysCmdsize {
-			argc: 0,
-			argsz: [0; MAX_ARGC_ENVC],
-			envc: 0,
-			envsz: [0; MAX_ARGC_ENVC],
-		}
-	}
-}
 
 /// Parameters for a [`Cmdval`](Hypercall::Cmdval) hypercall, which copies the arguments end environment of the application into the VM's memory.
 #[repr(C, packed)]
@@ -153,11 +142,6 @@ pub struct SysCmdval {
 	/// Pointer to a memory section in the VM memory large enough to store the environment values.
 	pub envp: PhysAddr,
 }
-impl SysCmdval {
-	pub fn new(argv: PhysAddr, envp: PhysAddr) -> SysCmdval {
-		SysCmdval { argv, envp }
-	}
-}
 
 /// Parameters for a [`Exit`](Hypercall::Exit) hypercall.
 #[repr(C, packed)]
@@ -165,11 +149,6 @@ impl SysCmdval {
 pub struct SysExit {
 	/// The return code of the guest.
 	pub arg: i32,
-}
-impl SysExit {
-	pub fn new(arg: i32) -> SysExit {
-		SysExit { arg }
-	}
 }
 
 /// Parameters for a [`FileUnlink`](Hypercall::FileUnlink) hypercall.
@@ -180,11 +159,6 @@ pub struct SysUnlink {
 	pub name: PhysAddr,
 	/// On success, `0` is returned.  On error, `-1` is returned.
 	pub ret: i32,
-}
-impl SysUnlink {
-	pub fn new(name: PhysAddr) -> SysUnlink {
-		SysUnlink { name, ret: -1 }
-	}
 }
 
 /// Parameters for a [`FileWrite`](Hypercall::FileWrite) hypercall.
