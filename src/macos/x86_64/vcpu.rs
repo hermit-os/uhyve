@@ -10,7 +10,7 @@ use std::{
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use lazy_static::lazy_static;
 use log::{debug, trace};
-use uhyve_interface::{Hypercall, UHYVE_UART_PORT};
+use uhyve_interface::Hypercall;
 use x86_64::{
 	registers::control::{Cr0Flags, Cr4Flags},
 	structures::{gdt::SegmentSelector, paging::PageTableFlags},
@@ -761,6 +761,11 @@ impl VirtualCPU for UhyveCPU {
 								self.write(syswrite).unwrap()
 							}
 							Hypercall::FileUnlink(sysunlink) => self.unlink(sysunlink),
+							Hypercall::SerialWrite(_buf) => {
+								// TODO Not sure why this call works different on macos...
+								let al = (self.vcpu.read_register(&Register::RAX)? & 0xFF) as u8;
+								self.uart(&[al]).unwrap();
+							}
 							_ => panic!("Got unknown hypercall {:?}", hypercall),
 						}
 						self.vcpu.write_register(&Register::RIP, rip + len)?;
@@ -769,12 +774,6 @@ impl VirtualCPU for UhyveCPU {
 							// TODO: Deprecate (not used in Linux anyway)
 							SHUTDOWN_PORT => {
 								return Ok(VcpuStopReason::Exit(0));
-							}
-							UHYVE_UART_PORT => {
-								let al = (self.vcpu.read_register(&Register::RAX)? & 0xFF) as u8;
-
-								self.uart(&[al]).unwrap();
-								self.vcpu.write_register(&Register::RIP, rip + len)?;
 							}
 							_ => {
 								error!("Receive unhandled output command at port 0x{:x}", port);

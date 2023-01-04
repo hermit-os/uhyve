@@ -45,6 +45,8 @@ pub enum IoPorts {
 	Cmdsize = 0x740,
 	/// Port address = `0x780`
 	Cmdval = 0x780,
+	/// Port address = `0x800`
+	Uart = 0x800,
 	/// Port address = `0x840`
 	FileUnlink = 0x840,
 }
@@ -60,6 +62,7 @@ impl From<Hypercall<'_>> for IoPorts {
 			Hypercall::FileRead(_) => Self::FileRead,
 			Hypercall::FileWrite(_) => Self::FileWrite,
 			Hypercall::FileUnlink(_) => Self::FileUnlink,
+			Hypercall::SerialWrite(_) => Self::Uart,
 		}
 	}
 }
@@ -82,6 +85,8 @@ pub enum Hypercall<'a> {
 	FileRead(&'a mut SysRead),
 	FileWrite(&'a SysWrite),
 	FileUnlink(&'a mut SysUnlink),
+	/// Write a buffer to the terminal.
+	SerialWrite(&'a [u8]),
 }
 impl<'a> Hypercall<'a> {
 	/// Get a hypercall's port address.
