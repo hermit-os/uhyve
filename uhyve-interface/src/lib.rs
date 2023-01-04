@@ -3,7 +3,7 @@
 //! The uhyve hypercall interface works as follows:
 //!
 //! - On `x86_64` you use an out port instruction. The address of the `out`-port corresponds to the
-//! hypercall you want to use. You can obtain it from the [`HypercallPorts`] enum. The data send to
+//! hypercall you want to use. You can obtain it from the [`IoPorts`] enum. The data send to
 //! that port is the physical memory address (of the VM) of the parameters of that hypercall.
 //! - On `aarch64` you write to the respective [`HypercallAddress`]. The 64-bit value written to that location is the guest's physical memory address of the hypercall's parameter.
 
@@ -22,7 +22,7 @@ use x86_64::PhysAddr;
 #[non_exhaustive]
 #[repr(u16)]
 #[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
-pub enum HypercallPorts {
+pub enum IoPorts {
 	/// Port address = `0x400`
 	FileWrite = 0x400,
 	/// Port address = `0x440`
@@ -48,7 +48,7 @@ pub enum HypercallPorts {
 	/// Port address = `0x840`
 	FileUnlink = 0x840,
 }
-impl From<Hypercall<'_>> for HypercallPorts {
+impl From<Hypercall<'_>> for IoPorts {
 	fn from(value: Hypercall) -> Self {
 		match value {
 			Hypercall::Cmdsize(_) => Self::Cmdsize,
@@ -86,7 +86,7 @@ pub enum Hypercall<'a> {
 impl<'a> Hypercall<'a> {
 	/// Get a hypercall's port address.
 	pub fn port(self) -> u16 {
-		HypercallPorts::from(self) as u16
+		IoPorts::from(self) as u16
 	}
 }
 

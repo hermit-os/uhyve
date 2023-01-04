@@ -73,43 +73,43 @@ pub trait VirtualCPU {
 
 	/// addr is the address of the hypercall parameter in the guest's memory space.
 	fn port_to_hypercall(&self, port: u16, data_addr: usize) -> Option<Hypercall<'_>> {
-		if let Ok(hypercall_port) = HypercallPorts::try_from(port) {
+		if let Ok(hypercall_port) = IoPorts::try_from(port) {
 			Some(match hypercall_port {
-				HypercallPorts::FileClose => {
+				IoPorts::FileClose => {
 					let sysclose = unsafe { &mut *(self.host_address(data_addr) as *mut SysClose) };
 					Hypercall::FileClose(sysclose)
 				}
-				HypercallPorts::FileLseek => {
+				IoPorts::FileLseek => {
 					let syslseek = unsafe { &mut *(self.host_address(data_addr) as *mut SysLseek) };
 					Hypercall::FileLseek(syslseek)
 				}
-				HypercallPorts::FileOpen => {
+				IoPorts::FileOpen => {
 					let sysopen = unsafe { &mut *(self.host_address(data_addr) as *mut SysOpen) };
 					Hypercall::FileOpen(sysopen)
 				}
-				HypercallPorts::FileRead => {
+				IoPorts::FileRead => {
 					let sysread = unsafe { &mut *(self.host_address(data_addr) as *mut SysRead) };
 					Hypercall::FileRead(sysread)
 				}
-				HypercallPorts::FileWrite => {
+				IoPorts::FileWrite => {
 					let syswrite = unsafe { &*(self.host_address(data_addr) as *const SysWrite) };
 					Hypercall::FileWrite(syswrite)
 				}
-				HypercallPorts::FileUnlink => {
+				IoPorts::FileUnlink => {
 					let sysunlink =
 						unsafe { &mut *(self.host_address(data_addr) as *mut SysUnlink) };
 					Hypercall::FileUnlink(sysunlink)
 				}
-				HypercallPorts::Exit => {
+				IoPorts::Exit => {
 					let sysexit = unsafe { &*(self.host_address(data_addr) as *const SysExit) };
 					Hypercall::Exit(sysexit)
 				}
-				HypercallPorts::Cmdsize => {
+				IoPorts::Cmdsize => {
 					let syssize =
 						unsafe { &mut *(self.host_address(data_addr) as *mut SysCmdsize) };
 					Hypercall::Cmdsize(syssize)
 				}
-				HypercallPorts::Cmdval => {
+				IoPorts::Cmdval => {
 					let syscmdval = unsafe { &*(self.host_address(data_addr) as *const SysCmdval) };
 					Hypercall::Cmdval(syscmdval)
 				}
