@@ -71,6 +71,55 @@ pub trait VirtualCPU {
 
 	fn args(&self) -> &[OsString];
 
+	/// addr is the address of the hypercall parameter in the guest's memory space.
+	fn port_to_hypercall(&self, port: u16, data_addr: usize) -> Option<Hypercall<'_>> {
+		if let Ok(hypercall_port) = HypercallPorts::try_from(port) {
+			Some(match hypercall_port {
+				HypercallPorts::FileClose => {
+					let sysclose = unsafe { &mut *(self.host_address(data_addr) as *mut SysClose) };
+					Hypercall::FileClose(sysclose)
+				}
+				HypercallPorts::FileLseek => {
+					let syslseek = unsafe { &mut *(self.host_address(data_addr) as *mut SysLseek) };
+					Hypercall::FileLseek(syslseek)
+				}
+				HypercallPorts::FileOpen => {
+					let sysopen = unsafe { &mut *(self.host_address(data_addr) as *mut SysOpen) };
+					Hypercall::FileOpen(sysopen)
+				}
+				HypercallPorts::FileRead => {
+					let sysread = unsafe { &mut *(self.host_address(data_addr) as *mut SysRead) };
+					Hypercall::FileRead(sysread)
+				}
+				HypercallPorts::FileWrite => {
+					let syswrite = unsafe { &*(self.host_address(data_addr) as *const SysWrite) };
+					Hypercall::FileWrite(syswrite)
+				}
+				HypercallPorts::FileUnlink => {
+					let sysunlink =
+						unsafe { &mut *(self.host_address(data_addr) as *mut SysUnlink) };
+					Hypercall::FileUnlink(sysunlink)
+				}
+				HypercallPorts::Exit => {
+					let sysexit = unsafe { &*(self.host_address(data_addr) as *const SysExit) };
+					Hypercall::Exit(sysexit)
+				}
+				HypercallPorts::Cmdsize => {
+					let syssize =
+						unsafe { &mut *(self.host_address(data_addr) as *mut SysCmdsize) };
+					Hypercall::Cmdsize(syssize)
+				}
+				HypercallPorts::Cmdval => {
+					let syscmdval = unsafe { &*(self.host_address(data_addr) as *const SysCmdval) };
+					Hypercall::Cmdval(syscmdval)
+				}
+				_ => unimplemented!(),
+			})
+		} else {
+			None
+		}
+	}
+
 	fn cmdsize(&self, syssize: &mut SysCmdsize) {
 		syssize.argc = 0;
 		syssize.envc = 0;
@@ -175,7 +224,7 @@ pub trait VirtualCPU {
 	fn open(&self, sysopen: &mut SysOpen) {
 		unsafe {
 			sysopen.ret = libc::open(
-				self.host_address(sysopen.name as usize) as *const i8,
+				self.host_address(sysopen.name.as_u64() as usize) as *const i8,
 				sysopen.flags,
 				sysopen.mode,
 			);
@@ -192,7 +241,7 @@ pub trait VirtualCPU {
 	/// Handles an read syscall on the host.
 	fn read(&self, sysread: &mut SysRead) {
 		unsafe {
-			let buffer = self.virt_to_phys(sysread.buf as usize);
+			let buffer = self.virt_to_phys(sysread.buf.as_u64() as usize);
 
 			let bytes_read = libc::read(
 				sysread.fd,
@@ -210,7 +259,7 @@ pub trait VirtualCPU {
 	/// Handles an write syscall on the host.
 	fn write(&self, syswrite: &SysWrite) -> io::Result<()> {
 		let mut bytes_written: usize = 0;
-		let buffer = self.virt_to_phys(syswrite.buf as usize);
+		let buffer = self.virt_to_phys(syswrite.buf.as_u64() as usize);
 
 		while bytes_written != syswrite.len {
 			unsafe {
