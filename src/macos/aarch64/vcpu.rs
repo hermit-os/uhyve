@@ -7,6 +7,7 @@ use std::{
 };
 
 use log::debug;
+use uhyve_interface::Hypercall;
 use xhypervisor::{self, Register, SystemRegister, VirtualCpuExitReason};
 
 use crate::{
@@ -15,7 +16,7 @@ use crate::{
 		PSR, TCR_FLAGS, TCR_TG1_4K, VA_BITS,
 	},
 	consts::*,
-	vm::{HypervisorResult, SysExit, VcpuStopReason, VirtualCPU},
+	vm::{HypervisorResult, VcpuStopReason, VirtualCPU},
 };
 
 pub struct UhyveCPU {
@@ -176,24 +177,31 @@ impl VirtualCPU for UhyveCPU {
 						let addr: u16 = exception.physical_address.try_into().unwrap();
 						let pc = self.vcpu.read_register(Register::PC)?;
 
-						match addr {
-							UHYVE_UART_PORT => {
-								let x8 = (self.vcpu.read_register(Register::X8)? & 0xFF) as u8;
+						let data_addr = self.vcpu.read_register(Register::X8)?;
+						if let Some(hypercall) = self.port_to_hypercall(addr, data_addr as usize) {
+							match hypercall {
+								Hypercall::SerialWrite(_buf) => {
+									let x8 = (self.vcpu.read_register(Register::X8)? & 0xFF) as u8;
 
-								self.uart(&[x8]).unwrap();
-								self.vcpu.write_register(Register::PC, pc + 4)?;
+									self.uart(&[x8]).unwrap();
+								}
+								Hypercall::Exit(sysexit) => {
+									return Ok(VcpuStopReason::Exit(self.exit(sysexit)));
+								}
+								_ => {
+									panic! {"Hypercall {hypercall:?} not implemented on macos-aarch64"}
+								}
 							}
-							UHYVE_PORT_EXIT => {
-								let data_addr = self.vcpu.read_register(Register::X8)?;
-								let sysexit = unsafe {
-									&*(self.host_address(data_addr as usize) as *const SysExit)
-								};
-								return Ok(VcpuStopReason::Exit(self.exit(sysexit)));
-							}
-							_ => {
-								error!("Unable to handle exception {:?}", exception);
-								self.print_registers();
-								return Err(xhypervisor::Error::Error);
+							// increase the pc to the instruction after the exception to continue execution
+							self.vcpu.write_register(Register::PC, pc + 4)?;
+						} else {
+							#[allow(clippy::match_single_binding)]
+							match addr {
+								_ => {
+									error!("Unable to handle exception {:?}", exception);
+									self.print_registers();
+									return Err(xhypervisor::Error::Error);
+								}
 							}
 						}
 					} else {
