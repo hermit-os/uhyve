@@ -748,9 +748,6 @@ impl VirtualCPU for UhyveCPU {
 					assert!(!input, "Invalid I/O operation");
 
 					match port {
-						SHUTDOWN_PORT => {
-							return Ok(VcpuStopReason::Exit(0));
-						}
 						UHYVE_UART_PORT => {
 							let al = (self.vcpu.read_register(&Register::RAX)? & 0xFF) as u8;
 
