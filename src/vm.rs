@@ -71,57 +71,48 @@ pub trait VirtualCPU {
 
 	fn args(&self) -> &[OsString];
 
-	/// addr is the address of the hypercall parameter in the guest's memory space.
-	fn address_to_hypercall(&self, addr: u16, data_addr: usize) -> Option<Hypercall<'_>> {
+	/// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
+	/// parameter that was send to that address by the guest.
+	fn address_to_hypercall(&self, addr: u16, data: usize) -> Option<Hypercall<'_>> {
 		if let Ok(hypercall_port) = HypercallAddress::try_from(addr) {
 			Some(match hypercall_port {
 				HypercallAddress::FileClose => {
-					let sysclose =
-						unsafe { &mut *(self.host_address(data_addr) as *mut CloseParams) };
+					let sysclose = unsafe { &mut *(self.host_address(data) as *mut CloseParams) };
 					Hypercall::FileClose(sysclose)
 				}
 				HypercallAddress::FileLseek => {
-					let syslseek =
-						unsafe { &mut *(self.host_address(data_addr) as *mut LseekParams) };
+					let syslseek = unsafe { &mut *(self.host_address(data) as *mut LseekParams) };
 					Hypercall::FileLseek(syslseek)
 				}
 				HypercallAddress::FileOpen => {
-					let sysopen =
-						unsafe { &mut *(self.host_address(data_addr) as *mut OpenParams) };
+					let sysopen = unsafe { &mut *(self.host_address(data) as *mut OpenParams) };
 					Hypercall::FileOpen(sysopen)
 				}
 				HypercallAddress::FileRead => {
-					let sysread = unsafe { &mut *(self.host_address(data_addr) as *mut ReadPrams) };
+					let sysread = unsafe { &mut *(self.host_address(data) as *mut ReadPrams) };
 					Hypercall::FileRead(sysread)
 				}
 				HypercallAddress::FileWrite => {
-					let syswrite =
-						unsafe { &*(self.host_address(data_addr) as *const WriteParams) };
+					let syswrite = unsafe { &*(self.host_address(data) as *const WriteParams) };
 					Hypercall::FileWrite(syswrite)
 				}
 				HypercallAddress::FileUnlink => {
-					let sysunlink =
-						unsafe { &mut *(self.host_address(data_addr) as *mut UnlinkParams) };
+					let sysunlink = unsafe { &mut *(self.host_address(data) as *mut UnlinkParams) };
 					Hypercall::FileUnlink(sysunlink)
 				}
 				HypercallAddress::Exit => {
-					let sysexit = unsafe { &*(self.host_address(data_addr) as *const ExitParams) };
+					let sysexit = unsafe { &*(self.host_address(data) as *const ExitParams) };
 					Hypercall::Exit(sysexit)
 				}
 				HypercallAddress::Cmdsize => {
-					let syssize =
-						unsafe { &mut *(self.host_address(data_addr) as *mut CmdsizeParams) };
+					let syssize = unsafe { &mut *(self.host_address(data) as *mut CmdsizeParams) };
 					Hypercall::Cmdsize(syssize)
 				}
 				HypercallAddress::Cmdval => {
-					let syscmdval =
-						unsafe { &*(self.host_address(data_addr) as *const CmdvalParams) };
+					let syscmdval = unsafe { &*(self.host_address(data) as *const CmdvalParams) };
 					Hypercall::Cmdval(syscmdval)
 				}
-				HypercallAddress::Uart => {
-					let buf = unsafe { &*(self.host_address(data_addr) as *const &[u8]) };
-					Hypercall::SerialWrite(buf)
-				}
+				HypercallAddress::Uart => Hypercall::SerialWriteByte(data as u8),
 				_ => unimplemented!(),
 			})
 		} else {

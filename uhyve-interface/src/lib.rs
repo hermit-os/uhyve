@@ -70,7 +70,7 @@ impl From<Hypercall<'_>> for HypercallAddress {
 			Hypercall::FileRead(_) => Self::FileRead,
 			Hypercall::FileWrite(_) => Self::FileWrite,
 			Hypercall::FileUnlink(_) => Self::FileUnlink,
-			Hypercall::SerialWrite(_) => Self::Uart,
+			Hypercall::SerialWriteByte(_) => Self::Uart,
 		}
 	}
 }
@@ -93,8 +93,8 @@ pub enum Hypercall<'a> {
 	FileRead(&'a mut ReadPrams),
 	FileWrite(&'a WriteParams),
 	FileUnlink(&'a mut UnlinkParams),
-	/// Write a buffer to the terminal.
-	SerialWrite(&'a [u8]),
+	/// Write a char to the terminal.
+	SerialWriteByte(u8),
 }
 impl<'a> Hypercall<'a> {
 	/// Get a hypercall's port address.
