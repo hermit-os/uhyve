@@ -761,7 +761,7 @@ impl VirtualCPU for UhyveCPU {
 								self.write(syswrite).unwrap()
 							}
 							Hypercall::FileUnlink(sysunlink) => self.unlink(sysunlink),
-							Hypercall::SerialWrite(_buf) => {
+							Hypercall::SerialWriteByte(_char) => {
 								// TODO Not sure why this call works different on macos...
 								let al = (self.vcpu.read_register(&Register::RAX)? & 0xFF) as u8;
 								self.uart(&[al]).unwrap();

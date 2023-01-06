@@ -181,7 +181,7 @@ impl VirtualCPU for UhyveCPU {
 						if let Some(hypercall) = self.address_to_hypercall(addr, data_addr as usize)
 						{
 							match hypercall {
-								Hypercall::SerialWrite(_buf) => {
+								Hypercall::SerialWriteByte(_char) => {
 									let x8 = (self.vcpu.read_register(Register::X8)? & 0xFF) as u8;
 
 									self.uart(&[x8]).unwrap();
