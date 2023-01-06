@@ -745,7 +745,7 @@ impl VirtualCPU for UhyveCPU {
 					assert!(!input, "Invalid I/O operation");
 
 					let data_addr: u64 = self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-					if let Some(hypercall) = self.port_to_hypercall(port, data_addr as usize) {
+					if let Some(hypercall) = self.address_to_hypercall(port, data_addr as usize) {
 						match hypercall {
 							Hypercall::Cmdsize(syssize) => self.cmdsize(syssize),
 							Hypercall::Cmdval(syscmdval) => self.cmdval(syscmdval),

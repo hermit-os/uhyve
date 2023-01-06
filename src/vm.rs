@@ -9,7 +9,7 @@ use hermit_entry::{
 };
 use log::{error, warn};
 use thiserror::Error;
-use uhyve_interface::{parameters::*, Hypercall, IoPorts, MAX_ARGC_ENVC};
+use uhyve_interface::{parameters::*, Hypercall, HypercallAddress, MAX_ARGC_ENVC};
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::{
@@ -72,53 +72,53 @@ pub trait VirtualCPU {
 	fn args(&self) -> &[OsString];
 
 	/// addr is the address of the hypercall parameter in the guest's memory space.
-	fn port_to_hypercall(&self, port: u16, data_addr: usize) -> Option<Hypercall<'_>> {
-		if let Ok(hypercall_port) = IoPorts::try_from(port) {
+	fn address_to_hypercall(&self, addr: u16, data_addr: usize) -> Option<Hypercall<'_>> {
+		if let Ok(hypercall_port) = HypercallAddress::try_from(addr) {
 			Some(match hypercall_port {
-				IoPorts::FileClose => {
+				HypercallAddress::FileClose => {
 					let sysclose =
 						unsafe { &mut *(self.host_address(data_addr) as *mut CloseParams) };
 					Hypercall::FileClose(sysclose)
 				}
-				IoPorts::FileLseek => {
+				HypercallAddress::FileLseek => {
 					let syslseek =
 						unsafe { &mut *(self.host_address(data_addr) as *mut LseekParams) };
 					Hypercall::FileLseek(syslseek)
 				}
-				IoPorts::FileOpen => {
+				HypercallAddress::FileOpen => {
 					let sysopen =
 						unsafe { &mut *(self.host_address(data_addr) as *mut OpenParams) };
 					Hypercall::FileOpen(sysopen)
 				}
-				IoPorts::FileRead => {
+				HypercallAddress::FileRead => {
 					let sysread = unsafe { &mut *(self.host_address(data_addr) as *mut ReadPrams) };
 					Hypercall::FileRead(sysread)
 				}
-				IoPorts::FileWrite => {
+				HypercallAddress::FileWrite => {
 					let syswrite =
 						unsafe { &*(self.host_address(data_addr) as *const WriteParams) };
 					Hypercall::FileWrite(syswrite)
 				}
-				IoPorts::FileUnlink => {
+				HypercallAddress::FileUnlink => {
 					let sysunlink =
 						unsafe { &mut *(self.host_address(data_addr) as *mut UnlinkParams) };
 					Hypercall::FileUnlink(sysunlink)
 				}
-				IoPorts::Exit => {
+				HypercallAddress::Exit => {
 					let sysexit = unsafe { &*(self.host_address(data_addr) as *const ExitParams) };
 					Hypercall::Exit(sysexit)
 				}
-				IoPorts::Cmdsize => {
+				HypercallAddress::Cmdsize => {
 					let syssize =
 						unsafe { &mut *(self.host_address(data_addr) as *mut CmdsizeParams) };
 					Hypercall::Cmdsize(syssize)
 				}
-				IoPorts::Cmdval => {
+				HypercallAddress::Cmdval => {
 					let syscmdval =
 						unsafe { &*(self.host_address(data_addr) as *const CmdvalParams) };
 					Hypercall::Cmdval(syscmdval)
 				}
-				IoPorts::Uart => {
+				HypercallAddress::Uart => {
 					let buf = unsafe { &*(self.host_address(data_addr) as *const &[u8]) };
 					Hypercall::SerialWrite(buf)
 				}
@@ -350,7 +350,8 @@ pub trait Vm {
 			hardware_info: HardwareInfo {
 				phys_addr_range: arch::RAM_START..arch::RAM_START + vm_mem_len as u64,
 				serial_port_base: self.verbose().then(|| {
-					SerialPortBase::new((uhyve_interface::IoPorts::Uart as u16).into()).unwrap()
+					SerialPortBase::new((uhyve_interface::HypercallAddress::Uart as u16).into())
+						.unwrap()
 				}),
 				device_tree: None,
 			},

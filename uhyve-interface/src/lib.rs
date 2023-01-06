@@ -7,8 +7,6 @@
 //! that port is the physical memory address (of the VM) of the parameters of that hypercall.
 //! - On `aarch64` you write to the respective [`HypercallAddress`]. The 64-bit value written to that location is the guest's physical memory address of the hypercall's parameter.
 
-// TODO: only x86 allows io instructions. Other architectures should use MMIO
-
 #![no_std]
 
 // TODO: Throw this out, once https://github.com/rust-lang/rfcs/issues/2783 or https://github.com/rust-lang/rust/issues/86772 is resolved
@@ -29,7 +27,7 @@ pub const UHYVE_INTERFACE_VERSION: u32 = 1;
 #[non_exhaustive]
 #[repr(u16)]
 #[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
-pub enum IoPorts {
+pub enum HypercallAddress {
 	/// Port address = `0x400`
 	FileWrite = 0x400,
 	/// Port address = `0x440`
@@ -60,7 +58,7 @@ pub enum IoPorts {
 	/// Port address = `0x840`
 	FileUnlink = 0x840,
 }
-impl From<Hypercall<'_>> for IoPorts {
+impl From<Hypercall<'_>> for HypercallAddress {
 	fn from(value: Hypercall) -> Self {
 		match value {
 			Hypercall::Cmdsize(_) => Self::Cmdsize,
@@ -101,7 +99,7 @@ pub enum Hypercall<'a> {
 impl<'a> Hypercall<'a> {
 	/// Get a hypercall's port address.
 	pub fn port(self) -> u16 {
-		IoPorts::from(self) as u16
+		HypercallAddress::from(self) as u16
 	}
 }
 
