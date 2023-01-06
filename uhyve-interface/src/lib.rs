@@ -14,8 +14,13 @@
 // TODO: Throw this out, once https://github.com/rust-lang/rfcs/issues/2783 or https://github.com/rust-lang/rust/issues/86772 is resolved
 use num_enum::TryFromPrimitive;
 
+pub mod elf;
 pub mod parameters;
 use parameters::*;
+
+/// The version of the uhyve interface. Note: This is not the same as the semver of the crate but
+/// should be increased on every version bump that changes the API.
+pub const UHYVE_INTERFACE_VERSION: u32 = 1;
 
 /// Enum containing all valid port mappings for hypercalls.
 ///
