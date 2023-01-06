@@ -362,7 +362,7 @@ impl VirtualCPU for UhyveCPU {
 					},
 					VcpuExit::IoOut(port, addr) => {
 						let data_addr: usize = unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-						if let Some(hypercall) = self.port_to_hypercall(port, data_addr) {
+						if let Some(hypercall) = self.address_to_hypercall(port, data_addr) {
 							match hypercall {
 								Hypercall::Cmdsize(syssize) => self.cmdsize(syssize),
 								Hypercall::Cmdval(syscmdval) => self.cmdval(syscmdval),
