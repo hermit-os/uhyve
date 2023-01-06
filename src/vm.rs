@@ -349,9 +349,9 @@ pub trait Vm {
 		let boot_info = BootInfo {
 			hardware_info: HardwareInfo {
 				phys_addr_range: arch::RAM_START..arch::RAM_START + vm_mem_len as u64,
-				serial_port_base: self
-					.verbose()
-					.then(|| SerialPortBase::new(uhyve_interface::IoPorts::Uart as u16).unwrap()),
+				serial_port_base: self.verbose().then(|| {
+					SerialPortBase::new((uhyve_interface::IoPorts::Uart as u16).into()).unwrap()
+				}),
 				device_tree: None,
 			},
 			load_info,
