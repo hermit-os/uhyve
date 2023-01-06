@@ -80,22 +80,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install nasm
       - uses: actions/checkout@v3
-        with:
-          path: uhyve
       - uses: actions/checkout@v3
         with:
-          repository: hermitcore/rusty-hermit
-          path: rusty-hermit
-          submodules: true
+          repository: hermitcore/rusty-demo
+          path: rusty-demo
       - name: Build rusty_demo
-        run: cargo build -Zbuild-std=core,alloc,std,panic_abort -Zbuild-std-features=compiler-builtins-mem --target x86_64-unknown-hermit --package rusty_demo
-        working-directory: rusty-hermit
+        run: cargo build -Zbuild-std=core,alloc,std,panic_abort -Zbuild-std-features=compiler-builtins-mem --target x86_64-unknown-hermit
+        working-directory: rusty-demo
       - name: Run rusty_demo
-        run: RUST_LOG=debug cargo run -- --verbose ../rusty-hermit/target/x86_64-unknown-hermit/debug/rusty_demo
-        working-directory: uhyve
+        run: RUST_LOG=debug cargo run -- --verbose rusty-demo/target/x86_64-unknown-hermit/debug/hello_world
       - name: Run rusty_demo
-        run: RUST_LOG=debug cargo run --release -- --verbose ../rusty-hermit/target/x86_64-unknown-hermit/debug/rusty_demo
-        working-directory: uhyve
+        run: RUST_LOG=debug cargo run --release -- --verbose rusty-demo/target/x86_64-unknown-hermit/debug/hello_world
 
   fmt:
     name: Format
