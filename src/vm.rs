@@ -73,7 +73,13 @@ pub trait VirtualCPU {
 
 	/// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
 	/// parameter that was send to that address by the guest.
-	fn address_to_hypercall(&self, addr: u16, data: usize) -> Option<Hypercall<'_>> {
+	///
+	/// # Safety
+	///
+	/// - `data` must be a valid pointer to the data attached to the hypercall.
+	/// - The return value is only valid, as long as the guest is halted.
+	/// - This fn must not be called multiple times on the same data, to avoid creating mutable aliasing.
+	unsafe fn address_to_hypercall(&self, addr: u16, data: usize) -> Option<Hypercall<'_>> {
 		if let Ok(hypercall_port) = HypercallAddress::try_from(addr) {
 			Some(match hypercall_port {
 				HypercallAddress::FileClose => {

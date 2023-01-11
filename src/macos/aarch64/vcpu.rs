@@ -178,7 +178,8 @@ impl VirtualCPU for UhyveCPU {
 						let pc = self.vcpu.read_register(Register::PC)?;
 
 						let data_addr = self.vcpu.read_register(Register::X8)?;
-						if let Some(hypercall) = self.address_to_hypercall(addr, data_addr as usize)
+						if let Some(hypercall) =
+							unsafe { self.address_to_hypercall(port, data_addr as usize) }
 						{
 							match hypercall {
 								Hypercall::SerialWriteByte(_char) => {
