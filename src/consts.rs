@@ -19,7 +19,6 @@ pub const EFER_NXE: u64 = 1 << 11; /* PTE No-Execute bit enable */
 pub const IOAPIC_BASE: u64 = 0xfec00000;
 pub const IOAPIC_SIZE: u64 = 0x1000;
 pub const KERNEL_STACK_SIZE: u64 = 32_768;
-pub const SHUTDOWN_PORT: u16 = 0xf4;
 pub const SHAREDQUEUE_START: usize = 0x80000;
 pub const UHYVE_NET_MTU: usize = 1500;
 pub const UHYVE_QUEUE_SIZE: usize = 8;
