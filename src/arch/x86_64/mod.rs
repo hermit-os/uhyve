@@ -155,10 +155,7 @@ mod tests {
 		cpuid.get_hypervisor_info().map(|hv| {
 			hv.tsc_frequency().map(|tsc_khz| {
 				let virtual_tsc_frequency_hz = tsc_khz as u64 * crate::x86_64::KHZ_TO_HZ;
-				println!(
-					"Hypervisor reports TSC Frequency at: {} Hz",
-					virtual_tsc_frequency_hz
-				);
+				println!("Hypervisor reports TSC Frequency at: {virtual_tsc_frequency_hz} Hz");
 			})
 		});
 

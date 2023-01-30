@@ -236,11 +236,11 @@ impl UhyveCPU {
 	}
 
 	fn show_dtable(name: &str, dtable: &kvm_dtable) {
-		println!("{}                 {:?}", name, dtable);
+		println!("{name}                 {dtable:?}");
 	}
 
 	fn show_segment(name: &str, seg: &kvm_segment) {
-		println!("{}       {:?}", name, seg);
+		println!("{name}       {seg:?}");
 	}
 
 	pub fn get_vcpu(&self) -> &VcpuFd {
@@ -474,7 +474,7 @@ impl VirtualCPU for UhyveCPU {
 								virtio_device.write_pfn(addr, self);
 							}
 							_ => {
-								panic!("Unhandled IO exit: 0x{:x}", port);
+								panic!("Unhandled IO exit: 0x{port:x}");
 							}
 						}
 					}
@@ -516,7 +516,7 @@ impl VirtualCPU for UhyveCPU {
 		println!();
 		println!("Registers:");
 		println!("----------");
-		println!("{:?}{:?}", regs, sregs);
+		println!("{regs:?}{sregs:?}");
 
 		println!("Segment registers:");
 		println!("------------------");
