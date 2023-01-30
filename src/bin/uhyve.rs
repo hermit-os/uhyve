@@ -217,11 +217,6 @@ impl CpuArgs {
 				let verb = if affinity_num_vals > 1 { "were" } else { "was" };
 				let message = format!(
 					"The argument '{affinity_arg}' requires {cpus_num_vals} values (matching '{cpus_arg}'), but {affinity_num_vals} {verb} provided",
-					affinity_arg = affinity_arg,
-					cpus_num_vals = cpus_num_vals,
-					cpus_arg = cpus_arg,
-					affinity_num_vals = affinity_num_vals,
-					verb = verb,
 				);
 				app.error(ErrorKind::WrongNumberOfValues, message).exit()
 			} else {

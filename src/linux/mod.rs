@@ -194,14 +194,14 @@ impl Uhyve {
 }
 
 fn wait_for_gdb_connection(port: u16) -> io::Result<TcpStream> {
-	let sockaddr = format!("localhost:{}", port);
-	eprintln!("Waiting for a GDB connection on {:?}...", sockaddr);
+	let sockaddr = format!("localhost:{port}");
+	eprintln!("Waiting for a GDB connection on {sockaddr:?}...");
 	let sock = TcpListener::bind(sockaddr)?;
 	let (stream, addr) = sock.accept()?;
 
 	// Blocks until a GDB client connects via TCP.
 	// i.e: Running `target remote localhost:<port>` from the GDB prompt.
 
-	eprintln!("Debugger connected from {}", addr);
+	eprintln!("Debugger connected from {addr}");
 	Ok(stream) // `TcpStream` implements `gdbstub::Connection`
 }

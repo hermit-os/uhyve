@@ -443,7 +443,7 @@ impl UhyveCPU {
 					.write_register(&Register::RDX, (self.apic_base >> 32) & 0xFFFFFFFF)?;
 			}
 			rcx => {
-				panic!("Unable to read msr 0x{:x}!", rcx)
+				panic!("Unable to read msr 0x{rcx:x}!")
 			}
 		}
 
@@ -483,7 +483,7 @@ impl UhyveCPU {
 			IA32_X2APIC_EOI => {}
 			IA32_X2APIC_ICR => {}
 			rcx => {
-				panic!("Unable to write msr 0x{:x}!", rcx)
+				panic!("Unable to write msr 0x{rcx:x}!")
 			}
 		}
 
@@ -707,8 +707,7 @@ impl VirtualCPU for UhyveCPU {
 
 					assert!(
 						valid && trap_or_breakpoint,
-						"Received exception or non-maskable interrupt {}!",
-						irq_vec
+						"Received exception or non-maskable interrupt {irq_vec}!"
 					);
 					debug!("Handle breakpoint exception");
 					return Ok(VcpuStopReason::Debug(()));
@@ -906,30 +905,12 @@ impl VirtualCPU for UhyveCPU {
 		let r15 = self.vcpu.read_register(&Register::R15).unwrap();
 
 		print!(
-			"rip: {:016x}   rsp: {:016x} flags: {:016x}\n\
-			rax: {:016x}   rbx: {:016x}   rcx: {:016x}\n\
-			rdx: {:016x}   rsi: {:016x}   rdi: {:016x}\n\
-			rbp: {:016x}    r8: {:016x}    r9: {:016x}\n\
-			r10: {:016x}   r11: {:016x}   r12: {:016x}\n\
-			r13: {:016x}   r14: {:016x}   r15: {:016x}\n",
-			rip,
-			rsp,
-			rflags,
-			rax,
-			rbx,
-			rcx,
-			rdx,
-			rsi,
-			rdi,
-			rbp,
-			r8,
-			r9,
-			r10,
-			r11,
-			r12,
-			r13,
-			r14,
-			r15
+			"rip: {rip:016x}   rsp: {rsp:016x} flags: {rflags:016x}\n\
+			rax: {rax:016x}   rbx: {rbx:016x}   rcx: {rcx:016x}\n\
+			rdx: {rdx:016x}   rsi: {rsi:016x}   rdi: {rdi:016x}\n\
+			rbp: {rbp:016x}    r8: {r8:016x}    r9: {r9:016x}\n\
+			r10: {r10:016x}   r11: {r11:016x}   r12: {r12:016x}\n\
+			r13: {r13:016x}   r14: {r14:016x}   r15: {r15:016x}\n"
 		);
 
 		let cr0 = self.vcpu.read_register(&Register::CR0).unwrap();
@@ -939,8 +920,7 @@ impl VirtualCPU for UhyveCPU {
 		let efer = self.vcpu.read_vmcs(VMCS_GUEST_IA32_EFER).unwrap();
 
 		println!(
-			"cr0: {:016x}   cr2: {:016x}   cr3: {:016x}\ncr4: {:016x}  efer: {:016x}",
-			cr0, cr2, cr3, cr4, efer
+			"cr0: {cr0:016x}   cr2: {cr2:016x}   cr3: {cr3:016x}\ncr4: {cr4:016x}  efer: {efer:016x}"
 		);
 
 		println!("\nSegment registers:");
@@ -1024,10 +1004,10 @@ impl VirtualCPU for UhyveCPU {
 
 		let gdt_base = self.vcpu.read_vmcs(VMCS_GUEST_GDTR_BASE).unwrap();
 		let gdt_limit = self.vcpu.read_vmcs(VMCS_GUEST_GDTR_LIMIT).unwrap();
-		println!("gdt                 {:016x}  {:08x}", gdt_base, gdt_limit);
+		println!("gdt                 {gdt_base:016x}  {gdt_limit:08x}");
 		let idt_base = self.vcpu.read_vmcs(VMCS_GUEST_IDTR_BASE).unwrap();
 		let idt_limit = self.vcpu.read_vmcs(VMCS_GUEST_IDTR_LIMIT).unwrap();
-		println!("idt                 {:016x}  {:08x}", idt_base, idt_limit);
+		println!("idt                 {idt_base:016x}  {idt_limit:08x}");
 		println!(
 			"VMCS link pointer   {:016x}",
 			self.vcpu.read_vmcs(VMCS_GUEST_LINK_POINTER).unwrap()

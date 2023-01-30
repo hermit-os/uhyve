@@ -41,7 +41,7 @@ impl IoApic {
 		match offset {
 			0x00 => self.selector = value as usize,
 			0x10 => self.rtbl[self.selector].reg = value as u32,
-			offset => panic!("Invalid offset {}", offset),
+			offset => panic!("Invalid offset {offset}"),
 		}
 	}
 
@@ -49,7 +49,7 @@ impl IoApic {
 		match offset {
 			0x00 => self.selector as u64,
 			0x10 => self.rtbl[self.selector].reg as u64,
-			offset => panic!("Invalid offset {}", offset),
+			offset => panic!("Invalid offset {offset}"),
 		}
 	}
 }
