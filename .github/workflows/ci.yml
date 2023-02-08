@@ -115,9 +115,10 @@ jobs:
             ubuntu*) suffix=unknown-linux-gnu ;;
             macos*) suffix=apple-darwin ;;
           esac
-          echo "CARGO_BUILD_TARGET=${{ matrix.arch }}-$suffix" >> $GITHUB_ENV
+          echo "target=${{ matrix.arch }}-$suffix" >> $GITHUB_OUTPUT
+        id: detect_target
       - name: Install target
-        run: rustup target add $CARGO_BUILD_TARGET
+        run: rustup target add ${{ steps.detect_target.outputs.target }}
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
   
