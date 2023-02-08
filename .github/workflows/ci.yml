@@ -14,24 +14,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
-    name: Check
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        arch: [x86_64, aarch64]
-        os: [ubuntu-latest, macos-latest]
-        exclude:
-          - arch: aarch64
-            os: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-target
-        with:
-          arch: ${{ matrix.arch }}
-          os: ${{ matrix.os }}
-      - run: cargo check --all-targets
-
   test:
     name: Test
     runs-on: ${{ matrix.os }}
