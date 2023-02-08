@@ -20,6 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Test
         run: |
           cargo test --lib
@@ -36,6 +37,7 @@ jobs:
           sudo apt-get install gdb
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Integration Tests
         run: cargo test --test '*'
 
@@ -48,6 +50,7 @@ jobs:
           lfs: true
       - run: git lfs checkout
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Run images
         run: |
           cargo run -- -v data/x86_64/hello_world
@@ -120,6 +123,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ steps.detect_target.outputs.target }}
+      - uses: Swatinem/rust-cache@v2
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
   
@@ -131,6 +135,7 @@ jobs:
       - name: Install clippy for Test Kernels
         run: rustup component add clippy
         working-directory: tests/test-kernels
+      - uses: Swatinem/rust-cache@v2
       - name: Clippy Test Kernels
         run: cargo clippy --all-targets -- -D warnings
         working-directory: tests/test-kernels
@@ -147,6 +152,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-llvm-cov
         run: curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin
+      - uses: Swatinem/rust-cache@v2
       - name: Generate code coverage
         run: cargo llvm-cov --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
