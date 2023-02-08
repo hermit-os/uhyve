@@ -109,10 +109,15 @@ jobs:
             os: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-target
-        with:
-          arch: ${{ matrix.arch }}
-          os: ${{ matrix.os }}
+      - name: Detect target
+        run: |
+          case ${{ matrix.os }} in
+            ubuntu*) suffix=unknown-linux-gnu ;;
+            macos*) suffix=apple-darwin ;;
+          esac
+          echo "CARGO_BUILD_TARGET=${{ matrix.arch }}-$suffix" >> $GITHUB_ENV
+      - name: Install target
+        run: rustup target add $CARGO_BUILD_TARGET
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
   
