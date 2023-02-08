@@ -5,6 +5,7 @@ status = [
     "Test (ubuntu-latest)",
     "Test (macos-latest)",
     "Integration Tests",
+    "Run images",
     "rusty_demo",
     "Format",
     "Clippy (x86_64, ubuntu-latest)",
