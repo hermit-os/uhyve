@@ -108,6 +108,9 @@ jobs:
           components: rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Install rustfmt for Test Kernels
+        run: rustup component add rustfmt
+        working-directory: tests/test-kernels
       - name: Format Test Kernels
         run: cargo fmt --all -- --check
         working-directory: tests/test-kernels
@@ -136,6 +139,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - name: Install clippy for Test Kernels
+        run: rustup component add clippy
+        working-directory: tests/test-kernels
       - name: Clippy Test Kernels
         run: cargo clippy --all-targets -- -D warnings
         working-directory: tests/test-kernels

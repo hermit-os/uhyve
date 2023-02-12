@@ -1,10 +1,7 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
 use std::{fs::File, io::prelude::*};
 
 #[cfg(target_os = "hermit")]
-extern crate hermit_sys;
+use hermit_sys as _;
 
 fn main() {
 	let mut file = File::create("foo.txt").unwrap();
