@@ -1,7 +1,4 @@
 status = [
-    "Check (x86_64, ubuntu-latest)",
-    "Check (x86_64, macos-latest)",
-    "Check (aarch64, macos-latest)",
     "Test (ubuntu-latest)",
     "Test (macos-latest)",
     "Integration Tests",
