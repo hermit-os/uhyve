@@ -64,6 +64,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install nasm
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v3
         with:
           path: uhyve
@@ -132,6 +133,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install clippy for Test Kernels
         run: rustup component add clippy
         working-directory: tests/test-kernels
