@@ -60,7 +60,7 @@ kvm-ioctls = "0.12"
 mac_address = "1.1"
 nix = "0.26"
 tun-tap = { version = "0.1", default-features = false }
-virtio-bindings = { version = "0.1", features = ["virtio-v4_14_0"] }
+virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
 vmm-sys-util = "0.11"
 
 [target.'cfg(target_os = "macos")'.dependencies]
