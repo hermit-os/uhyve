@@ -141,6 +141,10 @@ jobs:
       - name: Clippy Test Kernels
         run: cargo clippy --all-targets -- -D warnings
         working-directory: tests/test-kernels
+    env:
+      # TODO: Remove once we have a hermit toolchain upgrade
+      # capable of sparse registries
+      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: git
       
   coverage:
     name: Coverage
