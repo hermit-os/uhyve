@@ -80,12 +80,11 @@ dependencies = [
 
 [[package]]
 name = "hermit-sys"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "807177bcbf82b274e66e56e339765f1fd0b4809198d91a9882083afbe594c56c"
+checksum = "e04860e23fb5882c64d594297123f89f40420db59e170a999b6a20d58aacfef9"
 dependencies = [
  "flate2",
- "libm",
  "tar",
  "ureq",
 ]
@@ -114,12 +113,6 @@ name = "libc"
 version = "0.2.141"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3304a64d199bb964be99741b7a14d26972741915b3649639149b2479bb46f4b5"
-
-[[package]]
-name = "libm"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "348108ab3fba42ec82ff6e9564fc4ca0247bdccdc68dd8af9764bbc79c3c8ffb"
 
 [[package]]
 name = "log"
