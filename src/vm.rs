@@ -358,6 +358,7 @@ pub trait Vm {
 				serial_port_base: self
 					.verbose()
 					.then(|| SerialPortBase::new(UHYVE_UART_PORT.into()).unwrap()),
+				device_tree: None,
 			},
 			load_info,
 			platform_info: PlatformInfo::Uhyve {
