@@ -69,6 +69,8 @@ pub enum HypercallAddress {
 	Uart = 0x800,
 	/// Port address = `0x840`
 	FileUnlink = 0x840,
+	/// Port address = `0x880`
+	SerialBufferWrite = 0x880,
 }
 impl From<Hypercall<'_>> for HypercallAddress {
 	fn from(value: Hypercall) -> Self {
@@ -83,6 +85,7 @@ impl From<Hypercall<'_>> for HypercallAddress {
 			Hypercall::FileWrite(_) => Self::FileWrite,
 			Hypercall::FileUnlink(_) => Self::FileUnlink,
 			Hypercall::SerialWriteByte(_) => Self::Uart,
+			Hypercall::SerialWriteBuffer(_) => Self::SerialBufferWrite,
 		}
 	}
 }
@@ -107,6 +110,8 @@ pub enum Hypercall<'a> {
 	FileUnlink(&'a mut UnlinkParams),
 	/// Write a char to the terminal.
 	SerialWriteByte(u8),
+	/// Write a buffer to the terminal.
+	SerialWriteBuffer(&'a SerialWriteBufferParams),
 }
 impl<'a> Hypercall<'a> {
 	/// Get a hypercall's port address.

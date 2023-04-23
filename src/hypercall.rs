@@ -64,6 +64,10 @@ pub unsafe fn address_to_hypercall(
 				Hypercall::Cmdval(syscmdval)
 			}
 			HypercallAddress::Uart => Hypercall::SerialWriteByte(data.as_u64() as u8),
+			HypercallAddress::SerialBufferWrite => {
+				let sysserialwrite = mem.get_ref_mut(data).unwrap();
+				Hypercall::SerialWriteBuffer(sysserialwrite)
+			}
 			_ => unimplemented!(),
 		})
 	} else {
@@ -156,6 +160,15 @@ pub fn lseek(syslseek: &mut LseekParams) {
 /// Handles an UART syscall by writing to stdout.
 pub fn uart(buf: &[u8]) -> io::Result<()> {
 	io::stdout().write_all(buf)
+}
+
+/// Handles a UART syscall by contructing a buffer from parameter
+pub fn uart_buffer(sysuart: &SerialWriteBufferParams, mem: &MmapMemory) {
+	let buf = unsafe {
+		mem.slice_at(sysuart.buf, sysuart.len)
+			.expect("Systemcall parameters for SerialWriteBuffer are invalid")
+	};
+	io::stdout().write_all(buf).unwrap()
 }
 
 /// Copies the arguments of the application into the VM's memory to the destinations specified in `syscmdval`.
