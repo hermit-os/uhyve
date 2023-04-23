@@ -370,7 +370,7 @@ impl VirtualCPU for UhyveCPU {
 								let sysuart = unsafe {
 									&mut *(self.host_address(data_addr) as *mut SysUart)
 								};
-								self.uart(addr)?;
+								self.uart(sysuart)?;
 							}
 							UHYVE_PORT_CMDSIZE => {
 								let data_addr: usize =
