@@ -86,6 +86,12 @@ pub struct SysUnlink {
 	ret: i32,
 }
 
+#[repr(C, packed)]
+pub struct SysUart {
+	buf: *const u8,
+	len: usize,
+}
+
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
 
 #[derive(Error, Debug)]
