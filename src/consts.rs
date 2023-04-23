@@ -45,3 +45,4 @@ pub const UHYVE_PORT_CMDVAL: u16 = 0x780;
 
 pub const UHYVE_UART_PORT: u16 = 0x800;
 pub const UHYVE_PORT_UNLINK: u16 = 0x840;
+pub const UHYVE_UART_BUFFER_PORT: u16 = 0x880;

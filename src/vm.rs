@@ -312,6 +312,13 @@ pub trait VirtualCPU {
 	fn uart(&self, buf: &[u8]) -> io::Result<()> {
 		io::stdout().write_all(buf)
 	}
+
+	/// Handles a UART syscall by contructing a buffer from parameter
+	fn uart_buffer(&self, sysuart: &SysUart) -> io::Result<()> {
+		let buf_addr = self.virt_to_phys(sysuart.buf as usize) as *const u8;
+		let buf = unsafe { std::slice::from_raw_parts(buf_addr, sysuart.len) };
+		io::stdout().write_all(buf)
+	}
 }
 
 pub trait Vm {
