@@ -35,7 +35,7 @@ use crate::{
 	macos::x86_64::ioapic::IoApic,
 	vm::{
 		HypervisorResult, SysClose, SysCmdsize, SysCmdval, SysExit, SysLseek, SysOpen, SysRead,
-		SysUnlink, SysWrite, VcpuStopReason, VirtualCPU,
+		SysUart, SysUnlink, SysWrite, VcpuStopReason, VirtualCPU,
 	},
 };
 
@@ -751,6 +751,15 @@ impl VirtualCPU for UhyveCPU {
 							let al = (self.vcpu.read_register(&Register::RAX)? & 0xFF) as u8;
 
 							self.uart(&[al]).unwrap();
+							self.vcpu.write_register(&Register::RIP, rip + len)?;
+						}
+						UHYVE_UART_BUFFER_PORT => {
+							let data_addr: u64 =
+								self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
+							let sysuart = unsafe {
+								&mut *(self.host_address(data_addr as usize) as *mut SysUart)
+							};
+							self.uart_buffer(sysuart).unwrap();
 							self.vcpu.write_register(&Register::RIP, rip + len)?;
 						}
 						UHYVE_PORT_CMDSIZE => {

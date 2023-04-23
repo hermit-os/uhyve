@@ -15,7 +15,7 @@ use crate::{
 		PSR, TCR_FLAGS, TCR_TG1_4K, VA_BITS,
 	},
 	consts::*,
-	vm::{HypervisorResult, SysExit, VcpuStopReason, VirtualCPU},
+	vm::{HypervisorResult, SysExit, SysUart, VcpuStopReason, VirtualCPU},
 };
 
 pub struct UhyveCPU {
@@ -181,6 +181,14 @@ impl VirtualCPU for UhyveCPU {
 								let x8 = (self.vcpu.read_register(Register::X8)? & 0xFF) as u8;
 
 								self.uart(&[x8]).unwrap();
+								self.vcpu.write_register(Register::PC, pc + 4)?;
+							}
+							UHYVE_UART_BUFFER_PORT => {
+								let data_addr = self.vcpu.read_register(Register::X8)?;
+								let sysuart = unsafe {
+									&*(self.host_address(data_addr as usize) as *const SysUart)
+								};
+								self.uart_buffer(sysuart).unwrap();
 								self.vcpu.write_register(Register::PC, pc + 4)?;
 							}
 							UHYVE_PORT_EXIT => {
