@@ -17,7 +17,7 @@ use crate::{
 	linux::{virtio::*, KVM},
 	vm::{
 		HypervisorResult, SysClose, SysCmdsize, SysCmdval, SysExit, SysLseek, SysOpen, SysRead,
-		SysUnlink, SysWrite, VcpuStopReason, VirtualCPU, SysUart,
+		SysUart, SysUnlink, SysWrite, VcpuStopReason, VirtualCPU,
 	},
 };
 
@@ -367,9 +367,8 @@ impl VirtualCPU for UhyveCPU {
 							UHYVE_UART_PORT => {
 								let data_addr: usize =
 									unsafe { (*(addr.as_ptr() as *const u32)) as usize };
-								let sysuart = unsafe {
-									&mut *(self.host_address(data_addr) as *mut SysUart)
-								};
+								let sysuart =
+									unsafe { &mut *(self.host_address(data_addr) as *mut SysUart) };
 								self.uart(sysuart)?;
 							}
 							UHYVE_PORT_CMDSIZE => {
