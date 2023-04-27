@@ -25,6 +25,7 @@ fn gdb() -> io::Result<()> {
 		let vm = Uhyve::new(
 			bin_path,
 			Params {
+				verbose: true,
 				gdb_port: Some(port),
 				..Default::default()
 			},
