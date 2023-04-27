@@ -15,8 +15,7 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 	let kernel_src_path = Path::new("tests/test-kernels");
 	let cmd = Command::new("cargo")
 		.arg("build")
-		.arg("-Zbuild-std=core,alloc,std,panic_abort")
-		.arg("-Zbuild-std-features=compiler-builtins-mem")
+		.arg("-Zbuild-std=std,panic_abort")
 		.arg("--target=x86_64-unknown-hermit")
 		.arg("--bin")
 		.arg(kernel)
@@ -41,6 +40,7 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 /// simple uhyve vm
 pub fn run_simple_vm(kernel_path: PathBuf) {
 	let params = Params {
+		verbose: true,
 		cpu_count: 2.try_into().unwrap(),
 		memory_size: Byte::from_bytes(32 * 1024 * 1024).try_into().unwrap(),
 		..Default::default()
