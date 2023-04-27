@@ -15,8 +15,7 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 	let kernel_src_path = Path::new("tests/test-kernels");
 	let cmd = Command::new("cargo")
 		.arg("build")
-		.arg("-Zbuild-std=core,alloc,std,panic_abort")
-		.arg("-Zbuild-std-features=compiler-builtins-mem")
+		.arg("-Zbuild-std=std,panic_abort")
 		.arg("--target=x86_64-unknown-hermit")
 		.arg("--bin")
 		.arg(kernel)
