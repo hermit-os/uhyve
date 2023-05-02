@@ -41,10 +41,6 @@ fn setup_trace() {
 #[derive(Parser, Debug)]
 #[clap(version, author, about)]
 struct Args {
-	/// Print kernel messages
-	#[clap(short, long)]
-	verbose: bool,
-
 	#[clap(flatten, next_help_heading = "MEMORY")]
 	memory_args: MemoryArgs,
 
@@ -229,7 +225,6 @@ impl CpuArgs {
 impl From<Args> for Params {
 	fn from(args: Args) -> Self {
 		let Args {
-			verbose,
 			memory_args:
 				MemoryArgs {
 					memory_size,
@@ -251,7 +246,6 @@ impl From<Args> for Params {
 			kernel_args,
 		} = args;
 		Self {
-			verbose,
 			memory_size,
 			#[cfg(target_os = "linux")]
 			thp,

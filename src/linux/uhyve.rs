@@ -130,7 +130,6 @@ pub struct Uhyve {
 	path: PathBuf,
 	args: Vec<OsString>,
 	boot_info: *const RawBootInfo,
-	verbose: bool,
 	uhyve_device: Option<UhyveNetwork>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	pub(super) gdb_port: Option<u16>,
@@ -145,7 +144,6 @@ impl fmt::Debug for Uhyve {
 			.field("num_cpus", &self.num_cpus)
 			.field("path", &self.path)
 			.field("boot_info", &self.boot_info)
-			.field("verbose", &self.verbose)
 			.field("uhyve_device", &self.uhyve_device)
 			.field("virtio_device", &self.virtio_device)
 			.finish()
@@ -260,7 +258,6 @@ impl Uhyve {
 			path: kernel_path,
 			args: params.kernel_args,
 			boot_info: ptr::null(),
-			verbose: params.verbose,
 			uhyve_device,
 			virtio_device,
 			gdb_port: params.gdb_port,
@@ -273,10 +270,6 @@ impl Uhyve {
 }
 
 impl Vm for Uhyve {
-	fn verbose(&self) -> bool {
-		self.verbose
-	}
-
 	fn set_offset(&mut self, offset: u64) {
 		self.offset = offset;
 	}

@@ -40,7 +40,6 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 /// simple uhyve vm
 pub fn run_simple_vm(kernel_path: PathBuf) {
 	let params = Params {
-		verbose: true,
 		cpu_count: 2.try_into().unwrap(),
 		memory_size: Byte::from_bytes(32 * 1024 * 1024).try_into().unwrap(),
 		..Default::default()

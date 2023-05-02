@@ -10,9 +10,6 @@ use thiserror::Error;
 
 #[derive(Debug, Clone)]
 pub struct Params {
-	/// Print kernel messages
-	pub verbose: bool,
-
 	/// Guest RAM size
 	pub memory_size: GuestMemorySize,
 
@@ -43,7 +40,6 @@ pub struct Params {
 impl Default for Params {
 	fn default() -> Self {
 		Self {
-			verbose: Default::default(),
 			memory_size: Default::default(),
 			#[cfg(target_os = "linux")]
 			thp: false,
