@@ -772,16 +772,8 @@ impl VirtualCPU for UhyveCPU {
 						}
 						self.vcpu.write_register(&Register::RIP, rip + len)?;
 					} else {
-						match port {
-							// TODO: Deprecate (not used in Linux anyway)
-							SHUTDOWN_PORT => {
-								return Ok(VcpuStopReason::Exit(0));
-							}
-							_ => {
-								error!("Receive unhandled output command at port 0x{:x}", port);
-								self.vcpu.write_register(&Register::RIP, rip + len)?;
-							}
-						}
+						error!("Receive unhandled output command at port 0x{:x}", port);
+						self.vcpu.write_register(&Register::RIP, rip + len)?;
 					}
 				}
 				vmx_reason => {
