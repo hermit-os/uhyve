@@ -21,7 +21,6 @@ exclude = [
     "/.gitattributes",
     "/.gitignore",
     "/.gitmodules",
-    "/bors.toml",
     "/codecov.yml",
 ]
 
