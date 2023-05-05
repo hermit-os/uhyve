@@ -8,21 +8,15 @@ use std::{
 
 use log::{debug, warn};
 use raw_cpuid::{CpuId, CpuIdReaderNative};
+use thiserror::Error;
 
 pub const RAM_START: u64 = 0x00;
 const MHZ_TO_HZ: u64 = 1000000;
 const KHZ_TO_HZ: u64 = 1000;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
+#[error("Frequency detection failed")]
 pub struct FrequencyDetectionFailed;
-
-impl std::fmt::Display for FrequencyDetectionFailed {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "Frequency detection failed")
-	}
-}
-
-impl std::error::Error for FrequencyDetectionFailed {}
 
 pub fn detect_freq_from_cpuid(
 	cpuid: &CpuId<CpuIdReaderNative>,
