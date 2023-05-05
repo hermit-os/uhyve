@@ -7,7 +7,7 @@ use std::{
 };
 
 use log::{debug, warn};
-use raw_cpuid::CpuId;
+use raw_cpuid::{CpuId, CpuIdReaderNative};
 
 pub const RAM_START: u64 = 0x00;
 const MHZ_TO_HZ: u64 = 1000000;
@@ -24,7 +24,9 @@ impl std::fmt::Display for FrequencyDetectionFailed {
 
 impl std::error::Error for FrequencyDetectionFailed {}
 
-pub fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, FrequencyDetectionFailed> {
+pub fn detect_freq_from_cpuid(
+	cpuid: &CpuId<CpuIdReaderNative>,
+) -> std::result::Result<u32, FrequencyDetectionFailed> {
 	debug!("Trying to detect CPU frequency by tsc info");
 
 	let has_invariant_tsc = cpuid
@@ -65,7 +67,7 @@ pub fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, Frequen
 }
 
 pub fn detect_freq_from_cpuid_hypervisor_info(
-	cpuid: &CpuId,
+	cpuid: &CpuId<CpuIdReaderNative>,
 ) -> std::result::Result<u32, FrequencyDetectionFailed> {
 	debug!("Trying to detect CPU frequency by hypervisor info");
 	let hypervisor_info = cpuid
