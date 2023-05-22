@@ -118,9 +118,9 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bitflags"
-version = "2.2.1"
+version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24a6904aef64d73cf10ab17ebace7befb918b82164785cb89907993be7f83813"
+checksum = "6776fc96284a0bb647b615056fc496d1fe1644a7ab01829818a6d91cae888b84"
 
 [[package]]
 name = "bstr"
@@ -891,7 +891,7 @@ version = "11.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d86a7c4638d42c44551f4791a20e687dbb4c3de1f33c43dd71e355cd429def1"
 dependencies = [
- "bitflags 2.2.1",
+ "bitflags 2.3.1",
 ]
 
 [[package]]
@@ -1173,7 +1173,7 @@ name = "uhyve"
 version = "0.2.2"
 dependencies = [
  "assert_fs",
- "bitflags 2.2.1",
+ "bitflags 2.3.1",
  "burst",
  "byte-unit",
  "clap 4.2.7",
