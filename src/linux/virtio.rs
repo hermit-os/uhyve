@@ -596,7 +596,7 @@ fn send_available_packets(
 	sink: &Arc<Tap>,
 	tx_queue_locked: &Arc<Mutex<Virtqueue>>,
 	guest_start_address: usize,
-) -> bool {
+) {
 	let tx_queue = &mut tx_queue_locked.try_lock().unwrap();
 
 	let send_indices: Vec<u16> = tx_queue.avail_iter().collect();
@@ -634,8 +634,4 @@ fn send_available_packets(
 			tx_queue.add_used(index as u32, 1);
 		}
 	}
-	if tx_queue.available_ring.needs_notification() {
-		return true;
-	}
-	false
 }
