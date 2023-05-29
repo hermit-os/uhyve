@@ -2,6 +2,7 @@
 #![allow(unused_macros)]
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::useless_conversion)]
+#![allow(clippy::extra_unused_type_parameters)]
 
 use thiserror::Error;
 
@@ -54,3 +55,5 @@ pub enum HypervisorError {
 }
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
+
+pub mod net;

@@ -45,7 +45,7 @@ instrument = ["rftrace", "rftrace-frontend"]
 align-address = "0.3.0"
 byte-unit = { version = "5", features = ["byte"] }
 clap = { version = "4.5", features = ["derive", "env"] }
-nix = { version = "0.29", features = ["mman", "pthread", "signal"] }
+nix = { version = "0.28", features = ["mman", "pthread", "signal", "net"] }
 core_affinity = "0.8"
 either = "1.15"
 env_logger = "0.11"
@@ -73,7 +73,13 @@ clean-path = "0.2.1"
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.11"
 kvm-ioctls = "0.21"
+mac_address = "1.1"
+tun-tap = { version = "0.1", default-features = false }
+virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
 vmm-sys-util = "0.12"
+macvtap = { version = "0.1.2" }
+spin = { version = "0.9", features = ["spin_mutex"] }
+zerocopy = "0.6"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 xhypervisor = { version = "0.3.0", features = ["macos_15_0_0"] }

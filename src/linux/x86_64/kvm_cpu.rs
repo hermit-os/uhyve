@@ -11,6 +11,7 @@ use crate::{
 	consts::*,
 	hypercall,
 	linux::KVM,
+	net::virtio::{ConfigAddress, offsets::*},
 	params::Params,
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
@@ -403,33 +404,6 @@ impl VirtualCPU for KvmCpu {
 								}
 							}
 							PCI_CONFIG_ADDRESS_PORT => {}
-							VIRTIO_PCI_STATUS => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_status(addr);
-							}
-							VIRTIO_PCI_HOST_FEATURES => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_host_features(addr);
-							}
-							VIRTIO_PCI_GUEST_FEATURES => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_requested_features(addr);
-							}
-							VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device
-									.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_OFF);
-							}
-							VIRTIO_PCI_ISR => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.reset_interrupt()
-							}
-							VIRTIO_PCI_LINK_STATUS_MSIX_OFF => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_link_status(addr);
-							}
 							port => {
 								warn!("guest read from unknown I/O port {port:#x}");
 							}
@@ -534,49 +508,67 @@ impl VirtualCPU for KvmCpu {
 								PCI_CONFIG_ADDRESS_PORT => {
 									self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
 								}
-								VIRTIO_PCI_STATUS => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_status(addr);
-								}
-								VIRTIO_PCI_GUEST_FEATURES => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_requested_features(addr);
-								}
-								VIRTIO_PCI_QUEUE_NOTIFY => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.handle_notify_output(addr, &self.peripherals.mem);
-								}
-								VIRTIO_PCI_QUEUE_SEL => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_selected_queue(addr);
-								}
-								VIRTIO_PCI_QUEUE_PFN => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_pfn(addr, &self.peripherals.mem);
-								}
 								port => {
 									warn!("guest wrote to unknown I/O port {port:#x}");
 								}
 							}
 						}
 					}
-					VcpuExit::MmioRead(addr, _targ) => {
+					VcpuExit::MmioRead(addr, data) => {
 						match addr {
 							0x9_F000..0xA_0000 | 0xF_0000..0x10_0000 => {} // Search for MP floating table
 							_ => {
+								use crate::net::virtio::offsets::*;
+								match ConfigAddress::from_guest_address(addr) {
+									ISR_NOTIFY => {
+										let virtio_device =
+											self.peripherals.virtio_device.lock().unwrap();
+										virtio_device.read_isr_notify(data);
+									}
+									DEVICE_STATUS => {
+										let virtio_device =
+											self.peripherals.virtio_device.lock().unwrap();
+										data[0] = virtio_device.read_status_reg();
+									}
+									DEVICE_FEATURE => {
+										let virtio_device =
+											self.peripherals.virtio_device.lock().unwrap();
+										virtio_device.read_host_features(data);
+									}
+									QUEUE_SIZE => {
+										let virtio_device =
+											self.peripherals.virtio_device.lock().unwrap();
+										virtio_device.read_queue_size(data);
+									}
+
+									QUEUE_NOTIFY_OFFSET => {
+										let virtio_device =
+											self.peripherals.virtio_device.lock().unwrap();
+										virtio_device.read_queue_notify_offset(data);
+									}
+									MAC_ADDRESS | MAC_ADDRESS_1 => {
+										let virtio_device =
+											self.peripherals.virtio_device.lock().unwrap();
+										virtio_device.read_mac_address(addr, data);
+									}
+									NET_STATUS => {
+										let virtio_device =
+											self.peripherals.virtio_device.lock().unwrap();
+										virtio_device.read_net_status(data);
+									}
+									MTU => {
+										let virtio_device =
+											self.peripherals.virtio_device.lock().unwrap();
+										virtio_device.read_mtu(data);
+									}
+									_ => {
+										warn!("unhandled read! {addr:#x?}")
+									}
+								}
 								self.print_registers();
 								panic!("mmio read to {addr:#x}");
 							}
 						}
-					}
-					VcpuExit::MmioWrite(addr, _targ) => {
-						self.print_registers();
-						panic!("undefined mmio write to {addr:#x}");
 					}
 					VcpuExit::Debug(debug) => {
 						if let Some(s) = self.stats.as_mut() {
@@ -589,8 +581,73 @@ impl VirtualCPU for KvmCpu {
 						self.print_registers();
 						panic!("{:?}", VcpuExit::InternalError)
 					}
+					VcpuExit::MmioWrite(addr, data) => {
+						match ConfigAddress::from_guest_address(addr) {
+							DEVICE_STATUS => {
+								let mut virtio_device =
+									self.peripherals.virtio_device.lock().unwrap();
+								virtio_device.write_status(data, &self.peripherals);
+							}
+							DRIVER_FEATURE_SELECT => {
+								let mut virtio_device =
+									self.peripherals.virtio_device.lock().unwrap();
+
+								virtio_device.write_driver_feature_select(data);
+							}
+							DEVICE_FEATURE_SELECT => {
+								let mut virtio_device =
+									self.peripherals.virtio_device.lock().unwrap();
+
+								virtio_device.write_device_feature_select(data);
+							}
+							DRIVER_FEATURE => {
+								let mut virtio_device =
+									self.peripherals.virtio_device.lock().unwrap();
+								virtio_device.write_requested_features(data);
+							}
+							QUEUE_SELECT => {
+								let mut virtio_device =
+									self.peripherals.virtio_device.lock().unwrap();
+								virtio_device.write_selected_queue(data);
+							}
+							QUEUE_DESC => {
+								// write descriptor address
+								let mut virtio_device =
+									self.peripherals.virtio_device.lock().unwrap();
+								virtio_device.write_pfn(data, &self.peripherals.mem);
+							}
+							QUEUE_ENABLE => {
+								let mut virtio_device =
+									self.peripherals.virtio_device.lock().unwrap();
+								virtio_device.queue_enable(data);
+							}
+							QUEUE_DRIVER => {
+								let mut virtio_device =
+									self.peripherals.virtio_device.lock().unwrap();
+								virtio_device.write_queue_driver(data);
+							}
+							QUEUE_DEVICE => {
+								let mut virtio_device =
+									self.peripherals.virtio_device.lock().unwrap();
+								virtio_device.write_queue_driver(data);
+							}
+							ISR_NOTIFY => {
+								panic!("Guest should not write to ISR!");
+							}
+							MEM_NOTIFY | MEM_NOTIFY_1 => {
+								// TODO: are we only writing to two addresses or alerting/switching twice?
+								panic!(
+									"Writing to MemNotify address! Is IOEventFD correctly configured?"
+								);
+							}
+							_ => {
+								self.print_registers();
+								panic!("undefined mmio write to {addr:#x}");
+							}
+						}
+					}
 					vcpu_exit => {
-						unimplemented!("{:?}", vcpu_exit)
+						unimplemented!("{:#x?}", vcpu_exit)
 					}
 				},
 				Err(err) => match err.errno() {
