@@ -10,30 +10,13 @@ use crate::net::{
 };
 
 /// Collection of all VirtIO Capabilities
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[repr(C)]
 pub struct VirtioCapColl {
 	pub common: ComCfg,
-	pub _padding2: [u8; 0x8],
 	pub isr: IsrStatus,
-	pub _padding3: [u8; 0x7f],
 	pub notif: NotifCfg,
-	pub _padding4: [u8; 0x6c],
 	pub dev: NetDevCfg,
-}
-
-impl Default for VirtioCapColl {
-	fn default() -> Self {
-		Self {
-			common: Default::default(),
-			_padding2: [0u8; 0x8],
-			isr: Default::default(),
-			_padding3: [0u8; 0x7f],
-			notif: Default::default(),
-			_padding4: [0u8; 0x6c],
-			dev: Default::default(),
-		}
-	}
 }
 
 /// Vendor-specific PCI capability.
