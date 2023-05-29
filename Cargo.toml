@@ -58,10 +58,13 @@ rftrace-frontend = { version = "0.1", optional = true }
 kvm-bindings = "0.6"
 kvm-ioctls = "0.12"
 mac_address = "1.1"
-nix = "0.26"
-tun-tap = { version = "0.1", default-features = false }
+nix = { version = "0.26", features = ["net"] }
 virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
+# virtio-queue = { version = "0.7" }
 vmm-sys-util = "0.11"
+macvtap = { version = "0.1.2" }
+spin = { version = "0.9", features = ["spin_mutex"] }
+zerocopy = "0.6"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 burst = "0.0"
@@ -77,3 +80,7 @@ bitflags = "2.3"
 [dev-dependencies]
 assert_fs = "1"
 criterion = "0.4"
+
+[profile.release]
+debug = 1
+

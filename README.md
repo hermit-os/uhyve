@@ -137,6 +137,29 @@ The repository [rusty-hermit](https://github.com/hermitcore/rusty-hermit) provid
 
 ![Debugging RustyHermit apps](img/vs_code.png)
 
+## Networking
+
+**Network support is currently unstable and tested only on Linux.**
+
+If you require uhyve to create its own virtual ethernet interface, you will need to provide it with the `CAP_NET_ADMIN` capability:
+
+```
+# as root
+setcap cap_net_admin+ep /path/to/uhyve # ./target/debug/uhyve
+```
+
+~~You can set the pre-created tap device name via an environment variable `TAP`~~
+
+Currently, the device is hard-coded with the name `tap10`. You will need to create the device and connect it to a bridge (such as virbr0):
+
+```
+ip tuntap add tap10 mode tap user "$(whoami)"
+ip link set tap10 master virbr0
+ip link set dev tap10 up
+```
+
+And, if desired, set the IP address and gateway of your RustyHermit instance via `HERMIT_IP` and `HERMIT_GATEWAY`.
+
 ## Known issues
 
  * Uhyve isn't able to pass more than 128 environment variables to the unikernel.

@@ -4,12 +4,11 @@
 use std::{
 	cmp,
 	ffi::OsString,
-	fmt, hint, mem,
+	fmt, mem,
 	os::raw::c_void,
 	path::{Path, PathBuf},
-	ptr::{self, read_volatile, write_volatile},
-	sync::{mpsc::sync_channel, Arc, Mutex},
-	thread,
+	ptr,
+	sync::{Arc, Mutex},
 };
 
 use hermit_entry::boot_info::RawBootInfo;
@@ -17,8 +16,6 @@ use kvm_bindings::*;
 use kvm_ioctls::VmFd;
 use log::debug;
 use nix::sys::mman::*;
-use tun_tap::{Iface, Mode};
-use vmm_sys_util::eventfd::EventFd;
 use x86_64::{
 	structures::paging::{Page, PageTable, PageTableFlags, Size2MiB},
 	PhysAddr,
@@ -28,7 +25,6 @@ use crate::{
 	consts::*,
 	linux::{vcpu::*, virtio::*, KVM},
 	params::Params,
-	shared_queue::*,
 	vm::{HypervisorResult, Vm},
 	x86_64::create_gdt_entry,
 };
@@ -36,89 +32,6 @@ use crate::{
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
 const KVM_32BIT_GAP_SIZE: usize = 768 << 20;
 const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
-
-#[derive(Debug)]
-struct UhyveNetwork {
-	#[allow(dead_code)]
-	reader: std::thread::JoinHandle<()>,
-	#[allow(dead_code)]
-	writer: std::thread::JoinHandle<()>,
-	tx: std::sync::mpsc::SyncSender<usize>,
-}
-
-impl UhyveNetwork {
-	pub fn new(evtfd: EventFd, start: usize) -> Self {
-		let iface = Arc::new(
-			Iface::without_packet_info("", Mode::Tap).expect("Unable to creat TUN/TAP device"),
-		);
-
-		let iface_writer = Arc::clone(&iface);
-		let iface_reader = Arc::clone(&iface);
-		let (tx, rx) = sync_channel(1);
-
-		let writer = thread::spawn(move || {
-			let tx_queue = unsafe {
-				#[allow(clippy::cast_ptr_alignment)]
-				&mut *((start + align_up!(mem::size_of::<SharedQueue>(), 64)) as *mut u8
-					as *mut SharedQueue)
-			};
-			tx_queue.init();
-
-			loop {
-				let _value = rx.recv().expect("Failed to read from channel");
-
-				let written = unsafe { read_volatile(&tx_queue.written) };
-				let read = unsafe { read_volatile(&tx_queue.read) };
-				let distance = written - read;
-
-				if distance > 0 {
-					let idx = read % UHYVE_QUEUE_SIZE;
-					let len = unsafe { read_volatile(&tx_queue.inner[idx].len) } as usize;
-					let _ = iface_writer
-						.send(&tx_queue.inner[idx].data[0..len])
-						.expect("Send on TUN/TAP device failed!");
-
-					unsafe { write_volatile(&mut tx_queue.read, read + 1) };
-				}
-			}
-		});
-
-		let reader = thread::spawn(move || {
-			let rx_queue = unsafe {
-				#[allow(clippy::cast_ptr_alignment)]
-				&mut *(start as *mut u8 as *mut SharedQueue)
-			};
-			rx_queue.init();
-
-			loop {
-				let written = unsafe { read_volatile(&rx_queue.written) };
-				let read = unsafe { read_volatile(&rx_queue.read) };
-				let distance = written - read;
-
-				if distance < UHYVE_QUEUE_SIZE {
-					let idx = written % UHYVE_QUEUE_SIZE;
-					unsafe {
-						write_volatile(
-							&mut rx_queue.inner[idx].len,
-							iface_reader
-								.recv(&mut rx_queue.inner[idx].data)
-								.expect("Receive on TUN/TAP device failed!")
-								.try_into()
-								.unwrap(),
-						);
-						write_volatile(&mut rx_queue.written, written + 1);
-					}
-
-					evtfd.write(1).expect("Unable to trigger interrupt");
-				} else {
-					hint::spin_loop();
-				}
-			}
-		});
-
-		UhyveNetwork { reader, writer, tx }
-	}
-}
 
 pub struct Uhyve {
 	vm: VmFd,
@@ -131,7 +44,6 @@ pub struct Uhyve {
 	args: Vec<OsString>,
 	boot_info: *const RawBootInfo,
 	verbose: bool,
-	uhyve_device: Option<UhyveNetwork>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	pub(super) gdb_port: Option<u16>,
 }
@@ -146,7 +58,6 @@ impl fmt::Debug for Uhyve {
 			.field("path", &self.path)
 			.field("boot_info", &self.boot_info)
 			.field("verbose", &self.verbose)
-			.field("uhyve_device", &self.uhyve_device)
 			.field("virtio_device", &self.virtio_device)
 			.finish()
 	}
@@ -161,9 +72,6 @@ impl Uhyve {
 		let mem = MmapMemory::new(0, memory_size, 0, params.thp, params.ksm);
 
 		let sz = cmp::min(memory_size, KVM_32BIT_GAP_START);
-
-		// create virtio interface
-		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new()));
 
 		let kvm_mem = kvm_userspace_memory_region {
 			slot: 0,
@@ -237,11 +145,15 @@ impl Uhyve {
 		vm.enable_cap(&cap)
 			.expect("Unable to disable exists due pause instructions");
 
-		let evtfd = EventFd::new(0).unwrap();
-		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET)?;
-		// create TUN/TAP device
-		let uhyve_device =
-			false.then(|| UhyveNetwork::new(evtfd, mem.host_address + SHAREDQUEUE_START));
+		// create virtio device
+		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new()));
+
+		// Write configuration and register eventfds
+		virtio_device
+			.lock()
+			.as_deref_mut()
+			.expect("Could not lock VirtIO device for setup")
+			.setup(&vm);
 
 		let cpu_count = params.cpu_count.get();
 
@@ -261,7 +173,6 @@ impl Uhyve {
 			args: params.kernel_args,
 			boot_info: ptr::null(),
 			verbose: params.verbose,
-			uhyve_device,
 			virtio_device,
 			gdb_port: params.gdb_port,
 		};
@@ -314,15 +225,12 @@ impl Vm for Uhyve {
 	}
 
 	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU> {
-		let tx = self.uhyve_device.as_ref().map(|dev| dev.tx.clone());
-
 		Ok(UhyveCPU::new(
 			id,
 			self.path.clone(),
 			self.args.clone(),
 			self.vm.create_vcpu(id.try_into().unwrap())?,
 			self.mem.host_address,
-			tx,
 			self.virtio_device.clone(),
 		))
 	}

@@ -1,10 +1,23 @@
-use std::{marker::PhantomData, mem, mem::size_of};
+use std::{
+	marker::PhantomData,
+	mem,
+	mem::size_of,
+	sync::atomic::{AtomicPtr, Ordering},
+};
 
 use crate::consts::PAGE_SIZE;
 
 pub const QUEUE_LIMIT: usize = 256;
+pub const VIRTQ_DESC_F_AVAIL: u16 = 1 << 7;
+pub const VIRTQ_DESC_F_USED: u16 = 1 << 15;
+
+use virtio_bindings::bindings::virtio_ring::VRING_AVAIL_F_NO_INTERRUPT;
+pub use virtio_bindings::bindings::virtio_ring::{
+	VRING_DESC_F_INDIRECT, VRING_DESC_F_NEXT, VRING_DESC_F_WRITE,
+};
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct VringDescriptor {
 	pub addr: u64,
 	pub len: u32,
@@ -12,49 +25,78 @@ pub struct VringDescriptor {
 	pub next: u16,
 }
 
+impl VringDescriptor {
+	pub fn is_writable(&self) -> bool {
+		self.flags as u32 & VRING_DESC_F_WRITE != 0
+	}
+
+	pub fn is_readable(&self) -> bool {
+		self.flags as u32 & VRING_DESC_F_WRITE == 0
+	}
+}
+
+#[derive(Debug)]
 pub struct Vring<T> {
-	mem: *const u8,
-	_marker: PhantomData<*const T>,
+	mem: AtomicPtr<u8>,
+	_marker: PhantomData<AtomicPtr<T>>,
 }
 
 impl<T> Vring<T> {
 	pub fn new(mem: *const u8) -> Self {
 		Vring {
-			mem,
+			mem: AtomicPtr::new(mem as *mut u8),
 			_marker: PhantomData,
 		}
 	}
 
-	pub fn _flags(&self) -> u16 {
-		unsafe {
-			#[allow(clippy::cast_ptr_alignment)]
-			*(self.mem as *const u16)
-		}
+	pub fn flags(&self) -> u32 {
+		unsafe { *(self.mem.load(Ordering::Acquire) as *const u32) }
 	}
 
+	//	TODO
+	pub fn set_flag(&mut self, flag: u32) {
+		unsafe { *(self.mem.load(Ordering::Acquire) as *mut u32) = flag }
+	}
+
+	//	TODO
+	pub fn needs_notification(&self) -> bool {
+		self.flags() != VRING_AVAIL_F_NO_INTERRUPT
+	}
+
+	// //	TODO
+	// pub fn enable_notification(&mut self) {
+	// 	self.set_flag(0)
+	// }
+	// //	TODO
+	// pub fn disable_notification(&mut self) {
+	// 	self.set_flag(VRING_AVAIL_F_NO_INTERRUPT)
+	// }
+
 	pub fn index(&self) -> u16 {
-		unsafe {
-			#[allow(clippy::cast_ptr_alignment)]
-			*(self.mem.offset(2) as *const u16)
-		}
+		unsafe { (self.mem.load(Ordering::Acquire).offset(2) as *const u16).read_volatile() }
 	}
 
 	pub fn advance_index(&mut self) {
 		unsafe {
 			let new_value = self.index() + 1;
-			#[allow(clippy::cast_ptr_alignment)]
-			let write_ptr = self.mem.offset(2) as *mut u16;
-			*write_ptr = new_value;
+			let write_ptr = self.mem.load(Ordering::Acquire).offset(2) as *mut u16;
+			write_ptr.write_volatile(new_value);
 		}
 	}
 
 	pub fn ring_elem(&mut self, index: u16) -> &mut T {
 		let elem_size = mem::size_of::<T>() as u16;
-		unsafe { &mut *(self.mem.offset((4 + index * elem_size) as isize) as *mut T) }
+		unsafe {
+			&mut *(self
+				.mem
+				.load(Ordering::Acquire)
+				.offset((4 + index * elem_size) as isize) as *mut T)
+		}
 	}
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct VringUsedElement {
 	pub id: u32,
 	pub len: u32,
@@ -63,8 +105,9 @@ pub struct VringUsedElement {
 pub type VringAvailable = Vring<u16>;
 pub type VringUsed = Vring<VringUsedElement>;
 
+#[derive(Debug)]
 pub struct Virtqueue {
-	pub descriptor_table: *mut VringDescriptor,
+	pub descriptor_table: AtomicPtr<VringDescriptor>,
 	pub available_ring: VringAvailable,
 	pub used_ring: VringUsed,
 	pub last_seen_available: u16,
@@ -110,7 +153,7 @@ fn get_used_ring_offset() -> usize {
 impl Virtqueue {
 	pub unsafe fn new(mem: *mut u8, queue_size: usize) -> Self {
 		#[allow(clippy::cast_ptr_alignment)]
-		let descriptor_table = mem as *mut VringDescriptor;
+		let descriptor_table = AtomicPtr::new(mem as *mut VringDescriptor); // mem as AtomicPtr<VringDescriptor>;
 		let available_ring_ptr = mem.add(get_available_ring_offset());
 		let used_ring_ptr = mem.add(get_used_ring_offset());
 		let available_ring = VringAvailable::new(available_ring_ptr);
@@ -125,8 +168,21 @@ impl Virtqueue {
 		}
 	}
 
-	pub unsafe fn get_descriptor(&mut self, index: u16) -> &mut VringDescriptor {
-		&mut *self.descriptor_table.offset(index as isize)
+	/// Resets the Virtqueue with a dangling pointer.
+	///
+	/// SAFETY: this must be handled as if it was uninitialized, but so far it's
+	/// being trusted!
+	pub unsafe fn blank() -> Self {
+		Self::new(std::ptr::NonNull::dangling().as_ptr(), 0)
+	}
+
+	pub unsafe fn get_descriptor(&mut self, index: u16) -> Option<&mut VringDescriptor> {
+		let descriptor =
+			&mut *(self.descriptor_table.load(Ordering::Acquire)).offset(index as isize);
+		if descriptor.addr != 0 {
+			return Some(descriptor);
+		}
+		None
 	}
 
 	pub fn avail_iter(&mut self) -> AvailIter<'_> {

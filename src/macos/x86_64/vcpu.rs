@@ -344,9 +344,9 @@ impl UhyveCPU {
 				let mut id_reg_values: [u32; 4] = [0; 4];
 				let id = b"uhyve - unikerne";
 				unsafe {
-					std::ptr::copy_nonoverlapping(
-						id.as_ptr(),
+					std::intrinsics::volatile_copy_nonoverlapping_memory(
 						id_reg_values.as_mut_ptr() as *mut u8,
+						id.as_ptr(),
 						id.len(),
 					);
 				}
@@ -365,9 +365,9 @@ impl UhyveCPU {
 				let mut id_reg_values: [u32; 4] = [0; 4];
 				let id = b"l hypervisor\0";
 				unsafe {
-					std::ptr::copy_nonoverlapping(
-						id.as_ptr(),
+					std::intrinsics::volatile_copy_nonoverlapping_memory(
 						id_reg_values.as_mut_ptr() as *mut u8,
+						id.as_ptr(),
 						id.len(),
 					);
 				}
