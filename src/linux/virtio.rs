@@ -55,7 +55,6 @@ const TX_QUEUE: u16 = 1;
 const PCI_MEM_BASE_ADDRESS_64BIT: u16 = 1 << 2;
 pub const VIRTIO_PCI_MEM_BAR_PFN: u16 = 1 << 3;
 
-// TODO: replace 2 config slices with proper type?
 pub trait PciDevice {
 	fn handle_read(&self, address: u32, dest: &mut [u8]);
 	fn handle_write(&mut self, address: u32, src: &[u8]);
@@ -533,7 +532,7 @@ impl PciDevice for VirtioNetPciDevice {
 
 	fn handle_write(&mut self, address: u32, dest: &[u8]) {
 		// TODO: we are temporarily stepping over this to allow us to have a register size
-		// larger than 0x10. Bad solution!
+		// larger than 0x10. Hacky solution!
 		for (i, var) in dest.iter().enumerate() {
 			if i == 1 && address == BAR0_REGISTER as u32 {
 				self.config_space[(address as usize) + i] = *var & !(0x10);
