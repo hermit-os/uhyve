@@ -103,7 +103,7 @@ impl Index<RangeFrom<usize>> for PciConfigSpace {
 	}
 }
 
-/// Type to manage uhyve's network device.
+/// Struct to manage uhyve's network device.
 pub struct VirtioNetPciDevice {
 	/// PCI configuration space
 	config_space: PciConfigSpace,
@@ -191,7 +191,7 @@ impl VirtioNetPciDevice {
 		self.capabilities.common.num_queues = 2;
 		self.capabilities.common.device_feature = UHYVE_NET_FEATURES_LOW;
 
-		// set capabilities pointer address, device as available
+		// Set capabilities pointer address, device as available
 		write_data!(
 			self.config_space,
 			STATUS_REGISTER,
@@ -252,7 +252,6 @@ impl VirtioNetPciDevice {
 			self.capabilities.common.driver_feature = 0;
 			self.capabilities.common.queue_select = 0;
 
-			// TODO: a queue reset must set and check validity!
 			unsafe {
 				*self.rx_queue.as_ref().lock() = Virtqueue::blank();
 				*self.tx_queue.as_ref().lock() = Virtqueue::blank();
@@ -372,7 +371,7 @@ impl VirtioNetPciDevice {
 				}
 			});
 
-			// should've would've panicked by now, if no mac existed!
+			// "should've would've panicked by now, if no mac existed!" BAD!
 			self.get_mac_addr();
 			self.capabilities.dev.status |= VIRTIO_NET_S_LINK_UP as u16;
 		}
@@ -447,7 +446,7 @@ impl VirtioNetPciDevice {
 		self.capabilities.common.driver_feature = 0;
 		self.capabilities.common.queue_select = 0;
 		self.capabilities.common.queue_size = 0;
-		// TODO: A reset virtioqueue must check store and set validity!
+		// TODO: A virtioqueue must check validity!
 		unsafe {
 			*self.rx_queue.as_ref().lock() = Virtqueue::blank();
 			*self.tx_queue.as_ref().lock() = Virtqueue::blank();
@@ -603,7 +602,7 @@ fn send_available_packets(
 
 	for index in send_indices {
 		//	TODO: improper behavior? find a better solution
-		// tl;dr - disable notifications and skip this function if the device doesn't report as ready
+		// tl;dr - disable notifications and skip this part if the queue doesn't report as ready
 		if let Some(desc) = unsafe { tx_queue.get_descriptor(index) } {
 			if !desc.is_readable() {
 				error!("Descriptor is not readable {}", desc.flags);
