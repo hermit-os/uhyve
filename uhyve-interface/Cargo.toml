@@ -1,0 +1,17 @@
+[package]
+name = "uhyve-interface"
+version = "0.1.0"
+edition = "2021"
+authors = [
+  "Jonathan Klimt <jonathan.klimt@eonerc.rwth-aachen.de>",
+  "Stefan Lankes <slankes@eonerc.rwth-aachen.de>",
+]
+description = "The interface between uhyve and a guest VM"
+repository = "https://github.com/hermitcore/uhyve"
+license = "MIT OR Apache-2.0"
+keywords = ["hypervisor", "unikernel", "hermit"]
+categories = ["os"]
+
+[dependencies]
+num_enum = { version = "0.5", default-features = false }
+x86_64 = { version = "0.14", default-features = false }
