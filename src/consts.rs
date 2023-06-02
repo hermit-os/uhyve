@@ -1,17 +1,19 @@
+use x86_64::addr::PhysAddr;
+
 pub const PAGE_SIZE: usize = 0x1000;
 pub const GDT_KERNEL_CODE: u16 = 1;
 pub const GDT_KERNEL_DATA: u16 = 2;
 pub const APIC_DEFAULT_BASE: u64 = 0xfee00000;
-pub const BOOT_GDT: u64 = 0x1000;
+pub const BOOT_GDT: PhysAddr = PhysAddr::new(0x1000);
 pub const BOOT_GDT_NULL: u64 = 0;
 pub const BOOT_GDT_CODE: u64 = 1;
 pub const BOOT_GDT_DATA: u64 = 2;
 pub const BOOT_GDT_MAX: u64 = 3;
-pub const BOOT_PML4: u64 = 0x10000;
-pub const BOOT_PGT: u64 = BOOT_PML4;
-pub const BOOT_PDPTE: u64 = 0x11000;
-pub const BOOT_PDE: u64 = 0x12000;
-pub const BOOT_INFO_ADDR: u64 = 0x9000;
+pub const BOOT_PML4: PhysAddr = PhysAddr::new(0x10000);
+pub const BOOT_PGT: PhysAddr = BOOT_PML4;
+pub const BOOT_PDPTE: PhysAddr = PhysAddr::new(0x11000);
+pub const BOOT_PDE: PhysAddr = PhysAddr::new(0x12000);
+pub const BOOT_INFO_ADDR: PhysAddr = PhysAddr::new(0x9000);
 pub const EFER_SCE: u64 = 1; /* System Call Extensions */
 pub const EFER_LME: u64 = 1 << 8; /* Long mode enable */
 pub const EFER_LMA: u64 = 1 << 10; /* Long mode active (read-only) */

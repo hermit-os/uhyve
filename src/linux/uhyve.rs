@@ -246,10 +246,10 @@ impl Vm for Uhyve {
 		let (mem_addr, _) = self.guest_mem();
 
 		unsafe {
-			let pml4 = &mut *((mem_addr as u64 + BOOT_PML4) as *mut PageTable);
-			let pdpte = &mut *((mem_addr as u64 + BOOT_PDPTE) as *mut PageTable);
-			let pde = &mut *((mem_addr as u64 + BOOT_PDE) as *mut PageTable);
-			let gdt_entry: u64 = mem_addr as u64 + BOOT_GDT;
+			let pml4 = &mut *((mem_addr as u64 + BOOT_PML4.as_u64()) as *mut PageTable);
+			let pdpte = &mut *((mem_addr as u64 + BOOT_PDPTE.as_u64()) as *mut PageTable);
+			let pde = &mut *((mem_addr as u64 + BOOT_PDE.as_u64()) as *mut PageTable);
+			let gdt_entry: u64 = mem_addr as u64 + BOOT_GDT.as_u64();
 
 			// initialize GDT
 			*((gdt_entry) as *mut u64) = create_gdt_entry(0, 0, 0);
@@ -267,17 +267,14 @@ impl Vm for Uhyve {
 			libc::memset(pde as *mut _ as *mut libc::c_void, 0x00, PAGE_SIZE);*/
 
 			pml4[0].set_addr(
-				PhysAddr::new(BOOT_PDPTE),
+				BOOT_PDPTE,
 				PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 			);
 			pml4[511].set_addr(
-				PhysAddr::new(BOOT_PML4),
+				BOOT_PML4,
 				PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 			);
-			pdpte[0].set_addr(
-				PhysAddr::new(BOOT_PDE),
-				PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-			);
+			pdpte[0].set_addr(BOOT_PDE, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
 
 			for i in 0..512 {
 				let addr = PhysAddr::new(i as u64 * Page::<Size2MiB>::SIZE);

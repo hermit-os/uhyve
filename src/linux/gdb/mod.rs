@@ -17,6 +17,7 @@ use kvm_bindings::{
 };
 use libc::EINVAL;
 use nix::sys::pthread::pthread_self;
+use uhyve_interface::GuestVirtAddr;
 use x86_64::registers::debug::Dr6Flags;
 
 use self::breakpoints::SwBreakpoints;
@@ -119,13 +120,13 @@ impl SingleThreadBase for GdbUhyve {
 	}
 
 	fn read_addrs(&mut self, start_addr: u64, data: &mut [u8]) -> TargetResult<usize, Self> {
-		let src = unsafe { self.vcpu.memory(start_addr, data.len()) };
+		let src = unsafe { self.vcpu.memory(GuestVirtAddr::new(start_addr), data.len()) };
 		data.copy_from_slice(src);
 		Ok(data.len())
 	}
 
 	fn write_addrs(&mut self, start_addr: u64, data: &[u8]) -> TargetResult<(), Self> {
-		let mem = unsafe { self.vcpu.memory(start_addr, data.len()) };
+		let mem = unsafe { self.vcpu.memory(GuestVirtAddr::new(start_addr), data.len()) };
 		mem.copy_from_slice(data);
 		Ok(())
 	}

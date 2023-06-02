@@ -3,6 +3,7 @@ use std::{fmt, mem::size_of, ptr::copy_nonoverlapping, sync::Mutex, vec::Vec};
 use log::info;
 use mac_address::*;
 use tun_tap::*;
+use uhyve_interface::GuestPhysAddr;
 use virtio_bindings::bindings::virtio_net::*;
 
 use crate::{linux::virtqueue::*, vm::VirtualCPU};
@@ -139,7 +140,7 @@ impl VirtioNetPciDevice {
 		}
 		for index in send_indices {
 			let desc = unsafe { tx_queue.get_descriptor(index) };
-			let gpa = unsafe { *(desc.addr as *const usize) };
+			let gpa = GuestPhysAddr::new(unsafe { *(desc.addr as *const u64) });
 			let hva = (*cpu).host_address(gpa) as *mut u8;
 			match &self.iface {
 				Some(tap) => unsafe {
@@ -269,10 +270,10 @@ impl VirtioNetPciDevice {
 			&& status & STATUS_DRIVER_OK == 0
 			&& self.selected_queue_num as usize == self.virt_queues.len()
 		{
-			let gpa = unsafe {
+			let gpa = GuestPhysAddr::new(unsafe {
 				#[allow(clippy::cast_ptr_alignment)]
-				*(dest.as_ptr() as *const usize)
-			};
+				*(dest.as_ptr() as *const u64)
+			});
 			let hva = (*vcpu).host_address(gpa) as *mut u8;
 			let queue = unsafe { Virtqueue::new(hva, QUEUE_LIMIT) };
 			self.virt_queues.push(queue);

@@ -9,7 +9,9 @@ use hermit_entry::{
 };
 use log::{error, warn};
 use thiserror::Error;
-use uhyve_interface::{parameters::*, Hypercall, HypercallAddress, MAX_ARGC_ENVC};
+use uhyve_interface::{
+	parameters::*, GuestPhysAddr, GuestVirtAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC,
+};
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::{
@@ -61,10 +63,10 @@ pub trait VirtualCPU {
 	fn print_registers(&self);
 
 	/// Translates an address from the VM's physical space into the hosts virtual space.
-	fn host_address(&self, addr: usize) -> usize;
+	fn host_address(&self, addr: GuestPhysAddr) -> usize;
 
 	/// Looks up the guests pagetable and translates a guest's virtual address to a guest's physical address.
-	fn virt_to_phys(&self, addr: usize) -> usize;
+	fn virt_to_phys(&self, addr: GuestVirtAddr) -> GuestPhysAddr;
 
 	/// Returns the (host) path of the kernel binary.
 	fn kernel_path(&self) -> &Path;
@@ -79,7 +81,7 @@ pub trait VirtualCPU {
 	/// - `data` must be a valid pointer to the data attached to the hypercall.
 	/// - The return value is only valid, as long as the guest is halted.
 	/// - This fn must not be called multiple times on the same data, to avoid creating mutable aliasing.
-	unsafe fn address_to_hypercall(&self, addr: u16, data: usize) -> Option<Hypercall<'_>> {
+	unsafe fn address_to_hypercall(&self, addr: u16, data: GuestPhysAddr) -> Option<Hypercall<'_>> {
 		if let Ok(hypercall_port) = HypercallAddress::try_from(addr) {
 			Some(match hypercall_port {
 				HypercallAddress::FileClose => {
@@ -118,7 +120,7 @@ pub trait VirtualCPU {
 					let syscmdval = unsafe { &*(self.host_address(data) as *const CmdvalParams) };
 					Hypercall::Cmdval(syscmdval)
 				}
-				HypercallAddress::Uart => Hypercall::SerialWriteByte(data as u8),
+				HypercallAddress::Uart => Hypercall::SerialWriteByte(data.as_u64() as u8),
 				_ => unimplemented!(),
 			})
 		} else {
@@ -158,13 +160,14 @@ pub trait VirtualCPU {
 
 	/// Copies the arguments end environment of the application into the VM's memory.
 	fn cmdval(&self, syscmdval: &CmdvalParams) {
-		let argv = self.host_address(syscmdval.argv.as_u64() as usize);
+		let argv = self.host_address(syscmdval.argv);
 
 		// copy kernel path as first argument
 		{
 			let path = self.kernel_path().as_os_str();
 
-			let argvptr = unsafe { self.host_address(*(argv as *mut *mut u8) as usize) };
+			let argvptr =
+				unsafe { self.host_address(GuestPhysAddr::new(*(argv as *mut *mut u8) as u64)) };
 			let len = path.len();
 			let slice = unsafe { slice::from_raw_parts_mut(argvptr as *mut u8, len + 1) };
 
@@ -176,9 +179,9 @@ pub trait VirtualCPU {
 		// Copy the application arguments into the vm memory
 		for (counter, argument) in self.args().iter().enumerate() {
 			let argvptr = unsafe {
-				self.host_address(
-					*((argv + (counter + 1) * mem::size_of::<usize>()) as *mut *mut u8) as usize,
-				)
+				self.host_address(GuestPhysAddr::new(
+					*((argv + (counter + 1) * mem::size_of::<usize>()) as *mut *mut u8) as u64,
+				))
 			};
 			let len = argument.len();
 			let slice = unsafe { slice::from_raw_parts_mut(argvptr as *mut u8, len + 1) };
@@ -190,14 +193,14 @@ pub trait VirtualCPU {
 
 		// Copy the environment variables into the vm memory
 		let mut counter = 0;
-		let envp = self.host_address(syscmdval.envp.as_u64() as usize);
+		let envp = self.host_address(syscmdval.envp);
 		for (key, value) in std::env::vars_os() {
 			if counter < MAX_ARGC_ENVC.try_into().unwrap() {
 				let envptr = unsafe {
-					self.host_address(
+					self.host_address(GuestPhysAddr::new(
 						*((envp + counter as usize * mem::size_of::<usize>()) as *mut *mut u8)
-							as usize,
-					)
+							as u64,
+					))
 				};
 				let len = key.len() + value.len();
 				let slice = unsafe { slice::from_raw_parts_mut(envptr as *mut u8, len + 2) };
@@ -216,8 +219,7 @@ pub trait VirtualCPU {
 	/// TODO: UNSAFE AS *%@#. It has to be checked that the VM is allowed to unlink that file!
 	fn unlink(&self, sysunlink: &mut UnlinkParams) {
 		unsafe {
-			sysunlink.ret =
-				libc::unlink(self.host_address(sysunlink.name.as_u64() as usize) as *const i8);
+			sysunlink.ret = libc::unlink(self.host_address(sysunlink.name) as *const i8);
 		}
 	}
 
@@ -230,7 +232,7 @@ pub trait VirtualCPU {
 	fn open(&self, sysopen: &mut OpenParams) {
 		unsafe {
 			sysopen.ret = libc::open(
-				self.host_address(sysopen.name.as_u64() as usize) as *const i8,
+				self.host_address(sysopen.name) as *const i8,
 				sysopen.flags,
 				sysopen.mode,
 			);
@@ -247,11 +249,9 @@ pub trait VirtualCPU {
 	/// Handles an read syscall on the host.
 	fn read(&self, sysread: &mut ReadPrams) {
 		unsafe {
-			let buffer = self.virt_to_phys(sysread.buf.as_u64() as usize);
-
 			let bytes_read = libc::read(
 				sysread.fd,
-				self.host_address(buffer) as *mut libc::c_void,
+				self.host_address(sysread.buf) as *mut libc::c_void,
 				sysread.len,
 			);
 			if bytes_read >= 0 {
@@ -265,13 +265,11 @@ pub trait VirtualCPU {
 	/// Handles an write syscall on the host.
 	fn write(&self, syswrite: &WriteParams) -> io::Result<()> {
 		let mut bytes_written: usize = 0;
-		let buffer = self.virt_to_phys(syswrite.buf.as_u64() as usize);
-
 		while bytes_written != syswrite.len {
 			unsafe {
 				let step = libc::write(
 					syswrite.fd,
-					self.host_address(buffer + bytes_written) as *const libc::c_void,
+					self.host_address(syswrite.buf + bytes_written) as *const libc::c_void,
 					syswrite.len - bytes_written,
 				);
 				if step >= 0 {
@@ -360,7 +358,7 @@ pub trait Vm {
 				boot_time: SystemTime::now().into(),
 			},
 		};
-		let raw_boot_info_ptr = vm_mem.add(BOOT_INFO_ADDR as usize) as *mut RawBootInfo;
+		let raw_boot_info_ptr = vm_mem.add(BOOT_INFO_ADDR.as_u64() as usize) as *mut RawBootInfo;
 		*raw_boot_info_ptr = RawBootInfo::from(boot_info);
 		self.set_boot_info(raw_boot_info_ptr);
 		self.set_stack_address(start_address.checked_sub(KERNEL_STACK_SIZE).expect(
