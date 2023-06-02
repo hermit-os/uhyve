@@ -14,6 +14,13 @@ use num_enum::TryFromPrimitive;
 
 pub mod elf;
 pub mod parameters;
+
+#[cfg(target_arch = "x86_64")]
+pub use ::x86_64::addr::PhysAddr as GuestPhysAddr;
+#[cfg(target_arch = "x86_64")]
+pub use ::x86_64::addr::VirtAddr as GuestVirtAddr;
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("Using uhyve-interface on a non-64-bit system is not (yet?) supported");
 use parameters::*;
 
 /// The version of the uhyve interface. Note: This is not the same as the semver of the crate but

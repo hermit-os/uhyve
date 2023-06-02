@@ -10,7 +10,7 @@ use std::{
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use lazy_static::lazy_static;
 use log::{debug, trace};
-use uhyve_interface::Hypercall;
+use uhyve_interface::{GuestPhysAddr, GuestVirtAddr, Hypercall};
 use x86_64::{
 	registers::control::{Cr0Flags, Cr4Flags},
 	structures::{gdt::SegmentSelector, paging::PageTableFlags},
@@ -202,7 +202,8 @@ impl UhyveCPU {
 		self.vcpu.write_vmcs(VMCS_GUEST_GS_BASE, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_GS_AR, 0x4093)?;
 
-		self.vcpu.write_vmcs(VMCS_GUEST_GDTR_BASE, BOOT_GDT)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_GDTR_BASE, BOOT_GDT.as_u64())?;
 		self.vcpu.write_vmcs(
 			VMCS_GUEST_GDTR_LIMIT,
 			((std::mem::size_of::<u64>() * BOOT_GDT_MAX as usize) - 1) as u64,
@@ -270,7 +271,8 @@ impl UhyveCPU {
 
 		self.vcpu.write_register(&Register::CR0, cr0.bits())?;
 		self.vcpu.write_register(&Register::CR4, cr4.bits())?;
-		self.vcpu.write_register(&Register::CR3, BOOT_PML4)?;
+		self.vcpu
+			.write_register(&Register::CR3, BOOT_PML4.as_u64())?;
 		self.vcpu.write_register(&Register::DR7, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_ESP, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_EIP, 0)?;
@@ -507,8 +509,9 @@ impl UhyveCPU {
 		let qualification = self.vcpu.read_vmcs(VMCS_RO_EXIT_QUALIFIC)?;
 		let read = (qualification & (1 << 0)) != 0;
 		let write = (qualification & (1 << 1)) != 0;
-		let code =
-			unsafe { std::slice::from_raw_parts(self.host_address(rip as usize) as *const u8, 8) };
+		let code = unsafe {
+			std::slice::from_raw_parts(self.host_address(GuestPhysAddr::new(rip)) as *const u8, 8)
+		};
 
 		if let Ok(instr) = disassemble_64(code, rip as usize, code.len()) {
 			match instr.operation {
@@ -616,7 +619,8 @@ impl VirtualCPU for UhyveCPU {
 		self.vcpu.write_register(&Register::RCX, 0)?;
 		self.vcpu.write_register(&Register::RDX, 0)?;
 		self.vcpu.write_register(&Register::RSI, cpu_id.into())?;
-		self.vcpu.write_register(&Register::RDI, BOOT_INFO_ADDR)?;
+		self.vcpu
+			.write_register(&Register::RDI, BOOT_INFO_ADDR.as_u64())?;
 		self.vcpu.write_register(&Register::R8, 0)?;
 		self.vcpu.write_register(&Register::R9, 0)?;
 		self.vcpu.write_register(&Register::R10, 0)?;
@@ -639,36 +643,43 @@ impl VirtualCPU for UhyveCPU {
 		self.args.as_slice()
 	}
 
-	fn host_address(&self, addr: usize) -> usize {
-		addr + self.vm_start
+	fn host_address(&self, addr: GuestPhysAddr) -> usize {
+		addr.as_u64() as usize + self.vm_start
 	}
 
-	fn virt_to_phys(&self, addr: usize) -> usize {
+	fn virt_to_phys(&self, addr: GuestVirtAddr) -> GuestPhysAddr {
+		// TODO: This fn is curently x86_64 only
 		/// Number of Offset bits of a virtual address for a 4 KiB page, which are shifted away to get its Page Frame Number (PFN).
-		pub const PAGE_BITS: usize = 12;
+		pub const PAGE_BITS: u64 = 12;
 
 		/// Number of bits of the index in each table (PML4, PDPT, PDT, PGT).
 		pub const PAGE_MAP_BITS: usize = 9;
 
-		let executable_disable_mask = !usize::try_from(PageTableFlags::NO_EXECUTE.bits()).unwrap();
-		let mut page_table = self.host_address(BOOT_PML4 as usize) as *const usize;
+		let executable_disable_mask = !u64::try_from(PageTableFlags::NO_EXECUTE.bits()).unwrap();
+		let mut page_table = self.host_address(BOOT_PML4) as *const u64;
 		let mut page_bits = 39;
-		let mut entry: usize = 0;
+		let mut entry: u64 = 0;
 
 		for _i in 0..4 {
-			let index = (addr >> page_bits) & ((1 << PAGE_MAP_BITS) - 1);
-			entry = unsafe { *page_table.add(index) & executable_disable_mask };
+			let index = (addr.as_u64() >> page_bits) & ((1 << PAGE_MAP_BITS) - 1);
+			entry = unsafe { *page_table.add(index as usize) & executable_disable_mask };
 
 			// bit 7 is set if this entry references a 1 GiB (PDPT) or 2 MiB (PDT) page.
-			if entry & usize::try_from(PageTableFlags::HUGE_PAGE.bits()).unwrap() != 0 {
-				return (entry & ((!0usize) << page_bits)) | (addr & !((!0usize) << page_bits));
+			if entry & u64::try_from(PageTableFlags::HUGE_PAGE.bits()).unwrap() != 0 {
+				return GuestPhysAddr::new(
+					(entry & ((!0u64) << page_bits)) | (addr.as_u64() & !((!0_u64) << page_bits)),
+				);
 			} else {
-				page_table = self.host_address(entry & !((1 << PAGE_BITS) - 1)) as *const usize;
+				page_table = self.host_address(GuestPhysAddr::new(
+					(entry & !((1 << PAGE_BITS) - 1)) as *const u64 as u64,
+				)) as *const u64;
 				page_bits -= PAGE_MAP_BITS;
 			}
 		}
 
-		(entry & ((!0usize) << PAGE_BITS)) | (addr & !((!0usize) << PAGE_BITS))
+		GuestPhysAddr::new(
+			(entry & ((!0u64) << PAGE_BITS)) | (addr.as_u64() & !((!0u64) << PAGE_BITS)),
+		)
 	}
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
@@ -746,7 +757,7 @@ impl VirtualCPU for UhyveCPU {
 
 					let data_addr: u64 = self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
 					if let Some(hypercall) =
-						unsafe { self.address_to_hypercall(port, data_addr as usize) }
+						unsafe { self.address_to_hypercall(port, GuestPhysAddr::new(data_addr)) }
 					{
 						match hypercall {
 							Hypercall::Cmdsize(syssize) => self.cmdsize(syssize),

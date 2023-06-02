@@ -1,6 +1,7 @@
 use std::collections::{hash_map::Entry, HashMap};
 
 use gdbstub::target::{self, ext::breakpoints::WatchKind, TargetResult};
+use uhyve_interface::GuestVirtAddr;
 
 use super::GdbUhyve;
 use crate::arch::x86_64::registers;
@@ -49,7 +50,7 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 		let sw_breakpoint = SwBreakpoint::new(addr, kind);
 
 		if let Entry::Vacant(entry) = self.sw_breakpoints.entry(sw_breakpoint) {
-			let instructions = unsafe { self.vcpu.memory(addr, kind) };
+			let instructions = unsafe { self.vcpu.memory(GuestVirtAddr::new(addr), kind) };
 			entry.insert(instructions.into());
 			instructions.fill(SwBreakpoint::OPCODE);
 			Ok(true)
@@ -62,7 +63,7 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 		let sw_breakpoint = SwBreakpoint::new(addr, kind);
 
 		if let Entry::Occupied(entry) = self.sw_breakpoints.entry(sw_breakpoint) {
-			let instructions = unsafe { self.vcpu.memory(addr, kind) };
+			let instructions = unsafe { self.vcpu.memory(GuestVirtAddr::new(addr), kind) };
 			instructions.copy_from_slice(&entry.remove());
 			Ok(true)
 		} else {

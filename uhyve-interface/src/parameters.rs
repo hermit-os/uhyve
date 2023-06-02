@@ -1,8 +1,6 @@
 //! Parameters for hypercalls.
 
-use x86_64::PhysAddr;
-
-use crate::MAX_ARGC_ENVC;
+use crate::{GuestPhysAddr, MAX_ARGC_ENVC};
 
 /// Parameters for a [`Cmdsize`](crate::Hypercall::Cmdsize) hypercall which provides the lengths of the items in the argument end environment vector.
 #[repr(C, packed)]
@@ -23,9 +21,9 @@ pub struct CmdsizeParams {
 #[derive(Debug, Copy, Clone)]
 pub struct CmdvalParams {
 	/// Pointer to a memory section in the VM memory large enough to store the argument string.
-	pub argv: PhysAddr,
+	pub argv: GuestPhysAddr,
 	/// Pointer to a memory section in the VM memory large enough to store the environment values.
-	pub envp: PhysAddr,
+	pub envp: GuestPhysAddr,
 }
 
 /// Parameters for a [`Exit`](crate::Hypercall::Exit) hypercall.
@@ -41,7 +39,7 @@ pub struct ExitParams {
 #[derive(Debug, Copy, Clone)]
 pub struct UnlinkParams {
 	/// Address of the file that should be unlinked.
-	pub name: PhysAddr,
+	pub name: GuestPhysAddr,
 	/// On success, `0` is returned.  On error, `-1` is returned.
 	pub ret: i32,
 }
@@ -53,7 +51,7 @@ pub struct WriteParams {
 	/// File descriptor of the file.
 	pub fd: i32,
 	/// Buffer to be written into the file.
-	pub buf: PhysAddr,
+	pub buf: GuestPhysAddr,
 	/// Number of bytes in the buffer to be written.
 	pub len: usize,
 }
@@ -65,7 +63,7 @@ pub struct ReadPrams {
 	/// File descriptor of the file.
 	pub fd: i32,
 	/// Buffer to read the file into.
-	pub buf: PhysAddr,
+	pub buf: GuestPhysAddr,
 	/// Number of bytes to read into the buffer.
 	pub len: usize,
 	/// Number of bytes read on success. `-1` on failure.
@@ -87,7 +85,7 @@ pub struct CloseParams {
 #[derive(Debug, Copy, Clone)]
 pub struct OpenParams {
 	/// Pathname of the file to be opened.
-	pub name: PhysAddr,
+	pub name: GuestPhysAddr,
 	/// Posix file access mode flags.
 	pub flags: i32,
 	/// Access permissions upon opening/creating a file.
