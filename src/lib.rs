@@ -22,7 +22,9 @@ pub use macos as os;
 pub mod params;
 #[cfg(target_os = "linux")]
 pub mod shared_queue;
+mod vcpu;
 pub mod vm;
 
 pub use arch::*;
-pub use os::uhyve::Uhyve;
+pub use os::{uhyve::Uhyve, HypervisorError};
+pub type HypervisorResult<T> = Result<T, HypervisorError>;

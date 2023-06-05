@@ -29,7 +29,8 @@ use nix::sys::{
 
 use crate::{
 	linux::gdb::{GdbUhyve, UhyveGdbEventLoop},
-	vm::{VirtualCPU, Vm},
+	vcpu::VirtualCPU,
+	vm::Vm,
 	Uhyve,
 };
 
