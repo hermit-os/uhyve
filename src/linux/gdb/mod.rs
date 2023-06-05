@@ -25,7 +25,7 @@ use super::HypervisorError;
 use crate::{
 	arch::x86_64::registers::debug::HwBreakpoints,
 	linux::{x86_64::kvm_cpu::KvmCpu, KickSignal},
-	vm::{VcpuStopReason, VirtualCPU},
+	vcpu::{VcpuStopReason, VirtualCPU},
 	Uhyve,
 };
 

@@ -26,8 +26,9 @@ use crate::{
 	consts::*,
 	linux::{virtio::*, x86_64::kvm_cpu::KvmCpu, KVM},
 	params::Params,
-	vm::{HypervisorResult, Vm},
+	vm::Vm,
 	x86_64::create_gdt_entry,
+	HypervisorResult,
 };
 
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;

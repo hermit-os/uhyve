@@ -16,7 +16,8 @@ use x86_64::{
 use crate::{
 	consts::*,
 	linux::{virtio::*, KVM},
-	vm::{HypervisorResult, VcpuStopReason, VirtualCPU},
+	vcpu::{VcpuStopReason, VirtualCPU},
+	HypervisorResult,
 };
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
