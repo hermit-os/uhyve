@@ -26,7 +26,7 @@ const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 const PCI_CONFIG_DATA_PORT: u16 = 0xCFC;
 const PCI_CONFIG_ADDRESS_PORT: u16 = 0xCF8;
 
-pub struct UhyveCPU {
+pub struct KvmCpu {
 	id: u32,
 	vcpu: VcpuFd,
 	vm_start: usize,
@@ -36,7 +36,7 @@ pub struct UhyveCPU {
 	pci_addr: Option<u32>,
 }
 
-impl UhyveCPU {
+impl KvmCpu {
 	pub unsafe fn memory(&mut self, start_addr: GuestVirtAddr, len: usize) -> &mut [u8] {
 		let phys = self.virt_to_phys(start_addr);
 		let host = self.host_address(phys);
@@ -50,8 +50,8 @@ impl UhyveCPU {
 		vcpu: VcpuFd,
 		vm_start: usize,
 		virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
-	) -> UhyveCPU {
-		UhyveCPU {
+	) -> KvmCpu {
+		KvmCpu {
 			id,
 			vcpu,
 			vm_start,
@@ -247,7 +247,7 @@ impl UhyveCPU {
 	}
 }
 
-impl VirtualCPU for UhyveCPU {
+impl VirtualCPU for KvmCpu {
 	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
 		self.setup_long_mode(entry_point, stack_address, cpu_id)?;
 		self.setup_cpuid()?;
@@ -469,16 +469,16 @@ impl VirtualCPU for UhyveCPU {
 		println!("Segment registers:");
 		println!("------------------");
 		println!("register  selector  base              limit     type  p dpl db s l g avl");
-		UhyveCPU::show_segment("cs ", &sregs.cs);
-		UhyveCPU::show_segment("ss ", &sregs.ss);
-		UhyveCPU::show_segment("ds ", &sregs.ds);
-		UhyveCPU::show_segment("es ", &sregs.es);
-		UhyveCPU::show_segment("fs ", &sregs.fs);
-		UhyveCPU::show_segment("gs ", &sregs.gs);
-		UhyveCPU::show_segment("tr ", &sregs.tr);
-		UhyveCPU::show_segment("ldt", &sregs.ldt);
-		UhyveCPU::show_dtable("gdt", &sregs.gdt);
-		UhyveCPU::show_dtable("idt", &sregs.idt);
+		KvmCpu::show_segment("cs ", &sregs.cs);
+		KvmCpu::show_segment("ss ", &sregs.ss);
+		KvmCpu::show_segment("ds ", &sregs.ds);
+		KvmCpu::show_segment("es ", &sregs.es);
+		KvmCpu::show_segment("fs ", &sregs.fs);
+		KvmCpu::show_segment("gs ", &sregs.gs);
+		KvmCpu::show_segment("tr ", &sregs.tr);
+		KvmCpu::show_segment("ldt", &sregs.ldt);
+		KvmCpu::show_dtable("gdt", &sregs.gdt);
+		KvmCpu::show_dtable("idt", &sregs.idt);
 
 		println!();
 		println!("\nAPIC:");

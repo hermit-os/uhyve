@@ -24,20 +24,20 @@ use self::breakpoints::SwBreakpoints;
 use super::HypervisorError;
 use crate::{
 	arch::x86_64::registers::debug::HwBreakpoints,
-	linux::{vcpu::UhyveCPU, KickSignal},
+	linux::{x86_64::kvm_cpu::KvmCpu, KickSignal},
 	vm::{VcpuStopReason, VirtualCPU},
 	Uhyve,
 };
 
 pub struct GdbUhyve {
 	vm: Uhyve,
-	vcpu: UhyveCPU,
+	vcpu: KvmCpu,
 	hw_breakpoints: HwBreakpoints,
 	sw_breakpoints: SwBreakpoints,
 }
 
 impl GdbUhyve {
-	pub fn new(vm: Uhyve, vcpu: UhyveCPU) -> Self {
+	pub fn new(vm: Uhyve, vcpu: KvmCpu) -> Self {
 		Self {
 			vm,
 			vcpu,

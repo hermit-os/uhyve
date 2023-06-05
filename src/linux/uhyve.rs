@@ -24,7 +24,7 @@ use x86_64::{
 
 use crate::{
 	consts::*,
-	linux::{vcpu::*, virtio::*, KVM},
+	linux::{virtio::*, x86_64::kvm_cpu::KvmCpu, KVM},
 	params::Params,
 	vm::{HypervisorResult, Vm},
 	x86_64::create_gdt_entry,
@@ -224,8 +224,8 @@ impl Vm for Uhyve {
 		self.path.as_path()
 	}
 
-	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU> {
-		Ok(UhyveCPU::new(
+	fn create_cpu(&self, id: u32) -> HypervisorResult<KvmCpu> {
+		Ok(KvmCpu::new(
 			id,
 			self.path.clone(),
 			self.args.clone(),

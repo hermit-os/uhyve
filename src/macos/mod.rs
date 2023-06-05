@@ -13,7 +13,7 @@ use core_affinity::CoreId;
 
 #[cfg(target_arch = "x86_64")]
 pub use crate::macos::x86_64::{uhyve, vcpu};
-use crate::vm::{VirtualCPU, Vm};
+use crate::{vcpu::VirtualCPU, vm::Vm};
 
 pub type HypervisorError = xhypervisor::Error;
 pub type DebugExitInfo = ();
