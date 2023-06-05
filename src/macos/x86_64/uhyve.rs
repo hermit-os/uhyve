@@ -19,8 +19,9 @@ use crate::{
 	consts::*,
 	macos::x86_64::{ioapic::IoApic, vcpu::*},
 	params::Params,
-	vm::{HypervisorResult, Vm},
+	vm::Vm,
 	x86_64::create_gdt_entry,
+	HypervisorResult,
 };
 
 pub struct Uhyve {
@@ -145,8 +146,8 @@ impl Vm for Uhyve {
 		self.path.as_path()
 	}
 
-	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU> {
-		Ok(UhyveCPU::new(
+	fn create_cpu(&self, id: u32) -> HypervisorResult<XhyveCpu> {
+		Ok(XhyveCpu::new(
 			id,
 			self.path.clone(),
 			self.args.clone(),

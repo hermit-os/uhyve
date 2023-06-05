@@ -147,8 +147,8 @@ impl Vm for Uhyve {
 		self.path.as_path()
 	}
 
-	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU> {
-		Ok(UhyveCPU::new(
+	fn create_cpu(&self, id: u32) -> HypervisorResult<XhyveCpu> {
+		Ok(XhyveCpu::new(
 			id,
 			self.path.clone(),
 			self.args.clone(),

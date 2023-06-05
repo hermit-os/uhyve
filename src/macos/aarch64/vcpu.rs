@@ -19,7 +19,7 @@ use crate::{
 	vm::{HypervisorResult, VcpuStopReason, VirtualCPU},
 };
 
-pub struct UhyveCPU {
+pub struct XhyveCpu {
 	id: u32,
 	kernel_path: PathBuf,
 	args: Vec<OsString>,
@@ -27,8 +27,8 @@ pub struct UhyveCPU {
 	vm_start: usize,
 }
 
-impl UhyveCPU {
-	pub fn new(id: u32, kernel_path: PathBuf, args: Vec<OsString>, vm_start: usize) -> UhyveCPU {
+impl XhyveCpu {
+	pub fn new(id: u32, kernel_path: PathBuf, args: Vec<OsString>, vm_start: usize) -> XhyveCpu {
 		Self {
 			id,
 			kernel_path,
@@ -39,7 +39,7 @@ impl UhyveCPU {
 	}
 }
 
-impl VirtualCPU for UhyveCPU {
+impl VirtualCPU for XhyveCpu {
 	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
 		debug!("Initialize VirtualCPU");
 
@@ -300,7 +300,7 @@ impl VirtualCPU for UhyveCPU {
 	}
 }
 
-impl Drop for UhyveCPU {
+impl Drop for XhyveCpu {
 	fn drop(&mut self) {
 		self.vcpu.destroy().unwrap();
 	}

@@ -34,7 +34,8 @@ use xhypervisor::{
 use crate::{
 	consts::*,
 	macos::x86_64::ioapic::IoApic,
-	vm::{HypervisorResult, VcpuStopReason, VirtualCPU},
+	vcpu::{VcpuStopReason, VirtualCPU},
+	HypervisorResult,
 };
 
 /// Extracted from `x86::msr`.
@@ -151,7 +152,7 @@ lazy_static! {
 	};
 }
 
-pub struct UhyveCPU {
+pub struct XhyveCpu {
 	id: u32,
 	kernel_path: PathBuf,
 	args: Vec<OsString>,
@@ -161,15 +162,15 @@ pub struct UhyveCPU {
 	ioapic: Arc<Mutex<IoApic>>,
 }
 
-impl UhyveCPU {
+impl XhyveCpu {
 	pub fn new(
 		id: u32,
 		kernel_path: PathBuf,
 		args: Vec<OsString>,
 		vm_start: usize,
 		ioapic: Arc<Mutex<IoApic>>,
-	) -> UhyveCPU {
-		UhyveCPU {
+	) -> XhyveCpu {
+		XhyveCpu {
 			id,
 			kernel_path,
 			args,
@@ -598,7 +599,7 @@ impl UhyveCPU {
 	}
 }
 
-impl VirtualCPU for UhyveCPU {
+impl VirtualCPU for XhyveCpu {
 	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
 		self.setup_capabilities()?;
 		self.setup_msr()?;
@@ -963,7 +964,7 @@ impl VirtualCPU for UhyveCPU {
 	}
 }
 
-impl Drop for UhyveCPU {
+impl Drop for XhyveCpu {
 	fn drop(&mut self) {
 		self.vcpu.destroy().unwrap();
 	}
