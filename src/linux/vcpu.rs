@@ -7,7 +7,7 @@ use std::{
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
-use uhyve_interface::{Hypercall, UHYVE_PORT_NETWRITE};
+use uhyve_interface::Hypercall;
 use x86_64::{
 	registers::control::{Cr0Flags, Cr4Flags},
 	structures::paging::PageTableFlags,
@@ -358,12 +358,6 @@ impl VirtualCPU for UhyveCPU {
 							};
 						} else {
 							match port {
-								UHYVE_PORT_NETWRITE => {
-									match &self.tx {
-										Some(tx_channel) => tx_channel.send(1).unwrap(),
-										None => {}
-									};
-								}
 								//TODO:
 								PCI_CONFIG_DATA_PORT => {
 									if let Some(pci_addr) = self.pci_addr {
