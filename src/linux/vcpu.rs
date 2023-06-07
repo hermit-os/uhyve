@@ -7,7 +7,7 @@ use std::{
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd};
-use uhyve_interface::{Hypercall, UHYVE_PORT_NETWRITE};
+use uhyve_interface::Hypercall;
 use x86_64::{
 	registers::control::{Cr0Flags, Cr4Flags},
 	structures::paging::PageTableFlags,
@@ -32,7 +32,6 @@ pub struct UhyveCPU {
 	vm_start: usize,
 	kernel_path: PathBuf,
 	args: Vec<OsString>,
-	tx: Option<std::sync::mpsc::SyncSender<usize>>,
 	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	pci_addr: Option<u32>,
 }
@@ -50,7 +49,6 @@ impl UhyveCPU {
 		args: Vec<OsString>,
 		vcpu: VcpuFd,
 		vm_start: usize,
-		tx: Option<std::sync::mpsc::SyncSender<usize>>,
 		virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	) -> UhyveCPU {
 		UhyveCPU {
@@ -59,7 +57,6 @@ impl UhyveCPU {
 			vm_start,
 			kernel_path,
 			args,
-			tx,
 			virtio_device,
 			pci_addr: None,
 		}
@@ -382,12 +379,6 @@ impl VirtualCPU for UhyveCPU {
 							};
 						} else {
 							match port {
-								UHYVE_PORT_NETWRITE => {
-									match &self.tx {
-										Some(tx_channel) => tx_channel.send(1).unwrap(),
-										None => {}
-									};
-								}
 								//TODO:
 								PCI_CONFIG_DATA_PORT => {
 									if let Some(pci_addr) = self.pci_addr {
