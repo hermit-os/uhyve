@@ -161,7 +161,7 @@ impl Vm for Uhyve {
 	}
 
 	/// Initialize the page tables for the guest
-	fn init_guest_mem(&self) {
+	fn init_guest_mem(&mut self) {
 		debug!("Initialize guest memory");
 
 		let (mem_addr, _) = self.guest_mem();

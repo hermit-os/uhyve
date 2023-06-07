@@ -49,7 +49,7 @@ pub trait Vm {
 	fn create_cpu(&self, id: u32) -> HypervisorResult<KvmCpu>;
 	fn set_boot_info(&mut self, header: *const RawBootInfo);
 	fn verbose(&self) -> bool;
-	fn init_guest_mem(&self);
+	fn init_guest_mem(&mut self);
 
 	unsafe fn load_kernel(&mut self) -> LoadKernelResult<()> {
 		let elf = fs::read(self.kernel_path())?;
@@ -124,4 +124,15 @@ fn detect_cpu_freq() -> u32 {
 		warn!("Unable to determine processor frequency");
 	}
 	mhz
+}
+
+/// A section of memory that is reserved for the VM guest.
+pub trait VmGuestMemory {
+	/// returns a pointer to the address of the guest memory and the size of the memory in bytes.
+	// TODO: replace with slice
+	// TODO: rename to memory
+	fn guest_mem(&self) -> (*mut u8, usize);
+
+	/// Initialize the memory
+	fn init_guest_mem(&mut self);
 }

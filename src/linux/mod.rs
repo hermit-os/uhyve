@@ -2,6 +2,7 @@
 pub mod x86_64;
 
 pub mod gdb;
+pub mod mem;
 pub mod uhyve;
 pub mod virtio;
 pub mod virtqueue;
@@ -10,7 +11,7 @@ pub type HypervisorError = kvm_ioctls::Error;
 pub type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
 
 use std::{
-	io, mem,
+	io,
 	net::{TcpListener, TcpStream},
 	os::unix::prelude::JoinHandleExt,
 	sync::{Arc, Barrier},
@@ -51,7 +52,7 @@ impl KickSignal {
 		assert!(kick_signal <= SIGRTMAX());
 		// TODO: Remove the transmute once realtime signals are properly supported by nix
 		// https://github.com/nix-rust/nix/issues/495
-		unsafe { mem::transmute(kick_signal) }
+		unsafe { std::mem::transmute(kick_signal) }
 	}
 
 	fn register_handler() -> nix::Result<()> {
