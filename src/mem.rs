@@ -40,16 +40,30 @@ impl MmapMemory {
 		};
 
 		if mergeable {
-			debug!("Enable kernel feature to merge same pages");
-			unsafe {
-				madvise(host_address, memory_size, MmapAdvise::MADV_MERGEABLE).unwrap();
+			#[cfg(target_os = "linux")]
+			{
+				debug!("Enable kernel feature to merge same pages");
+				unsafe {
+					madvise(host_address, memory_size, MmapAdvise::MADV_MERGEABLE).unwrap();
+				}
+			}
+			#[cfg(not(target_os = "linux"))]
+			{
+				error!("OS does not support same page merging");
 			}
 		}
 
 		if huge_pages {
-			debug!("Uhyve uses huge pages");
-			unsafe {
-				madvise(host_address, memory_size, MmapAdvise::MADV_HUGEPAGE).unwrap();
+			#[cfg(target_os = "linux")]
+			{
+				debug!("Uhyve uses huge pages");
+				unsafe {
+					madvise(host_address, memory_size, MmapAdvise::MADV_HUGEPAGE).unwrap();
+				}
+			}
+			#[cfg(not(target_os = "linux"))]
+			{
+				error!("OS does not support huge pages");
 			}
 		}
 
@@ -61,8 +75,7 @@ impl MmapMemory {
 		}
 	}
 
-	#[allow(dead_code)]
-	fn as_slice_mut(&mut self) -> &mut [u8] {
+	pub fn as_slice_mut(& self) -> &mut [u8] {
 		unsafe { std::slice::from_raw_parts_mut(self.host_address as *mut u8, self.memory_size) }
 	}
 }

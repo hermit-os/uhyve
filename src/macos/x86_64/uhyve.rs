@@ -13,11 +13,14 @@ use x86_64::{
 	structures::paging::{Page, PageTable, PageTableFlags, Size2MiB},
 	PhysAddr,
 };
-use xhypervisor::{create_vm, map_mem, unmap_mem, MemPerm};
 
 use crate::{
 	consts::*,
-	macos::x86_64::{ioapic::IoApic, vcpu::*},
+	macos::{
+		x86_64::{ioapic::IoApic, vcpu::*},
+		xhyve::initialize_xhyve,
+	},
+	mem::MmapMemory,
 	params::Params,
 	vm::Vm,
 	x86_64::create_gdt_entry,
@@ -28,8 +31,7 @@ pub struct Uhyve {
 	offset: u64,
 	entry_point: u64,
 	stack_address: u64,
-	mem_size: usize,
-	guest_mem: *mut c_void,
+	mem: MmapMemory,
 	num_cpus: u32,
 	path: PathBuf,
 	args: Vec<OsString>,
@@ -43,8 +45,7 @@ impl std::fmt::Debug for Uhyve {
 		f.debug_struct("Uhyve")
 			.field("entry_point", &self.entry_point)
 			.field("stack_address", &self.stack_address)
-			.field("mem_size", &self.mem_size)
-			.field("guest_mem", &self.guest_mem)
+			.field("mem", &self.mem)
 			.field("num_cpus", &self.num_cpus)
 			.field("path", &self.path)
 			.field("boot_info", &self.boot_info)
@@ -58,39 +59,15 @@ impl Uhyve {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<Uhyve> {
 		let memory_size = params.memory_size.get();
 
-		let mem = unsafe {
-			libc::mmap(
-				std::ptr::null_mut(),
-				memory_size,
-				libc::PROT_READ | libc::PROT_WRITE,
-				libc::MAP_PRIVATE | libc::MAP_ANON | libc::MAP_NORESERVE,
-				-1,
-				0,
-			)
-		};
+		let mem = MmapMemory::new(0, memory_size, 0, false, false);
 
-		assert_ne!(libc::MAP_FAILED, mem, "mmap failed");
-
-		debug!("Allocate memory for the guest at 0x{:x}", mem as usize);
-
-		debug!("Create VM...");
-		create_vm()?;
-
-		debug!("Map guest memory...");
-		unsafe {
-			map_mem(
-				std::slice::from_raw_parts(mem as *mut u8, memory_size),
-				0,
-				MemPerm::ExecAndWrite,
-			)?;
-		}
+		initialize_xhyve(&mut mem)?;
 
 		let hyve = Uhyve {
 			offset: 0,
 			entry_point: 0,
 			stack_address: 0,
-			mem_size: memory_size,
-			guest_mem: mem,
+			mem,
 			num_cpus: params.cpu_count.get(),
 			path: kernel_path,
 			args: params.kernel_args,
@@ -139,7 +116,7 @@ impl Vm for Uhyve {
 	}
 
 	fn guest_mem(&self) -> (*mut u8, usize) {
-		(self.guest_mem as *mut u8, self.mem_size)
+		(self.mem.host_address as *mut u8, self.mem.memory_size)
 	}
 
 	fn kernel_path(&self) -> &Path {
@@ -151,7 +128,7 @@ impl Vm for Uhyve {
 			id,
 			self.path.clone(),
 			self.args.clone(),
-			self.guest_mem as usize,
+			self.guest_mem().0 as usize,
 			self.ioapic.clone(),
 		))
 	}
@@ -204,16 +181,6 @@ impl Vm for Uhyve {
 					PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::HUGE_PAGE,
 				);
 			}
-		}
-	}
-}
-
-impl Drop for Uhyve {
-	fn drop(&mut self) {
-		unmap_mem(0, self.mem_size).unwrap();
-
-		unsafe {
-			libc::munmap(self.guest_mem, self.mem_size);
 		}
 	}
 }

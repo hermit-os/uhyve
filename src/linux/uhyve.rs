@@ -13,10 +13,10 @@ use hermit_entry::boot_info::RawBootInfo;
 
 use crate::{
 	linux::{
-		mem::MmapMemory,
 		virtio::*,
 		x86_64::kvm_cpu::{initialize_kvm, KvmCpu},
 	},
+	mem::MmapMemory,
 	params::Params,
 	vm::{Vm, VmGuestMemory},
 	HypervisorResult,
