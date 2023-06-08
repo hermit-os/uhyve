@@ -3,7 +3,6 @@ use std::{
 	mem,
 	path::{Path, PathBuf},
 	ptr,
-	sync::{Arc, Mutex},
 };
 
 use hermit_entry::boot_info::RawBootInfo;
@@ -16,10 +15,7 @@ use x86_64::{
 
 use crate::{
 	consts::*,
-	macos::{
-		x86_64::{ioapic::IoApic, vcpu::*},
-		xhyve::initialize_xhyve,
-	},
+	macos::{x86_64::vcpu::*, xhyve::initialize_xhyve},
 	mem::MmapMemory,
 	params::Params,
 	vm::Vm,
@@ -36,7 +32,6 @@ pub struct Uhyve {
 	path: PathBuf,
 	args: Vec<OsString>,
 	boot_info: *const RawBootInfo,
-	ioapic: Arc<Mutex<IoApic>>,
 	verbose: bool,
 }
 
@@ -49,7 +44,6 @@ impl std::fmt::Debug for Uhyve {
 			.field("num_cpus", &self.num_cpus)
 			.field("path", &self.path)
 			.field("boot_info", &self.boot_info)
-			.field("ioapic", &self.ioapic)
 			.field("verbose", &self.verbose)
 			.finish()
 	}
@@ -72,7 +66,6 @@ impl Uhyve {
 			path: kernel_path,
 			args: params.kernel_args,
 			boot_info: ptr::null(),
-			ioapic: Arc::new(Mutex::new(IoApic::new())),
 			verbose: params.verbose,
 		};
 
@@ -129,7 +122,6 @@ impl Vm for Uhyve {
 			self.path.clone(),
 			self.args.clone(),
 			self.guest_mem().0 as usize,
-			self.ioapic.clone(),
 		))
 	}
 

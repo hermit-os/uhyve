@@ -38,6 +38,8 @@ use crate::{
 	HypervisorResult,
 };
 
+static IOAPIC: Arc<Mutex<IoApic>> = Arc::new(Mutex::new(IoApic::new()));
+
 /// Extracted from `x86::msr`.
 mod msr {
 	/// See Section 17.13, Time-Stamp Counter.
@@ -163,13 +165,7 @@ pub struct XhyveCpu {
 }
 
 impl XhyveCpu {
-	pub fn new(
-		id: u32,
-		kernel_path: PathBuf,
-		args: Vec<OsString>,
-		vm_start: usize,
-		ioapic: Arc<Mutex<IoApic>>,
-	) -> XhyveCpu {
+	pub fn new(id: u32, kernel_path: PathBuf, args: Vec<OsString>, vm_start: usize) -> XhyveCpu {
 		XhyveCpu {
 			id,
 			kernel_path,
@@ -177,7 +173,7 @@ impl XhyveCpu {
 			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
 			vm_start,
 			apic_base: APIC_DEFAULT_BASE,
-			ioapic,
+			ioapic: IOAPIC.clone(),
 		}
 	}
 
