@@ -2,7 +2,6 @@
 pub mod x86_64;
 
 pub mod gdb;
-pub mod mem;
 pub mod uhyve;
 pub mod virtio;
 pub mod virtqueue;

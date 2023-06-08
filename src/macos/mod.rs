@@ -4,6 +4,7 @@ pub mod aarch64;
 pub use crate::macos::aarch64::{uhyve, vcpu};
 #[cfg(target_arch = "x86_64")]
 pub mod x86_64;
+pub mod xhyve;
 use std::{
 	sync::{mpsc, Arc},
 	thread,
@@ -13,7 +14,7 @@ use core_affinity::CoreId;
 
 #[cfg(target_arch = "x86_64")]
 pub use crate::macos::x86_64::{uhyve, vcpu};
-use crate::{vcpu::VirtualCPU, vm::Vm};
+use crate::vm::Vm;
 
 pub type HypervisorError = xhypervisor::Error;
 pub type DebugExitInfo = ();
