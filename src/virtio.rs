@@ -6,7 +6,7 @@ use tun_tap::*;
 use uhyve_interface::GuestPhysAddr;
 use virtio_bindings::bindings::virtio_net::*;
 
-use crate::{linux::virtqueue::*, vcpu::VirtualCPU};
+use crate::{vcpu::VirtualCPU, virtqueue::*};
 
 const STATUS_ACKNOWLEDGE: u8 = 0b00000001;
 const STATUS_DRIVER: u8 = 0b00000010;

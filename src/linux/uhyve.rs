@@ -12,12 +12,10 @@ use std::{
 use hermit_entry::boot_info::RawBootInfo;
 
 use crate::{
-	linux::{
-		virtio::*,
-		x86_64::kvm_cpu::{initialize_kvm, KvmCpu},
-	},
+	linux::x86_64::kvm_cpu::{initialize_kvm, KvmCpu},
 	mem::MmapMemory,
 	params::Params,
+	virtio::*,
 	vm::{Vm, VmGuestMemory},
 	HypervisorResult,
 };

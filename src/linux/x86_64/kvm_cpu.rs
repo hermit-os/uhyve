@@ -16,9 +16,10 @@ use x86_64::{
 
 use crate::{
 	consts::*,
-	linux::{virtio::*, KVM},
+	linux::KVM,
 	mem::MmapMemory,
 	vcpu::{VcpuStopReason, VirtualCPU},
+	virtio::*,
 	HypervisorResult,
 };
 
