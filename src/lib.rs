@@ -24,6 +24,8 @@ pub mod params;
 #[cfg(target_os = "linux")]
 pub mod shared_queue;
 mod vcpu;
+pub mod virtio;
+pub mod virtqueue;
 pub mod vm;
 
 pub use arch::*;

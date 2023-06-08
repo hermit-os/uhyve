@@ -3,8 +3,6 @@ pub mod x86_64;
 
 pub mod gdb;
 pub mod uhyve;
-pub mod virtio;
-pub mod virtqueue;
 
 pub type HypervisorError = kvm_ioctls::Error;
 pub type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
