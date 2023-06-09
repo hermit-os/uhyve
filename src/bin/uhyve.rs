@@ -204,7 +204,7 @@ impl CpuArgs {
 	fn get_affinity(self, app: &mut Command) -> Option<Vec<CoreId>> {
 		self.affinity.map(|affinity| {
 			let affinity_num_vals = affinity.0.len();
-			let cpus_num_vals = self.cpu_count.get().try_into().unwrap();
+			let cpus_num_vals: usize = self.cpu_count.get().try_into().unwrap();
 			if affinity_num_vals != cpus_num_vals {
 				let affinity_arg = app
 					.get_arguments()
