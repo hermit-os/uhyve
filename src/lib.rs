@@ -29,5 +29,5 @@ pub mod virtqueue;
 pub mod vm;
 
 pub use arch::*;
-pub use os::{uhyve::Uhyve, HypervisorError};
+pub use os::HypervisorError;
 pub type HypervisorResult<T> = Result<T, HypervisorError>;

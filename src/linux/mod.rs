@@ -2,7 +2,6 @@
 pub mod x86_64;
 
 pub mod gdb;
-pub mod uhyve;
 
 pub type HypervisorError = kvm_ioctls::Error;
 pub type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
@@ -26,10 +25,12 @@ use nix::sys::{
 };
 
 use crate::{
-	linux::gdb::{GdbUhyve, UhyveGdbEventLoop},
+	linux::{
+		gdb::{GdbUhyve, UhyveGdbEventLoop},
+		x86_64::kvm_cpu::KvmCpu,
+	},
 	vcpu::VirtualCPU,
-	vm::Vm,
-	Uhyve,
+	vm::UhyveVm,
 };
 
 lazy_static! {
@@ -69,7 +70,7 @@ impl KickSignal {
 	}
 }
 
-impl Uhyve {
+impl UhyveVm<KvmCpu> {
 	/// Runs the VM.
 	///
 	/// Blocks until the VM has finished execution.
