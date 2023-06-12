@@ -4,7 +4,7 @@ use std::{
 	arch::x86_64::__cpuid_count,
 	ffi::OsString,
 	path::{Path, PathBuf},
-	sync::{Arc, Mutex},
+	sync::Mutex,
 };
 
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
@@ -38,7 +38,7 @@ use crate::{
 	HypervisorResult,
 };
 
-static IOAPIC: Arc<Mutex<IoApic>> = Arc::new(Mutex::new(IoApic::new()));
+static IOAPIC: Mutex<Option<IoApic>> = Mutex::new(None);
 
 /// Extracted from `x86::msr`.
 mod msr {
@@ -161,7 +161,6 @@ pub struct XhyveCpu {
 	vcpu: xhypervisor::VirtualCpu,
 	vm_start: usize,
 	apic_base: u64,
-	ioapic: Arc<Mutex<IoApic>>,
 }
 
 impl XhyveCpu {
@@ -173,7 +172,6 @@ impl XhyveCpu {
 			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
 			vm_start,
 			apic_base: APIC_DEFAULT_BASE,
-			ioapic: IOAPIC.clone(),
 		}
 	}
 
@@ -542,14 +540,21 @@ impl XhyveCpu {
 							}
 						};
 
-						self.ioapic
+						IOAPIC
 							.lock()
 							.unwrap()
+							.as_mut()
+							.expect("IOAPIC not initialized")
 							.write(address - IOAPIC_BASE, val);
 					}
 
 					if read {
-						let value = self.ioapic.lock().unwrap().read(address - IOAPIC_BASE);
+						let value = IOAPIC
+							.lock()
+							.unwrap()
+							.as_mut()
+							.expect("IOAPIC not initialized")
+							.read(address - IOAPIC_BASE);
 
 						match instr.operands[0].operand {
 							OperandType::REG_EDI => {
