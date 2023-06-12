@@ -4,7 +4,6 @@ use gdbstub::target::{
 };
 
 use super::GdbUhyve;
-use crate::vm::Vm;
 
 impl target::ext::section_offsets::SectionOffsets for GdbUhyve {
 	fn get_section_offsets(&mut self) -> Result<Offsets<u64>, Self::Error> {

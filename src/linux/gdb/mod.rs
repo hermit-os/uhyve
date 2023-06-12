@@ -26,18 +26,18 @@ use crate::{
 	arch::x86_64::registers::debug::HwBreakpoints,
 	linux::{x86_64::kvm_cpu::KvmCpu, KickSignal},
 	vcpu::{VcpuStopReason, VirtualCPU},
-	Uhyve,
+	vm::UhyveVm,
 };
 
 pub struct GdbUhyve {
-	vm: Uhyve,
+	vm: UhyveVm<KvmCpu>,
 	vcpu: KvmCpu,
 	hw_breakpoints: HwBreakpoints,
 	sw_breakpoints: SwBreakpoints,
 }
 
 impl GdbUhyve {
-	pub fn new(vm: Uhyve, vcpu: KvmCpu) -> Self {
+	pub fn new(vm: UhyveVm<KvmCpu>, vcpu: KvmCpu) -> Self {
 		Self {
 			vm,
 			vcpu,
