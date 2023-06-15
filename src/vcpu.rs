@@ -241,7 +241,7 @@ pub trait VirtualCPU {
 			unsafe {
 				let step = libc::write(
 					syswrite.fd,
-					self.host_address(syswrite.buf + bytes_written) as *const libc::c_void,
+					self.host_address(syswrite.buf + bytes_written as u64) as *const libc::c_void,
 					syswrite.len - bytes_written,
 				);
 				if step >= 0 {
