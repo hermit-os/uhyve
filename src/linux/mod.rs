@@ -77,9 +77,7 @@ impl UhyveVm<KvmCpu> {
 	pub fn run(mut self, cpu_affinity: Option<Vec<CoreId>>) -> i32 {
 		KickSignal::register_handler().unwrap();
 
-		unsafe {
-			self.load_kernel().expect("Unabled to load the kernel");
-		}
+		self.load_kernel().expect("Unabled to load the kernel");
 
 		if self.gdb_port.is_none() {
 			self.run_no_gdb(cpu_affinity)

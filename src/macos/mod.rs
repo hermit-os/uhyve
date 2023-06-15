@@ -25,9 +25,7 @@ impl UhyveVm<XhyveCpu> {
 	///
 	/// Blocks until the VM has finished execution.
 	pub fn run(mut self, cpu_affinity: Option<Vec<CoreId>>) -> i32 {
-		unsafe {
-			self.load_kernel().expect("Unabled to load the kernel");
-		}
+		self.load_kernel().expect("Unabled to load the kernel");
 
 		// For communication of the exit code from one vcpu to this thread as return
 		// value.
