@@ -9,6 +9,7 @@ use std::{
 use log::{debug, warn};
 use raw_cpuid::{CpuId, CpuIdReaderNative};
 use thiserror::Error;
+use uhyve_interface::GuestPhysAddr;
 use x86_64::{
 	structures::paging::{Page, PageTable, PageTableFlags, Size2MiB},
 	PhysAddr,
@@ -16,7 +17,7 @@ use x86_64::{
 
 use crate::consts::*;
 
-pub const RAM_START: u64 = 0x00;
+pub const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x00);
 const MHZ_TO_HZ: u64 = 1000000;
 const KHZ_TO_HZ: u64 = 1000;
 
