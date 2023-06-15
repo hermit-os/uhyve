@@ -17,9 +17,7 @@ pub fn load_vm_hello_world(c: &mut Criterion) {
 	let mut vm = UhyveVm::<VcpuDefault>::new(path, params).expect("Unable to create VM");
 
 	c.bench_function("vm::load_kernel(hello world)", |b| {
-		b.iter(|| unsafe {
-			vm.load_kernel().unwrap();
-		})
+		b.iter(|| vm.load_kernel().unwrap())
 	});
 }
 

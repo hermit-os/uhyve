@@ -7,6 +7,6 @@ pub fn initialize_xhyve(mem: &mut MmapMemory) -> HypervisorResult<()> {
 	create_vm()?;
 
 	debug!("Map guest memory...");
-	map_mem(mem.as_slice_mut(), 0, MemPerm::ExecAndWrite)?;
+	map_mem(unsafe { mem.as_slice_mut() }, 0, MemPerm::ExecAndWrite)?;
 	Ok(())
 }

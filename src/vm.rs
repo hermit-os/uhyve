@@ -2,10 +2,9 @@ use std::{
 	ffi::OsString,
 	fmt, fs, io,
 	marker::PhantomData,
-	mem::MaybeUninit,
 	num::NonZeroU32,
 	path::{Path, PathBuf},
-	ptr, slice,
+	ptr,
 	sync::{Arc, Mutex},
 	time::SystemTime,
 };
@@ -107,9 +106,9 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		let memory_size = params.memory_size.get();
 
 		#[cfg(target_os = "linux")]
-		let mem = MmapMemory::new(0, memory_size, 0, params.thp, params.ksm);
+		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, params.thp, params.ksm);
 		#[cfg(not(target_os = "linux"))]
-		let mem = MmapMemory::new(0, memory_size, 0, false, false);
+		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, false, false);
 
 		// create virtio interface
 		// TODO: Remove allow once fixed:
@@ -203,33 +202,33 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		self.mem.init_guest_mem();
 	}
 
-	pub unsafe fn load_kernel(&mut self) -> LoadKernelResult<()> {
+	pub fn load_kernel(&mut self) -> LoadKernelResult<()> {
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
 		// TODO: should be a random start address, if we have a relocatable executable
-		let start_address = object.start_addr().unwrap_or(0x400000);
-		self.set_offset(start_address);
+		let kernel_start_address = object.start_addr().unwrap_or(0x400000) as usize;
+		let kernel_end_address = kernel_start_address + object.mem_size();
+		self.set_offset(kernel_start_address as u64);
 
-		let (vm_mem, vm_mem_len) = self.guest_mem();
-		if start_address as usize + object.mem_size() > vm_mem_len {
+		if kernel_end_address > self.mem.memory_size - self.mem.guest_address {
 			return Err(LoadKernelError::InsufficientMemory);
 		}
-
-		let vm_slice = {
-			let vm_slice = slice::from_raw_parts_mut(vm_mem as *mut MaybeUninit<u8>, vm_mem_len);
-			&mut vm_slice[start_address as usize..][..object.mem_size()]
-		};
 
 		let LoadedKernel {
 			load_info,
 			entry_point,
-		} = object.load_kernel(vm_slice, start_address);
+		} = object.load_kernel(
+			// Safety: Slice only lives during this fn call, so no aliasing happens
+			&mut unsafe { self.mem.as_slice_uninit_mut() }
+				[kernel_start_address..kernel_end_address],
+			kernel_start_address as u64,
+		);
 		self.set_entry_point(entry_point);
 
 		let boot_info = BootInfo {
 			hardware_info: HardwareInfo {
-				phys_addr_range: arch::RAM_START..arch::RAM_START + vm_mem_len as u64,
+				phys_addr_range: arch::RAM_START..arch::RAM_START + self.mem.memory_size as u64,
 				serial_port_base: self.verbose().then(|| {
 					SerialPortBase::new((uhyve_interface::HypercallAddress::Uart as u16).into())
 						.unwrap()
@@ -244,10 +243,14 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 				boot_time: SystemTime::now().into(),
 			},
 		};
-		let raw_boot_info_ptr = vm_mem.add(BOOT_INFO_ADDR.as_u64() as usize) as *mut RawBootInfo;
-		*raw_boot_info_ptr = RawBootInfo::from(boot_info);
-		self.set_boot_info(raw_boot_info_ptr);
-		self.set_stack_address(start_address.checked_sub(KERNEL_STACK_SIZE).expect(
+		unsafe {
+			let raw_boot_info_ptr = (self.mem.host_address as *mut u8)
+				.add(BOOT_INFO_ADDR.as_u64() as usize) as *mut RawBootInfo;
+			*raw_boot_info_ptr = RawBootInfo::from(boot_info);
+			self.set_boot_info(raw_boot_info_ptr);
+		}
+
+		self.set_stack_address((kernel_start_address as u64).checked_sub(KERNEL_STACK_SIZE).expect(
 			"there should be enough space for the boot stack before the kernel start address",
 		));
 
