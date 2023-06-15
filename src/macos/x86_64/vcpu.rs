@@ -201,7 +201,7 @@ impl XhyveCpu {
 			.write_vmcs(VMCS_GUEST_GDTR_BASE, BOOT_GDT.as_u64())?;
 		self.vcpu.write_vmcs(
 			VMCS_GUEST_GDTR_LIMIT,
-			((std::mem::size_of::<u64>() * BOOT_GDT_MAX as usize) - 1) as u64,
+			((std::mem::size_of::<u64>() * BOOT_GDT_MAX) - 1) as u64,
 		)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_IDTR_BASE, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_IDTR_LIMIT, 0xffff)?;

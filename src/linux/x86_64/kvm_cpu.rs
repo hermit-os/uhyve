@@ -310,7 +310,7 @@ impl KvmCpu {
 		//sregs.fs = seg;
 		//sregs.gs = seg;
 		sregs.gdt.base = BOOT_GDT.as_u64();
-		sregs.gdt.limit = ((std::mem::size_of::<u64>() * BOOT_GDT_MAX as usize) - 1) as u16;
+		sregs.gdt.limit = ((std::mem::size_of::<u64>() * BOOT_GDT_MAX) - 1) as u16;
 
 		self.vcpu.set_sregs(&sregs)?;
 

@@ -67,19 +67,6 @@ fn detect_cpu_freq() -> u32 {
 	mhz
 }
 
-/// A section of memory that is reserved for the VM guest.
-pub trait VmGuestMemory {
-	/// returns a pointer to the address of the guest memory and the size of the memory in bytes.
-	// TODO: replace with slice
-	// TODO: rename to memory
-	fn guest_mem(&self) -> (*mut u8, usize);
-
-	/// Initialize the memory
-	fn init_guest_mem(&mut self);
-
-	// TODO Guest physical to virtual here
-}
-
 #[cfg(target_os = "linux")]
 pub type VcpuDefault = crate::linux::x86_64::kvm_cpu::KvmCpu;
 #[cfg(target_os = "macos")]
@@ -185,10 +172,6 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		self.num_cpus
 	}
 
-	fn guest_mem(&self) -> (*mut u8, usize) {
-		(self.mem.host_address as *mut u8, self.mem.memory_size)
-	}
-
 	fn kernel_path(&self) -> &Path {
 		self.path.as_path()
 	}
@@ -199,7 +182,14 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 
 	/// Initialize the page tables for the guest
 	fn init_guest_mem(&mut self) {
-		self.mem.init_guest_mem();
+		debug!("Initialize guest memory");
+
+		#[cfg(target_arch = "x86_64")]
+		crate::x86_64::initialize_pagetables(
+			unsafe { self.mem.as_slice_mut() } // slice only lives during this fn call
+				.try_into()
+				.expect("Guest memory is not large enough for pagetables"),
+		);
 	}
 
 	pub fn load_kernel(&mut self) -> LoadKernelResult<()> {
