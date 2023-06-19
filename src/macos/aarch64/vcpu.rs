@@ -187,6 +187,13 @@ impl VirtualCPU for UhyveCPU {
 
 									self.uart(&[x8]).unwrap();
 								}
+								Hypercall::SerialWriteBuffer(sysserialwrite) => {
+									let data_addr = self.vcpu.read_register(Register::X8)?;
+									let sysuart = unsafe {
+										&*(self.host_address(data_addr as usize) as *const SysUart)
+									};
+									self.uart_buffer(sysuart).unwrap();
+								}
 								Hypercall::Exit(sysexit) => {
 									return Ok(VcpuStopReason::Exit(self.exit(sysexit)));
 								}

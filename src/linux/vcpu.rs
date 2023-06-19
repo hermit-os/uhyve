@@ -275,6 +275,7 @@ impl VirtualCPU for UhyveCPU {
 	}
 
 	fn host_address(&self, addr: usize) -> usize {
+		// TODO: Check that we don't have an out ouf bounds read (stay inside vm memory)
 		addr + self.vm_start
 	}
 
@@ -378,6 +379,9 @@ impl VirtualCPU for UhyveCPU {
 								Hypercall::FileWrite(syswrite) => self.write(syswrite)?,
 								Hypercall::FileUnlink(sysunlink) => self.unlink(sysunlink),
 								Hypercall::SerialWriteByte(buf) => self.uart(&[buf])?,
+								Hypercall::SerialWriteBuffer(sysserialwrite) => {
+									self.uart_buffer(sysserialwrite)?
+								}
 								_ => panic!("Got unknown hypercall {:?}", hypercall),
 							};
 						} else {

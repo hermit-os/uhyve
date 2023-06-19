@@ -768,6 +768,10 @@ impl VirtualCPU for UhyveCPU {
 								let al = (self.vcpu.read_register(&Register::RAX)? & 0xFF) as u8;
 								self.uart(&[al]).unwrap();
 							}
+							Hypercall::SerialWriteBuffer(sysserialwrite) => {
+								self.uart_buffer(sysserialwrite).unwrap();
+							}
+
 							_ => panic!("Got unknown hypercall {:?}", hypercall),
 						}
 						self.vcpu.write_register(&Register::RIP, rip + len)?;

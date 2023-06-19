@@ -119,6 +119,11 @@ pub trait VirtualCPU {
 					Hypercall::Cmdval(syscmdval)
 				}
 				HypercallAddress::Uart => Hypercall::SerialWriteByte(data as u8),
+				HypercallAddress::SerialBufferWrite => {
+					let syscmdval =
+						unsafe { &*(self.host_address(data) as *const SerialWriteBufferParams) };
+					Hypercall::SerialWriteBuffer(syscmdval)
+				}
 				_ => unimplemented!(),
 			})
 		} else {
@@ -295,6 +300,13 @@ pub trait VirtualCPU {
 
 	/// Handles an UART syscall by writing to stdout.
 	fn uart(&self, buf: &[u8]) -> io::Result<()> {
+		io::stdout().write_all(buf)
+	}
+
+	/// Handles a UART syscall by contructing a buffer from parameter
+	fn uart_buffer(&self, sysuart: &SerialWriteBufferParams) -> io::Result<()> {
+		let buf_addr = self.host_address(sysuart.buf.as_u64() as usize) as *const u8;
+		let buf = unsafe { std::slice::from_raw_parts(buf_addr, sysuart.len) };
 		io::stdout().write_all(buf)
 	}
 }
