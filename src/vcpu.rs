@@ -1,8 +1,6 @@
 use std::{ffi::OsString, io, io::Write, mem, os::unix::ffi::OsStrExt, path::Path, slice};
 
-use uhyve_interface::{
-	parameters::*, GuestPhysAddr, GuestVirtAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC,
-};
+use uhyve_interface::{parameters::*, GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC};
 
 /// The trait and fns that a virtual cpu requires
 use crate::{os::DebugExitInfo, HypervisorResult};
@@ -35,9 +33,6 @@ pub trait VirtualCPU {
 
 	/// Translates an address from the VM's physical space into the hosts virtual space.
 	fn host_address(&self, addr: GuestPhysAddr) -> usize;
-
-	/// Looks up the guests pagetable and translates a guest's virtual address to a guest's physical address.
-	fn virt_to_phys(&self, addr: GuestVirtAddr) -> GuestPhysAddr;
 
 	/// Returns the (host) path of the kernel binary.
 	fn kernel_path(&self) -> &Path;

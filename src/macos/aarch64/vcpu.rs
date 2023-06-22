@@ -159,10 +159,6 @@ impl VirtualCPU for XhyveCpu {
 		addr + self.vm_start
 	}
 
-	fn virt_to_phys(&self, _addr: usize) -> usize {
-		0
-	}
-
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
 			self.vcpu.run()?;

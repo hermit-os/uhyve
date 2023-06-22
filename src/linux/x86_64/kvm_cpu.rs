@@ -1,18 +1,14 @@
 use std::{
 	ffi::OsString,
 	path::{Path, PathBuf},
-	slice,
 	sync::{Arc, Mutex},
 };
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
-use uhyve_interface::{GuestPhysAddr, GuestVirtAddr, Hypercall};
+use uhyve_interface::{GuestPhysAddr, Hypercall};
 use vmm_sys_util::eventfd::EventFd;
-use x86_64::{
-	registers::control::{Cr0Flags, Cr4Flags},
-	structures::paging::PageTableFlags,
-};
+use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
 use crate::{
 	consts::*,
@@ -130,12 +126,6 @@ pub struct KvmCpu {
 }
 
 impl KvmCpu {
-	pub unsafe fn memory(&mut self, start_addr: GuestVirtAddr, len: usize) -> &mut [u8] {
-		let phys = self.virt_to_phys(start_addr);
-		let host = self.host_address(phys);
-		slice::from_raw_parts_mut(host as *mut u8, len)
-	}
-
 	pub fn new(
 		id: u32,
 		kernel_path: PathBuf,
@@ -371,41 +361,6 @@ impl VirtualCPU for KvmCpu {
 
 	fn host_address(&self, addr: GuestPhysAddr) -> usize {
 		addr.as_u64() as usize + self.vm_start
-	}
-
-	fn virt_to_phys(&self, addr: GuestVirtAddr) -> GuestPhysAddr {
-		// TODO: This fn is curently x86_64 only
-		/// Number of Offset bits of a virtual address for a 4 KiB page, which are shifted away to get its Page Frame Number (PFN).
-		pub const PAGE_BITS: u64 = 12;
-
-		/// Number of bits of the index in each table (PML4, PDPT, PDT, PGT).
-		pub const PAGE_MAP_BITS: usize = 9;
-
-		let executable_disable_mask = !u64::try_from(PageTableFlags::NO_EXECUTE.bits()).unwrap();
-		let mut page_table = self.host_address(BOOT_PML4) as *const u64;
-		let mut page_bits = 39;
-		let mut entry: u64 = 0;
-
-		for _i in 0..4 {
-			let index = (addr.as_u64() >> page_bits) & ((1 << PAGE_MAP_BITS) - 1);
-			entry = unsafe { *page_table.add(index as usize) & executable_disable_mask };
-
-			// bit 7 is set if this entry references a 1 GiB (PDPT) or 2 MiB (PDT) page.
-			if entry & u64::try_from(PageTableFlags::HUGE_PAGE.bits()).unwrap() != 0 {
-				return GuestPhysAddr::new(
-					(entry & ((!0u64) << page_bits)) | (addr.as_u64() & !((!0_u64) << page_bits)),
-				);
-			} else {
-				page_table = self.host_address(GuestPhysAddr::new(
-					(entry & !((1 << PAGE_BITS) - 1)) as *const u64 as u64,
-				)) as *const u64;
-				page_bits -= PAGE_MAP_BITS;
-			}
-		}
-
-		GuestPhysAddr::new(
-			(entry & ((!0u64) << PAGE_BITS)) | (addr.as_u64() & !((!0u64) << PAGE_BITS)),
-		)
 	}
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
