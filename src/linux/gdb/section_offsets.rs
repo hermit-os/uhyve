@@ -1,7 +1,4 @@
-use gdbstub::target::{
-	ext::section_offsets::Offsets,
-	{self},
-};
+use gdbstub::target::{self, ext::section_offsets::Offsets};
 
 use super::GdbUhyve;
 
