@@ -23,7 +23,7 @@ use x86_64::registers::debug::Dr6Flags;
 use self::breakpoints::SwBreakpoints;
 use super::HypervisorError;
 use crate::{
-	arch::x86_64::registers::debug::HwBreakpoints,
+	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
 	linux::{x86_64::kvm_cpu::KvmCpu, KickSignal},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::UhyveVm,
@@ -120,13 +120,28 @@ impl SingleThreadBase for GdbUhyve {
 	}
 
 	fn read_addrs(&mut self, start_addr: u64, data: &mut [u8]) -> TargetResult<usize, Self> {
-		let src = unsafe { self.vcpu.memory(GuestVirtAddr::new(start_addr), data.len()) };
+		// Safety: mem is copied to data before mem can be modified.
+		let src = unsafe {
+			self.vm.mem.slice_at(
+				virt_to_phys(GuestVirtAddr::new(start_addr), &self.vm.mem).map_err(|_err| ())?,
+				data.len(),
+			)
+		}
+		.unwrap();
 		data.copy_from_slice(src);
 		Ok(data.len())
 	}
 
 	fn write_addrs(&mut self, start_addr: u64, data: &[u8]) -> TargetResult<(), Self> {
-		let mem = unsafe { self.vcpu.memory(GuestVirtAddr::new(start_addr), data.len()) };
+		// Safety: self.vm.mem is not altered during the lifetime of mem.
+		let mem = unsafe {
+			self.vm.mem.slice_at_mut(
+				virt_to_phys(GuestVirtAddr::new(start_addr), &self.vm.mem).map_err(|_err| ())?,
+				data.len(),
+			)
+		}
+		.unwrap();
+
 		mem.copy_from_slice(data);
 		Ok(())
 	}
