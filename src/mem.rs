@@ -1,6 +1,5 @@
 use std::{mem::MaybeUninit, ops::Index, os::raw::c_void, ptr::NonNull};
 
-use log::debug;
 use nix::sys::mman::*;
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
