@@ -1,8 +1,4 @@
-use std::{
-	ffi::OsString,
-	path::{Path, PathBuf},
-	sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
@@ -16,6 +12,7 @@ use crate::{
 	mem::MmapMemory,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	virtio::*,
+	vm::UhyveVm,
 	HypervisorResult,
 };
 
@@ -118,38 +115,11 @@ pub fn initialize_kvm(mem: &MmapMemory, use_pit: bool) -> HypervisorResult<()> {
 pub struct KvmCpu {
 	id: u32,
 	vcpu: VcpuFd,
-	vm_start: usize,
-	kernel_path: PathBuf,
-	args: Vec<OsString>,
-	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
+	parent_vm: Arc<UhyveVm<Self>>,
 	pci_addr: Option<u32>,
 }
 
 impl KvmCpu {
-	pub fn new(
-		id: u32,
-		kernel_path: PathBuf,
-		args: Vec<OsString>,
-		vm_start: usize,
-		virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
-	) -> HypervisorResult<KvmCpu> {
-		let vcpu = KVM_ACCESS
-			.lock()
-			.unwrap()
-			.as_mut()
-			.expect("KVM is not initialized yet")
-			.create_vcpu(id.try_into().unwrap())?;
-		Ok(KvmCpu {
-			id,
-			vcpu,
-			vm_start,
-			kernel_path,
-			args,
-			virtio_device,
-			pci_addr: None,
-		})
-	}
-
 	fn setup_cpuid(&self) -> Result<(), kvm_ioctls::Error> {
 		//debug!("Setup cpuid");
 
@@ -333,9 +303,7 @@ impl KvmCpu {
 	pub fn get_vcpu_mut(&mut self) -> &mut VcpuFd {
 		&mut self.vcpu
 	}
-}
 
-impl VirtualCPU for KvmCpu {
 	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
 		self.setup_long_mode(entry_point, stack_address, cpu_id)?;
 		self.setup_cpuid()?;
@@ -350,17 +318,29 @@ impl VirtualCPU for KvmCpu {
 
 		Ok(())
 	}
+}
 
-	fn kernel_path(&self) -> &Path {
-		self.kernel_path.as_path()
-	}
+impl VirtualCPU for KvmCpu {
+	fn new(id: u32, parent_vm: Arc<UhyveVm<KvmCpu>>) -> HypervisorResult<KvmCpu> {
+		let vcpu = KVM_ACCESS
+			.lock()
+			.unwrap()
+			.as_mut()
+			.expect("KVM is not initialized yet")
+			.create_vcpu(id as u64)?;
+		let mut kvcpu = KvmCpu {
+			id,
+			vcpu,
+			parent_vm: parent_vm.clone(),
+			pci_addr: None,
+		};
+		kvcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
 
-	fn args(&self) -> &[OsString] {
-		self.args.as_slice()
+		Ok(kvcpu)
 	}
 
 	fn host_address(&self, addr: GuestPhysAddr) -> usize {
-		addr.as_u64() as usize + self.vm_start
+		unimplemented!()
 	}
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
@@ -378,7 +358,8 @@ impl VirtualCPU for KvmCpu {
 						PCI_CONFIG_DATA_PORT => {
 							if let Some(pci_addr) = self.pci_addr {
 								if pci_addr & 0x1ff800 == 0 {
-									let virtio_device = self.virtio_device.lock().unwrap();
+									let virtio_device =
+										self.parent_vm.virtio_device.lock().unwrap();
 									virtio_device.handle_read(pci_addr & 0x3ff, addr);
 								} else {
 									unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
@@ -389,28 +370,28 @@ impl VirtualCPU for KvmCpu {
 						}
 						PCI_CONFIG_ADDRESS_PORT => {}
 						VIRTIO_PCI_STATUS => {
-							let virtio_device = self.virtio_device.lock().unwrap();
+							let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 							virtio_device.read_status(addr);
 						}
 						VIRTIO_PCI_HOST_FEATURES => {
-							let virtio_device = self.virtio_device.lock().unwrap();
+							let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 							virtio_device.read_host_features(addr);
 						}
 						VIRTIO_PCI_GUEST_FEATURES => {
-							let mut virtio_device = self.virtio_device.lock().unwrap();
+							let mut virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 							virtio_device.read_requested_features(addr);
 						}
 						VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
-							let virtio_device = self.virtio_device.lock().unwrap();
+							let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 							virtio_device
 								.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_OFF);
 						}
 						VIRTIO_PCI_ISR => {
-							let mut virtio_device = self.virtio_device.lock().unwrap();
+							let mut virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 							virtio_device.reset_interrupt()
 						}
 						VIRTIO_PCI_LINK_STATUS_MSIX_OFF => {
-							let virtio_device = self.virtio_device.lock().unwrap();
+							let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 							virtio_device.read_link_status(addr);
 						}
 						_ => {
@@ -445,7 +426,7 @@ impl VirtualCPU for KvmCpu {
 									if let Some(pci_addr) = self.pci_addr {
 										if pci_addr & 0x1ff800 == 0 {
 											let mut virtio_device =
-												self.virtio_device.lock().unwrap();
+												self.parent_vm.virtio_device.lock().unwrap();
 											virtio_device.handle_write(pci_addr & 0x3ff, addr);
 										}
 									}
@@ -454,24 +435,29 @@ impl VirtualCPU for KvmCpu {
 									self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
 								}
 								VIRTIO_PCI_STATUS => {
-									let mut virtio_device = self.virtio_device.lock().unwrap();
+									let mut virtio_device =
+										self.parent_vm.virtio_device.lock().unwrap();
 									virtio_device.write_status(addr);
 								}
 								VIRTIO_PCI_GUEST_FEATURES => {
-									let mut virtio_device = self.virtio_device.lock().unwrap();
+									let mut virtio_device =
+										self.parent_vm.virtio_device.lock().unwrap();
 									virtio_device.write_requested_features(addr);
 								}
 								VIRTIO_PCI_QUEUE_NOTIFY => {
-									let mut virtio_device = self.virtio_device.lock().unwrap();
-									virtio_device.handle_notify_output(addr, self);
+									let mut virtio_device =
+										self.parent_vm.virtio_device.lock().unwrap();
+									virtio_device.handle_notify_output(addr, &self.parent_vm.mem);
 								}
 								VIRTIO_PCI_QUEUE_SEL => {
-									let mut virtio_device = self.virtio_device.lock().unwrap();
+									let mut virtio_device =
+										self.parent_vm.virtio_device.lock().unwrap();
 									virtio_device.write_selected_queue(addr);
 								}
 								VIRTIO_PCI_QUEUE_PFN => {
-									let mut virtio_device = self.virtio_device.lock().unwrap();
-									virtio_device.write_pfn(addr, self);
+									let mut virtio_device =
+										self.parent_vm.virtio_device.lock().unwrap();
+									virtio_device.write_pfn(addr, &self.parent_vm.mem);
 								}
 								_ => {
 									panic!("Unhandled IO exit: 0x{:x}", port);

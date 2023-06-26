@@ -2,7 +2,13 @@ mod breakpoints;
 mod regs;
 mod section_offsets;
 
-use std::{io::Read, net::TcpStream, sync::Once, thread, time::Duration};
+use std::{
+	io::Read,
+	net::TcpStream,
+	sync::{Arc, Once},
+	thread,
+	time::Duration,
+};
 
 use gdbstub::{
 	common::Signal,
@@ -30,14 +36,14 @@ use crate::{
 };
 
 pub struct GdbUhyve {
-	vm: UhyveVm<KvmCpu>,
+	vm: Arc<UhyveVm<KvmCpu>>,
 	vcpu: KvmCpu,
 	hw_breakpoints: HwBreakpoints,
 	sw_breakpoints: SwBreakpoints,
 }
 
 impl GdbUhyve {
-	pub fn new(vm: UhyveVm<KvmCpu>, vcpu: KvmCpu) -> Self {
+	pub fn new(vm: Arc<UhyveVm<KvmCpu>>, vcpu: KvmCpu) -> Self {
 		Self {
 			vm,
 			vcpu,

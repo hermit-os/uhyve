@@ -2,9 +2,7 @@
 
 use std::{
 	arch::x86_64::__cpuid_count,
-	ffi::OsString,
-	path::{Path, PathBuf},
-	sync::Mutex,
+	sync::{Arc, Mutex},
 };
 
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
@@ -35,6 +33,7 @@ use crate::{
 	consts::*,
 	macos::x86_64::ioapic::IoApic,
 	vcpu::{VcpuStopReason, VirtualCPU},
+	vm::UhyveVm,
 	HypervisorResult,
 };
 
@@ -156,25 +155,12 @@ lazy_static! {
 
 pub struct XhyveCpu {
 	id: u32,
-	kernel_path: PathBuf,
-	args: Vec<OsString>,
 	vcpu: xhypervisor::VirtualCpu,
-	vm_start: usize,
+	parent_vm: Arc<UhyveVm<Self>>,
 	apic_base: u64,
 }
 
 impl XhyveCpu {
-	pub fn new(id: u32, kernel_path: PathBuf, args: Vec<OsString>, vm_start: usize) -> XhyveCpu {
-		XhyveCpu {
-			id,
-			kernel_path,
-			args,
-			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
-			vm_start,
-			apic_base: APIC_DEFAULT_BASE,
-		}
-	}
-
 	fn setup_system_gdt(&mut self) -> Result<(), xhypervisor::Error> {
 		debug!("Setup GDT");
 
@@ -598,9 +584,7 @@ impl XhyveCpu {
 	pub fn get_vcpu(&self) -> &xhypervisor::VirtualCpu {
 		&self.vcpu
 	}
-}
 
-impl VirtualCPU for XhyveCpu {
 	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
 		self.setup_capabilities()?;
 		self.setup_msr()?;
@@ -636,17 +620,19 @@ impl VirtualCPU for XhyveCpu {
 
 		Ok(())
 	}
+}
 
-	fn kernel_path(&self) -> &Path {
-		self.kernel_path.as_path()
-	}
+impl VirtualCPU for XhyveCpu {
+	fn new(id: u32, parent_vm: Arc<UhyveVm<Self>>) -> HypervisorResult<Self> {
+		let mut vcpu = XhyveCpu {
+			id,
+			parent_vm: parent_vm.clone(),
+			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
+			apic_base: APIC_DEFAULT_BASE,
+		};
+		vcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
 
-	fn args(&self) -> &[OsString] {
-		self.args.as_slice()
-	}
-
-	fn host_address(&self, addr: GuestPhysAddr) -> usize {
-		addr.as_u64() as usize + self.vm_start
+		Ok(vcpu)
 	}
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
