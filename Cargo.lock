@@ -1471,6 +1471,7 @@ dependencies = [
 name = "uhyve-interface"
 version = "0.1.0"
 dependencies = [
+ "log",
  "num_enum",
  "x86_64",
 ]

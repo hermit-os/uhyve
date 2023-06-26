@@ -31,6 +31,8 @@ use xhypervisor::{
 
 use crate::{
 	consts::*,
+	hypercall,
+	hypercall::{copy_argv, copy_env},
 	macos::x86_64::ioapic::IoApic,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::UhyveVm,
@@ -491,7 +493,13 @@ impl XhyveCpu {
 		let read = (qualification & (1 << 0)) != 0;
 		let write = (qualification & (1 << 1)) != 0;
 		let code = unsafe {
-			std::slice::from_raw_parts(self.host_address(GuestPhysAddr::new(rip)) as *const u8, 8)
+			std::slice::from_raw_parts(
+				self.parent_vm
+					.mem
+					.host_address(GuestPhysAddr::new(rip))
+					.unwrap(),
+				8,
+			)
 		};
 
 		if let Ok(instr) = disassemble_64(code, rip as usize, code.len()) {
@@ -708,30 +716,42 @@ impl VirtualCPU for XhyveCpu {
 
 					assert!(!input, "Invalid I/O operation");
 
-					let data_addr: u64 = self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-					if let Some(hypercall) =
-						unsafe { self.address_to_hypercall(port, GuestPhysAddr::new(data_addr)) }
-					{
+					let data_addr =
+						GuestPhysAddr::new(self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF);
+					if let Some(hypercall) = unsafe {
+						hypercall::address_to_hypercall(&self.parent_vm.mem, port, data_addr)
+					} {
 						match hypercall {
-							Hypercall::Cmdsize(syssize) => self.cmdsize(syssize),
-							Hypercall::Cmdval(syscmdval) => self.cmdval(syscmdval),
+							Hypercall::Cmdsize(syssize) => {
+								syssize.update(self.parent_vm.kernel_path(), self.parent_vm.args())
+							}
+							Hypercall::Cmdval(syscmdval) => {
+								copy_argv(
+									self.parent_vm.kernel_path().as_os_str(),
+									self.parent_vm.args(),
+									syscmdval,
+									&self.parent_vm.mem,
+								);
+								copy_env(syscmdval, &self.parent_vm.mem);
+							}
 							Hypercall::Exit(sysexit) => {
-								return Ok(VcpuStopReason::Exit(self.exit(sysexit)))
+								return Ok(VcpuStopReason::Exit(sysexit.arg));
 							}
-							Hypercall::FileClose(sysclose) => self.close(sysclose),
-							Hypercall::FileLseek(syslseek) => self.lseek(syslseek),
-							Hypercall::FileOpen(sysopen) => self.open(sysopen),
-							Hypercall::FileRead(sysread) => self.read(sysread),
+							Hypercall::FileClose(sysclose) => hypercall::close(sysclose),
+							Hypercall::FileLseek(syslseek) => hypercall::lseek(syslseek),
+							Hypercall::FileOpen(sysopen) => {
+								hypercall::open(&self.parent_vm.mem, sysopen)
+							}
+							Hypercall::FileRead(sysread) => {
+								hypercall::read(&self.parent_vm.mem, sysread)
+							}
 							Hypercall::FileWrite(syswrite) => {
-								// Return an error for proper handling
-								self.write(syswrite).unwrap()
+								hypercall::write(&self.parent_vm.mem, syswrite).unwrap()
 							}
-							Hypercall::FileUnlink(sysunlink) => self.unlink(sysunlink),
-							Hypercall::SerialWriteByte(_char) => {
-								// TODO Not sure why this call works different on macos...
-								let al = (self.vcpu.read_register(&Register::RAX)? & 0xFF) as u8;
-								self.uart(&[al]).unwrap();
+							Hypercall::FileUnlink(sysunlink) => {
+								hypercall::unlink(&self.parent_vm.mem, sysunlink)
 							}
+							Hypercall::SerialWriteByte(buf) => hypercall::uart(&[buf]).unwrap(),
 							_ => panic!("Got unknown hypercall {:?}", hypercall),
 						}
 						self.vcpu.write_register(&Register::RIP, rip + len)?;

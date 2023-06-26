@@ -56,7 +56,7 @@ mac_address = "1.1"
 thiserror = "1.0"
 time = "0.3"
 tun-tap = { version = "0.1.3", default-features = false }
-uhyve-interface = { path = "./uhyve-interface" }
+uhyve-interface = { path = "./uhyve-interface", features = ["std"] }
 virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
 rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }
