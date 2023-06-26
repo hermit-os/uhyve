@@ -93,7 +93,7 @@ impl UhyveVm<KvmCpu> {
 		let this = Arc::new(self);
 		let threads = (0..this.num_cpus())
 			.map(|cpu_id| {
-				let vm = this.clone();
+				let parent_vm = this.clone();
 				let barrier = barrier.clone();
 				let local_cpu_affinity = cpu_affinity
 					.as_ref()
@@ -109,9 +109,7 @@ impl UhyveVm<KvmCpu> {
 						None => debug!("No affinity specified, not binding thread"),
 					}
 
-					let mut cpu = vm.create_cpu(cpu_id).unwrap();
-					cpu.init(vm.get_entry_point(), vm.stack_address(), cpu_id)
-						.unwrap();
+					let mut cpu = KvmCpu::new(cpu_id, parent_vm.clone()).unwrap();
 
 					thread::sleep(std::time::Duration::from_millis(cpu_id as u64 * 50));
 
@@ -167,13 +165,12 @@ impl UhyveVm<KvmCpu> {
 			None => debug!("No affinity specified, not binding thread"),
 		}
 
-		let mut cpu = self.create_cpu(cpu_id).unwrap();
-		cpu.init(self.get_entry_point(), self.stack_address(), cpu_id)
-			.unwrap();
+		let this = Arc::new(self);
+		let cpu = KvmCpu::new(cpu_id, this.clone()).unwrap();
 
-		let connection = wait_for_gdb_connection(self.gdb_port.unwrap()).unwrap();
+		let connection = wait_for_gdb_connection(this.gdb_port.unwrap()).unwrap();
 		let debugger = GdbStub::new(connection);
-		let mut debuggable_vcpu = GdbUhyve::new(self, cpu);
+		let mut debuggable_vcpu = GdbUhyve::new(this, cpu);
 
 		match debugger
 			.run_blocking::<UhyveGdbEventLoop>(&mut debuggable_vcpu)

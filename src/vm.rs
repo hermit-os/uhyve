@@ -3,7 +3,7 @@ use std::{
 	fmt, fs, io,
 	marker::PhantomData,
 	num::NonZeroU32,
-	path::{Path, PathBuf},
+	path::PathBuf,
 	ptr,
 	sync::{Arc, Mutex},
 	time::SystemTime,
@@ -21,9 +21,7 @@ use crate::arch::x86_64::{
 	detect_freq_from_cpuid, detect_freq_from_cpuid_hypervisor_info, get_cpu_frequency_from_os,
 };
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
-use crate::linux::x86_64::kvm_cpu::{initialize_kvm, KvmCpu};
-#[cfg(all(target_arch = "x86_64", target_os = "macos"))]
-use crate::macos::x86_64::vcpu::XhyveCpu;
+use crate::linux::x86_64::kvm_cpu::initialize_kvm;
 use crate::{
 	arch, consts::*, mem::MmapMemory, os::HypervisorError, params::Params, vcpu::VirtualCPU,
 	virtio::*,
@@ -77,13 +75,13 @@ pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 	offset: u64,
 	entry_point: u64,
 	stack_address: u64,
-	pub mem: MmapMemory,
+	pub mem: Arc<MmapMemory>,
 	num_cpus: u32,
 	path: PathBuf,
 	args: Vec<OsString>,
 	boot_info: *const RawBootInfo,
 	verbose: bool,
-	virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
+	pub virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	#[allow(dead_code)] // gdb is not supported on macos
 	pub(super) gdb_port: Option<u16>,
 	_vcpu_type: PhantomData<VCpuType>,
@@ -121,7 +119,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			offset: 0,
 			entry_point: 0,
 			stack_address: 0,
-			mem,
+			mem: mem.into(),
 			num_cpus: cpu_count,
 			path: kernel_path,
 			args: params.kernel_args,
@@ -172,8 +170,12 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		self.num_cpus
 	}
 
-	fn kernel_path(&self) -> &Path {
-		self.path.as_path()
+	pub fn kernel_path(&self) -> &PathBuf {
+		&self.path
+	}
+
+	pub fn args(&self) -> &Vec<OsString> {
+		&self.args
 	}
 
 	fn set_boot_info(&mut self, header: *const RawBootInfo) {
@@ -246,31 +248,6 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		));
 
 		Ok(())
-	}
-}
-
-#[cfg(target_os = "linux")]
-impl UhyveVm<KvmCpu> {
-	pub fn create_cpu(&self, id: u32) -> HypervisorResult<KvmCpu> {
-		KvmCpu::new(
-			id,
-			self.path.clone(),
-			self.args.clone(),
-			self.mem.host_address,
-			self.virtio_device.clone(),
-		)
-	}
-}
-
-#[cfg(target_os = "macos")]
-impl UhyveVm<XhyveCpu> {
-	pub fn create_cpu(&self, id: u32) -> HypervisorResult<XhyveCpu> {
-		Ok(XhyveCpu::new(
-			id,
-			self.path.clone(),
-			self.args.clone(),
-			self.mem.host_address,
-		))
 	}
 }
 

@@ -24,17 +24,15 @@ pub struct XhyveCpu {
 	kernel_path: PathBuf,
 	args: Vec<OsString>,
 	vcpu: xhypervisor::VirtualCpu,
-	vm_start: usize,
 }
 
 impl XhyveCpu {
-	pub fn new(id: u32, kernel_path: PathBuf, args: Vec<OsString>, vm_start: usize) -> XhyveCpu {
+	pub fn new(id: u32, kernel_path: PathBuf, args: Vec<OsString>) -> XhyveCpu {
 		Self {
 			id,
 			kernel_path,
 			args,
 			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
-			vm_start,
 		}
 	}
 }
@@ -153,10 +151,6 @@ impl VirtualCPU for XhyveCpu {
 
 	fn args(&self) -> &[OsString] {
 		self.args.as_slice()
-	}
-
-	fn host_address(&self, addr: usize) -> usize {
-		addr + self.vm_start
 	}
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {

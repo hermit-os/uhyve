@@ -34,7 +34,7 @@ impl UhyveVm<XhyveCpu> {
 		let this = Arc::new(self);
 
 		(0..this.num_cpus()).for_each(|cpu_id| {
-			let vm = this.clone();
+			let parent_vm = this.clone();
 			let exit_tx = exit_tx.clone();
 
 			let local_cpu_affinity = match &cpu_affinity {
@@ -53,9 +53,7 @@ impl UhyveVm<XhyveCpu> {
 					None => debug!("No affinity specified, not binding thread"),
 				}
 
-				let mut cpu = vm.create_cpu(cpu_id).unwrap();
-				cpu.init(vm.get_entry_point(), vm.stack_address(), cpu_id)
-					.unwrap();
+				let mut cpu = XhyveCpu::new(cpu_id, parent_vm.clone()).unwrap();
 
 				// jump into the VM and execute code of the guest
 				let result = cpu.run();

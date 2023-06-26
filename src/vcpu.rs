@@ -1,7 +1,10 @@
-use std::{ffi::OsString, io, io::Write, mem, os::unix::ffi::OsStrExt, path::Path, slice};
+use std::{
+	ffi::OsString, io, io::Write, mem, os::unix::ffi::OsStrExt, path::Path, slice, sync::Arc,
+};
 
 use uhyve_interface::{parameters::*, GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC};
 
+use crate::vm::UhyveVm;
 /// The trait and fns that a virtual cpu requires
 use crate::{os::DebugExitInfo, HypervisorResult};
 
@@ -18,9 +21,9 @@ pub enum VcpuStopReason {
 }
 
 /// Functionality a virtual CPU backend must provide to be used by uhyve
-pub trait VirtualCPU {
-	/// Initialize the cpu to start running the code ad entry_point.
-	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()>;
+pub trait VirtualCPU: Sized {
+	/// Create a new CPU object
+	fn new(id: u32, vm: Arc<UhyveVm<Self>>) -> HypervisorResult<Self>;
 
 	/// Continues execution.
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason>;
@@ -35,10 +38,14 @@ pub trait VirtualCPU {
 	fn host_address(&self, addr: GuestPhysAddr) -> usize;
 
 	/// Returns the (host) path of the kernel binary.
-	fn kernel_path(&self) -> &Path;
+	fn kernel_path(&self) -> &Path {
+		unimplemented!()
+	}
 
 	// TODO remove
-	fn args(&self) -> &[OsString];
+	fn args(&self) -> &[OsString] {
+		unimplemented!()
+	}
 
 	/// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
 	/// parameter that was send to that address by the guest.
