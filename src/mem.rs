@@ -143,6 +143,16 @@ impl MmapMemory {
 	pub fn read<T>(&self, addr: GuestPhysAddr) -> Result<T, MemoryError> {
 		Ok(unsafe { self.host_address(addr)?.cast::<T>().read_unaligned() })
 	}
+
+	/// Get a reference to the type at the given address in the memory.
+	pub unsafe fn get_ref<T>(&self, addr: GuestPhysAddr) -> Result<&T, MemoryError> {
+		Ok(unsafe { &*(self.host_address(addr)? as *const T) })
+	}
+
+	/// Get a mutable reference to the type at the given address in the memory.
+	pub unsafe fn get_ref_mut<T>(&self, addr: GuestPhysAddr) -> Result<&mut T, MemoryError> {
+		Ok(unsafe { &mut *(self.host_address(addr)? as *mut T) })
+	}
 }
 
 impl Drop for MmapMemory {

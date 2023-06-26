@@ -8,6 +8,7 @@ use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
 use crate::{
 	consts::*,
+	hypercall,
 	linux::KVM,
 	mem::MmapMemory,
 	vcpu::{VcpuStopReason, VirtualCPU},
@@ -339,10 +340,6 @@ impl VirtualCPU for KvmCpu {
 		Ok(kvcpu)
 	}
 
-	fn host_address(&self, addr: GuestPhysAddr) -> usize {
-		unimplemented!()
-	}
-
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
 			match self.vcpu.run() {
@@ -401,22 +398,39 @@ impl VirtualCPU for KvmCpu {
 					VcpuExit::IoOut(port, addr) => {
 						let data_addr =
 							GuestPhysAddr::new(unsafe { (*(addr.as_ptr() as *const u32)) as u64 });
-						if let Some(hypercall) =
-							unsafe { self.address_to_hypercall(port, data_addr) }
-						{
+						if let Some(hypercall) = unsafe {
+							hypercall::address_to_hypercall(&self.parent_vm.mem, port, data_addr)
+						} {
 							match hypercall {
-								Hypercall::Cmdsize(syssize) => self.cmdsize(syssize),
-								Hypercall::Cmdval(syscmdval) => self.cmdval(syscmdval),
-								Hypercall::Exit(sysexit) => {
-									return Ok(VcpuStopReason::Exit(self.exit(sysexit)));
+								Hypercall::Cmdsize(syssize) => syssize
+									.update(self.parent_vm.kernel_path(), self.parent_vm.args()),
+								Hypercall::Cmdval(syscmdval) => {
+									hypercall::copy_argv(
+										self.parent_vm.kernel_path().as_os_str(),
+										self.parent_vm.args(),
+										syscmdval,
+										&self.parent_vm.mem,
+									);
+									hypercall::copy_env(syscmdval, &self.parent_vm.mem);
 								}
-								Hypercall::FileClose(sysclose) => self.close(sysclose),
-								Hypercall::FileLseek(syslseek) => self.lseek(syslseek),
-								Hypercall::FileOpen(sysopen) => self.open(sysopen),
-								Hypercall::FileRead(sysread) => self.read(sysread),
-								Hypercall::FileWrite(syswrite) => self.write(syswrite)?,
-								Hypercall::FileUnlink(sysunlink) => self.unlink(sysunlink),
-								Hypercall::SerialWriteByte(buf) => self.uart(&[buf])?,
+								Hypercall::Exit(sysexit) => {
+									return Ok(VcpuStopReason::Exit(sysexit.arg));
+								}
+								Hypercall::FileClose(sysclose) => hypercall::close(sysclose),
+								Hypercall::FileLseek(syslseek) => hypercall::lseek(syslseek),
+								Hypercall::FileOpen(sysopen) => {
+									hypercall::open(&self.parent_vm.mem, sysopen)
+								}
+								Hypercall::FileRead(sysread) => {
+									hypercall::read(&self.parent_vm.mem, sysread)
+								}
+								Hypercall::FileWrite(syswrite) => {
+									hypercall::write(&self.parent_vm.mem, syswrite)?
+								}
+								Hypercall::FileUnlink(sysunlink) => {
+									hypercall::unlink(&self.parent_vm.mem, sysunlink)
+								}
+								Hypercall::SerialWriteByte(buf) => hypercall::uart(&[buf])?,
 								_ => panic!("Got unknown hypercall {:?}", hypercall),
 							};
 						} else {

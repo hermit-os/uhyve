@@ -7,7 +7,7 @@
 //! that port is the physical memory address (of the VM) of the parameters of that hypercall.
 //! - On `aarch64` you write to the respective [`HypercallAddress`]. The 64-bit value written to that location is the guest's physical memory address of the hypercall's parameter.
 
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 // TODO: Throw this out, once https://github.com/rust-lang/rfcs/issues/2783 or https://github.com/rust-lang/rust/issues/86772 is resolved
 use num_enum::TryFromPrimitive;

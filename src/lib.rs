@@ -19,6 +19,7 @@ pub use linux as os;
 pub mod macos;
 #[cfg(target_os = "macos")]
 pub use macos as os;
+mod hypercall;
 pub mod mem;
 pub mod params;
 #[cfg(target_os = "linux")]
