@@ -5,7 +5,7 @@ use std::{
 	str::FromStr,
 };
 
-use byte_unit::{AdjustedByte, Byte, ByteError};
+use byte_unit::{n_mib_bytes, AdjustedByte, Byte, ByteError};
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
@@ -124,18 +124,25 @@ impl fmt::Display for GuestMemorySize {
 }
 
 #[derive(Error, Debug)]
-#[error("invalid amount of guest memory (minimum: {}, found {0})", GuestMemorySize::minimum().get_appropriate_unit(true))]
-pub struct InvalidGuestMemorySizeError(AdjustedByte);
+pub enum InvalidGuestMemorySizeError {
+	#[error("Not enough guest memory. Must be at least {} (is {0})", GuestMemorySize::minimum().get_appropriate_unit(true))]
+	MemoryTooSmall(AdjustedByte),
+	#[error("Invalid amount of guest memory. Must be a multiple of 2 MiB (is {0})")]
+	NotAHugepage(AdjustedByte),
+}
 
 impl TryFrom<Byte> for GuestMemorySize {
 	type Error = InvalidGuestMemorySizeError;
 
 	fn try_from(value: Byte) -> Result<Self, Self::Error> {
-		if value >= Self::minimum() {
-			Ok(Self(value))
-		} else {
+		if value < Self::minimum() {
 			let value = value.get_appropriate_unit(true);
-			Err(InvalidGuestMemorySizeError(value))
+			Err(InvalidGuestMemorySizeError::MemoryTooSmall(value))
+		} else if value.get_bytes() % n_mib_bytes!(2) != 0 {
+			let value = value.get_appropriate_unit(true);
+			Err(InvalidGuestMemorySizeError::NotAHugepage(value))
+		} else {
+			Ok(Self(value))
 		}
 	}
 }
