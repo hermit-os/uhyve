@@ -507,11 +507,8 @@ impl VirtioNetPciDevice {
 		self.capabilities.common.driver_feature = 0;
 		self.capabilities.common.queue_select = 0;
 		self.capabilities.common.queue_size = 0;
-		// TODO: is following comment still valid?
-		// TODO: A virtioqueue must check validity!
 		self.rx_queue.as_ref().lock().reset();
 		self.tx_queue.as_ref().lock().reset();
-		// self.cap_space[ISR_STATUS] = NOTIFY_CONFIGURUTION_CHANGED;
 	}
 
 	/// Register virtqueue and grab the host-address pointer
@@ -534,7 +531,6 @@ impl VirtioNetPciDevice {
 			let mut queue = match self.capabilities.common.queue_select {
 				RX_QUEUE => self.rx_queue.as_ref().lock(),
 				TX_QUEUE => self.tx_queue.as_ref().lock(),
-				// TODO: review spec: likely can't panic here
 				_ => panic!("Invalid queue selected!"),
 			};
 
