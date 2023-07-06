@@ -1462,6 +1462,7 @@ dependencies = [
  "tun-tap",
  "uhyve-interface",
  "virtio-bindings",
+ "vm-memory",
  "vmm-sys-util",
  "x86_64",
  "xhypervisor",
@@ -1510,6 +1511,17 @@ name = "virtio-bindings"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "878bcb1b2812a10c30d53b0ed054999de3d98f25ece91fc173973f9c57aaae86"
+
+[[package]]
+name = "vm-memory"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9dc276f0d00c17b9aeb584da0f1e1c673df0d183cc2539e3636ec8cbc5eae99b"
+dependencies = [
+ "libc",
+ "thiserror",
+ "winapi",
+]
 
 [[package]]
 name = "vmm-sys-util"
