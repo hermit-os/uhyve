@@ -129,7 +129,7 @@ impl ConfigAddress {
 	}
 
 	pub fn guest_address(&self) -> u64 {
-		(self.0 + IOBASE).try_into().unwrap()
+		(self.0 + IOBASE).into()
 	}
 }
 
