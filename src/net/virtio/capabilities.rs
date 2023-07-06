@@ -9,6 +9,23 @@ use crate::net::{
 	virtio::config::cfg_type,
 };
 
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, AsBytes)]
+pub enum FeatureSelector {
+	Low = 0,
+	High = 1,
+}
+
+impl From<u32> for FeatureSelector {
+	fn from(value: u32) -> Self {
+		match value {
+			0 => Self::Low,
+			1 => Self::High,
+			_ => Self::Low, // TODO, should this panic, or should we set to an invalid value?
+		}
+	}
+}
+
 /// Collection of all VirtIO Capabilities
 #[derive(Clone, Debug, Default)]
 #[repr(C)]
@@ -164,7 +181,7 @@ pub struct ComCfg {
 	/// **read-write**: The driver uses this to select device_feature.
 	///
 	/// Values may only be 0 for feature bits 0-31, or one for feature bits 32-63.
-	pub device_feature_select: u32,
+	pub device_feature_select: FeatureSelector,
 
 	/// **read-only**: The driver reads the currently activated feature bits.
 	///
@@ -172,7 +189,7 @@ pub struct ComCfg {
 	pub device_feature: u32,
 
 	/// **read-write**: The driver uses this to report which feature bits it is offering.
-	pub driver_feature_select: u32,
+	pub driver_feature_select: FeatureSelector,
 
 	/// **read-write**: Driver reads activated feature bits
 	///
@@ -234,9 +251,9 @@ pub struct ComCfg {
 impl Default for ComCfg {
 	fn default() -> Self {
 		Self {
-			device_feature_select: 0,
+			device_feature_select: FeatureSelector::Low,
 			device_feature: 0,
-			driver_feature_select: 0,
+			driver_feature_select: FeatureSelector::Low,
 			driver_feature: 0,
 			config_msix_vector: super::VIRTIO_MSI_NO_VECTOR,
 			num_queues: 0,

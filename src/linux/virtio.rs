@@ -55,6 +55,8 @@ const TX_QUEUE: u16 = 1;
 const PCI_MEM_BASE_ADDRESS_64BIT: u16 = 1 << 2;
 pub const VIRTIO_PCI_MEM_BAR_PFN: u16 = 1 << 3;
 
+use crate::net::virtio::capabilities::FeatureSelector;
+
 pub trait PciDevice {
 	fn handle_read(&self, address: u32, dest: &mut [u8]);
 	fn handle_write(&mut self, address: u32, src: &[u8]);
@@ -481,34 +483,33 @@ impl VirtioNetPciDevice {
 
 			self.capabilities.common.driver_feature =
 				match self.capabilities.common.driver_feature_select {
-					0 => {
+					FeatureSelector::Low => {
 						(self.capabilities.common.driver_feature | requested_features)
 							& UHYVE_NET_FEATURES_LOW
 					}
-					1 => {
+					FeatureSelector::High => {
 						(self.capabilities.common.driver_feature | requested_features)
 							& UHYVE_NET_FEATURES_HIGH
 					}
-					_ => panic!("Driver feature selector is invalid"),
 				}
 		}
 	}
 
 	pub fn write_device_feature_select(&mut self, data: &[u8]) {
 		self.capabilities.common.device_feature_select =
-			u32::from_le_bytes(data.try_into().unwrap())
+			FeatureSelector::from(u32::from_le_bytes(data.try_into().unwrap()))
 	}
 
 	pub fn write_driver_feature_select(&mut self, data: &[u8]) {
 		self.capabilities.common.driver_feature_select =
-			u32::from_le_bytes(data.try_into().unwrap())
+			FeatureSelector::from(u32::from_le_bytes(data.try_into().unwrap()))
 	}
 
 	pub fn read_host_features(&self, data: &mut [u8]) {
 		match self.capabilities.common.device_feature_select {
-			0 => data.copy_from_slice(&UHYVE_NET_FEATURES_LOW.to_le_bytes()),
-			1 => data.copy_from_slice(&UHYVE_NET_FEATURES_HIGH.to_le_bytes()),
-			_ => data.fill(0), // VirtIO 4.1.4.3.1: present zero for any invalid select
+			FeatureSelector::Low => data.copy_from_slice(&UHYVE_NET_FEATURES_LOW.to_le_bytes()),
+			FeatureSelector::High => data.copy_from_slice(&UHYVE_NET_FEATURES_HIGH.to_le_bytes()),
+			// _ => data.fill(0), // VirtIO 4.1.4.3.1: present zero for any invalid select
 		}
 	}
 
