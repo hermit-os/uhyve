@@ -1,7 +1,7 @@
 use core::cmp;
 use std::{
 	ffi::{CStr, CString, OsStr},
-	io::{self, Error, ErrorKind},
+	io,
 	os::{fd::IntoRawFd, unix::ffi::OsStrExt},
 };
 
@@ -12,7 +12,7 @@ use crate::{
 		fd::{FdData, GuestFd, UhyveFileDescriptorLayer},
 		filemap::UhyveFileMap,
 	},
-	mem::{MemoryError, MmapMemory},
+	mem::MmapMemory,
 	params::EnvVars,
 	virt_to_phys,
 	vm::VmPeripherals,
@@ -310,14 +310,7 @@ pub fn write(
 		let host_address = peripherals
 			.mem
 			.host_address(guest_phys_addr.unwrap())
-			.map_err(|e| match e {
-				MemoryError::BoundsViolation => {
-					unreachable!("Bounds violation after host_address function")
-				}
-				MemoryError::WrongMemoryError => {
-					Error::new(ErrorKind::AddrNotAvailable, e.to_string())
-				}
-			})?;
+			.expect("Unreachable: Bounds violation after host_address function");
 
 		match file_map.fdmap.get_mut(gfd).unwrap() {
 			FdData::Raw(r) => unsafe {

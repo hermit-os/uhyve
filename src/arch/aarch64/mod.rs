@@ -137,7 +137,7 @@ fn is_valid_address(virtual_address: GuestVirtAddr) -> bool {
 }
 
 /// Converts a virtual address in the guest to a physical address in the guest
-pub fn virt_to_phys(
+pub(crate) fn virt_to_phys(
 	addr: GuestVirtAddr,
 	mem: &MmapMemory,
 	pgt: GuestPhysAddr,

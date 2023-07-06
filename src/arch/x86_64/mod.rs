@@ -29,7 +29,7 @@ pub(crate) fn generate_address(object_mem_size: usize) -> GuestPhysAddr {
 }
 
 /// Converts a virtual address in the guest to a physical address in the guest
-pub fn virt_to_phys(
+pub(crate) fn virt_to_phys(
 	addr: GuestVirtAddr,
 	mem: &MmapMemory,
 	pml4: GuestPhysAddr,
@@ -95,7 +95,7 @@ mod tests {
 
 		let guest_address = GuestPhysAddr::new(0x11111000);
 
-		let mem = MmapMemory::new(0, MIN_PHYSMEM_SIZE * 2, guest_address, true, true);
+		let mem = MmapMemory::new(MIN_PHYSMEM_SIZE * 2, guest_address, true, true);
 		println!("mmap memory created {mem:x?}");
 
 		init_guest_mem(

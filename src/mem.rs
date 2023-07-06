@@ -1,51 +1,53 @@
-use std::{mem::MaybeUninit, ops::Index, os::raw::c_void, ptr::NonNull};
+use std::mem::MaybeUninit;
+#[cfg(target_os = "linux")]
+use std::{os::raw::c_void, ptr::NonNull};
 
-use nix::sys::mman::*;
+#[cfg(target_os = "linux")]
+use nix::sys::mman::{MmapAdvise, madvise};
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
+use vm_memory::{
+	Address, GuestAddress, GuestMemoryRegion, GuestRegionMmap, MemoryRegionAddress,
+	mmap::MmapRegionBuilder,
+};
 
 #[derive(Error, Debug)]
 pub enum MemoryError {
 	#[error("Memory bounds exceeded")]
 	BoundsViolation,
-	#[error("The desired guest location is not part of this memory")]
-	WrongMemoryError,
 }
 
 /// A general purpose VM memory section that can exploit some Linux Kernel features.
+/// Uses `GuestMemoryMmap` under the hood.
 #[derive(Debug)]
-pub struct MmapMemory {
-	// TODO: make private
-	pub flags: u32,
-	pub memory_size: usize,
-	pub guest_address: GuestPhysAddr,
-	pub host_address: *mut u8,
+pub(crate) struct MmapMemory {
+	mem: GuestRegionMmap,
 }
-
 impl MmapMemory {
 	pub fn new(
-		flags: u32,
 		memory_size: usize,
 		guest_address: GuestPhysAddr,
 		huge_pages: bool,
 		mergeable: bool,
-	) -> MmapMemory {
-		let host_address = unsafe {
-			mmap_anonymous(
-				None,
-				memory_size.try_into().unwrap(),
-				ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
-				MapFlags::MAP_PRIVATE | MapFlags::MAP_NORESERVE,
-			)
-			.expect("mmap failed")
-		};
+	) -> Self {
+		let mm_region = MmapRegionBuilder::new_with_bitmap(memory_size, ())
+			.with_mmap_prot(libc::PROT_READ | libc::PROT_WRITE)
+			.with_mmap_flags(libc::MAP_ANONYMOUS | libc::MAP_NORESERVE | libc::MAP_PRIVATE)
+			.build()
+			.unwrap();
 
 		if mergeable {
 			#[cfg(target_os = "linux")]
 			{
 				debug!("Enable kernel feature to merge same pages");
+
 				unsafe {
-					madvise(host_address, memory_size, MmapAdvise::MADV_MERGEABLE).unwrap();
+					madvise(
+						NonNull::new(mm_region.as_ptr() as *mut c_void).unwrap(),
+						memory_size,
+						MmapAdvise::MADV_MERGEABLE,
+					)
+					.unwrap();
 				}
 			}
 			#[cfg(not(target_os = "linux"))]
@@ -59,7 +61,12 @@ impl MmapMemory {
 			{
 				debug!("Uhyve uses huge pages");
 				unsafe {
-					madvise(host_address, memory_size, MmapAdvise::MADV_HUGEPAGE).unwrap();
+					madvise(
+						NonNull::new(mm_region.as_ptr() as *mut c_void).unwrap(),
+						memory_size,
+						MmapAdvise::MADV_HUGEPAGE,
+					)
+					.unwrap();
 				}
 			}
 			#[cfg(not(target_os = "linux"))]
@@ -68,12 +75,27 @@ impl MmapMemory {
 			}
 		}
 
-		MmapMemory {
-			flags,
-			memory_size,
-			guest_address,
-			host_address: host_address.as_ptr() as *mut u8,
+		Self {
+			mem: GuestRegionMmap::<()>::new(mm_region, GuestAddress(guest_address.as_u64()))
+				.unwrap(),
 		}
+	}
+
+	/// Returns the size of the memory in bytes
+	pub fn size(&self) -> usize {
+		self.mem.size()
+	}
+
+	/// Returns the first valid physical address from the gutest perspective.
+	pub fn guest_addr(&self) -> GuestPhysAddr {
+		GuestPhysAddr::new(self.mem.start_addr().0)
+	}
+
+	/// Returns a pointer to the beginning of the memory on the host.
+	pub fn host_start(&self) -> *mut u8 {
+		let start_addr = self.mem.start_addr();
+		let region_addr = self.mem.to_region_addr(start_addr).unwrap();
+		self.mem.get_host_address(region_addr).unwrap()
 	}
 
 	/// # Safety
@@ -81,7 +103,7 @@ impl MmapMemory {
 	/// This can create multiple aliasing. During the lifetime of the returned slice, the memory must not be altered, dropped or simmilar.
 	#[expect(clippy::mut_from_ref)]
 	pub unsafe fn as_slice_mut(&self) -> &mut [u8] {
-		unsafe { std::slice::from_raw_parts_mut(self.host_address, self.memory_size) }
+		unsafe { std::slice::from_raw_parts_mut(self.host_start(), self.size()) }
 	}
 
 	/// # Safety
@@ -90,11 +112,30 @@ impl MmapMemory {
 	#[expect(clippy::mut_from_ref)]
 	pub unsafe fn as_slice_uninit_mut(&self) -> &mut [MaybeUninit<u8>] {
 		unsafe {
-			std::slice::from_raw_parts_mut(
-				self.host_address as *mut MaybeUninit<u8>,
-				self.memory_size,
-			)
+			std::slice::from_raw_parts_mut(self.host_start() as *mut MaybeUninit<u8>, self.size())
 		}
+	}
+
+	/// Converts `addr` to a `MemoryRegionAddress` that is relative to the internally used memory.
+	fn addr_to_mem_region_addr(
+		&self,
+		addr: GuestPhysAddr,
+	) -> Result<MemoryRegionAddress, MemoryError> {
+		Ok(MemoryRegionAddress(
+			GuestAddress(addr.as_u64())
+				.checked_sub(self.mem.start_addr().0)
+				.ok_or(MemoryError::BoundsViolation)?
+				.0,
+		))
+	}
+
+	/// Checks if the range described by `addr` + `len` is part of this memory region
+	fn check_range(&self, addr: MemoryRegionAddress, len: usize) -> Result<bool, MemoryError> {
+		Ok(self.mem.address_in_range(addr)
+			&& self.mem.address_in_range(
+				addr.checked_add(if len > 0 { len as u64 - 1 } else { 0 })
+					.ok_or(MemoryError::BoundsViolation)?,
+			))
 	}
 
 	/// Read a section of the memory.
@@ -105,10 +146,13 @@ impl MmapMemory {
 	/// the returned slice, the memory must not be altered to prevent undfined
 	/// behaviour.
 	pub unsafe fn slice_at(&self, addr: GuestPhysAddr, len: usize) -> Result<&[u8], MemoryError> {
-		if addr.as_usize() + len >= self.memory_size + self.guest_address.as_usize() {
-			Err(MemoryError::BoundsViolation)
+		let guest_addr = self.addr_to_mem_region_addr(addr)?;
+		if self.check_range(guest_addr, len)? {
+			Ok(unsafe {
+				std::slice::from_raw_parts_mut(self.mem.get_host_address(guest_addr).unwrap(), len)
+			})
 		} else {
-			Ok(unsafe { std::slice::from_raw_parts(self.host_address(addr)?, len) })
+			Err(MemoryError::BoundsViolation)
 		}
 	}
 
@@ -125,40 +169,53 @@ impl MmapMemory {
 		addr: GuestPhysAddr,
 		len: usize,
 	) -> Result<&mut [u8], MemoryError> {
-		if addr.as_u64() as usize + len > self.memory_size + self.guest_address.as_u64() as usize {
-			Err(MemoryError::BoundsViolation)
+		let guest_addr = self.addr_to_mem_region_addr(addr)?;
+		if self.check_range(guest_addr, len)? {
+			Ok(unsafe {
+				std::slice::from_raw_parts_mut(self.mem.get_host_address(guest_addr).unwrap(), len)
+			})
 		} else {
-			Ok(unsafe { std::slice::from_raw_parts_mut(self.host_address(addr)? as *mut u8, len) })
+			Err(MemoryError::BoundsViolation)
 		}
 	}
 
 	/// Returns the host address of the given internal physical address in the
 	/// memory, if the address is valid.
 	pub fn host_address(&self, addr: GuestPhysAddr) -> Result<*const u8, MemoryError> {
-		if addr < self.guest_address
-			|| addr.as_usize() > self.guest_address.as_usize() + self.memory_size
-		{
-			return Err(MemoryError::WrongMemoryError);
-		}
-		Ok(
-			// Safety:
-			// - The new ptr is checked to be within the mmap'd memory region above
-			// - to overflow an isize, the guest memory needs to be larger than 2^63 (which is rather unlikely anytime soon).
-			unsafe { self.host_address.add((addr - self.guest_address) as usize) as usize }
-				as *const u8,
-		)
+		let ptr = self
+			.mem
+			.get_host_address(
+				self.mem
+					.to_region_addr(GuestAddress(addr.as_u64()))
+					.unwrap(),
+			)
+			.unwrap();
+		Ok(ptr as *const u8)
 	}
 
 	/// Read the value in the memory at the given address
+	#[cfg(test)]
 	pub fn read<T>(&self, addr: GuestPhysAddr) -> Result<T, MemoryError> {
 		Ok(unsafe { self.host_address(addr)?.cast::<T>().read_unaligned() })
+	}
+
+	unsafe fn get_ptr_internal(&self, addr: MemoryRegionAddress) -> Result<*mut u8, MemoryError> {
+		self.mem
+			.get_host_address(addr)
+			.map_err(|_| MemoryError::BoundsViolation)
 	}
 
 	/// # Safety
 	///
 	/// Get a reference to the type at the given address in the memory.
+	#[allow(dead_code)] // currently not used on every architecture and OS
 	pub unsafe fn get_ref<T>(&self, addr: GuestPhysAddr) -> Result<&T, MemoryError> {
-		Ok(unsafe { &*(self.host_address(addr)? as *const T) })
+		let guest_addr = self.addr_to_mem_region_addr(addr)?;
+		if self.check_range(guest_addr, std::mem::size_of::<T>())? {
+			Ok(unsafe { &*(self.get_ptr_internal(guest_addr)? as *const T) })
+		} else {
+			Err(MemoryError::BoundsViolation)
+		}
 	}
 
 	/// # Safety
@@ -166,86 +223,12 @@ impl MmapMemory {
 	/// Get a mutable reference to the type at the given address in the memory.
 	#[expect(clippy::mut_from_ref)]
 	pub unsafe fn get_ref_mut<T>(&self, addr: GuestPhysAddr) -> Result<&mut T, MemoryError> {
-		Ok(unsafe { &mut *(self.host_address(addr)? as *mut T) })
-	}
-}
-
-impl Drop for MmapMemory {
-	fn drop(&mut self) {
-		if self.memory_size > 0 {
-			let host_addr = NonNull::new(self.host_address as *mut c_void).unwrap();
-			unsafe {
-				munmap(host_addr, self.memory_size).unwrap();
-			}
+		let guest_addr = self.addr_to_mem_region_addr(addr)?;
+		if self.check_range(guest_addr, std::mem::size_of::<T>())? {
+			Ok(unsafe { &mut *(self.get_ptr_internal(guest_addr)? as *mut T) })
+		} else {
+			Err(MemoryError::BoundsViolation)
 		}
-	}
-}
-
-impl Index<usize> for MmapMemory {
-	type Output = u8;
-
-	#[inline(always)]
-	fn index(&self, index: usize) -> &Self::Output {
-		assert!(index < self.memory_size);
-
-		// Safety:
-		// - The new ptr is checked to be within the mmap'd memory region above
-		// - to overflow an isize, the guest memory needs to be larger than 2^63 (which is rather unlikely anytime soon).
-		unsafe { &*self.host_address.add(index) }
-	}
-}
-
-/// Wrapper aroud a memory allocation that is aligned to x86 HugePages
-/// (`0x20_0000`). Intended for testing purposes only
-#[cfg(test)]
-#[allow(
-	dead_code,
-	reason = "Part of ongoing work-in-progress virtio-net feature"
-)]
-pub(crate) struct HugePageAlignedMem<const SIZE: usize> {
-	ptr: NonNull<u8>,
-}
-#[cfg(test)]
-#[expect(
-	dead_code,
-	reason = "Part of ongoing work-in-progress virtio-net feature"
-)]
-impl<const SIZE: usize> HugePageAlignedMem<SIZE> {
-	pub fn new() -> Self {
-		use std::alloc::{Layout, alloc_zeroed};
-		// TODO: Make this generic to arbitrary alignments.
-		let layout = Layout::from_size_align(SIZE, 0x20_0000).unwrap();
-		let ptr = unsafe { alloc_zeroed(layout) };
-		Self {
-			ptr: NonNull::new(ptr).expect("Allocation failed"),
-		}
-	}
-}
-#[cfg(test)]
-impl<const SIZE: usize> Drop for HugePageAlignedMem<SIZE> {
-	fn drop(&mut self) {
-		use std::alloc::{Layout, dealloc};
-		let layout = Layout::from_size_align(SIZE, 0x20_0000).unwrap();
-		let ptr = self.ptr.as_ptr();
-		unsafe {
-			dealloc(ptr, layout);
-		}
-	}
-}
-#[cfg(test)]
-impl<const SIZE: usize> core::ops::Deref for HugePageAlignedMem<SIZE> {
-	type Target = [u8];
-	fn deref(&self) -> &[u8] {
-		let slice = NonNull::slice_from_raw_parts(self.ptr, SIZE);
-		unsafe { slice.as_ref() }
-	}
-}
-
-#[cfg(test)]
-impl<const SIZE: usize> core::ops::DerefMut for HugePageAlignedMem<SIZE> {
-	fn deref_mut(&mut self) -> &mut [u8] {
-		let mut slice = NonNull::slice_from_raw_parts(self.ptr, SIZE);
-		unsafe { slice.as_mut() }
 	}
 }
 
@@ -264,7 +247,7 @@ mod tests {
 		];
 
 		for address in phys_mem_start_addresses {
-			let mem = MmapMemory::new(0, 40 * PAGE_SIZE, GuestPhysAddr::new(address), true, true);
+			let mem = MmapMemory::new(40 * PAGE_SIZE, GuestPhysAddr::new(address), true, true);
 			unsafe {
 				mem.as_slice_mut()[0xfe] = 0xaa;
 				mem.as_slice_mut()[0xff] = 0xbb;
