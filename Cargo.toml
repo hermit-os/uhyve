@@ -60,6 +60,7 @@ uhyve-interface = { version = "0.1.1", path = "uhyve-interface", features = ["st
 virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
 rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }
+vm-memory = { version = "0.14.1", features = ["backend-mmap"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.8"
@@ -67,8 +68,8 @@ kvm-ioctls = "0.17"
 mac_address = "1.1"
 tun-tap = { version = "0.1", default-features = false }
 virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
+virtio-queue = { version = "0.12" }
 vmm-sys-util = "0.12"
-vm-memory = { version = "0.12", features = ["backend-mmap"] }
 macvtap = { version = "0.1.2" }
 spin = { version = "0.9", features = ["spin_mutex"] }
 zerocopy = "0.6"

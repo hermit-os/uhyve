@@ -29,9 +29,9 @@ use x86_64::registers::debug::Dr6Flags;
 use self::breakpoints::SwBreakpoints;
 use super::HypervisorError;
 use crate::{
-	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
-	consts::BOOT_PML4,
+	arch::x86_64::registers::debug::HwBreakpoints,
 	linux::{x86_64::kvm_cpu::KvmCpu, KickSignal},
+	mem::mem_as_slice_virt,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::UhyveVm,
 };
@@ -127,30 +127,23 @@ impl SingleThreadBase for GdbUhyve {
 	}
 
 	fn read_addrs(&mut self, start_addr: u64, data: &mut [u8]) -> TargetResult<usize, Self> {
-		let guest_addr = GuestVirtAddr::try_new(start_addr).map_err(|_e| TargetError::NonFatal)?;
-		// Safety: mem is copied to data before mem can be modified.
-		let src = unsafe {
-			self.vm.mem.slice_at(
-				virt_to_phys(guest_addr, &self.vm.mem, BOOT_PML4).map_err(|_err| ())?,
-				data.len(),
-			)
-		}
-		.unwrap();
-		data.copy_from_slice(src);
+		let start_addr = GuestVirtAddr::try_new(start_addr).map_err(|_e| TargetError::NonFatal)?;
+		// Safety: self.vm.mem is not altered during the lifetime of mem, because the vm is paused.
+		let mem = unsafe {
+			mem_as_slice_virt(&self.vm.mem, start_addr, data.len())
+				.map_err(|_| TargetError::NonFatal)?
+		};
+		data.copy_from_slice(mem);
 		Ok(data.len())
 	}
 
 	fn write_addrs(&mut self, start_addr: u64, data: &[u8]) -> TargetResult<(), Self> {
+		let start_addr = GuestVirtAddr::try_new(start_addr).map_err(|_e| TargetError::NonFatal)?;
 		// Safety: self.vm.mem is not altered during the lifetime of mem.
 		let mem = unsafe {
-			self.vm.mem.slice_at_mut(
-				virt_to_phys(GuestVirtAddr::new(start_addr), &self.vm.mem, BOOT_PML4)
-					.map_err(|_err| ())?,
-				data.len(),
-			)
-		}
-		.unwrap();
-
+			mem_as_slice_virt(&self.vm.mem, start_addr, data.len())
+				.map_err(|_| TargetError::NonFatal)?
+		};
 		mem.copy_from_slice(data);
 		Ok(())
 	}

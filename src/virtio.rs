@@ -1,27 +1,26 @@
 use std::{
+	collections::VecDeque as Vec,
 	fmt,
 	io::{Read, Write},
 	mem,
 	ops::{Index, IndexMut, RangeFrom},
-	ptr,
 	sync::{
 		atomic::{AtomicBool, Ordering},
 		Arc,
 	},
 	thread, time,
-	vec::Vec,
 };
 
 use kvm_ioctls::{IoEventAddress, NoDatamatch, VmFd};
 use spin::Mutex;
-use uhyve_interface::GuestPhysAddr;
 use virtio_bindings::bindings::virtio_net::virtio_net_hdr_v1;
+use virtio_queue::{Descriptor, DescriptorChain, Error as VirtIOError, Queue, QueueOwnedT, QueueT};
+use vm_memory::{Bytes, GuestAddress, GuestMemoryMmap};
 use vmm_sys_util::eventfd::EventFd;
 use zerocopy::AsBytes;
 
 use crate::{
 	consts::{UHYVE_IRQ_NET, UHYVE_NET_MTU},
-	mem::MmapMemory,
 	net::{
 		tap::Tap,
 		virtio::{
@@ -36,7 +35,7 @@ use crate::{
 			VIRTIO_VENDOR_ID,
 		},
 	},
-	virtqueue::*,
+	virtqueue::{self, QUEUE_LIMIT},
 };
 
 const VIRTIO_NET_HEADER_SZ: usize = mem::size_of::<virtio_net_hdr_v1>();
@@ -116,9 +115,9 @@ pub struct VirtioNetPciDevice {
 	/// read by read_isr_notify
 	isr_changed: Arc<AtomicBool>,
 	/// received virtqueue
-	rx_queue: Arc<Mutex<Virtqueue>>,
+	rx_queue: Arc<Mutex<Queue>>,
 	/// transmitted virtqueue
-	tx_queue: Arc<Mutex<Virtqueue>>,
+	tx_queue: Arc<Mutex<Queue>>,
 	/// virtual network interface
 	iface: Option<Arc<Tap>>,
 	/// File Descriptor for IRQ event signalling to guest
@@ -137,7 +136,7 @@ impl fmt::Debug for VirtioNetPciDevice {
 }
 
 impl VirtioNetPciDevice {
-	pub fn new(guest_mmap: vm_memory::GuestMemoryMmap) -> VirtioNetPciDevice {
+	pub fn new(guest_mmap: GuestMemoryMmap) -> VirtioNetPciDevice {
 		let mut config_space: PciConfigSpace = PciConfigSpace::new();
 
 		write_data!(config_space, VENDOR_ID_REGISTER, VIRTIO_VENDOR_ID);
@@ -161,8 +160,8 @@ impl VirtioNetPciDevice {
 
 		// Create invalid virtqueues. Improper, unsafe and poor practice!
 		// Ideally, we would mark and watch the queues as ready.
-		let rx_queue = unsafe { Arc::new(Mutex::new(Virtqueue::blank())) };
-		let tx_queue = unsafe { Arc::new(Mutex::new(Virtqueue::blank())) };
+		let rx_queue = Arc::new(Mutex::new(Queue::new(QUEUE_LIMIT as u16).unwrap()));
+		let tx_queue = Arc::new(Mutex::new(Queue::new(QUEUE_LIMIT as u16).unwrap()));
 
 		let capabilities = VirtioCapColl::default();
 
@@ -251,18 +250,15 @@ impl VirtioNetPciDevice {
 	}
 
 	// Virtio handshake: chapter 3 virtio v1.2
-	pub fn write_status(&mut self, dest: &[u8], mem: Arc<MmapMemory>) {
+	pub fn write_status(&mut self, dest: &[u8]) {
 		let status = self.read_status_reg();
 		if dest[0] == status::UNINITIALIZED {
 			// reset the device.
 			self.write_status_reg(status::UNINITIALIZED);
 			self.capabilities.common.driver_feature = 0;
 			self.capabilities.common.queue_select = 0;
-
-			unsafe {
-				*self.rx_queue.as_ref().lock() = Virtqueue::blank();
-				*self.tx_queue.as_ref().lock() = Virtqueue::blank();
-			}
+			self.rx_queue.as_ref().lock().reset();
+			self.tx_queue.as_ref().lock().reset();
 		} else if status == status::DEVICE_NEEDS_RESET || status == status::UNINITIALIZED {
 			self.write_status_reset(dest);
 		} else if status == status::ACKNOWLEDGE {
@@ -273,7 +269,7 @@ impl VirtioNetPciDevice {
 			self.write_status_features(dest);
 		} else if status == status::ACKNOWLEDGE | status::DRIVER | status::FEATURES_OK {
 			// guest OS is ready, we'll set ourselves as ready and start the networking interface.
-			self.write_status_ok(dest, mem);
+			self.write_status_ok(dest);
 		}
 	}
 
@@ -315,7 +311,7 @@ impl VirtioNetPciDevice {
 	}
 
 	/// Complete handshake: set device as ready.
-	fn write_status_ok(&mut self, dest: &[u8], mem: Arc<MmapMemory>) {
+	fn write_status_ok(&mut self, dest: &[u8]) {
 		if dest[0] == status::ACKNOWLEDGE | status::DRIVER | status::FEATURES_OK | status::DRIVER_OK
 		{
 			self.write_status_reg(dest[0]);
@@ -329,14 +325,21 @@ impl VirtioNetPciDevice {
 			let notify_evtfd = self.notify_evtfd.take().unwrap();
 
 			let poll_tx_queue = self.tx_queue.clone();
+			let guest_mmap = Arc::clone(&self.guest_mmap);
+			let mmap = guest_mmap.clone();
 
-			let arc_mem = mem.clone();
 			// Start the ioeventfd watcher
 			thread::spawn(move || {
 				debug!("Starting notification watcher.");
 				loop {
 					if notify_evtfd.read().is_ok() {
-						send_available_packets(&sink, &poll_tx_queue, &arc_mem);
+						match send_available_packets(&sink, &poll_tx_queue, &mmap) {
+							Ok(_) => trace!("Sent and alerted"),
+							Err(VirtIOError::QueueNotReady) => {
+								error!("Sending before queue is ready!")
+							}
+							Err(e) => error!("Error sending frames: {e:?}"),
+						}
 					} else {
 						panic!("Could not read eventfd. Is the file nonblocking?");
 					}
@@ -349,15 +352,16 @@ impl VirtioNetPciDevice {
 			let mut frame_queue: Vec<([u8; 1500], usize)> = Vec::with_capacity(QUEUE_LIMIT / 2);
 
 			let irq_evtfd = self.irq_evtfd.take().unwrap();
-
-			let arc_mem = Arc::new(mem);
+			let mmap = Arc::clone(&guest_mmap);
 			// Start the rx thread.
 			thread::spawn(move || loop {
 				let mut _delay = time::Instant::now();
 
 				let mut buf = [0u8; UHYVE_NET_MTU];
 				let len = stream.get_iface().read(&mut buf).unwrap();
-				frame_queue.push((buf, len));
+				let mmap = mmap.as_ref().clone();
+				frame_queue.push_back((buf, len));
+				let l = frame_queue.len();
 
 				// Not ideal to wait random values or queue lengths.
 				if _delay
@@ -373,10 +377,21 @@ impl VirtioNetPciDevice {
 					"Frame larger than MTU, was the device reconfigured?"
 				);
 
-				if write_packet(&poll_rx_queue, &arc_mem, &mut frame_queue) {
-					_delay = time::Instant::now();
-					alert.store(true, Ordering::Release);
-					irq_evtfd.write(1).unwrap();
+				match write_packet(&poll_rx_queue, &mut frame_queue, &mmap) {
+					Ok(sent) => {
+						// TODO: replace Ok(usize) with bool (if needs notification)
+						trace!("wrote {}/{} of received frames to guest memory", sent, l);
+						if sent > 0 {
+							let mut queue = poll_rx_queue.lock();
+							if queue.needs_notification(&mmap).unwrap() {
+								_delay = time::Instant::now();
+								alert.store(true, Ordering::Release);
+								irq_evtfd.write(1).unwrap();
+							}
+						}
+					}
+					Err(VirtIOError::QueueNotReady) => error!("Sending before queue is ready!"),
+					Err(e) => error!("Could not write frames to guest: {e:?}"),
 				}
 			});
 
@@ -442,10 +457,22 @@ impl VirtioNetPciDevice {
 		// let val = u16::from_le_bytes(data.try_into().unwrap());
 
 		assert!(val == 1 || val == 0, "Invalid queue enable value provided!");
-		// trace!(
-		// 	"{} current queue..",
-		// 	if val == 1 { "enabling" } else { "disabling" }
-		// );
+
+		let stat = val == 1;
+
+		let mut queue = match self.capabilities.common.queue_select {
+			RX_QUEUE => self.rx_queue.lock(),
+			TX_QUEUE => self.tx_queue.lock(),
+			_ => {
+				panic!("Cannot enable invalid queue!")
+			}
+		};
+		queue.set_ready(stat);
+		// we'll need to set if we're enabling, as queue is_valid will return false
+		// the queue is disabled
+		if stat && !queue.is_valid(self.guest_mmap.as_ref()) {
+			error!("tried to set queue as ready, but is not valid")
+		}
 		self.capabilities.common.queue_enable = val;
 	}
 
@@ -455,33 +482,40 @@ impl VirtioNetPciDevice {
 		self.capabilities.common.driver_feature = 0;
 		self.capabilities.common.queue_select = 0;
 		self.capabilities.common.queue_size = 0;
-		unsafe {
-			*self.rx_queue.as_ref().lock() = Virtqueue::blank();
-			*self.tx_queue.as_ref().lock() = Virtqueue::blank();
-		}
+		self.rx_queue.as_ref().lock().reset();
+		self.tx_queue.as_ref().lock().reset();
 	}
 
 	/// Register virtqueue and grab the host-address pointer
-	pub fn write_pfn(&mut self, dest: &[u8], mem: &MmapMemory) {
+	pub fn write_pfn(&mut self, dest: &[u8]) {
 		let status = self.read_status_reg();
 		if status & status::FEATURES_OK != 0 && status & status::DRIVER_OK == 0 {
-			let gpa = unsafe { ptr::read_unaligned(dest.as_ptr() as *const GuestPhysAddr) };
-			assert!(
-				gpa != GuestPhysAddr::new(0),
-				"Received a null pointer as an address!"
+			let gpa = unsafe { *(dest.as_ptr() as *const usize) };
+			assert!(gpa != 0, "Received a null pointer as an address!");
+
+			let guest_addr = GuestAddress(gpa as u64);
+			let availaddr = GuestAddress(
+				(mem::size_of::<Descriptor>() * QUEUE_LIMIT + guest_addr.0 as usize) as u64,
 			);
 
-			let hva = mem.host_address(gpa).unwrap() as *mut u8;
+			let usedaddr = GuestAddress(virtqueue::align(
+				availaddr.0 as usize + (mem::size_of::<u16>() * (QUEUE_LIMIT + 3)),
+				crate::consts::PAGE_SIZE,
+			) as u64);
 
-			match self.capabilities.common.queue_select {
-				RX_QUEUE => {
-					*self.rx_queue.as_ref().lock() = unsafe { Virtqueue::new(hva, QUEUE_LIMIT) };
-				}
-				TX_QUEUE => {
-					*self.tx_queue.as_ref().lock() = unsafe { Virtqueue::new(hva, QUEUE_LIMIT) };
-				}
-				_ => error!("Invalid queue selected"),
-			}
+			let mut queue = match self.capabilities.common.queue_select {
+				RX_QUEUE => self.rx_queue.as_ref().lock(),
+				TX_QUEUE => self.tx_queue.as_ref().lock(),
+				_ => panic!("Invalid queue selected!"),
+			};
+
+			queue.set_size(QUEUE_LIMIT as u16);
+			queue.set_desc_table_address(
+				Some(guest_addr.0 as u32),
+				Some((guest_addr.0 >> 32) as u32),
+			);
+			queue.set_avail_ring_address(Some(availaddr.0 as u32), None);
+			queue.set_used_ring_address(Some(usedaddr.0 as u32), None)
 		}
 	}
 
@@ -527,12 +561,6 @@ impl VirtioNetPciDevice {
 	}
 }
 
-impl Default for VirtioNetPciDevice {
-	fn default() -> Self {
-		Self::new()
-	}
-}
-
 impl PciDevice for VirtioNetPciDevice {
 	fn handle_read(&self, address: u32, dest: &mut [u8]) {
 		dest.copy_from_slice(&self.config_space[address as usize..][..dest.len()]);
@@ -553,98 +581,115 @@ impl PciDevice for VirtioNetPciDevice {
 
 /// Returns true if notification must occur
 fn write_packet(
-	rx_queue: &Arc<Mutex<Virtqueue>>,
-	mem: &MmapMemory,
+	rx_queue: &Arc<Mutex<Queue>>,
 	frame_queue: &mut Vec<([u8; UHYVE_NET_MTU], usize)>,
-) -> bool {
+	mmap: &GuestMemoryMmap,
+) -> Result<usize, VirtIOError> {
+	let mut queue = rx_queue.lock();
+
+	if !queue.is_valid(mmap) {
+		error!("Queue is not valid!");
+		return Err(VirtIOError::InvalidSize);
+	}
+
+	if !queue.ready() {
+		error!("QueueTx not ready!");
+		return Err(VirtIOError::QueueNotReady);
+	}
+
+	queue.disable_notification(mmap)?;
+
+	let l = frame_queue.len();
+
 	frame_queue.retain(|(frame, len)| {
-		let mut queue = rx_queue.lock();
-		// TODO: better handling of notification suppression.
-		// queue.used_ring.disable_notification();
+		while let Some(chain) = queue.iter(mmap).unwrap().next() {
+			let c: DescriptorChain<&GuestMemoryMmap> = chain.clone();
+			for desc in chain.into_iter() {
+				if desc.refers_to_indirect_table() {
+					error!("Unhandled indirect descriptor");
+					return true;
+				}
+				if desc.has_next() {
+					error!("Buffer continues in another field!");
+					return true;
+				}
 
-		// This may not be correct, what if it was changed?
-		let index = queue.last_seen_available;
+				let mut buf = vec![0u8; len + VIRTIO_NET_HEADER_SZ];
+				let p: *mut u8 = (&virtio_net_hdr_v1 {
+					num_buffers: 1,
+					..Default::default()
+				} as *const _ as *const u8)
+					.cast_mut();
 
-		if let Some(desc) = unsafe { queue.get_descriptor(index) } {
-			if !desc.is_writable() {
-				return true;
+				// Write virtio header
+				buf[0..VIRTIO_NET_HEADER_SZ].copy_from_slice(unsafe {
+					std::slice::from_raw_parts_mut(p, VIRTIO_NET_HEADER_SZ)
+				});
+				// write packet content
+				buf[VIRTIO_NET_HEADER_SZ..].copy_from_slice(&frame[0..*len]);
+
+				mmap.write_slice(&buf, desc.addr()).unwrap();
+
+				queue.add_used(mmap, c.head_index(), desc.len()).unwrap();
 			}
-			if desc.flags as u32 & VRING_DESC_F_NEXT != 0 {
-				error!("Chained descriptors are unhandled!");
-				return true;
-			}
-
-			let hva = mem.host_address(desc.addr).unwrap();
-
-			// Write virtio header and frame
-			unsafe {
-				ptr::write(
-					hva as *mut virtio_net_hdr_v1,
-					virtio_net_hdr_v1 {
-						num_buffers: 1,
-						..Default::default()
-					},
-				);
-
-				ptr::copy_nonoverlapping(
-					frame.as_ptr(),
-					hva.add(VIRTIO_NET_HEADER_SZ) as *mut u8,
-					*len,
-				);
-			}
-			let len = desc.len;
-			queue.add_used(index as u32, len);
-			return false;
 		}
-		true
+		false
 	});
 
-	// TODO
-	// queue.used_ring.enable_notification();
-	true
+	Ok(l - frame_queue.len())
 }
 
 fn send_available_packets(
 	sink: &Arc<Tap>,
-	tx_queue_locked: &Arc<Mutex<Virtqueue>>,
-	mem: &MmapMemory,
-) {
-	let tx_queue = &mut tx_queue_locked.try_lock().unwrap();
+	tx_queue_locked: &Arc<Mutex<Queue>>,
+	mem: &GuestMemoryMmap,
+) -> std::result::Result<bool, VirtIOError> {
+	let queue = &mut tx_queue_locked.try_lock().unwrap();
+	if !queue.is_valid(mem) {
+		error!("Queue is not valid!");
+		return Err(VirtIOError::InvalidSize);
+	}
 
-	let send_indices: Vec<u16> = tx_queue.avail_iter().collect();
+	if !queue.ready() {
+		error!("QueueTx not ready!");
+		return Err(VirtIOError::QueueNotReady);
+	}
 
-	for index in send_indices {
-		//	TODO: improper behavior? find a better solution
-		// tl;dr - disable notifications and skip this part if the queue doesn't report as ready
-		if let Some(desc) = unsafe { tx_queue.get_descriptor(index) } {
-			if !desc.is_readable() {
-				error!("Descriptor is not readable {}", desc.flags);
-				continue;
-			}
+	queue.disable_notification(mem)?;
+
+	while let Some(chain) = queue.iter(mem).unwrap().next() {
+		let c = chain.clone();
+
+		for desc in chain {
+			let len = desc.len();
 
 			assert!(
-				desc.len as usize <= UHYVE_NET_MTU + VIRTIO_NET_HEADER_SZ,
+				len as usize <= UHYVE_NET_MTU + VIRTIO_NET_HEADER_SZ,
 				"VirtIO buffer is larger than permitted"
 			);
-			let len = desc.len as usize - VIRTIO_NET_HEADER_SZ;
-			let buf = vec![0u8; len];
 
-			// TODO: not the nicest solution
-			let hva = mem
-				.host_address(desc.addr + VIRTIO_NET_HEADER_SZ as u64)
-				.unwrap();
+			let mut buf = vec![0; len as usize];
+			mem.read_slice(&mut buf, desc.addr()).unwrap();
 
-			unsafe { ptr::copy_nonoverlapping(hva, buf.as_ptr() as *mut u8, len) };
-			// transmission failure is not necessarily grounds for a device reset
-			match sink.get_iface().write(&buf) {
-				Ok(_) => {}
+			match sink.get_iface().write(&buf[VIRTIO_NET_HEADER_SZ..]) {
+				Ok(sent_len) => {
+					if sent_len != len as usize - VIRTIO_NET_HEADER_SZ {
+						error!("Could not send all data provided! sent {sent_len}, vs {len}");
+					}
+				}
 				Err(e) => {
-					error!("could not send frame: {e:?}");
-					// trace!("frame slice: {buf:x?}");
+					error!("could not send frame: {e}");
+					error!(
+						"frame slice: {:x?}",
+						&buf[VIRTIO_NET_HEADER_SZ..(len as usize)]
+					);
 				}
 			}
 
-			tx_queue.add_used(index as u32, 1);
+			queue.add_used(mem, c.head_index(), desc.len())?;
 		}
 	}
+	queue.enable_notification(mem)?;
+
+	Ok(true)
 }

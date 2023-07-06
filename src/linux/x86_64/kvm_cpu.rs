@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
 use uhyve_interface::{GuestPhysAddr, Hypercall};
+use vm_memory::{GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
 use vmm_sys_util::eventfd::EventFd;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
@@ -10,7 +11,6 @@ use crate::{
 	consts::*,
 	hypercall,
 	linux::KVM,
-	mem::MmapMemory,
 	net::virtio::{offsets::*, ConfigAddress},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	virtio::*,
@@ -31,30 +31,37 @@ const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
 
 static KVM_ACCESS: Mutex<Option<VmFd>> = Mutex::new(None);
 
-pub fn initialize_kvm(mem: &MmapMemory, use_pit: bool) -> HypervisorResult<()> {
-	let sz = std::cmp::min(mem.memory_size, KVM_32BIT_GAP_START);
+pub fn initialize_kvm(mem: &GuestMemoryMmap, use_pit: bool) -> HypervisorResult<()> {
+	// TODO: Support multiple regions and iterate over them
+	let mem_region = mem.iter().next().unwrap();
+	let sz = std::cmp::min(mem_region.size(), KVM_32BIT_GAP_START);
 
+	let start_addr = mem_region.start_addr();
+	let region_addr = mem_region.to_region_addr(start_addr).unwrap();
 	let kvm_mem = kvm_userspace_memory_region {
 		slot: 0,
-		flags: mem.flags,
+		flags: 0, // Can be KVM_MEM_LOG_DIRTY_PAGES and KVM_MEM_READONLY
 		memory_size: sz as u64,
-		guest_phys_addr: mem.guest_address.as_u64(),
-		userspace_addr: mem.host_address as u64,
+		guest_phys_addr: start_addr.0,
+		userspace_addr: mem_region.get_host_address(region_addr).unwrap() as u64,
 	};
 
 	// TODO: make vm a global struct in linux blah
 	let vm = KVM.create_vm()?;
 	unsafe { vm.set_user_memory_region(kvm_mem) }?;
 
-	if mem.memory_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
+	if mem_region.size() > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
 		let kvm_mem = kvm_userspace_memory_region {
 			slot: 1,
-			flags: mem.flags,
-			memory_size: (mem.memory_size - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
-			guest_phys_addr: mem.guest_address.as_u64()
+			flags: mem_region.flags() as u32,
+			memory_size: (mem_region.size() - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
+			guest_phys_addr: mem_region.start_addr().0
 				+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
-			userspace_addr: (mem.host_address as usize + KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE)
-				as u64,
+			userspace_addr: (mem_region
+				.get_host_address(mem_region.to_region_addr(mem_region.start_addr()).unwrap())
+				.unwrap() as usize
+				+ KVM_32BIT_GAP_START
+				+ KVM_32BIT_GAP_SIZE) as u64,
 		};
 
 		unsafe { vm.set_user_memory_region(kvm_mem) }?;
@@ -482,7 +489,7 @@ impl VirtualCPU for KvmCpu {
 							DEVICE_STATUS => {
 								let mut virtio_device =
 									self.parent_vm.virtio_device.lock().unwrap();
-								virtio_device.write_status(data, self.parent_vm.mem.clone());
+								virtio_device.write_status(data);
 							}
 							DRIVER_FEATURE_SELECT => {
 								let mut virtio_device =
@@ -510,7 +517,7 @@ impl VirtualCPU for KvmCpu {
 								// write descriptor address
 								let mut virtio_device =
 									self.parent_vm.virtio_device.lock().unwrap();
-								virtio_device.write_pfn(data, &self.parent_vm.mem);
+								virtio_device.write_pfn(data);
 							}
 							QUEUE_ENABLE => {
 								let mut virtio_device =
