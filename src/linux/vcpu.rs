@@ -373,16 +373,16 @@ impl VirtualCPU for UhyveCPU {
 								}
 								VIRTIO_PCI_STATUS => {
 									let mut virtio_device = self.virtio_device.lock().unwrap();
-									virtio_device.write_status(addr, self.vm_start);
+									virtio_device.write_status(addr);
 								}
 								VIRTIO_PCI_GUEST_FEATURES => {
 									let mut virtio_device = self.virtio_device.lock().unwrap();
 									virtio_device.write_requested_features(addr);
 								}
-								VIRTIO_PCI_QUEUE_NOTIFY => {
-									let mut virtio_device = self.virtio_device.lock().unwrap();
-									virtio_device.handle_notify_output(addr, self);
-								}
+								// VIRTIO_PCI_QUEUE_NOTIFY => {
+								// 	let mut virtio_device = self.virtio_device.lock().unwrap();
+								// 	virtio_device.handle_notify_output(addr, self);
+								// }
 								VIRTIO_PCI_QUEUE_SEL => {
 									let mut virtio_device = self.virtio_device.lock().unwrap();
 									virtio_device.write_selected_queue(addr);
