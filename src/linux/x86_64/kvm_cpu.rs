@@ -75,28 +75,27 @@ impl VirtualizationBackendInternal for KvmVm {
 	) -> HypervisorResult<Self> {
 		let vm = KVM.create_vm().unwrap();
 
-		let sz = std::cmp::min(peripherals.mem.memory_size, KVM_32BIT_GAP_START);
+		let sz = std::cmp::min(peripherals.mem.size(), KVM_32BIT_GAP_START);
 
 		let kvm_mem = kvm_userspace_memory_region {
 			slot: 0,
-			flags: peripherals.mem.flags,
+			flags: 0, // Can be KVM_MEM_LOG_DIRTY_PAGES and KVM_MEM_READONLY
 			memory_size: sz as u64,
-			guest_phys_addr: peripherals.mem.guest_address.as_u64(),
-			userspace_addr: peripherals.mem.host_address as u64,
+			guest_phys_addr: peripherals.mem.guest_addr().as_u64(),
+			userspace_addr: peripherals.mem.host_start() as u64,
 		};
 
 		unsafe { vm.set_user_memory_region(kvm_mem) }?;
 
-		if peripherals.mem.memory_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
+		if peripherals.mem.size() > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
 			let kvm_mem = kvm_userspace_memory_region {
 				slot: 1,
-				flags: peripherals.mem.flags,
-				memory_size: (peripherals.mem.memory_size
-					- KVM_32BIT_GAP_START
-					- KVM_32BIT_GAP_SIZE) as u64,
-				guest_phys_addr: peripherals.mem.guest_address.as_u64()
+				flags: 0, // Can be KVM_MEM_LOG_DIRTY_PAGES and KVM_MEM_READONLY
+				memory_size: (peripherals.mem.size() - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE)
+					as u64,
+				guest_phys_addr: peripherals.mem.guest_addr().as_u64()
 					+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
-				userspace_addr: (peripherals.mem.host_address as usize
+				userspace_addr: (peripherals.mem.host_start() as usize
 					+ KVM_32BIT_GAP_START
 					+ KVM_32BIT_GAP_SIZE) as u64,
 			};
@@ -520,15 +519,15 @@ impl VirtualCPU for KvmCpu {
 								Hypercall::SerialWriteBuffer(sysserialwrite) => {
 									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 									let buf = unsafe {
-										self
-											.peripherals
-											.mem
-											.slice_at(sysserialwrite.buf, sysserialwrite.len)
-											.unwrap_or_else(|e| {
-												panic!(
-													"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
-												)
-											})
+										self.peripherals.mem.slice_at(
+											sysserialwrite.buf,
+											sysserialwrite.len,
+										)
+										.unwrap_or_else(|e| {
+											panic!(
+												"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
+											)
+										})
 									};
 
 									self.peripherals

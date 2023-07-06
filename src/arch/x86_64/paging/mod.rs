@@ -189,7 +189,7 @@ mod tests {
 		for &guest_address in gaddrs.iter() {
 			println!("\n\n---------------------------------------");
 			println!("testing guest address {guest_address:?}");
-			let mem = MmapMemory::new(0, MIN_PHYSMEM_SIZE * 2, guest_address, true, true);
+			let mem = MmapMemory::new(MIN_PHYSMEM_SIZE * 2, guest_address, true, true);
 			initialize_pagetables(
 				unsafe {
 					mem.slice_at_mut(guest_address, MIN_PHYSMEM_SIZE * 2)

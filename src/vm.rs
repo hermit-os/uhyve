@@ -198,10 +198,10 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		debug!("Kernel gets loaded to {kernel_address:#x}");
 
 		#[cfg(target_os = "linux")]
-		let mut mem = MmapMemory::new(0, memory_size, guest_address, params.thp, params.ksm);
+		let mut mem = MmapMemory::new(memory_size, guest_address, params.thp, params.ksm);
 
 		#[cfg(not(target_os = "linux"))]
-		let mut mem = MmapMemory::new(0, memory_size, guest_address, false, false);
+		let mut mem = MmapMemory::new(memory_size, guest_address, false, false);
 
 		// TODO: file_mapping not in kernel_info
 		let file_mapping = Mutex::new(UhyveFileMap::new(
@@ -248,7 +248,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		let kernel_info = Arc::new(KernelInfo {
 			entry_point: entry_point.into(),
 			kernel_address,
-			guest_address: mem.guest_address,
+			guest_address: mem.guest_addr(),
 			path: kernel_path,
 			params,
 			stack_address,
@@ -304,7 +304,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		};
 		init_guest_mem(
 			unsafe { peripherals.mem.as_slice_mut() }, // slice only lives during this fn call
-			peripherals.mem.guest_address,
+			guest_address,
 			kernel_end_address - guest_address,
 			legacy_mapping,
 		);
@@ -476,7 +476,7 @@ fn write_fdt_into_mem(
 
 	let mut fdt = Fdt::new()
 		.unwrap()
-		.memory(mem.guest_address..mem.guest_address + mem.memory_size as u64)
+		.memory(mem.guest_addr()..mem.guest_addr() + mem.size() as u64)
 		.unwrap()
 		.kernel_args(&params.kernel_args[..sep])
 		.app_args(params.kernel_args.get(sep + 1..).unwrap_or_default());
@@ -505,7 +505,7 @@ fn write_fdt_into_mem(
 	debug!("fdt.len() = {}", fdt.len());
 	assert!(fdt.len() < (BOOT_INFO_OFFSET - FDT_OFFSET) as usize);
 	unsafe {
-		let fdt_ptr = mem.host_address.add(FDT_OFFSET as usize);
+		let fdt_ptr = mem.host_start().add(FDT_OFFSET as usize);
 		fdt_ptr.copy_from_nonoverlapping(fdt.as_ptr(), fdt.len());
 	}
 }
@@ -518,12 +518,12 @@ fn write_boot_info_to_mem(
 ) {
 	debug!(
 		"Writing BootInfo to {:?}",
-		mem.guest_address + BOOT_INFO_OFFSET
+		mem.guest_addr() + BOOT_INFO_OFFSET
 	);
 	let boot_info = BootInfo {
 		hardware_info: HardwareInfo {
-			phys_addr_range: mem.guest_address.as_u64()
-				..mem.guest_address.as_u64() + mem.memory_size as u64,
+			phys_addr_range: mem.guest_addr().as_u64()
+				..mem.guest_addr().as_u64() + mem.size() as u64,
 			#[cfg_attr(
 				target_arch = "x86_64",
 				expect(
@@ -534,11 +534,7 @@ fn write_boot_info_to_mem(
 			serial_port_base: SerialPortBase::new(
 				(uhyve_interface::HypercallAddress::Uart as u16).into(),
 			),
-			device_tree: Some(
-				(mem.guest_address.as_u64() + FDT_OFFSET)
-					.try_into()
-					.unwrap(),
-			),
+			device_tree: Some((mem.guest_addr().as_u64() + FDT_OFFSET).try_into().unwrap()),
 		},
 		load_info,
 		platform_info: PlatformInfo::Uhyve {
@@ -549,7 +545,7 @@ fn write_boot_info_to_mem(
 		},
 	};
 	unsafe {
-		let raw_boot_info_ptr = mem.host_address.add(BOOT_INFO_OFFSET as usize) as *mut RawBootInfo;
+		let raw_boot_info_ptr = mem.host_start().add(BOOT_INFO_OFFSET as usize) as *mut RawBootInfo;
 		*raw_boot_info_ptr = RawBootInfo::from(boot_info);
 	}
 }
@@ -561,9 +557,9 @@ fn load_kernel_to_mem(
 	mem: &mut MmapMemory,
 	relative_offset: u64,
 ) -> LoadKernelResult<(LoadedKernel, GuestPhysAddr)> {
-	let kernel_end_address = mem.guest_address + relative_offset + object.mem_size();
+	let kernel_end_address = mem.guest_addr() + relative_offset + object.mem_size();
 
-	if kernel_end_address > mem.guest_address + mem.memory_size {
+	if kernel_end_address > mem.guest_addr() + mem.size() {
 		return Err(LoadKernelError::InsufficientMemory);
 	}
 
@@ -572,7 +568,7 @@ fn load_kernel_to_mem(
 			// Safety: Slice only lives during this fn call, so no aliasing happens
 			&mut unsafe { mem.as_slice_uninit_mut() }
 				[relative_offset as usize..relative_offset as usize + object.mem_size()],
-			relative_offset + mem.guest_address.as_u64(),
+			relative_offset + mem.guest_addr().as_u64(),
 		),
 		kernel_end_address,
 	))
