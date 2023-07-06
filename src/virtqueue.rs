@@ -15,7 +15,7 @@ pub const VIRTQ_DESC_F_AVAIL: u16 = 1 << 7;
 pub const VIRTQ_DESC_F_USED: u16 = 1 << 15;
 
 use virtio_bindings::bindings::virtio_ring::VRING_AVAIL_F_NO_INTERRUPT;
-pub use virtio_bindings::bindings::virtio_ring::{VRING_DESC_F_NEXT, VRING_DESC_F_WRITE};
+pub use virtio_bindings::bindings::virtio_ring::VRING_DESC_F_WRITE;
 
 #[repr(C)]
 #[derive(Debug)]
