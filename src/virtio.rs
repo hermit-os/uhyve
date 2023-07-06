@@ -635,6 +635,7 @@ fn write_packet(
 		}
 		false
 	});
+	queue.enable_notification(mmap)?;
 
 	Ok(l - frame_queue.len())
 }
