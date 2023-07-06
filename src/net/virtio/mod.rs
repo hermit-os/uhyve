@@ -4,7 +4,7 @@ use std::ops::Add;
 
 pub use virtio_bindings::{
 	bindings::virtio_net::{VIRTIO_NET_F_MAC, VIRTIO_NET_F_MTU, VIRTIO_NET_F_STATUS},
-	virtio_config::VIRTIO_F_VERSION_1,
+	virtio_config::{VIRTIO_F_RING_RESET, VIRTIO_F_VERSION_1},
 };
 
 pub mod features {
@@ -188,6 +188,11 @@ pub mod offsets {
 	pub const QUEUE_DRIVER: ConfigAddress = get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_driver);
 
 	pub const QUEUE_DEVICE: ConfigAddress = get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_device);
+
+	pub const QUEUE_NOTIFY_DATA: ConfigAddress =
+		get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_notify_data);
+
+	pub const QUEUE_RESET: ConfigAddress = get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_reset);
 
 	/// Notify structure in case config changes take place
 	pub const ISR_NOTIFY: ConfigAddress = get_offset!(ISR_CFG_OFFSET, IsrStatus, flags);
