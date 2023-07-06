@@ -407,10 +407,9 @@ impl VirtioNetPciDevice {
 					);
 
 					match write_packet(&poll_rx_queue, &mut frame_queue, &mmap) {
-						Ok(sent) => {
-							// TODO: replace Ok(usize) with bool (if needs notification)
-							// trace!("wrote {}/{} of received frames to guest memory", sent, l);
-							if sent > 0 && poll_rx_queue.lock().needs_notification(&mmap).unwrap() {
+						Ok(data_sent) => {
+							if data_sent && poll_rx_queue.lock().needs_notification(&mmap).unwrap()
+							{
 								_delay = time::Instant::now();
 								alert.store(true, Ordering::Release);
 								irq_evtfd.write(1).unwrap();
@@ -601,7 +600,7 @@ fn write_packet(
 	rx_queue: &Arc<Mutex<Queue>>,
 	frame_queue: &mut Vec<([u8; UHYVE_NET_MTU], usize)>,
 	mmap: &GuestMemoryMmap,
-) -> Result<usize, VirtIOError> {
+) -> Result<bool, VirtIOError> {
 	let mut queue = rx_queue.lock();
 
 	if !queue.is_valid(mmap) {
@@ -654,7 +653,7 @@ fn write_packet(
 	});
 	queue.enable_notification(mmap)?;
 
-	Ok(l - frame_queue.len())
+	Ok(l - frame_queue.len() > 0)
 }
 
 fn send_available_packets(
