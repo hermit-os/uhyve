@@ -362,7 +362,7 @@ impl VirtioNetPciDevice {
 				let len = stream.get_iface().read(&mut buf).unwrap();
 				let mmap = mmap.as_ref().clone();
 				frame_queue.push_back((buf, len));
-				let l = frame_queue.len();
+				// let l = frame_queue.len();
 
 				// Not ideal to wait random values or queue lengths.
 				if _delay
@@ -381,14 +381,11 @@ impl VirtioNetPciDevice {
 				match write_packet(&poll_rx_queue, &mut frame_queue, &mmap) {
 					Ok(sent) => {
 						// TODO: replace Ok(usize) with bool (if needs notification)
-						trace!("wrote {}/{} of received frames to guest memory", sent, l);
-						if sent > 0 {
-							let mut queue = poll_rx_queue.lock();
-							if queue.needs_notification(&mmap).unwrap() {
-								_delay = time::Instant::now();
-								alert.store(true, Ordering::Release);
-								irq_evtfd.write(1).unwrap();
-							}
+						// trace!("wrote {}/{} received frames to guest memory", sent, l);
+						if sent > 0 && poll_rx_queue.lock().needs_notification(&mmap).unwrap() {
+							_delay = time::Instant::now();
+							alert.store(true, Ordering::Release);
+							irq_evtfd.write(1).unwrap();
 						}
 					}
 					Err(VirtIOError::QueueNotReady) => error!("Sending before queue is ready!"),
