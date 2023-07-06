@@ -68,6 +68,7 @@ mac_address = "1.1"
 tun-tap = { version = "0.1", default-features = false }
 virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
 vmm-sys-util = "0.12"
+vm-memory = { version = "0.12", features = ["backend-mmap"] }
 macvtap = { version = "0.1.2" }
 spin = { version = "0.9", features = ["spin_mutex"] }
 zerocopy = "0.6"
