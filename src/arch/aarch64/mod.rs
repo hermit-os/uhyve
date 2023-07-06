@@ -4,10 +4,11 @@ use align_address::Align;
 use bitflags::bitflags;
 use rand::Rng;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
+use vm_memory::GuestMemoryMmap;
 
 use crate::{
 	consts::{KERNEL_OFFSET, PAGETABLES_END, PAGETABLES_OFFSET, PGT_OFFSET},
-	mem::MmapMemory,
+	mem::mem_as_slice,
 	paging::{BumpAllocator, PagetableError},
 };
 
@@ -139,7 +140,7 @@ fn is_valid_address(virtual_address: GuestVirtAddr) -> bool {
 /// Converts a virtual address in the guest to a physical address in the guest
 pub fn virt_to_phys(
 	addr: GuestVirtAddr,
-	mem: &MmapMemory,
+	mem: &GuestMemoryMmap,
 	pgt: GuestPhysAddr,
 ) -> Result<GuestPhysAddr, PagetableError> {
 	if !is_valid_address(addr) {
@@ -157,7 +158,7 @@ pub fn virt_to_phys(
 	// - Our indices can't be larger than 512, so we stay in the borders of the page.
 	// - We are page_aligned, and thus also PageTableEntry aligned.
 	let mut pagetable: &[PageTableEntry] = unsafe {
-		std::mem::transmute::<&[u8], &[PageTableEntry]>(mem.slice_at(pgt, PAGE_SIZE).unwrap())
+		std::mem::transmute::<&[u8], &[PageTableEntry]>(mem_as_slice(mem, pgt, PAGE_SIZE).unwrap())
 	};
 	// TODO: Depending on the virtual address length and granule (defined in TCR register by TG and TxSZ), we could reduce the number of pagetable walks. Hermit doesn't do this at the moment.
 	for level in 0..3 {
@@ -168,7 +169,7 @@ pub fn virt_to_phys(
 
 		pagetable = unsafe {
 			std::mem::transmute::<&[u8], &[PageTableEntry]>(
-				mem.slice_at(pte.address(), PAGE_SIZE).unwrap(),
+				mem_as_slice(mem, pte.address(), PAGE_SIZE).unwrap(),
 			)
 		};
 	}
