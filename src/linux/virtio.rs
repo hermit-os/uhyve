@@ -362,7 +362,7 @@ impl VirtioNetPciDevice {
 				loop {
 					if notify_evtfd.read().is_ok() {
 						match send_available_packets(&sink, &poll_tx_queue, &mmap) {
-							Ok(_) => trace!("Sent and alerted"),
+							Ok(_) => {}
 							Err(VirtIOError::QueueNotReady) => {
 								error!("Sending before queue is ready!")
 							}
