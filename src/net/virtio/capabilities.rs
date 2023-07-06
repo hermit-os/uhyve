@@ -246,6 +246,15 @@ pub struct ComCfg {
 	/// **read-write**: The driver writes the physical address of Device Area here. See section 2.6
 	/// virtio v1.2
 	pub queue_device: u64,
+
+	/// **read-only** for driver: The driver will use this value to put it in the ’virtqueue number’ field
+	/// in the available buffer notification structure.
+	///  This field exists only if VIRTIO_F_NOTIF_CONFIG_DATA has been negotiated.
+	pub queue_notify_data: u16,
+
+	/// ***read-write**: The driver uses this to selectively reset the queue.
+	/// This field exists only if VIRTIO_F_RING_RESET has been negotiated.
+	pub queue_reset: u16,
 }
 
 impl Default for ComCfg {
@@ -268,6 +277,8 @@ impl Default for ComCfg {
 			queue_desc: 0,
 			queue_driver: 0,
 			queue_device: 0,
+			queue_notify_data: 0,
+			queue_reset: 0,
 		}
 	}
 }

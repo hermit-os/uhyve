@@ -13,7 +13,9 @@ use std::{
 
 use kvm_ioctls::{IoEventAddress, NoDatamatch, VmFd};
 use spin::Mutex;
-use virtio_bindings::bindings::virtio_net::virtio_net_hdr_v1;
+use virtio_bindings::{
+	bindings::virtio_net::virtio_net_hdr_v1, virtio_config::VIRTIO_F_RING_RESET,
+};
 use virtio_queue::{Descriptor, DescriptorChain, Error as VirtIOError, Queue, QueueOwnedT, QueueT};
 use vm_memory::{Bytes, GuestAddress, GuestMemoryMmap};
 use vmm_sys_util::eventfd::EventFd;
@@ -126,6 +128,8 @@ pub struct VirtioNetPciDevice {
 	/// File Descriptor for polling guest (MMIO) IOEventFD signals
 	notify_evtfd: Option<EventFd>,
 	guest_mmap: Arc<GuestMemoryMmap>,
+	/// Store all negotiated feature sets. Chapter 2.2 virtio v1.2
+	feature_set: u64,
 }
 
 impl fmt::Debug for VirtioNetPciDevice {
@@ -177,6 +181,7 @@ impl VirtioNetPciDevice {
 			irq_evtfd: None,
 			notify_evtfd: None,
 			guest_mmap,
+			feature_set: (UHYVE_NET_FEATURES_LOW as u64) & ((UHYVE_NET_FEATURES_HIGH as u64) << 32),
 		}
 	}
 
@@ -248,6 +253,28 @@ impl VirtioNetPciDevice {
 		data[0] = NOTIFY_CONFIGURUTION_CHANGED;
 		// ISR may be used as fallback notification
 		// self.capabilities.isr.flags = NOTIFY_CONFIGURUTION_CHANGED
+	}
+
+	/// Reset queue in common capability structure when VIRTIO_F_RING_RESET is negotiated.
+	/// This is currently disabled, but only called in vcpu.rs
+	/// Virtqueue Reset: chapter 2.6.1 virtio v1.2
+	pub fn write_reset_queue(&mut self) {
+		if self.feature_set & (1 << VIRTIO_F_RING_RESET) != 0 {
+			// reset only selected queue
+			let mut queue = match self.capabilities.common.queue_select {
+				RX_QUEUE => self.rx_queue.lock(),
+				TX_QUEUE => self.tx_queue.lock(),
+				_ => panic!("invalid queue selected!"),
+			};
+			queue.reset();
+		}
+		self.capabilities.common.queue_reset = 0;
+	}
+
+	/// Read queue_reset from common capability structure when VIRTIO_F_RING_RESET is negotiated.
+	/// Virtqueue Reset: chapter 2.6.1 virtio v1.2
+	pub fn read_queue_reset(&self, data: &mut [u8]) {
+		data[0] = self.capabilities.common.queue_reset as u8;
 	}
 
 	// Virtio handshake: chapter 3 virtio v1.2
