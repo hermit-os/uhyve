@@ -60,7 +60,8 @@ kvm-ioctls = "0.12"
 mac_address = "1.1"
 nix = { version = "0.26", features = ["net"] }
 virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
-# virtio-queue = { version = "0.7" }
+virtio-queue = { version = "0.9" }
+vm-memory = { version = "0.12", features = ["backend-mmap"]}
 vmm-sys-util = "0.11"
 macvtap = { version = "0.1.2" }
 spin = { version = "0.9", features = ["spin_mutex"] }
