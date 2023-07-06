@@ -137,7 +137,7 @@ impl<'a> Iterator for AvailIter<'a> {
 	}
 }
 
-fn align(addr: usize, boundary: usize) -> usize {
+pub(crate) fn align(addr: usize, boundary: usize) -> usize {
 	(addr + boundary - 1) & !(boundary - 1)
 }
 
