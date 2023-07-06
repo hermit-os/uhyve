@@ -474,7 +474,7 @@ impl VirtualCPU for UhyveCPU {
 						match ConfigAddress::from_guest_address(addr) {
 							DEVICE_STATUS => {
 								let mut virtio_device = self.virtio_device.lock().unwrap();
-								virtio_device.write_status(data, self.vm_start);
+								virtio_device.write_status(data);
 							}
 							DRIVER_FEATURE_SELECT => {
 								let mut virtio_device = self.virtio_device.lock().unwrap();

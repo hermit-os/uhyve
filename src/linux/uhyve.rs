@@ -150,7 +150,7 @@ impl Uhyve {
 			.expect("Unable to disable exists due pause instructions");
 
 		// create virtio device
-		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new()));
+		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new(mem.mmap.clone())));
 
 		// Write configuration and register eventfds
 		virtio_device
