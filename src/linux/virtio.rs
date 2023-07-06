@@ -195,6 +195,7 @@ impl VirtioNetPciDevice {
 			.write_slice(PCICAP_DEV, PCICAP_NOTIF.cap_next);
 
 		self.capabilities.common.num_queues = 2;
+		self.capabilities.common.device_feature_select = FeatureSelector::Low;
 		self.capabilities.common.device_feature = UHYVE_NET_FEATURES_LOW;
 
 		// Set capabilities pointer address, device as available
