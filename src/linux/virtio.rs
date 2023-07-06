@@ -124,6 +124,7 @@ pub struct VirtioNetPciDevice {
 	irq_evtfd: Option<EventFd>,
 	/// File Descriptor for polling guest (MMIO) IOEventFD signals
 	notify_evtfd: Option<EventFd>,
+	guest_mmap: Arc<GuestMemoryMmap>,
 }
 
 impl fmt::Debug for VirtioNetPciDevice {
@@ -135,7 +136,7 @@ impl fmt::Debug for VirtioNetPciDevice {
 }
 
 impl VirtioNetPciDevice {
-	pub fn new() -> VirtioNetPciDevice {
+	pub fn new(guest_mmap: vm_memory::GuestMemoryMmap) -> VirtioNetPciDevice {
 		let mut config_space: PciConfigSpace = PciConfigSpace::new();
 
 		write_data!(config_space, VENDOR_ID_REGISTER, VIRTIO_VENDOR_ID);
@@ -164,6 +165,7 @@ impl VirtioNetPciDevice {
 
 		let capabilities = VirtioCapColl::default();
 
+		let guest_mmap = Arc::new(guest_mmap);
 		VirtioNetPciDevice {
 			config_space,
 			capabilities,
@@ -173,6 +175,7 @@ impl VirtioNetPciDevice {
 			iface: None,
 			irq_evtfd: None,
 			notify_evtfd: None,
+			guest_mmap,
 		}
 	}
 
