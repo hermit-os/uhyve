@@ -581,6 +581,11 @@ impl VirtualCPU for KvmCpu {
 											self.peripherals.virtio_device.lock().unwrap();
 										virtio_device.read_mtu(data);
 									}
+									QUEUE_RESET => {
+										let virtio_device =
+											self.peripherals.virtio_device.lock().unwrap();
+										virtio_device.read_queue_reset(data);
+									}
 									_ => {
 										let l = data.len();
 										self.print_registers();
@@ -650,6 +655,11 @@ impl VirtualCPU for KvmCpu {
 								let mut virtio_device =
 									self.peripherals.virtio_device.lock().unwrap();
 								virtio_device.write_queue_driver(data);
+							}
+							QUEUE_RESET => {
+								let mut virtio_device =
+									self.peripherals.virtio_device.lock().unwrap();
+								virtio_device.write_reset_queue();
 							}
 							ISR_NOTIFY => {
 								panic!("Guest should not write to ISR!");
