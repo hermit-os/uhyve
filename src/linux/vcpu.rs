@@ -371,26 +371,6 @@ impl VirtualCPU for UhyveCPU {
 								PCI_CONFIG_ADDRESS_PORT => {
 									self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
 								}
-								VIRTIO_PCI_STATUS => {
-									let mut virtio_device = self.virtio_device.lock().unwrap();
-									virtio_device.write_status(addr);
-								}
-								VIRTIO_PCI_GUEST_FEATURES => {
-									let mut virtio_device = self.virtio_device.lock().unwrap();
-									virtio_device.write_requested_features(addr);
-								}
-								// VIRTIO_PCI_QUEUE_NOTIFY => {
-								// 	let mut virtio_device = self.virtio_device.lock().unwrap();
-								// 	virtio_device.handle_notify_output(addr, self);
-								// }
-								VIRTIO_PCI_QUEUE_SEL => {
-									let mut virtio_device = self.virtio_device.lock().unwrap();
-									virtio_device.write_selected_queue(addr);
-								}
-								VIRTIO_PCI_QUEUE_PFN => {
-									let mut virtio_device = self.virtio_device.lock().unwrap();
-									virtio_device.write_pfn(addr, self);
-								}
 								_ => {
 									panic!("Unhandled IO exit: 0x{:x}", port);
 								}
