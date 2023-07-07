@@ -18,8 +18,7 @@ use crate::{
 	linux::{virtio::*, KVM},
 	net::virtio::{offsets::*, ConfigAddress},
 	vm::{
-		HypervisorResult, SysClose, SysCmdsize, SysCmdval, SysExit, SysLseek, SysOpen, SysRead,
-		SysUnlink, SysWrite, VcpuStopReason, VirtualCPU,
+		HypervisorResult, VcpuStopReason, VirtualCPU,
 	},
 };
 
