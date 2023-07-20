@@ -139,7 +139,7 @@ impl Virtqueue {
 
 	pub fn add_used(&mut self, desc_index: u32, len: u32) {
 		let tgt_index = self.used_ring.index() % self.queue_size;
-		let mut used_elem = self.used_ring.ring_elem(tgt_index);
+		let used_elem = self.used_ring.ring_elem(tgt_index);
 		used_elem.id = desc_index;
 		used_elem.len = len;
 		self.used_ring.advance_index();
