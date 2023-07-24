@@ -43,7 +43,7 @@ instrument = ["rftrace", "rftrace-frontend"]
 byte-unit = { version = "4.0", default-features = false, features = ["std"] }
 clap = { version = "4.3", features = ["derive", "env"] }
 core_affinity = "0.8"
-either = "1.8"
+either = "1.9"
 env_logger = "0.10"
 gdbstub = "0.6"
 gdbstub_arch = "0.2"
