@@ -1115,9 +1115,9 @@ dependencies = [
 
 [[package]]
 name = "tun-tap"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27165dce5c30856f7e11754ff8d3bb6fc965fba6f25f31ecbddc7c23f99e1615"
+checksum = "9a477a4e9367c72ac875d23cd07ac99ffa932497d8428767fed0cfa27bbabe50"
 dependencies = [
  "cc",
 ]
