@@ -1,11 +1,11 @@
-# uhyve - A minimal hypervisor for RustyHermit
+# uhyve - A minimal hypervisor for Hermit
 
 [![crates.io](https://img.shields.io/crates/v/uhyve.svg)](https://crates.io/crates/uhyve)
 [![Slack Status](https://matrix.osbyexample.com:3008/badge.svg)](https://matrix.osbyexample.com:3008)
 
 ## Introduction
 
-uhyve is small hypervisor to boot the library operating systems [RustyHermit](https://github.com/hermitcore/libhermit-rs), which  is a unikernel operating system targeting a scalable and predictable runtime behavior for HPC and cloud environments.
+uhyve is small hypervisor to boot the [Hermit kernel](https://github.com/hermitcore/kernel), which  is a unikernel operating system targeting a scalable and predictable runtime behavior for HPC and cloud environments.
 
 **Warning:** At the moment uhyve grants full host file system access from within the unikernel with the permissions of the user running uhyve.
 Thus, it should not be used for applications which require isolation from the host system.
@@ -96,7 +96,7 @@ The file `app.entitlements` must have following content:
 
 For further details have a look at [Apple's documentation](https://developer.apple.com/documentation/bundleresources/entitlements/com_apple_security_hypervisor).
 
-## Running RustyHermit apps within uhyve
+## Running Hermit apps within uhyve
 
 Use the hypervisor to start the unikernel.
 ```sh
@@ -121,7 +121,7 @@ By default, the loader initializes a system with one core and 512 MiB RAM.
 HERMIT_CPUS=4 HERMIT_MEM=8G uhyve /path/to/the/unikernel/binary
 ```
 
-## Debugging of RustyHermit apps (unstable)
+## Debugging of Hermit apps (unstable)
 
 Basic support of (single-core) applications is already integrated into uhyve.
 By specifying variable `HERMIT_GDB_PORT=port`, uhyve is working as gdbserver and is waiting on port `port` for a connection to a gdb.
@@ -131,11 +131,11 @@ For instance, with the following command uhyve is waiting on port `6677` for a c
 HERMIT_GDB_PORT=6677 uhyve /path_to_the_unikernel/hello_world
 ```
 
-In principle, every gdb-capable IDE should be able to debug RustyHermit applications. (Eclipse, VSCode, ...)
+In principle, every gdb-capable IDE should be able to debug Hermit applications. (Eclipse, VSCode, ...)
 
-The repository [rusty-hermit](https://github.com/hermitcore/rusty-hermit) provides [example configuration files](https://github.com/hermitcore/rusty-hermit/tree/master/.vscode) to debug a RustyHermit application with Visual Code.
+The repository [hermit-rs](https://github.com/hermitcore/hermit-rs) provides [example configuration files](https://github.com/hermitcore/hermit-rs/tree/master/.vscode) to debug a Hermit application with Visual Code.
 
-![Debugging RustyHermit apps](img/vs_code.png)
+![Debugging Hermit apps](img/vs_code.png)
 
 ## Known issues
 

@@ -64,17 +64,17 @@ jobs:
           path: uhyve
       - uses: actions/checkout@v3
         with:
-          repository: hermitcore/rusty-hermit
-          path: rusty-hermit
+          repository: hermitcore/hermit-rs
+          path: hermit-rs
           submodules: true
       - name: Build rusty_demo
         run: cargo build -Zbuild-std=core,alloc,std,panic_abort -Zbuild-std-features=compiler-builtins-mem --target x86_64-unknown-hermit --package rusty_demo
-        working-directory: rusty-hermit
+        working-directory: hermit-rs
       - name: Run rusty_demo
-        run: RUST_LOG=debug cargo run -- --verbose ../rusty-hermit/target/x86_64-unknown-hermit/debug/rusty_demo
+        run: RUST_LOG=debug cargo run -- --verbose ../hermit-rs/target/x86_64-unknown-hermit/debug/rusty_demo
         working-directory: uhyve
       - name: Run rusty_demo
-        run: RUST_LOG=debug cargo run --release -- --verbose ../rusty-hermit/target/x86_64-unknown-hermit/debug/rusty_demo
+        run: RUST_LOG=debug cargo run --release -- --verbose ../hermit-rs/target/x86_64-unknown-hermit/debug/rusty_demo
         working-directory: uhyve
 
   fmt:
