@@ -1,5 +1,5 @@
 [workspace]
-exclude = ["tests/test-kernels", "rusty-hermit", "rusty-hermit/*", "libhermit-rs"]
+exclude = ["tests/test-kernels", "hermit-rs", "hermit-rs/*", "kernel"]
 
 [package]
 name = "uhyve"
@@ -11,7 +11,7 @@ authors = [
     "Jonathan Klimt <jonathan.klimt@eonerc.rwth-aachen.de>",
 ]
 edition = "2021"
-description = "A minimal hypervisor for RustyHermit"
+description = "A minimal hypervisor for Hermit"
 repository = "https://github.com/hermitcore/uhyve"
 license = "MIT OR Apache-2.0"
 keywords = ["hypervisor", "unikernel"]

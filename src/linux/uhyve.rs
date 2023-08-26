@@ -75,6 +75,9 @@ impl Uhyve {
 		let sz = cmp::min(memory_size, KVM_32BIT_GAP_START);
 
 		// create virtio interface
+		// TODO: Remove allow once fixed:
+		// https://github.com/rust-lang/rust-clippy/issues/11382
+		#[allow(clippy::arc_with_non_send_sync)]
 		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new()));
 
 		let kvm_mem = kvm_userspace_memory_region {
