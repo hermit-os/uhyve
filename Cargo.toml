@@ -62,7 +62,7 @@ rftrace-frontend = { version = "0.1", optional = true }
 kvm-bindings = "0.6"
 kvm-ioctls = "0.12"
 mac_address = "1.1"
-nix = "0.26"
+nix = { version = "0.27", features = ["mman", "pthread", "signal"] }
 tun-tap = { version = "0.1", default-features = false }
 virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
 vmm-sys-util = "0.11"
