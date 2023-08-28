@@ -5,7 +5,7 @@ use std::{
 	cmp,
 	ffi::OsString,
 	fmt, mem,
-	os::raw::c_void,
+	os::{fd::BorrowedFd, raw::c_void},
 	path::{Path, PathBuf},
 	ptr,
 	sync::{Arc, Mutex},
@@ -313,12 +313,12 @@ impl MmapMemory {
 		mergeable: bool,
 	) -> MmapMemory {
 		let host_address = unsafe {
-			mmap(
+			mmap::<BorrowedFd<'_>>(
 				None,
 				memory_size.try_into().unwrap(),
 				ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
 				MapFlags::MAP_PRIVATE | MapFlags::MAP_ANONYMOUS | MapFlags::MAP_NORESERVE,
-				-1,
+				None,
 				0,
 			)
 			.expect("mmap failed")
