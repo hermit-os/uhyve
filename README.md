@@ -1,3 +1,5 @@
+<img width="200" align="right" src="img/uhyve.svg" />
+
 # uhyve - A minimal hypervisor for Hermit
 
 [![crates.io](https://img.shields.io/crates/v/uhyve.svg)](https://crates.io/crates/uhyve)
