@@ -40,7 +40,7 @@ default = []
 instrument = ["rftrace", "rftrace-frontend"]
 
 [dependencies]
-byte-unit = { version = "4.0", default-features = false, features = ["std"] }
+byte-unit = { version = "5.0", default-features = false, features = ["std"] }
 clap = { version = "4.4", features = ["derive", "env"] }
 core_affinity = "0.8"
 either = "1.9"
