@@ -5,7 +5,7 @@ use std::{
 	str::FromStr,
 };
 
-use byte_unit::{n_mib_bytes, AdjustedByte, Byte, ByteError};
+use byte_unit::{Byte, Unit};
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
@@ -103,32 +103,38 @@ pub struct GuestMemorySize(Byte);
 
 impl GuestMemorySize {
 	const fn minimum() -> Byte {
-		Byte::from_bytes(16 * 1024 * 1024)
+		let Some(byte) = Byte::from_u64_with_unit(16, Unit::MiB) else {
+			panic!()
+		};
+		byte
 	}
 
 	pub fn get(self) -> usize {
-		self.0.get_bytes().try_into().unwrap()
+		self.0.as_u64().try_into().unwrap()
 	}
 }
 
 impl Default for GuestMemorySize {
 	fn default() -> Self {
-		Self(Byte::from_bytes(64 * 1024 * 1024))
+		Self(Byte::from_u64_with_unit(64, Unit::MiB).unwrap())
 	}
 }
 
 impl fmt::Display for GuestMemorySize {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		self.0.get_appropriate_unit(true).fmt(f)
+		self.0.fmt(f)
 	}
 }
 
 #[derive(Error, Debug)]
 pub enum InvalidGuestMemorySizeError {
-	#[error("Not enough guest memory. Must be at least {} (is {0})", GuestMemorySize::minimum().get_appropriate_unit(true))]
-	MemoryTooSmall(AdjustedByte),
+	#[error(
+		"Not enough guest memory. Must be at least {} (is {0})",
+		GuestMemorySize::minimum()
+	)]
+	MemoryTooSmall(Byte),
 	#[error("Invalid amount of guest memory. Must be a multiple of 2 MiB (is {0})")]
-	NotAHugepage(AdjustedByte),
+	NotAHugepage(Byte),
 }
 
 impl TryFrom<Byte> for GuestMemorySize {
@@ -136,10 +142,8 @@ impl TryFrom<Byte> for GuestMemorySize {
 
 	fn try_from(value: Byte) -> Result<Self, Self::Error> {
 		if value < Self::minimum() {
-			let value = value.get_appropriate_unit(true);
 			Err(InvalidGuestMemorySizeError::MemoryTooSmall(value))
-		} else if value.get_bytes() % n_mib_bytes!(2) != 0 {
-			let value = value.get_appropriate_unit(true);
+		} else if value.as_u64() % Byte::from_u64_with_unit(2, Unit::MiB).unwrap().as_u64() != 0 {
 			Err(InvalidGuestMemorySizeError::NotAHugepage(value))
 		} else {
 			Ok(Self(value))
@@ -150,7 +154,7 @@ impl TryFrom<Byte> for GuestMemorySize {
 #[derive(Error, Debug)]
 pub enum ParseByteError {
 	#[error(transparent)]
-	Parse(#[from] ByteError),
+	Parse(#[from] byte_unit::ParseError),
 
 	#[error(transparent)]
 	InvalidMemorySize(#[from] InvalidGuestMemorySizeError),
