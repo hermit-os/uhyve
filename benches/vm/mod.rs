@@ -7,7 +7,7 @@ pub fn load_vm_hello_world(c: &mut Criterion) {
 		.iter()
 		.collect();
 	let params = Params {
-		memory_size: Byte::from_bytes(1024 * 100000).try_into().unwrap(),
+		memory_size: Byte::from_u64(1024 * 100_000).try_into().unwrap(),
 		..Default::default()
 	};
 	let mut vm = Uhyve::new(path, params).expect("Unable to create VM");
