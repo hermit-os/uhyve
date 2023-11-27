@@ -118,10 +118,10 @@ impl SingleThreadBase for GdbUhyve {
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))
 	}
 
-	fn read_addrs(&mut self, start_addr: u64, data: &mut [u8]) -> TargetResult<(), Self> {
+	fn read_addrs(&mut self, start_addr: u64, data: &mut [u8]) -> TargetResult<usize, Self> {
 		let src = unsafe { self.vcpu.memory(start_addr, data.len()) };
 		data.copy_from_slice(src);
-		Ok(())
+		Ok(data.len())
 	}
 
 	fn write_addrs(&mut self, start_addr: u64, data: &[u8]) -> TargetResult<(), Self> {
