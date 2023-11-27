@@ -45,7 +45,7 @@ clap = { version = "4.4", features = ["derive", "env"] }
 core_affinity = "0.8"
 either = "1.9"
 env_logger = "0.10"
-gdbstub = "0.6"
+gdbstub = "0.7"
 gdbstub_arch = "0.2"
 hermit-entry = { version = "0.9", features = ["loader"] }
 lazy_static = "1.4"

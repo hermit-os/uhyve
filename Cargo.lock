@@ -420,12 +420,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "gdbstub"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09a8b954f9d02b74fe8e89a1c77bd9a6b8206713ebf1b272bfad9573b4a86f88"
+dependencies = [
+ "bitflags 2.4.1",
+ "cfg-if",
+ "log",
+ "managed",
+ "num-traits",
+ "paste",
+]
+
+[[package]]
 name = "gdbstub_arch"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eecb536c55c43593a00dde9074dbbdb0e81ce5f20dbca921400f8779c21dea9c"
 dependencies = [
- "gdbstub",
+ "gdbstub 0.6.6",
  "num-traits",
 ]
 
@@ -1119,7 +1133,7 @@ dependencies = [
  "criterion",
  "either",
  "env_logger",
- "gdbstub",
+ "gdbstub 0.7.0",
  "gdbstub_arch",
  "hermit-entry",
  "kvm-bindings",
