@@ -46,7 +46,7 @@ core_affinity = "0.8"
 either = "1.9"
 env_logger = "0.10"
 gdbstub = "0.6"
-gdbstub_arch = "0.2"
+gdbstub_arch = "0.3"
 hermit-entry = { version = "0.9", features = ["loader"] }
 lazy_static = "1.4"
 libc = "0.2"
