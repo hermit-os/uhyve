@@ -229,7 +229,7 @@ impl Vm for Uhyve {
 			id,
 			self.path.clone(),
 			self.args.clone(),
-			self.vm.create_vcpu(id.try_into().unwrap())?,
+			self.vm.create_vcpu(id.into())?,
 			self.mem.host_address,
 			self.virtio_device.clone(),
 		))
