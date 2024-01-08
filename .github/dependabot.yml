@@ -12,6 +12,10 @@ updates:
       gdbstub:
         patterns:
           - "gdbstub*"
+      rust-vmm:
+        patterns:
+          - "kvm-ioctls"
+          - "vmm-sys-util"
 
   - package-ecosystem: "github-actions"
     directory: "/"
