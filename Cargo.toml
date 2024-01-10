@@ -59,7 +59,7 @@ rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-kvm-bindings = "0.6"
+kvm-bindings = "0.7"
 kvm-ioctls = "0.15"
 mac_address = "1.1"
 nix = { version = "0.27", features = ["mman", "pthread", "signal"] }
