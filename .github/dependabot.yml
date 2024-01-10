@@ -15,6 +15,7 @@ updates:
       rust-vmm:
         patterns:
           - "kvm-ioctls"
+          - "kvm-bindings"
           - "vmm-sys-util"
 
   - package-ecosystem: "github-actions"
