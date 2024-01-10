@@ -18,6 +18,12 @@ updates:
           - "kvm-bindings"
           - "vmm-sys-util"
 
+  - package-ecosystem: "cargo"
+    directory: "/tests/test-kernels"
+    schedule:
+      interval: "weekly"
+      timezone: "Europe/Berlin"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
