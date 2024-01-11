@@ -1,10 +1,11 @@
 #[cfg(target_os = "hermit")]
-use hermit_sys as _;
+use hermit as _;
 
 static mut WATCH: u8 = 2;
 
 fn main() {
 	let _x = 5;
+	opaque(_x);
 	let _x = 3.5;
 
 	fn break1() {}
@@ -24,3 +25,6 @@ fn main() {
 	fn break2() {}
 	break2();
 }
+
+// See https://github.com/rust-lang/rust/pull/107404
+fn opaque(_: i32) {}
