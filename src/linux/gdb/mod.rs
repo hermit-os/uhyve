@@ -126,10 +126,11 @@ impl SingleThreadBase for GdbUhyve {
 	}
 
 	fn read_addrs(&mut self, start_addr: u64, data: &mut [u8]) -> TargetResult<usize, Self> {
+		let guest_addr = GuestVirtAddr::try_new(start_addr).map_err(|_e| TargetError::NonFatal)?;
 		// Safety: mem is copied to data before mem can be modified.
 		let src = unsafe {
 			self.vm.mem.slice_at(
-				virt_to_phys(GuestVirtAddr::new(start_addr), &self.vm.mem).map_err(|_err| ())?,
+				virt_to_phys(guest_addr, &self.vm.mem).map_err(|_err| ())?,
 				data.len(),
 			)
 		}
