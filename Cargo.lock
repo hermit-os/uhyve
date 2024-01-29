@@ -220,9 +220,9 @@ checksum = "2126f73a8916d144752737656d641afbcf2d2a0227ec457fc9e60151b27b54ab"
 
 [[package]]
 name = "byte-unit"
-version = "5.1.3"
+version = "5.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbda27216be70d08546aa506cecabce0c5eb0d494aaaedbd7ec82c8ae1a60b46"
+checksum = "33ac19bdf0b2665407c39d82dbc937e951e7e2001609f0fb32edd0af45a2d63e"
 dependencies = [
  "rust_decimal",
  "serde",
