@@ -115,9 +115,20 @@ pub fn write(mem: &MmapMemory, syswrite: &WriteParams) -> io::Result<()> {
 	let mut bytes_written: usize = 0;
 	while bytes_written != syswrite.len {
 		unsafe {
+			use std::io::{Error, ErrorKind};
+
+			use crate::mem::MemoryError;
 			let step = libc::write(
 				syswrite.fd,
-				mem.host_address(syswrite.buf + bytes_written as u64).unwrap() as *const libc::c_void,
+				mem.host_address(syswrite.buf + bytes_written as u64)
+					.map_err(|e| match e {
+						MemoryError::BoundsViolation => {
+							unreachable!("Bounds violation after host_address function")
+						}
+						MemoryError::WrongMemoryError => {
+							Error::new(ErrorKind::AddrNotAvailable, e.to_string())
+						}
+					})? as *const libc::c_void,
 				syswrite.len - bytes_written,
 			);
 			if step >= 0 {
