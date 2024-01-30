@@ -124,7 +124,8 @@ impl UhyveVm<KvmCpu> {
 						}
 						Err(err) => {
 							error!("CPU {} crashed with {:?}", cpu_id, err);
-							None
+							barrier.wait();
+							Some(err.errno())
 						}
 					}
 				})
@@ -142,12 +143,11 @@ impl UhyveVm<KvmCpu> {
 			.into_iter()
 			.filter_map(|thread| thread.join().unwrap())
 			.collect::<Vec<_>>();
-		assert_eq!(
-			1,
-			code.len(),
-			"more than one thread finished with an exit code"
-		);
-		code[0]
+		match code.len() {
+			0 => panic!("No return code from any CPU? Maybe all have been kicked?"),
+			1 => code[0],
+			_ => panic!("more than one thread finished with an exit code (codes: {code:?})"),
+		}
 	}
 
 	fn run_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> i32 {

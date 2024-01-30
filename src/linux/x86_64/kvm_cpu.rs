@@ -14,7 +14,7 @@ use crate::{
 	vcpu::{VcpuStopReason, VirtualCPU},
 	virtio::*,
 	vm::UhyveVm,
-	HypervisorResult,
+	HypervisorError, HypervisorResult,
 };
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
@@ -425,7 +425,8 @@ impl VirtualCPU for KvmCpu {
 									hypercall::read(&self.parent_vm.mem, sysread)
 								}
 								Hypercall::FileWrite(syswrite) => {
-									hypercall::write(&self.parent_vm.mem, syswrite)?
+									hypercall::write(&self.parent_vm.mem, syswrite)
+										.map_err(|_e| HypervisorError::new(libc::EFAULT))?
 								}
 								Hypercall::FileUnlink(sysunlink) => {
 									hypercall::unlink(&self.parent_vm.mem, sysunlink)
