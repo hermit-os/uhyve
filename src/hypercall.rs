@@ -1,13 +1,15 @@
 use std::{
 	ffi::{OsStr, OsString},
-	io,
-	io::Write,
+	io::{self, Error, ErrorKind, Write},
 	os::unix::ffi::OsStrExt,
 };
 
 use uhyve_interface::{parameters::*, GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC};
 
-use crate::mem::MmapMemory;
+use crate::{
+	mem::{MemoryError, MmapMemory},
+	virt_to_phys,
+};
 
 /// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
 /// parameter that was send to that address by the guest.
@@ -99,7 +101,8 @@ pub fn read(mem: &MmapMemory, sysread: &mut ReadPrams) {
 	unsafe {
 		let bytes_read = libc::read(
 			sysread.fd,
-			mem.host_address(sysread.buf).unwrap() as *mut libc::c_void,
+			mem.host_address(virt_to_phys(sysread.buf, mem).unwrap())
+				.unwrap() as *mut libc::c_void,
 			sysread.len,
 		);
 		if bytes_read >= 0 {
@@ -115,12 +118,9 @@ pub fn write(mem: &MmapMemory, syswrite: &WriteParams) -> io::Result<()> {
 	let mut bytes_written: usize = 0;
 	while bytes_written != syswrite.len {
 		unsafe {
-			use std::io::{Error, ErrorKind};
-
-			use crate::mem::MemoryError;
 			let step = libc::write(
 				syswrite.fd,
-				mem.host_address(syswrite.buf + bytes_written as u64)
+				mem.host_address(virt_to_phys(syswrite.buf + bytes_written as u64, mem).unwrap())
 					.map_err(|e| match e {
 						MemoryError::BoundsViolation => {
 							unreachable!("Bounds violation after host_address function")
