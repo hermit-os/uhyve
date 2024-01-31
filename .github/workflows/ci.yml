@@ -48,34 +48,8 @@ jobs:
       - name: Run images
         run: |
           cargo run -- -v data/x86_64/hello_world
+          cargo run -- -v benches_data/rusty_demo
           cargo run -- -v data/x86_64/hello_c
-
-  rusty_demo:
-    name: rusty_demo
-    runs-on: [self-hosted]
-    steps:
-      - name: Install NASM
-        run: |
-          sudo apt-get update
-          sudo apt-get install nasm
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/checkout@v4
-        with:
-          path: uhyve
-      - uses: actions/checkout@v4
-        with:
-          repository: hermitcore/hermit-rs
-          path: hermit-rs
-          submodules: true
-      - name: Build rusty_demo
-        run: cargo build -Zbuild-std=core,alloc,std,panic_abort -Zbuild-std-features=compiler-builtins-mem --target x86_64-unknown-hermit --package rusty_demo
-        working-directory: hermit-rs
-      - name: Run rusty_demo
-        run: RUST_LOG=debug cargo run -- --verbose ../hermit-rs/target/x86_64-unknown-hermit/debug/rusty_demo
-        working-directory: uhyve
-      - name: Run rusty_demo
-        run: RUST_LOG=debug cargo run --release -- --verbose ../hermit-rs/target/x86_64-unknown-hermit/debug/rusty_demo
-        working-directory: uhyve
 
   fmt:
     name: Format
