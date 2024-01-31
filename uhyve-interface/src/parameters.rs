@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::{GuestPhysAddr, MAX_ARGC_ENVC};
+use crate::{GuestPhysAddr, GuestVirtAddr, MAX_ARGC_ENVC};
 
 /// Parameters for a [`Cmdsize`](crate::Hypercall::Cmdsize) hypercall which provides the lengths of the items in the argument end environment vector.
 #[repr(C, packed)]
@@ -84,7 +84,7 @@ pub struct WriteParams {
 	/// File descriptor of the file.
 	pub fd: i32,
 	/// Buffer to be written into the file.
-	pub buf: GuestPhysAddr,
+	pub buf: GuestVirtAddr,
 	/// Number of bytes in the buffer to be written.
 	pub len: usize,
 }
@@ -96,7 +96,7 @@ pub struct ReadPrams {
 	/// File descriptor of the file.
 	pub fd: i32,
 	/// Buffer to read the file into.
-	pub buf: GuestPhysAddr,
+	pub buf: GuestVirtAddr,
 	/// Number of bytes to read into the buffer.
 	pub len: usize,
 	/// Number of bytes read on success. `-1` on failure.
