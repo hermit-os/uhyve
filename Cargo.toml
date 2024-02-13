@@ -41,7 +41,7 @@ instrument = ["rftrace", "rftrace-frontend"]
 
 [dependencies]
 byte-unit = { version = "5", features = ["byte"] }
-clap = { version = "4.4", features = ["derive", "env"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 core_affinity = "0.8"
 either = "1.9"
 env_logger = "0.10"
