@@ -82,32 +82,18 @@ jobs:
 
   clippy:
     name: Clippy
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        arch: [x86_64, aarch64]
-        os: [ubuntu-latest, macos-latest]
-        exclude:
-          - arch: aarch64
-            os: ubuntu-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Detect target
-        run: |
-          case ${{ matrix.os }} in
-            ubuntu*) suffix=unknown-linux-gnu ;;
-            macos*) suffix=apple-darwin ;;
-          esac
-          echo "target=${{ matrix.arch }}-$suffix" >> $GITHUB_OUTPUT
-        id: detect_target
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ steps.detect_target.outputs.target }}
+          targets: x86_64-unknown-linux-gnu, x86_64-apple-darwin, aarch64-apple-darwin
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --target x86_64-unknown-linux-gnu --target x86_64-apple-darwin --target aarch64-apple-darwin -- -D warnings
   
   clippy-test-kernel:
     name: Clippy test-kernels
