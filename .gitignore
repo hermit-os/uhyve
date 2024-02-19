@@ -4,3 +4,5 @@
 lcov.info
 *.profraw
 *.profdata
+
+.vscode
