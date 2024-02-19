@@ -45,7 +45,9 @@ jobs:
       - run: git lfs checkout
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - run: cargo build
       - name: Run images
+        timeout-minutes: 1
         run: |
           cargo run -- -v data/x86_64/hello_world
           cargo run -- -v benches_data/rusty_demo
