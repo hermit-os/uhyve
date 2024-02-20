@@ -82,18 +82,28 @@ jobs:
 
   clippy:
     name: Clippy
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            targets: x86_64-unknown-linux-gnu
+            flags: --target x86_64-unknown-linux-gnu
+          - os: macos-latest
+            targets: x86_64-apple-darwin, aarch64-apple-darwin
+            flags: --target x86_64-apple-darwin --target aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-gnu, x86_64-apple-darwin, aarch64-apple-darwin
+          targets: ${{ matrix.targets }}
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Clippy
-        run: cargo clippy --all-targets --target x86_64-unknown-linux-gnu --target x86_64-apple-darwin --target aarch64-apple-darwin -- -D warnings
+        run: cargo clippy --all-targets ${{ matrix.flags }} -- -D warnings
   
   clippy-test-kernel:
     name: Clippy test-kernels
