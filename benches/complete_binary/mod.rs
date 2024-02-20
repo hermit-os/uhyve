@@ -46,6 +46,8 @@ pub fn run_hello_world(c: &mut Criterion) {
 		b.iter(|| {
 			let status = Command::new(&uhyve_path)
 				.arg(&hello_world_path)
+				.arg("-m")
+				.arg("64M")
 				.stdout(Stdio::null())
 				.status()
 				.expect("failed to execute process");
