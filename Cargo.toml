@@ -65,6 +65,7 @@ mac_address = "1.1"
 nix = { version = "0.27", features = ["mman", "pthread", "signal"] }
 tun-tap = { version = "0.1", default-features = false }
 virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
+vm-memory = { version = "0.12", features = ["backend-mmap"] }
 vmm-sys-util = "0.12"
 
 [target.'cfg(target_os = "macos")'.dependencies]

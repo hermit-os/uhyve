@@ -5,7 +5,7 @@ use std::{
 	cmp,
 	ffi::OsString,
 	fmt, mem,
-	os::{fd::BorrowedFd, raw::c_void},
+	os::raw::c_void,
 	path::{Path, PathBuf},
 	ptr,
 	sync::{Arc, Mutex},
@@ -17,6 +17,10 @@ use kvm_ioctls::VmFd;
 use log::debug;
 use nix::sys::mman::*;
 use vmm_sys_util::eventfd::EventFd;
+use vm_memory::{
+	GuestAddress, GuestMemoryMmap, GuestMemoryRegion, GuestRegionMmap, MemoryRegionAddress,
+	MmapRegion,
+};
 use x86_64::{
 	structures::paging::{Page, PageTable, PageTableFlags, Size2MiB},
 	PhysAddr,
@@ -302,6 +306,7 @@ struct MmapMemory {
 	memory_size: usize,
 	guest_address: usize,
 	host_address: usize,
+	pub mmap: vm_memory::GuestMemoryMmap,
 }
 
 impl MmapMemory {
@@ -312,37 +317,33 @@ impl MmapMemory {
 		huge_pages: bool,
 		mergeable: bool,
 	) -> MmapMemory {
-		let host_address = unsafe {
-			mmap::<BorrowedFd<'_>>(
-				None,
-				memory_size.try_into().unwrap(),
-				ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
-				MapFlags::MAP_PRIVATE | MapFlags::MAP_ANONYMOUS | MapFlags::MAP_NORESERVE,
-				None,
-				0,
-			)
-			.expect("mmap failed")
-		};
+		let regionmap = GuestRegionMmap::new(
+			MmapRegion::new(memory_size).unwrap(),
+			GuestAddress(guest_address),
+		)
+		.unwrap();
 
 		if mergeable {
 			debug!("Enable kernel feature to merge same pages");
-			unsafe {
-				madvise(host_address, memory_size, MmapAdvise::MADV_MERGEABLE).unwrap();
-			}
+			// TODO: implement flags
+			assert!(regionmap.flags() | MmapAdvise::MADV_MERGEABLE as i32 != 0);
 		}
 
 		if huge_pages {
 			debug!("Uhyve uses huge pages");
-			unsafe {
-				madvise(host_address, memory_size, MmapAdvise::MADV_HUGEPAGE).unwrap();
-			}
+			// TODO: implement flags
+			assert!(regionmap.flags() | MmapAdvise::MADV_HUGEPAGE as i32 != 0);
 		}
+
+		let host_address = regionmap.get_host_address(MemoryRegionAddress(0)).unwrap();
+		let mmap = GuestMemoryMmap::from_regions(vec![regionmap]).unwrap();
 
 		MmapMemory {
 			flags,
 			memory_size,
 			guest_address: guest_address as usize,
 			host_address: host_address as usize,
+			mmap,
 		}
 	}
 
