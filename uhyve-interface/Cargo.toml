@@ -15,3 +15,8 @@ categories = ["os"]
 [dependencies]
 num_enum = { version = "0.7", default-features = false }
 x86_64 = { version = "0.14", default-features = false }
+log = {version = "0.4", optional = true}
+
+[features]
+std = ["dep:log"]
+

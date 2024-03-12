@@ -147,8 +147,8 @@ impl Vm for Uhyve {
 		self.path.as_path()
 	}
 
-	fn create_cpu(&self, id: u32) -> HypervisorResult<UhyveCPU> {
-		Ok(UhyveCPU::new(
+	fn create_cpu(&self, id: u32) -> HypervisorResult<XhyveCpu> {
+		Ok(XhyveCpu::new(
 			id,
 			self.path.clone(),
 			self.args.clone(),
@@ -160,7 +160,7 @@ impl Vm for Uhyve {
 		self.boot_info = header;
 	}
 
-	fn init_guest_mem(&self) {
+	fn init_guest_mem(&mut self) {
 		debug!("Initialize guest memory");
 
 		let (mem_addr, _) = self.guest_mem();

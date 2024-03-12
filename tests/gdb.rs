@@ -12,7 +12,7 @@ use std::{
 
 use assert_fs::{assert::PathAssert, fixture::PathChild, TempDir};
 use common::build_hermit_bin;
-use uhyvelib::{params::Params, Uhyve};
+use uhyvelib::{params::Params, vm::UhyveVm};
 
 #[test]
 fn gdb() -> io::Result<()> {
@@ -22,7 +22,7 @@ fn gdb() -> io::Result<()> {
 	let bin_path_clone = bin_path.clone();
 	let vm = thread::spawn(move || {
 		let bin_path = bin_path_clone;
-		let vm = Uhyve::new(
+		let vm = UhyveVm::new(
 			bin_path,
 			Params {
 				verbose: true,

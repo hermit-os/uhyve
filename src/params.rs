@@ -32,7 +32,6 @@ pub struct Params {
 	pub pit: bool,
 
 	/// GDB server port
-	#[cfg(target_os = "linux")]
 	pub gdb_port: Option<u16>,
 
 	/// Arguments to forward to the kernel
@@ -52,7 +51,6 @@ impl Default for Params {
 			#[cfg(target_os = "linux")]
 			pit: false,
 			cpu_count: Default::default(),
-			#[cfg(target_os = "linux")]
 			gdb_port: Default::default(),
 			kernel_args: Default::default(),
 		}

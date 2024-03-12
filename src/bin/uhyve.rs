@@ -11,7 +11,7 @@ use either::Either;
 use thiserror::Error;
 use uhyvelib::{
 	params::{CpuCount, GuestMemorySize, Params},
-	Uhyve,
+	vm::UhyveVm,
 };
 
 #[cfg(feature = "instrument")]
@@ -262,6 +262,8 @@ impl From<Args> for Params {
 			pit,
 			#[cfg(target_os = "linux")]
 			gdb_port,
+			#[cfg(target_os = "macos")]
+			gdb_port: None,
 			kernel_args,
 		}
 	}
@@ -279,9 +281,10 @@ fn run_uhyve() -> i32 {
 	let affinity = args.cpu_args.clone().get_affinity(&mut app);
 	let params = Params::from(args);
 
-	Uhyve::new(kernel, params)
-		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?")
-		.run(affinity)
+	let vm = UhyveVm::new(kernel, params)
+		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?");
+
+	vm.run(affinity)
 }
 
 fn main() {

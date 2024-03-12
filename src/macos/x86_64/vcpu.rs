@@ -2,18 +2,16 @@
 
 use std::{
 	arch::x86_64::__cpuid_count,
-	ffi::OsString,
-	path::{Path, PathBuf},
 	sync::{Arc, Mutex},
 };
 
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use lazy_static::lazy_static;
 use log::{debug, trace};
-use uhyve_interface::Hypercall;
+use uhyve_interface::{GuestPhysAddr, Hypercall};
 use x86_64::{
 	registers::control::{Cr0Flags, Cr4Flags},
-	structures::{gdt::SegmentSelector, paging::PageTableFlags},
+	structures::gdt::SegmentSelector,
 	PrivilegeLevel,
 };
 use xhypervisor::{
@@ -33,9 +31,15 @@ use xhypervisor::{
 
 use crate::{
 	consts::*,
+	hypercall,
+	hypercall::{copy_argv, copy_env},
 	macos::x86_64::ioapic::IoApic,
-	vm::{HypervisorResult, VcpuStopReason, VirtualCPU},
+	vcpu::{VcpuStopReason, VirtualCPU},
+	vm::UhyveVm,
+	HypervisorResult,
 };
+
+static IOAPIC: Mutex<Option<IoApic>> = Mutex::new(None);
 
 /// Extracted from `x86::msr`.
 mod msr {
@@ -151,35 +155,14 @@ lazy_static! {
 	};
 }
 
-pub struct UhyveCPU {
+pub struct XhyveCpu {
 	id: u32,
-	kernel_path: PathBuf,
-	args: Vec<OsString>,
 	vcpu: xhypervisor::VirtualCpu,
-	vm_start: usize,
+	parent_vm: Arc<UhyveVm<Self>>,
 	apic_base: u64,
-	ioapic: Arc<Mutex<IoApic>>,
 }
 
-impl UhyveCPU {
-	pub fn new(
-		id: u32,
-		kernel_path: PathBuf,
-		args: Vec<OsString>,
-		vm_start: usize,
-		ioapic: Arc<Mutex<IoApic>>,
-	) -> UhyveCPU {
-		UhyveCPU {
-			id,
-			kernel_path,
-			args,
-			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
-			vm_start,
-			apic_base: APIC_DEFAULT_BASE,
-			ioapic,
-		}
-	}
-
+impl XhyveCpu {
 	fn setup_system_gdt(&mut self) -> Result<(), xhypervisor::Error> {
 		debug!("Setup GDT");
 
@@ -202,10 +185,11 @@ impl UhyveCPU {
 		self.vcpu.write_vmcs(VMCS_GUEST_GS_BASE, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_GS_AR, 0x4093)?;
 
-		self.vcpu.write_vmcs(VMCS_GUEST_GDTR_BASE, BOOT_GDT)?;
+		self.vcpu
+			.write_vmcs(VMCS_GUEST_GDTR_BASE, BOOT_GDT.as_u64())?;
 		self.vcpu.write_vmcs(
 			VMCS_GUEST_GDTR_LIMIT,
-			((std::mem::size_of::<u64>() * BOOT_GDT_MAX as usize) - 1) as u64,
+			((std::mem::size_of::<u64>() * BOOT_GDT_MAX) - 1) as u64,
 		)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_IDTR_BASE, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_IDTR_LIMIT, 0xffff)?;
@@ -270,7 +254,8 @@ impl UhyveCPU {
 
 		self.vcpu.write_register(&Register::CR0, cr0.bits())?;
 		self.vcpu.write_register(&Register::CR4, cr4.bits())?;
-		self.vcpu.write_register(&Register::CR3, BOOT_PML4)?;
+		self.vcpu
+			.write_register(&Register::CR3, BOOT_PML4.as_u64())?;
 		self.vcpu.write_register(&Register::DR7, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_ESP, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_EIP, 0)?;
@@ -507,8 +492,15 @@ impl UhyveCPU {
 		let qualification = self.vcpu.read_vmcs(VMCS_RO_EXIT_QUALIFIC)?;
 		let read = (qualification & (1 << 0)) != 0;
 		let write = (qualification & (1 << 1)) != 0;
-		let code =
-			unsafe { std::slice::from_raw_parts(self.host_address(rip as usize) as *const u8, 8) };
+		let code = unsafe {
+			std::slice::from_raw_parts(
+				self.parent_vm
+					.mem
+					.host_address(GuestPhysAddr::new(rip))
+					.unwrap(),
+				8,
+			)
+		};
 
 		if let Ok(instr) = disassemble_64(code, rip as usize, code.len()) {
 			match instr.operation {
@@ -542,14 +534,21 @@ impl UhyveCPU {
 							}
 						};
 
-						self.ioapic
+						IOAPIC
 							.lock()
 							.unwrap()
+							.as_mut()
+							.expect("IOAPIC not initialized")
 							.write(address - IOAPIC_BASE, val);
 					}
 
 					if read {
-						let value = self.ioapic.lock().unwrap().read(address - IOAPIC_BASE);
+						let value = IOAPIC
+							.lock()
+							.unwrap()
+							.as_mut()
+							.expect("IOAPIC not initialized")
+							.read(address - IOAPIC_BASE);
 
 						match instr.operands[0].operand {
 							OperandType::REG_EDI => {
@@ -593,9 +592,7 @@ impl UhyveCPU {
 	pub fn get_vcpu(&self) -> &xhypervisor::VirtualCpu {
 		&self.vcpu
 	}
-}
 
-impl VirtualCPU for UhyveCPU {
 	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
 		self.setup_capabilities()?;
 		self.setup_msr()?;
@@ -616,7 +613,8 @@ impl VirtualCPU for UhyveCPU {
 		self.vcpu.write_register(&Register::RCX, 0)?;
 		self.vcpu.write_register(&Register::RDX, 0)?;
 		self.vcpu.write_register(&Register::RSI, cpu_id.into())?;
-		self.vcpu.write_register(&Register::RDI, BOOT_INFO_ADDR)?;
+		self.vcpu
+			.write_register(&Register::RDI, BOOT_INFO_ADDR.as_u64())?;
 		self.vcpu.write_register(&Register::R8, 0)?;
 		self.vcpu.write_register(&Register::R9, 0)?;
 		self.vcpu.write_register(&Register::R10, 0)?;
@@ -630,45 +628,19 @@ impl VirtualCPU for UhyveCPU {
 
 		Ok(())
 	}
+}
 
-	fn kernel_path(&self) -> &Path {
-		self.kernel_path.as_path()
-	}
+impl VirtualCPU for XhyveCpu {
+	fn new(id: u32, parent_vm: Arc<UhyveVm<Self>>) -> HypervisorResult<Self> {
+		let mut vcpu = XhyveCpu {
+			id,
+			parent_vm: parent_vm.clone(),
+			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
+			apic_base: APIC_DEFAULT_BASE,
+		};
+		vcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
 
-	fn args(&self) -> &[OsString] {
-		self.args.as_slice()
-	}
-
-	fn host_address(&self, addr: usize) -> usize {
-		addr + self.vm_start
-	}
-
-	fn virt_to_phys(&self, addr: usize) -> usize {
-		/// Number of Offset bits of a virtual address for a 4 KiB page, which are shifted away to get its Page Frame Number (PFN).
-		pub const PAGE_BITS: usize = 12;
-
-		/// Number of bits of the index in each table (PML4, PDPT, PDT, PGT).
-		pub const PAGE_MAP_BITS: usize = 9;
-
-		let executable_disable_mask = !usize::try_from(PageTableFlags::NO_EXECUTE.bits()).unwrap();
-		let mut page_table = self.host_address(BOOT_PML4 as usize) as *const usize;
-		let mut page_bits = 39;
-		let mut entry: usize = 0;
-
-		for _i in 0..4 {
-			let index = (addr >> page_bits) & ((1 << PAGE_MAP_BITS) - 1);
-			entry = unsafe { *page_table.add(index) & executable_disable_mask };
-
-			// bit 7 is set if this entry references a 1 GiB (PDPT) or 2 MiB (PDT) page.
-			if entry & usize::try_from(PageTableFlags::HUGE_PAGE.bits()).unwrap() != 0 {
-				return (entry & ((!0usize) << page_bits)) | (addr & !((!0usize) << page_bits));
-			} else {
-				page_table = self.host_address(entry & !((1 << PAGE_BITS) - 1)) as *const usize;
-				page_bits -= PAGE_MAP_BITS;
-			}
-		}
-
-		(entry & ((!0usize) << PAGE_BITS)) | (addr & !((!0usize) << PAGE_BITS))
+		Ok(vcpu)
 	}
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
@@ -744,30 +716,42 @@ impl VirtualCPU for UhyveCPU {
 
 					assert!(!input, "Invalid I/O operation");
 
-					let data_addr: u64 = self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF;
-					if let Some(hypercall) =
-						unsafe { self.address_to_hypercall(port, data_addr as usize) }
-					{
+					let data_addr =
+						GuestPhysAddr::new(self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF);
+					if let Some(hypercall) = unsafe {
+						hypercall::address_to_hypercall(&self.parent_vm.mem, port, data_addr)
+					} {
 						match hypercall {
-							Hypercall::Cmdsize(syssize) => self.cmdsize(syssize),
-							Hypercall::Cmdval(syscmdval) => self.cmdval(syscmdval),
+							Hypercall::Cmdsize(syssize) => {
+								syssize.update(self.parent_vm.kernel_path(), self.parent_vm.args())
+							}
+							Hypercall::Cmdval(syscmdval) => {
+								copy_argv(
+									self.parent_vm.kernel_path().as_os_str(),
+									self.parent_vm.args(),
+									syscmdval,
+									&self.parent_vm.mem,
+								);
+								copy_env(syscmdval, &self.parent_vm.mem);
+							}
 							Hypercall::Exit(sysexit) => {
-								return Ok(VcpuStopReason::Exit(self.exit(sysexit)))
+								return Ok(VcpuStopReason::Exit(sysexit.arg));
 							}
-							Hypercall::FileClose(sysclose) => self.close(sysclose),
-							Hypercall::FileLseek(syslseek) => self.lseek(syslseek),
-							Hypercall::FileOpen(sysopen) => self.open(sysopen),
-							Hypercall::FileRead(sysread) => self.read(sysread),
+							Hypercall::FileClose(sysclose) => hypercall::close(sysclose),
+							Hypercall::FileLseek(syslseek) => hypercall::lseek(syslseek),
+							Hypercall::FileOpen(sysopen) => {
+								hypercall::open(&self.parent_vm.mem, sysopen)
+							}
+							Hypercall::FileRead(sysread) => {
+								hypercall::read(&self.parent_vm.mem, sysread)
+							}
 							Hypercall::FileWrite(syswrite) => {
-								// Return an error for proper handling
-								self.write(syswrite).unwrap()
+								hypercall::write(&self.parent_vm.mem, syswrite).unwrap()
 							}
-							Hypercall::FileUnlink(sysunlink) => self.unlink(sysunlink),
-							Hypercall::SerialWriteByte(_char) => {
-								// TODO Not sure why this call works different on macos...
-								let al = (self.vcpu.read_register(&Register::RAX)? & 0xFF) as u8;
-								self.uart(&[al]).unwrap();
+							Hypercall::FileUnlink(sysunlink) => {
+								hypercall::unlink(&self.parent_vm.mem, sysunlink)
 							}
+							Hypercall::SerialWriteByte(buf) => hypercall::uart(&[buf]).unwrap(),
 							_ => panic!("Got unknown hypercall {:?}", hypercall),
 						}
 						self.vcpu.write_register(&Register::RIP, rip + len)?;
@@ -952,7 +936,7 @@ impl VirtualCPU for UhyveCPU {
 	}
 }
 
-impl Drop for UhyveCPU {
+impl Drop for XhyveCpu {
 	fn drop(&mut self) {
 		self.vcpu.destroy().unwrap();
 	}
