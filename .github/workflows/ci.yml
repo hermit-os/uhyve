@@ -129,6 +129,8 @@ jobs:
     name: Coverage
     runs-on: [self-hosted]
     steps:
+      - name: Test
+        run: echo $HOME && cd ~ && pwd && cd -
       - name: Install gdb
         run: |
           sudo apt-get update
@@ -147,3 +149,5 @@ jobs:
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
+    env:
+      HOME: "/root"
