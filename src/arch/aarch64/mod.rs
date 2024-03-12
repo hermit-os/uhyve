@@ -1,7 +1,13 @@
-use crate::consts::{BOOT_INFO_ADDR, BOOT_PGT, PAGE_SIZE};
-use bitflags::bitflags;
 use std::mem::size_of;
-use uhyve_interface::GuestPhysAddr;
+
+use bitflags::bitflags;
+use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
+
+use crate::{
+	consts::{BOOT_INFO_ADDR, BOOT_PGT},
+	mem::MmapMemory,
+	paging::PagetableError,
+};
 
 pub const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x00);
 
@@ -21,6 +27,16 @@ pub const MT_DEVICE_nGnRE: u64 = 1;
 pub const MT_DEVICE_GRE: u64 = 2;
 pub const MT_NORMAL_NC: u64 = 3;
 pub const MT_NORMAL: u64 = 4;
+
+/// Number of Offset bits of a virtual address for a 4 KiB page, which are shifted away to get its Page Frame Number (PFN).
+const PAGE_BITS: usize = 12;
+const PAGE_SIZE: usize = 1 << PAGE_BITS;
+
+/// Number of bits of the index in each table (L0Table, L1Table, L2Table, L3Table).
+const PAGE_MAP_BITS: usize = 9;
+
+/// A mask where PAGE_MAP_BITS are set to calculate a table index.
+const PAGE_MAP_MASK: u64 = 0x1FF;
 
 #[inline(always)]
 pub const fn mair(attr: u64, mt: u64) -> u64 {
@@ -60,6 +76,75 @@ bitflags! {
 		/// Debug mask bit
 		const D_BIT	= 0x00000200;
 	}
+}
+
+/// An entry in a L0 page table (coarses). Adapted from hermit-os/kernel.
+#[derive(Clone, Copy, Debug)]
+struct PageTableEntry {
+	/// Physical memory address this entry refers, combined with flags from PageTableEntryFlags.
+	physical_address_and_flags: GuestPhysAddr,
+}
+
+impl PageTableEntry {
+	/// Return the stored physical address.
+	pub fn address(&self) -> GuestPhysAddr {
+		// For other granules than 4KiB or hugepages we should check the DESCRIPTOR_TYPE bit and modify the address translation accordingly.
+		GuestPhysAddr(
+			self.physical_address_and_flags.as_u64() & !(PAGE_SIZE as u64 - 1) & !(u64::MAX << 48),
+		)
+	}
+}
+impl From<u64> for PageTableEntry {
+	fn from(i: u64) -> Self {
+		Self {
+			physical_address_and_flags: GuestPhysAddr::new(i),
+		}
+	}
+}
+
+/// Returns whether the given virtual address is a valid one in the AArch64 memory model.
+///
+/// Current AArch64 supports only 48-bit for virtual memory addresses.
+/// The upper bits must always be 0 or 1 and indicate whether TBBR0 or TBBR1 contains the
+/// base address. So always enforce 0 here.
+fn is_valid_address(virtual_address: GuestVirtAddr) -> bool {
+	virtual_address < GuestVirtAddr(0x1_0000_0000_0000)
+}
+
+/// Converts a virtual address in the guest to a physical address in the guest
+pub fn virt_to_phys(
+	addr: GuestVirtAddr,
+	mem: &MmapMemory,
+) -> Result<GuestPhysAddr, PagetableError> {
+	if !is_valid_address(addr) {
+		return Err(PagetableError::InvalidAddress);
+	}
+
+	// Assumptions:
+	// - We use 4KiB granule
+	// - We use maximum VA length
+	// => We have 4 level paging
+
+	// Safety:
+	// - We are only working in the vm's memory
+	// - the memory location of the pagetable is not altered by hermit.
+	// - Our indices can't be larger than 512, so we stay in the borders of the page.
+	// - We are page_aligned, and thus also PageTableEntry aligned.
+	let mut pagetable: &[PageTableEntry] =
+		unsafe { std::mem::transmute(mem.slice_at(BOOT_PGT, PAGE_SIZE).unwrap()) };
+	// TODO: Depending on the virtual address length and granule (defined in TCR register by TG and TxSZ), we could reduce the number of pagetable walks. Hermit doesn't do this at the moment.
+	for level in 0..3 {
+		let table_index =
+			(addr.as_u64() >> PAGE_BITS >> ((3 - level) * PAGE_MAP_BITS) & PAGE_MAP_MASK) as usize;
+		let pte = PageTableEntry::from(pagetable[table_index]);
+		// TODO: We could stop here if we have a "Block Entry" (ARM equivalent to huge page). Currently not supported.
+
+		pagetable = unsafe { std::mem::transmute(mem.slice_at(pte.address(), PAGE_SIZE).unwrap()) };
+	}
+	let table_index = (addr.as_u64() >> PAGE_BITS & PAGE_MAP_MASK) as usize;
+	let pte = PageTableEntry::from(pagetable[table_index]);
+
+	Ok(pte.address())
 }
 
 pub fn init_guest_mem(mem: &mut [u8]) {
