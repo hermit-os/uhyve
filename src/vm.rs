@@ -68,7 +68,7 @@ fn detect_cpu_freq() -> u32 {
 #[cfg(target_os = "linux")]
 pub type VcpuDefault = crate::linux::x86_64::kvm_cpu::KvmCpu;
 #[cfg(target_os = "macos")]
-pub type VcpuDefault = crate::macos::x86_64::vcpu::XhyveCpu;
+pub type VcpuDefault = crate::macos::XhyveCpu;
 
 pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 	/// The starting position of the image in physical memory
