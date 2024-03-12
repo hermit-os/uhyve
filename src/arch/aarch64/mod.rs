@@ -58,3 +58,75 @@ bitflags! {
 		const D_BIT	= 0x00000200;
 	}
 }
+
+pub fn init_guest_mem(mem: &mut [u8]) {
+	let mem_addr = std::ptr::addr_of_mut!(mem[0]);
+
+	assert(mem.len() >= BOOT_PGT + 512 * sizeof::<u64>());
+	let pgt_slice = unsafe {
+		std::slice::from_raw_parts_mut(
+			mem_addr.offset(BOOT_PGT.try_into().unwrap()) as *mut u64,
+			512,
+		)
+	};
+	pgt_slice.fill(0);
+	pgt_slice[0] = BOOT_PGT + 0x1000 + PT_PT;
+	pgt_slice[511] = BOOT_PGT + PT_PT + PT_SELF;
+
+	assert(mem.len() >= BOOT_PGT + 0x1000 + 512 * sizeof::<u64>());
+	let pgt_slice = unsafe {
+		std::slice::from_raw_parts_mut(
+			mem_addr.offset((BOOT_PGT + 0x1000).try_into().unwrap()) as *mut u64,
+			512,
+		)
+	};
+	pgt_slice.fill(0);
+	pgt_slice[0] = BOOT_PGT + 0x2000 + PT_PT;
+
+	assert(mem.len() >= BOOT_PGT + 0x2000 + 512 * sizeof::<u64>());
+	let pgt_slice = unsafe {
+		std::slice::from_raw_parts_mut(
+			mem_addr.offset((BOOT_PGT + 0x2000).try_into().unwrap()) as *mut u64,
+			512,
+		)
+	};
+	pgt_slice.fill(0);
+	pgt_slice[0] = BOOT_PGT + 0x3000 + PT_PT;
+	pgt_slice[1] = BOOT_PGT + 0x4000 + PT_PT;
+	pgt_slice[2] = BOOT_PGT + 0x5000 + PT_PT;
+
+	assert(mem.len() >= BOOT_PGT + 0x3000 + 512 * sizeof::<u64>());
+	let pgt_slice = unsafe {
+		std::slice::from_raw_parts_mut(
+			mem_addr.offset((BOOT_PGT + 0x3000).try_into().unwrap()) as *mut u64,
+			512,
+		)
+	};
+	pgt_slice.fill(0);
+	// map uhyve ports into the virtual address space
+	pgt_slice[0] = PT_MEM_CD;
+	// map BootInfo into the virtual address space
+	pgt_slice[BOOT_INFO_ADDR as usize / PAGE_SIZE] = BOOT_INFO_ADDR + PT_MEM;
+
+	assert(mem.len() >= BOOT_PGT + 0x4000 + 512 * sizeof::<u64>());
+	let pgt_slice = unsafe {
+		std::slice::from_raw_parts_mut(
+			mem_addr.offset((BOOT_PGT + 0x4000).try_into().unwrap()) as *mut u64,
+			512,
+		)
+	};
+	for (idx, i) in pgt_slice.iter_mut().enumerate() {
+		*i = 0x200000u64 + (idx * PAGE_SIZE) as u64 + PT_MEM;
+	}
+
+	assert(mem.len() >= BOOT_PGT + 0x5000 + 512 * sizeof::<u64>());
+	let pgt_slice = unsafe {
+		std::slice::from_raw_parts_mut(
+			mem_addr.offset((BOOT_PGT + 0x5000).try_into().unwrap()) as *mut u64,
+			512,
+		)
+	};
+	for (idx, i) in pgt_slice.iter_mut().enumerate() {
+		*i = 0x400000u64 + (idx * PAGE_SIZE) as u64 + PT_MEM;
+	}
+}
