@@ -1,13 +1,10 @@
 #![allow(non_snake_case)]
 #![allow(clippy::identity_op)]
 
-use std::{
-	ffi::OsString,
-	path::{Path, PathBuf},
-};
+use std::sync::Arc;
 
 use log::debug;
-use uhyve_interface::Hypercall;
+use uhyve_interface::{GuestPhysAddr, Hypercall};
 use xhypervisor::{self, Register, SystemRegister, VirtualCpuExitReason};
 
 use crate::{
@@ -16,28 +13,19 @@ use crate::{
 		PSR, TCR_FLAGS, TCR_TG1_4K, VA_BITS,
 	},
 	consts::*,
-	vm::{HypervisorResult, VcpuStopReason, VirtualCPU},
+	hypercall,
+	vcpu::{VcpuStopReason, VirtualCPU},
+	vm::UhyveVm,
+	HypervisorResult,
 };
 
 pub struct XhyveCpu {
 	id: u32,
-	kernel_path: PathBuf,
-	args: Vec<OsString>,
 	vcpu: xhypervisor::VirtualCpu,
+	parent_vm: Arc<UhyveVm<Self>>,
 }
 
 impl XhyveCpu {
-	pub fn new(id: u32, kernel_path: PathBuf, args: Vec<OsString>) -> XhyveCpu {
-		Self {
-			id,
-			kernel_path,
-			args,
-			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
-		}
-	}
-}
-
-impl VirtualCPU for XhyveCpu {
 	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
 		debug!("Initialize VirtualCPU");
 
@@ -145,13 +133,18 @@ impl VirtualCPU for XhyveCpu {
 
 		Ok(())
 	}
+}
 
-	fn kernel_path(&self) -> &Path {
-		self.kernel_path.as_path()
-	}
+impl VirtualCPU for XhyveCpu {
+	fn new(id: u32, parent_vm: Arc<UhyveVm<Self>>) -> HypervisorResult<Self> {
+		let mut vcpu = XhyveCpu {
+			id,
+			parent_vm: parent_vm.clone(),
+			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
+		};
+		vcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
 
-	fn args(&self) -> &[OsString] {
-		self.args.as_slice()
+		Ok(vcpu)
 	}
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
@@ -168,18 +161,18 @@ impl VirtualCPU for XhyveCpu {
 						let addr: u16 = exception.physical_address.try_into().unwrap();
 						let pc = self.vcpu.read_register(Register::PC)?;
 
-						let data_addr = self.vcpu.read_register(Register::X8)?;
-						if let Some(hypercall) =
-							unsafe { self.address_to_hypercall(addr, data_addr as usize) }
-						{
+						let data_addr = GuestPhysAddr::new(self.vcpu.read_register(Register::X8)?);
+						if let Some(hypercall) = unsafe {
+							hypercall::address_to_hypercall(&self.parent_vm.mem, addr, data_addr)
+						} {
 							match hypercall {
 								Hypercall::SerialWriteByte(_char) => {
 									let x8 = (self.vcpu.read_register(Register::X8)? & 0xFF) as u8;
 
-									self.uart(&[x8]).unwrap();
+									hypercall::uart(&[x8]).unwrap();
 								}
 								Hypercall::Exit(sysexit) => {
-									return Ok(VcpuStopReason::Exit(self.exit(sysexit)));
+									return Ok(VcpuStopReason::Exit(sysexit.arg));
 								}
 								_ => {
 									panic! {"Hypercall {hypercall:?} not implemented on macos-aarch64"}

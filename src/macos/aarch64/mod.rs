@@ -1,4 +1,3 @@
-pub mod uhyve;
 pub mod vcpu;
 
 /// The size of a page.
