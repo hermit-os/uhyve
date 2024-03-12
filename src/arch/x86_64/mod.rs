@@ -237,6 +237,11 @@ pub fn virt_to_phys(
 	Ok(entry.addr() + (addr.as_u64() & !((!0u64) << PAGE_BITS)))
 }
 
+pub fn init_guest_mem(mem: &mut [u8]) {
+	// TODO: we should maybe return an error on failure (e.g., the memory is too small)
+	initialize_pagetables(mem);
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
