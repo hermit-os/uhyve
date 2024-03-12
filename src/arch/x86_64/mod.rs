@@ -120,16 +120,16 @@ pub fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {
 		| (limit & 0x0000ffffu64)
 }
 
-pub const MIN_PAGING_MEM_SIZE: usize = BOOT_PDE.as_u64() as usize + 0x1000;
+pub const MIN_PHYSMEM_SIZE: usize = BOOT_PDE.as_u64() as usize + 0x1000;
 
 /// Creates the pagetables and the GDT in the guest memory space.
 ///
-/// The memory slice must be larger than [`MIN_PAGING_MEM_SIZE`].
+/// The memory slice must be larger than [`MIN_PHYSMEM_SIZE`].
 /// Also, the memory `mem` needs to be zeroed for [`PAGE_SIZE`] bytes at the
 /// offsets [`BOOT_PML4`] and [`BOOT_PDPTE`], otherwise the integrity of the
 /// pagetables and thus the integrity of the guest's memory is not ensured
 pub fn initialize_pagetables(mem: &mut [u8]) {
-	assert!(mem.len() >= MIN_PAGING_MEM_SIZE);
+	assert!(mem.len() >= MIN_PHYSMEM_SIZE);
 	let mem_addr = std::ptr::addr_of_mut!(mem[0]);
 
 	let (gdt_entry, pml4, pdpte, pde);
@@ -321,8 +321,8 @@ mod tests {
 
 	#[test]
 	fn test_pagetable_initialization() {
-		let mut mem: Vec<u8> = vec![0; MIN_PAGING_MEM_SIZE];
-		initialize_pagetables((&mut mem[0..MIN_PAGING_MEM_SIZE]).try_into().unwrap());
+		let mut mem: Vec<u8> = vec![0; MIN_PHYSMEM_SIZE];
+		initialize_pagetables((&mut mem[0..MIN_PHYSMEM_SIZE]).try_into().unwrap());
 
 		// Test pagetable setup
 		let addr_pdpte = u64::from_le_bytes(
@@ -369,13 +369,7 @@ mod tests {
 
 	#[test]
 	fn test_virt_to_phys() {
-		let mem = MmapMemory::new(
-			0,
-			MIN_PAGING_MEM_SIZE * 2,
-			GuestPhysAddr::new(0),
-			true,
-			true,
-		);
+		let mem = MmapMemory::new(0, MIN_PHYSMEM_SIZE * 2, GuestPhysAddr::new(0), true, true);
 		initialize_pagetables(unsafe { mem.as_slice_mut() }.try_into().unwrap());
 
 		// Get the address of the first entry in PML4 (the address of the PML4 itself)
