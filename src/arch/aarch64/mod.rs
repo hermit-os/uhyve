@@ -115,6 +115,7 @@ fn is_valid_address(virtual_address: GuestVirtAddr) -> bool {
 pub fn virt_to_phys(
 	addr: GuestVirtAddr,
 	mem: &MmapMemory,
+	pagetable_l0: GuestPhysAddr,
 ) -> Result<GuestPhysAddr, PagetableError> {
 	if !is_valid_address(addr) {
 		return Err(PagetableError::InvalidAddress);
@@ -131,7 +132,7 @@ pub fn virt_to_phys(
 	// - Our indices can't be larger than 512, so we stay in the borders of the page.
 	// - We are page_aligned, and thus also PageTableEntry aligned.
 	let mut pagetable: &[PageTableEntry] =
-		unsafe { std::mem::transmute(mem.slice_at(BOOT_PGT, PAGE_SIZE).unwrap()) };
+		unsafe { std::mem::transmute(mem.slice_at(pagetable_l0, PAGE_SIZE).unwrap()) };
 	// TODO: Depending on the virtual address length and granule (defined in TCR register by TG and TxSZ), we could reduce the number of pagetable walks. Hermit doesn't do this at the moment.
 	for level in 0..3 {
 		let table_index =
