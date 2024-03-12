@@ -18,7 +18,7 @@ use x86_64::{
 	PhysAddr,
 };
 
-use crate::{consts::*, mem::MmapMemory};
+use crate::{consts::*, mem::MmapMemory, paging::PagetableError};
 
 pub const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x00);
 const MHZ_TO_HZ: u64 = 1000000;
@@ -190,12 +190,6 @@ pub fn initialize_pagetables(mem: &mut [u8]) {
 			PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::HUGE_PAGE,
 		);
 	}
-}
-
-#[derive(Error, Debug)]
-pub enum PagetableError {
-	#[error("The accessed virtual address is not mapped")]
-	InvalidAddress,
 }
 
 /// Converts a virtual address in the guest to a physical address in the guest
