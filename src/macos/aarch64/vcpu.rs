@@ -13,7 +13,7 @@ use crate::{
 		PSR, TCR_FLAGS, TCR_TG1_4K, VA_BITS,
 	},
 	consts::*,
-	hypercall,
+	hypercall::{self, copy_argv, copy_env},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::UhyveVm,
 	HypervisorResult,
@@ -173,6 +173,31 @@ impl VirtualCPU for XhyveCpu {
 								}
 								Hypercall::Exit(sysexit) => {
 									return Ok(VcpuStopReason::Exit(sysexit.arg));
+								}
+								Hypercall::Cmdsize(syssize) => syssize
+									.update(self.parent_vm.kernel_path(), self.parent_vm.args()),
+								Hypercall::Cmdval(syscmdval) => {
+									copy_argv(
+										self.parent_vm.kernel_path().as_os_str(),
+										self.parent_vm.args(),
+										syscmdval,
+										&self.parent_vm.mem,
+									);
+									copy_env(syscmdval, &self.parent_vm.mem);
+								}
+								Hypercall::FileClose(sysclose) => hypercall::close(sysclose),
+								Hypercall::FileLseek(syslseek) => hypercall::lseek(syslseek),
+								Hypercall::FileOpen(sysopen) => {
+									hypercall::open(&self.parent_vm.mem, sysopen)
+								}
+								Hypercall::FileRead(sysread) => {
+									hypercall::read(&self.parent_vm.mem, sysread)
+								}
+								Hypercall::FileWrite(syswrite) => {
+									hypercall::write(&self.parent_vm.mem, syswrite).unwrap()
+								}
+								Hypercall::FileUnlink(sysunlink) => {
+									hypercall::unlink(&self.parent_vm.mem, sysunlink)
 								}
 								_ => {
 									panic! {"Hypercall {hypercall:?} not implemented on macos-aarch64"}
