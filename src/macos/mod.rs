@@ -12,9 +12,9 @@ use std::{
 use core_affinity::CoreId;
 
 #[cfg(target_arch = "aarch64")]
-pub use crate::macos::aarch64::{uhyve, vcpu};
+pub use crate::macos::aarch64::vcpu::XhyveCpu;
 #[cfg(target_arch = "x86_64")]
-use crate::macos::x86_64::vcpu::XhyveCpu;
+pub use crate::macos::x86_64::vcpu::XhyveCpu;
 use crate::{vcpu::VirtualCPU, vm::UhyveVm};
 
 pub type HypervisorError = xhypervisor::Error;

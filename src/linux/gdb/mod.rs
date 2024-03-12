@@ -30,6 +30,7 @@ use self::breakpoints::SwBreakpoints;
 use super::HypervisorError;
 use crate::{
 	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
+	consts::BOOT_PML4,
 	linux::{x86_64::kvm_cpu::KvmCpu, KickSignal},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::UhyveVm,
@@ -130,7 +131,7 @@ impl SingleThreadBase for GdbUhyve {
 		// Safety: mem is copied to data before mem can be modified.
 		let src = unsafe {
 			self.vm.mem.slice_at(
-				virt_to_phys(guest_addr, &self.vm.mem).map_err(|_err| ())?,
+				virt_to_phys(guest_addr, &self.vm.mem, BOOT_PML4).map_err(|_err| ())?,
 				data.len(),
 			)
 		}
@@ -143,7 +144,8 @@ impl SingleThreadBase for GdbUhyve {
 		// Safety: self.vm.mem is not altered during the lifetime of mem.
 		let mem = unsafe {
 			self.vm.mem.slice_at_mut(
-				virt_to_phys(GuestVirtAddr::new(start_addr), &self.vm.mem).map_err(|_err| ())?,
+				virt_to_phys(GuestVirtAddr::new(start_addr), &self.vm.mem, BOOT_PML4)
+					.map_err(|_err| ())?,
 				data.len(),
 			)
 		}

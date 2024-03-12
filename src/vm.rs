@@ -68,7 +68,7 @@ fn detect_cpu_freq() -> u32 {
 #[cfg(target_os = "linux")]
 pub type VcpuDefault = crate::linux::x86_64::kvm_cpu::KvmCpu;
 #[cfg(target_os = "macos")]
-pub type VcpuDefault = crate::macos::x86_64::vcpu::XhyveCpu;
+pub type VcpuDefault = crate::macos::XhyveCpu;
 
 pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 	/// The starting position of the image in physical memory
@@ -168,9 +168,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 	/// Initialize the page tables for the guest
 	fn init_guest_mem(&mut self) {
 		debug!("Initialize guest memory");
-
-		#[cfg(target_arch = "x86_64")]
-		crate::x86_64::initialize_pagetables(
+		crate::arch::init_guest_mem(
 			unsafe { self.mem.as_slice_mut() } // slice only lives during this fn call
 				.try_into()
 				.expect("Guest memory is not large enough for pagetables"),
