@@ -47,7 +47,8 @@ impl VirtualCPU for XhyveCpu {
 		self.vcpu.write_register(Register::PC, entry_point)?;
 		self.vcpu
 			.write_system_register(SystemRegister::SP_EL1, stack_address)?;
-		self.vcpu.write_register(Register::X0, BOOT_INFO_ADDR)?;
+		self.vcpu
+			.write_register(Register::X0, BOOT_INFO_ADDR.as_u64())?;
 		self.vcpu.write_register(Register::X1, cpu_id.into())?;
 
 		/*
@@ -99,7 +100,7 @@ impl VirtualCPU for XhyveCpu {
 		self.vcpu
 			.write_system_register(SystemRegister::TTBR1_EL1, 0)?;
 		self.vcpu
-			.write_system_register(SystemRegister::TTBR0_EL1, BOOT_PGT)?;
+			.write_system_register(SystemRegister::TTBR0_EL1, BOOT_PGT.as_u64())?;
 
 		/*
 		* Prepare system control register (SCTRL)

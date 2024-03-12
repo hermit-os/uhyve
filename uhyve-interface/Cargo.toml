@@ -14,8 +14,13 @@ categories = ["os"]
 
 [dependencies]
 num_enum = { version = "0.7", default-features = false }
-x86_64 = { version = "0.15", default-features = false }
-log = {version = "0.4", optional = true}
+log = { version = "0.4", optional = true }
 
 [features]
 std = ["dep:log"]
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86_64 = { version = "0.15", default-features = false }
+
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+aarch64 = { version = "0.0.11", default-features = false }
