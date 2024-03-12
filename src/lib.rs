@@ -21,6 +21,7 @@ pub mod macos;
 pub use macos as os;
 mod hypercall;
 pub mod mem;
+pub mod paging;
 pub mod params;
 #[cfg(target_os = "linux")]
 pub mod shared_queue;
