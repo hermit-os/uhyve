@@ -8,6 +8,10 @@ publish = false
 [target.'cfg(target_os = "hermit")'.dependencies.hermit]
 git = "https://github.com/hermit-os/hermit-rs.git"
 tag = "hermit-0.13.2"
+# We disable dhcp to use a hard-coded IPv4
+default-features = false
+features = ["pci", "pci-ids", "acpi", "fsgsbase", "smp", "tcp", "vsock", "virtio-net"]
+
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = { version = "0.15", default-features = false, features = [
