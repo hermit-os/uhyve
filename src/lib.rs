@@ -2,6 +2,7 @@
 #![allow(unused_macros)]
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::useless_conversion)]
+#![allow(clippy::extra_unused_type_parameters)]
 
 #[macro_use]
 mod macros;
@@ -26,3 +27,5 @@ pub mod vm;
 
 pub use arch::*;
 pub use os::uhyve::Uhyve;
+
+pub mod net;

@@ -6,4 +6,4 @@ edition = "2021"
 publish = false
 
 [target.'cfg(target_os = "hermit")'.dependencies]
-hermit = "0.8"
+hermit = {version="0.8.2", features=["pci", "pci-ids", "acpi", "tcp", "udp"] }
