@@ -28,6 +28,9 @@ pub enum BuildMode {
 	Release,
 }
 
+pub const HERMIT_GATEWAY: &str = "10.0.5.2";
+pub const HERMIT_IP: &str = "10.0.5.3";
+
 /// Uses Cargo to build a kernel in the `tests/test-kernels` directory.
 /// Returns a path to the build binary.
 pub fn build_hermit_bin(kernel: impl AsRef<Path>, mode: BuildMode) -> PathBuf {
@@ -57,6 +60,8 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>, mode: BuildMode) -> PathBuf {
 				.arg("--target=x86_64-unknown-hermit")
 				.arg("--bin")
 				.arg(kernel)
+				.env("HERMIT_IP", HERMIT_IP)
+				.env("HERMIT_GATEWAY", HERMIT_GATEWAY)
 				.current_dir(&kernel_src_path);
 
 			cmd = if mode == BuildMode::Release {
