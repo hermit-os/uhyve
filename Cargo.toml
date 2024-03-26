@@ -3,7 +3,7 @@ exclude = ["tests/test-kernels", "hermit-rs", "hermit-rs/*", "kernel"]
 
 [package]
 name = "uhyve"
-version = "0.2.2"
+version = "0.2.3"
 authors = [
     "Stefan Lankes <slankes@eonerc.rwth-aachen.de>",
     "Martin Kröning <mkroening@posteo.net>",
