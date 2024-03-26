@@ -53,7 +53,7 @@ libc = "0.2"
 log = "0.4"
 thiserror = "1.0"
 time = "0.3"
-uhyve-interface = { path = "./uhyve-interface" }
+uhyve-interface = { version = "0.1", path = "uhyve-interface" }
 
 rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }
