@@ -5,9 +5,9 @@ use std::{
 	cmp,
 	ffi::OsString,
 	fmt, mem,
-	os::{fd::BorrowedFd, raw::c_void},
+	os::raw::c_void,
 	path::{Path, PathBuf},
-	ptr,
+	ptr::{self, NonNull},
 	sync::{Arc, Mutex},
 };
 
@@ -313,13 +313,11 @@ impl MmapMemory {
 		mergeable: bool,
 	) -> MmapMemory {
 		let host_address = unsafe {
-			mmap::<BorrowedFd<'_>>(
+			mmap_anonymous(
 				None,
 				memory_size.try_into().unwrap(),
 				ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
-				MapFlags::MAP_PRIVATE | MapFlags::MAP_ANONYMOUS | MapFlags::MAP_NORESERVE,
-				None,
-				0,
+				MapFlags::MAP_PRIVATE | MapFlags::MAP_NORESERVE,
 			)
 			.expect("mmap failed")
 		};
@@ -342,7 +340,7 @@ impl MmapMemory {
 			flags,
 			memory_size,
 			guest_address: guest_address as usize,
-			host_address: host_address as usize,
+			host_address: host_address.as_ptr() as usize,
 		}
 	}
 
@@ -355,8 +353,9 @@ impl MmapMemory {
 impl Drop for MmapMemory {
 	fn drop(&mut self) {
 		if self.memory_size > 0 {
+			let host_addr = NonNull::new(self.host_address as *mut c_void).unwrap();
 			unsafe {
-				munmap(self.host_address as *mut c_void, self.memory_size).unwrap();
+				munmap(host_addr, self.memory_size).unwrap();
 			}
 		}
 	}
