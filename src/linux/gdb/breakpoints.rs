@@ -1,10 +1,13 @@
 use std::collections::{hash_map::Entry, HashMap};
 
 use gdbstub::target::{self, ext::breakpoints::WatchKind, TargetResult};
+use uhyve_interface::GuestVirtAddr;
 
 use super::GdbUhyve;
-use crate::arch::x86_64::registers;
-
+use crate::{
+	arch::x86_64::{registers, virt_to_phys},
+	consts::BOOT_PML4,
+};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SwBreakpoint {
 	addr: u64,
@@ -49,7 +52,15 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 		let sw_breakpoint = SwBreakpoint::new(addr, kind);
 
 		if let Entry::Vacant(entry) = self.sw_breakpoints.entry(sw_breakpoint) {
-			let instructions = unsafe { self.vcpu.memory(addr, kind) };
+			// Safety: mem is not altered during the lifetime of `instructions`
+			let instructions = unsafe {
+				self.vm.mem.slice_at_mut(
+					virt_to_phys(GuestVirtAddr::new(addr), &self.vm.mem, BOOT_PML4)
+						.map_err(|_err| ())?,
+					kind,
+				)
+			}
+			.unwrap();
 			entry.insert(instructions.into());
 			instructions.fill(SwBreakpoint::OPCODE);
 			Ok(true)
@@ -62,7 +73,15 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 		let sw_breakpoint = SwBreakpoint::new(addr, kind);
 
 		if let Entry::Occupied(entry) = self.sw_breakpoints.entry(sw_breakpoint) {
-			let instructions = unsafe { self.vcpu.memory(addr, kind) };
+			// Safety: mem is not altered during the lifetime of `instructions`
+			let instructions = unsafe {
+				self.vm.mem.slice_at_mut(
+					virt_to_phys(GuestVirtAddr::new(addr), &self.vm.mem, BOOT_PML4)
+						.map_err(|_err| ())?,
+					kind,
+				)
+			}
+			.unwrap();
 			instructions.copy_from_slice(&entry.remove());
 			Ok(true)
 		} else {

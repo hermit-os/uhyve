@@ -1,8 +1,8 @@
 //! Parameters for hypercalls.
 
-use x86_64::PhysAddr;
+use std::path::Path;
 
-use crate::MAX_ARGC_ENVC;
+use crate::{GuestPhysAddr, GuestVirtAddr, MAX_ARGC_ENVC};
 
 /// Parameters for a [`Cmdsize`](crate::Hypercall::Cmdsize) hypercall which provides the lengths of the items in the argument end environment vector.
 #[repr(C, packed)]
@@ -17,15 +17,46 @@ pub struct CmdsizeParams {
 	/// Length of the items in the environment.
 	pub envsz: [i32; MAX_ARGC_ENVC],
 }
+impl CmdsizeParams {
+	#[cfg(feature = "std")]
+	/// Update the struct with the lengths of the given command.
+	/// - `path` is usually the path and name of the application. E.g., "/home/hermit/app"
+	/// - `args` is a list of strings that form the parameters. (E.g., `["-v", "myarg"]`)
+	///
+	/// Note that this hypercall only transfers the sizes. It usually has to be followed up with the [`Cmdval` Hypercall](crate::Hypercall::Cmdval).
+	pub fn update(&mut self, path: &Path, args: &[std::ffi::OsString]) {
+		self.argc = 0;
+
+		self.argsz[0] = path.as_os_str().len() as i32 + 1;
+
+		self.argc += 1;
+		for argument in args {
+			self.argsz[(self.argc) as usize] = argument.len() as i32 + 1;
+
+			self.argc += 1;
+		}
+
+		self.envc = 0;
+		// let mut counter = 0;
+		for (key, value) in std::env::vars_os() {
+			if self.envc < MAX_ARGC_ENVC.try_into().unwrap() {
+				self.envsz[self.envc as usize] = (key.len() + value.len()) as i32 + 2;
+				self.envc += 1;
+			} else {
+				log::warn!("Environment is too large! {key:?}={value:?} will not be passed!");
+			}
+		}
+	}
+}
 
 /// Parameters for a [`Cmdval`](crate::Hypercall::Cmdval) hypercall, which copies the arguments end environment of the application into the VM's memory.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct CmdvalParams {
-	/// Pointer to a memory section in the VM memory large enough to store the argument string.
-	pub argv: PhysAddr,
-	/// Pointer to a memory section in the VM memory large enough to store the environment values.
-	pub envp: PhysAddr,
+	/// Pointer to a memory section in the VM memory which holds addresses for the destinations of the individual arguments
+	pub argv: GuestPhysAddr,
+	/// Pointer to a memory section in the VM memory which holds addresses for the destinations of the individual environment variables
+	pub envp: GuestPhysAddr,
 }
 
 /// Parameters for a [`Exit`](crate::Hypercall::Exit) hypercall.
@@ -41,7 +72,7 @@ pub struct ExitParams {
 #[derive(Debug, Copy, Clone)]
 pub struct UnlinkParams {
 	/// Address of the file that should be unlinked.
-	pub name: PhysAddr,
+	pub name: GuestPhysAddr,
 	/// On success, `0` is returned.  On error, `-1` is returned.
 	pub ret: i32,
 }
@@ -53,7 +84,7 @@ pub struct WriteParams {
 	/// File descriptor of the file.
 	pub fd: i32,
 	/// Buffer to be written into the file.
-	pub buf: PhysAddr,
+	pub buf: GuestVirtAddr,
 	/// Number of bytes in the buffer to be written.
 	pub len: usize,
 }
@@ -65,7 +96,7 @@ pub struct ReadPrams {
 	/// File descriptor of the file.
 	pub fd: i32,
 	/// Buffer to read the file into.
-	pub buf: PhysAddr,
+	pub buf: GuestVirtAddr,
 	/// Number of bytes to read into the buffer.
 	pub len: usize,
 	/// Number of bytes read on success. `-1` on failure.
@@ -87,7 +118,7 @@ pub struct CloseParams {
 #[derive(Debug, Copy, Clone)]
 pub struct OpenParams {
 	/// Pathname of the file to be opened.
-	pub name: PhysAddr,
+	pub name: GuestPhysAddr,
 	/// Posix file access mode flags.
 	pub flags: i32,
 	/// Access permissions upon opening/creating a file.

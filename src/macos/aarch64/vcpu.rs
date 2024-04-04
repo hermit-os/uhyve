@@ -1,13 +1,10 @@
 #![allow(non_snake_case)]
 #![allow(clippy::identity_op)]
 
-use std::{
-	ffi::OsString,
-	path::{Path, PathBuf},
-};
+use std::sync::Arc;
 
 use log::debug;
-use uhyve_interface::Hypercall;
+use uhyve_interface::{GuestPhysAddr, Hypercall};
 use xhypervisor::{self, Register, SystemRegister, VirtualCpuExitReason};
 
 use crate::{
@@ -16,30 +13,19 @@ use crate::{
 		PSR, TCR_FLAGS, TCR_TG1_4K, VA_BITS,
 	},
 	consts::*,
-	vm::{HypervisorResult, VcpuStopReason, VirtualCPU},
+	hypercall::{self, copy_argv, copy_env},
+	vcpu::{VcpuStopReason, VirtualCPU},
+	vm::UhyveVm,
+	HypervisorResult,
 };
 
-pub struct UhyveCPU {
+pub struct XhyveCpu {
 	id: u32,
-	kernel_path: PathBuf,
-	args: Vec<OsString>,
 	vcpu: xhypervisor::VirtualCpu,
-	vm_start: usize,
+	parent_vm: Arc<UhyveVm<Self>>,
 }
 
-impl UhyveCPU {
-	pub fn new(id: u32, kernel_path: PathBuf, args: Vec<OsString>, vm_start: usize) -> UhyveCPU {
-		Self {
-			id,
-			kernel_path,
-			args,
-			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
-			vm_start,
-		}
-	}
-}
-
-impl VirtualCPU for UhyveCPU {
+impl XhyveCpu {
 	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
 		debug!("Initialize VirtualCPU");
 
@@ -49,7 +35,8 @@ impl VirtualCPU for UhyveCPU {
 		self.vcpu.write_register(Register::PC, entry_point)?;
 		self.vcpu
 			.write_system_register(SystemRegister::SP_EL1, stack_address)?;
-		self.vcpu.write_register(Register::X0, BOOT_INFO_ADDR)?;
+		self.vcpu
+			.write_register(Register::X0, BOOT_INFO_ADDR.as_u64())?;
 		self.vcpu.write_register(Register::X1, cpu_id.into())?;
 
 		/*
@@ -101,7 +88,7 @@ impl VirtualCPU for UhyveCPU {
 		self.vcpu
 			.write_system_register(SystemRegister::TTBR1_EL1, 0)?;
 		self.vcpu
-			.write_system_register(SystemRegister::TTBR0_EL1, BOOT_PGT)?;
+			.write_system_register(SystemRegister::TTBR0_EL1, BOOT_PGT.as_u64())?;
 
 		/*
 		* Prepare system control register (SCTRL)
@@ -146,21 +133,18 @@ impl VirtualCPU for UhyveCPU {
 
 		Ok(())
 	}
+}
 
-	fn kernel_path(&self) -> &Path {
-		self.kernel_path.as_path()
-	}
+impl VirtualCPU for XhyveCpu {
+	fn new(id: u32, parent_vm: Arc<UhyveVm<Self>>) -> HypervisorResult<Self> {
+		let mut vcpu = XhyveCpu {
+			id,
+			parent_vm: parent_vm.clone(),
+			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
+		};
+		vcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
 
-	fn args(&self) -> &[OsString] {
-		self.args.as_slice()
-	}
-
-	fn host_address(&self, addr: usize) -> usize {
-		addr + self.vm_start
-	}
-
-	fn virt_to_phys(&self, _addr: usize) -> usize {
-		0
+		Ok(vcpu)
 	}
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
@@ -177,18 +161,43 @@ impl VirtualCPU for UhyveCPU {
 						let addr: u16 = exception.physical_address.try_into().unwrap();
 						let pc = self.vcpu.read_register(Register::PC)?;
 
-						let data_addr = self.vcpu.read_register(Register::X8)?;
-						if let Some(hypercall) =
-							unsafe { self.address_to_hypercall(addr, data_addr as usize) }
-						{
+						let data_addr = GuestPhysAddr::new(self.vcpu.read_register(Register::X8)?);
+						if let Some(hypercall) = unsafe {
+							hypercall::address_to_hypercall(&self.parent_vm.mem, addr, data_addr)
+						} {
 							match hypercall {
 								Hypercall::SerialWriteByte(_char) => {
 									let x8 = (self.vcpu.read_register(Register::X8)? & 0xFF) as u8;
 
-									self.uart(&[x8]).unwrap();
+									hypercall::uart(&[x8]).unwrap();
 								}
 								Hypercall::Exit(sysexit) => {
-									return Ok(VcpuStopReason::Exit(self.exit(sysexit)));
+									return Ok(VcpuStopReason::Exit(sysexit.arg));
+								}
+								Hypercall::Cmdsize(syssize) => syssize
+									.update(self.parent_vm.kernel_path(), self.parent_vm.args()),
+								Hypercall::Cmdval(syscmdval) => {
+									copy_argv(
+										self.parent_vm.kernel_path().as_os_str(),
+										self.parent_vm.args(),
+										syscmdval,
+										&self.parent_vm.mem,
+									);
+									copy_env(syscmdval, &self.parent_vm.mem);
+								}
+								Hypercall::FileClose(sysclose) => hypercall::close(sysclose),
+								Hypercall::FileLseek(syslseek) => hypercall::lseek(syslseek),
+								Hypercall::FileOpen(sysopen) => {
+									hypercall::open(&self.parent_vm.mem, sysopen)
+								}
+								Hypercall::FileRead(sysread) => {
+									hypercall::read(&self.parent_vm.mem, sysread)
+								}
+								Hypercall::FileWrite(syswrite) => {
+									hypercall::write(&self.parent_vm.mem, syswrite).unwrap()
+								}
+								Hypercall::FileUnlink(sysunlink) => {
+									hypercall::unlink(&self.parent_vm.mem, sysunlink)
 								}
 								_ => {
 									panic! {"Hypercall {hypercall:?} not implemented on macos-aarch64"}
@@ -300,7 +309,7 @@ impl VirtualCPU for UhyveCPU {
 	}
 }
 
-impl Drop for UhyveCPU {
+impl Drop for XhyveCpu {
 	fn drop(&mut self) {
 		self.vcpu.destroy().unwrap();
 	}

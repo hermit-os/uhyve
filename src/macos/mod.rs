@@ -1,9 +1,9 @@
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
-#[cfg(target_arch = "aarch64")]
-pub use crate::macos::aarch64::{uhyve, vcpu};
 #[cfg(target_arch = "x86_64")]
 pub mod x86_64;
+
+pub mod xhyve;
 use std::{
 	sync::{mpsc, Arc},
 	thread,
@@ -11,21 +11,21 @@ use std::{
 
 use core_affinity::CoreId;
 
+#[cfg(target_arch = "aarch64")]
+pub use crate::macos::aarch64::vcpu::XhyveCpu;
 #[cfg(target_arch = "x86_64")]
-pub use crate::macos::x86_64::{uhyve, vcpu};
-use crate::vm::{VirtualCPU, Vm};
+pub use crate::macos::x86_64::vcpu::XhyveCpu;
+use crate::{vcpu::VirtualCPU, vm::UhyveVm};
 
 pub type HypervisorError = xhypervisor::Error;
 pub type DebugExitInfo = ();
 
-impl uhyve::Uhyve {
+impl UhyveVm<XhyveCpu> {
 	/// Runs the VM.
 	///
 	/// Blocks until the VM has finished execution.
 	pub fn run(mut self, cpu_affinity: Option<Vec<CoreId>>) -> i32 {
-		unsafe {
-			self.load_kernel().expect("Unabled to load the kernel");
-		}
+		self.load_kernel().expect("Unabled to load the kernel");
 
 		// For communication of the exit code from one vcpu to this thread as return
 		// value.
@@ -34,7 +34,7 @@ impl uhyve::Uhyve {
 		let this = Arc::new(self);
 
 		(0..this.num_cpus()).for_each(|cpu_id| {
-			let vm = this.clone();
+			let parent_vm = this.clone();
 			let exit_tx = exit_tx.clone();
 
 			let local_cpu_affinity = match &cpu_affinity {
@@ -53,9 +53,7 @@ impl uhyve::Uhyve {
 					None => debug!("No affinity specified, not binding thread"),
 				}
 
-				let mut cpu = vm.create_cpu(cpu_id).unwrap();
-				cpu.init(vm.get_entry_point(), vm.stack_address(), cpu_id)
-					.unwrap();
+				let mut cpu = XhyveCpu::new(cpu_id, parent_vm.clone()).unwrap();
 
 				// jump into the VM and execute code of the guest
 				let result = cpu.run();

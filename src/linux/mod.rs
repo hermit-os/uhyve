@@ -1,14 +1,13 @@
+#[cfg(target_arch = "x86_64")]
+pub mod x86_64;
+
 pub mod gdb;
-pub mod uhyve;
-pub mod vcpu;
-pub mod virtio;
-pub mod virtqueue;
 
 pub type HypervisorError = kvm_ioctls::Error;
 pub type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
 
 use std::{
-	io, mem,
+	io,
 	net::{TcpListener, TcpStream},
 	os::unix::prelude::JoinHandleExt,
 	sync::{Arc, Barrier},
@@ -26,9 +25,12 @@ use nix::sys::{
 };
 
 use crate::{
-	linux::gdb::{GdbUhyve, UhyveGdbEventLoop},
-	vm::{VirtualCPU, Vm},
-	Uhyve,
+	linux::{
+		gdb::{GdbUhyve, UhyveGdbEventLoop},
+		x86_64::kvm_cpu::KvmCpu,
+	},
+	vcpu::VirtualCPU,
+	vm::UhyveVm,
 };
 
 lazy_static! {
@@ -48,7 +50,7 @@ impl KickSignal {
 		assert!(kick_signal <= SIGRTMAX());
 		// TODO: Remove the transmute once realtime signals are properly supported by nix
 		// https://github.com/nix-rust/nix/issues/495
-		unsafe { mem::transmute(kick_signal) }
+		unsafe { std::mem::transmute(kick_signal) }
 	}
 
 	fn register_handler() -> nix::Result<()> {
@@ -68,16 +70,14 @@ impl KickSignal {
 	}
 }
 
-impl Uhyve {
+impl UhyveVm<KvmCpu> {
 	/// Runs the VM.
 	///
 	/// Blocks until the VM has finished execution.
 	pub fn run(mut self, cpu_affinity: Option<Vec<CoreId>>) -> i32 {
 		KickSignal::register_handler().unwrap();
 
-		unsafe {
-			self.load_kernel().expect("Unabled to load the kernel");
-		}
+		self.load_kernel().expect("Unabled to load the kernel");
 
 		if self.gdb_port.is_none() {
 			self.run_no_gdb(cpu_affinity)
@@ -93,7 +93,7 @@ impl Uhyve {
 		let this = Arc::new(self);
 		let threads = (0..this.num_cpus())
 			.map(|cpu_id| {
-				let vm = this.clone();
+				let parent_vm = this.clone();
 				let barrier = barrier.clone();
 				let local_cpu_affinity = cpu_affinity
 					.as_ref()
@@ -109,9 +109,7 @@ impl Uhyve {
 						None => debug!("No affinity specified, not binding thread"),
 					}
 
-					let mut cpu = vm.create_cpu(cpu_id).unwrap();
-					cpu.init(vm.get_entry_point(), vm.stack_address(), cpu_id)
-						.unwrap();
+					let mut cpu = KvmCpu::new(cpu_id, parent_vm.clone()).unwrap();
 
 					thread::sleep(std::time::Duration::from_millis(cpu_id as u64 * 50));
 
@@ -126,7 +124,8 @@ impl Uhyve {
 						}
 						Err(err) => {
 							error!("CPU {} crashed with {:?}", cpu_id, err);
-							None
+							barrier.wait();
+							Some(err.errno())
 						}
 					}
 				})
@@ -144,12 +143,11 @@ impl Uhyve {
 			.into_iter()
 			.filter_map(|thread| thread.join().unwrap())
 			.collect::<Vec<_>>();
-		assert_eq!(
-			1,
-			code.len(),
-			"more than one thread finished with an exit code"
-		);
-		code[0]
+		match code.len() {
+			0 => panic!("No return code from any CPU? Maybe all have been kicked?"),
+			1 => code[0],
+			_ => panic!("more than one thread finished with an exit code (codes: {code:?})"),
+		}
 	}
 
 	fn run_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> i32 {
@@ -167,13 +165,12 @@ impl Uhyve {
 			None => debug!("No affinity specified, not binding thread"),
 		}
 
-		let mut cpu = self.create_cpu(cpu_id).unwrap();
-		cpu.init(self.get_entry_point(), self.stack_address(), cpu_id)
-			.unwrap();
+		let this = Arc::new(self);
+		let cpu = KvmCpu::new(cpu_id, this.clone()).unwrap();
 
-		let connection = wait_for_gdb_connection(self.gdb_port.unwrap()).unwrap();
+		let connection = wait_for_gdb_connection(this.gdb_port.unwrap()).unwrap();
 		let debugger = GdbStub::new(connection);
-		let mut debuggable_vcpu = GdbUhyve::new(self, cpu);
+		let mut debuggable_vcpu = GdbUhyve::new(this, cpu);
 
 		match debugger
 			.run_blocking::<UhyveGdbEventLoop>(&mut debuggable_vcpu)

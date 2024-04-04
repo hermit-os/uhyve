@@ -19,10 +19,17 @@ pub use linux as os;
 pub mod macos;
 #[cfg(target_os = "macos")]
 pub use macos as os;
+mod hypercall;
+pub mod mem;
+pub mod paging;
 pub mod params;
 #[cfg(target_os = "linux")]
 pub mod shared_queue;
+mod vcpu;
+pub mod virtio;
+pub mod virtqueue;
 pub mod vm;
 
 pub use arch::*;
-pub use os::uhyve::Uhyve;
+pub use os::HypervisorError;
+pub type HypervisorResult<T> = Result<T, HypervisorError>;

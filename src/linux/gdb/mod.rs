@@ -2,7 +2,13 @@ mod breakpoints;
 mod regs;
 mod section_offsets;
 
-use std::{io::Read, net::TcpStream, sync::Once, thread, time::Duration};
+use std::{
+	io::Read,
+	net::TcpStream,
+	sync::{Arc, Once},
+	thread,
+	time::Duration,
+};
 
 use gdbstub::{
 	common::Signal,
@@ -17,26 +23,28 @@ use kvm_bindings::{
 };
 use libc::EINVAL;
 use nix::sys::pthread::pthread_self;
+use uhyve_interface::GuestVirtAddr;
 use x86_64::registers::debug::Dr6Flags;
 
 use self::breakpoints::SwBreakpoints;
 use super::HypervisorError;
 use crate::{
-	arch::x86_64::registers::debug::HwBreakpoints,
-	linux::{vcpu::UhyveCPU, KickSignal},
-	vm::{VcpuStopReason, VirtualCPU},
-	Uhyve,
+	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
+	consts::BOOT_PML4,
+	linux::{x86_64::kvm_cpu::KvmCpu, KickSignal},
+	vcpu::{VcpuStopReason, VirtualCPU},
+	vm::UhyveVm,
 };
 
 pub struct GdbUhyve {
-	vm: Uhyve,
-	vcpu: UhyveCPU,
+	vm: Arc<UhyveVm<KvmCpu>>,
+	vcpu: KvmCpu,
 	hw_breakpoints: HwBreakpoints,
 	sw_breakpoints: SwBreakpoints,
 }
 
 impl GdbUhyve {
-	pub fn new(vm: Uhyve, vcpu: UhyveCPU) -> Self {
+	pub fn new(vm: Arc<UhyveVm<KvmCpu>>, vcpu: KvmCpu) -> Self {
 		Self {
 			vm,
 			vcpu,
@@ -119,13 +127,30 @@ impl SingleThreadBase for GdbUhyve {
 	}
 
 	fn read_addrs(&mut self, start_addr: u64, data: &mut [u8]) -> TargetResult<usize, Self> {
-		let src = unsafe { self.vcpu.memory(start_addr, data.len()) };
+		let guest_addr = GuestVirtAddr::try_new(start_addr).map_err(|_e| TargetError::NonFatal)?;
+		// Safety: mem is copied to data before mem can be modified.
+		let src = unsafe {
+			self.vm.mem.slice_at(
+				virt_to_phys(guest_addr, &self.vm.mem, BOOT_PML4).map_err(|_err| ())?,
+				data.len(),
+			)
+		}
+		.unwrap();
 		data.copy_from_slice(src);
 		Ok(data.len())
 	}
 
 	fn write_addrs(&mut self, start_addr: u64, data: &[u8]) -> TargetResult<(), Self> {
-		let mem = unsafe { self.vcpu.memory(start_addr, data.len()) };
+		// Safety: self.vm.mem is not altered during the lifetime of mem.
+		let mem = unsafe {
+			self.vm.mem.slice_at_mut(
+				virt_to_phys(GuestVirtAddr::new(start_addr), &self.vm.mem, BOOT_PML4)
+					.map_err(|_err| ())?,
+				data.len(),
+			)
+		}
+		.unwrap();
+
 		mem.copy_from_slice(data);
 		Ok(())
 	}

@@ -7,13 +7,25 @@
 //! that port is the physical memory address (of the VM) of the parameters of that hypercall.
 //! - On `aarch64` you write to the respective [`HypercallAddress`]. The 64-bit value written to that location is the guest's physical memory address of the hypercall's parameter.
 
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 // TODO: Throw this out, once https://github.com/rust-lang/rfcs/issues/2783 or https://github.com/rust-lang/rust/issues/86772 is resolved
 use num_enum::TryFromPrimitive;
 
 pub mod elf;
 pub mod parameters;
+
+#[cfg(target_arch = "aarch64")]
+pub use ::aarch64::paging::PhysAddr as GuestPhysAddr;
+#[cfg(target_arch = "aarch64")]
+pub use ::aarch64::paging::VirtAddr as GuestVirtAddr;
+#[cfg(target_arch = "x86_64")]
+pub use ::x86_64::addr::PhysAddr as GuestPhysAddr;
+#[cfg(target_arch = "x86_64")]
+pub use ::x86_64::addr::VirtAddr as GuestVirtAddr;
+
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("Using uhyve-interface on a non-64-bit system is not (yet?) supported");
 use parameters::*;
 
 /// The version of the uhyve interface. Note: This is not the same as the semver of the crate but
