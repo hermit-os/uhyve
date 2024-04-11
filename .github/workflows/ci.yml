@@ -59,7 +59,7 @@ jobs:
         timeout-minutes: 1
         run: |
           cargo run -- -v data/x86_64/hello_world
-          cargo run -- -v benches_data/rusty_demo
+          cargo run -- -v data/x86_64/rusty_demo
           cargo run -- -v data/x86_64/hello_c
 
   fmt:
