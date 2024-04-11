@@ -1,7 +1,5 @@
 //! Parameters for hypercalls.
 
-use std::path::Path;
-
 use crate::{GuestPhysAddr, GuestVirtAddr, MAX_ARGC_ENVC};
 
 /// Parameters for a [`Cmdsize`](crate::Hypercall::Cmdsize) hypercall which provides the lengths of the items in the argument end environment vector.
@@ -24,7 +22,7 @@ impl CmdsizeParams {
 	/// - `args` is a list of strings that form the parameters. (E.g., `["-v", "myarg"]`)
 	///
 	/// Note that this hypercall only transfers the sizes. It usually has to be followed up with the [`Cmdval` Hypercall](crate::Hypercall::Cmdval).
-	pub fn update(&mut self, path: &Path, args: &[std::ffi::OsString]) {
+	pub fn update(&mut self, path: &std::path::Path, args: &[std::ffi::OsString]) {
 		self.argc = 0;
 
 		self.argsz[0] = path.as_os_str().len() as i32 + 1;
