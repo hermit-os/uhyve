@@ -21,6 +21,7 @@ exclude = [
     "/img/",
     "/benches/",
     "/benches_data/",
+    "/data",
     "/.gitattributes",
     "/.gitignore",
     "/.gitmodules",
