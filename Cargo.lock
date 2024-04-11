@@ -610,9 +610,9 @@ checksum = "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024"
 
 [[package]]
 name = "hermit-entry"
-version = "0.9.10"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22ad63cf6566d7a38eba91d21e704730f2c3751c3da2d9c6a71136e00d97097e"
+checksum = "aa8da8546263459c84a24582eacf3b7b6d818a12f606e920bcfe5485235dac63"
 dependencies = [
  "align-address",
  "goblin",
