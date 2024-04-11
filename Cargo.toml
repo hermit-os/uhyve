@@ -20,7 +20,6 @@ exclude = [
     "/.github/",
     "/img/",
     "/benches/",
-    "/benches_data/",
     "/data",
     "/.gitattributes",
     "/.gitignore",
