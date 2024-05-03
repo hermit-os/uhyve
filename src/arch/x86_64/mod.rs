@@ -49,7 +49,6 @@ pub fn detect_freq_from_cpuid(
 				.get_processor_frequency_info()
 				.map(|pinfo| pinfo.processor_base_frequency() as u64 * MHZ_TO_HZ)
 				.map(|cpu_base_freq_hz| {
-					// Ratio numerator may be 0 when not enumerated
 					let crystal_hz =
 						cpu_base_freq_hz * tinfo.denominator() as u64 / tinfo.numerator() as u64;
 					crystal_hz * tinfo.numerator() as u64 / tinfo.denominator() as u64
