@@ -1,15 +1,15 @@
 <img width="200" align="right" src="img/uhyve.svg" />
 
-# uhyve - A minimal hypervisor for Hermit
+# Uhyve - A minimal hypervisor for Hermit
 
 [![crates.io](https://img.shields.io/crates/v/uhyve.svg)](https://crates.io/crates/uhyve)
 [![Zulip Badge](https://img.shields.io/badge/chat-hermit-57A37C?logo=zulip)](https://hermit.zulipchat.com/)
 
 ## Introduction
 
-uhyve is small hypervisor to boot the [Hermit kernel](https://github.com/hermitcore/kernel), which  is a unikernel operating system targeting a scalable and predictable runtime behavior for HPC and cloud environments.
+Uhyve is small hypervisor to boot the [Hermit kernel](https://github.com/hermitcore/kernel), which  is a unikernel operating system targeting a scalable and predictable runtime behavior for HPC and cloud environments.
 
-**Warning:** At the moment uhyve grants full host file system access from within the unikernel with the permissions of the user running uhyve.
+**Warning:** At the moment Uhyve grants full host file system access from within the unikernel with the permissions of the user running Uhyve.
 Thus, it should not be used for applications which require isolation from the host system.
 
 ## Installation
@@ -17,7 +17,7 @@ Thus, it should not be used for applications which require isolation from the ho
 An installation of the Rust toolchain is required.
 Please visit the [Rust website](https://www.rust-lang.org/) and follow the installation instructions.
 
-Install uhyve with
+Install Uhyve with
 
 ```console
 $ cargo install --locked uhyve
@@ -33,7 +33,7 @@ To check if your system supports virtualization, you can use the following comma
 if egrep -c '(vmx|svm)' /proc/cpuinfo > /dev/null; then echo "Virtualization support found"; fi
 ```
 
-On Linux, uhyve depends on the virtualization solution [KVM](https://www.linux-kvm.org/page/Main_Page) (Kernel-based Virtual Machine).
+On Linux, Uhyve depends on the virtualization solution [KVM](https://www.linux-kvm.org/page/Main_Page) (Kernel-based Virtual Machine).
 If the following command gives you some output, you are ready to go!
 
 ```sh
@@ -44,7 +44,7 @@ lsmod | grep kvm
 
 ### macOS
 
-**Disclaimer:** Currently, uhyve is mainly developed for Linux.
+**Disclaimer:** Currently, Uhyve is mainly developed for Linux.
 The macOS version has not been tested extensively and does not support all features of the Linux version.
 
 Apple's *Command Line Tools* must be installed.
@@ -75,7 +75,7 @@ cd uhyve
 cargo build --release
 ```
 
-## Signing uhyve to run on macOS Big Sur
+## Signing Uhyve to run on macOS Big Sur
 
 `uhyve` can be self-signed with the following command.
 
@@ -98,7 +98,7 @@ The file `app.entitlements` must have following content:
 
 For further details have a look at [Apple's documentation](https://developer.apple.com/documentation/bundleresources/entitlements/com_apple_security_hypervisor).
 
-## Running Hermit apps within uhyve
+## Running Hermit apps within Uhyve
 
 Use the hypervisor to start the unikernel.
 ```sh
@@ -107,13 +107,13 @@ uhyve /path/to/the/unikernel/binary
 
 ### Configuration
 
-uhyve can be configured via environment variables.
+Uhyve can be configured via environment variables.
 The following variables are supported.
 
 - `HERMIT_CPUS`: specifies the number of cores the virtual machine may use.
 - `HERMIT_MEM`: defines the memory size of the virtual machine. The suffixes *M* and *G* can be used to specify a value in megabytes or gigabytes, respectively.
 - setting `HERMIT_VERBOSE` to `1` makes the hypervisor print kernel log messages to the terminal.
-- `HERMIT_GDB_PORT=port` activate a gdb server for the application running inside uhyve. _See below_
+- `HERMIT_GDB_PORT=port` activate a gdb server for the application running inside Uhyve. _See below_
 
 By default, the loader initializes a system with one core and 512 MiB RAM.
 
@@ -125,9 +125,9 @@ HERMIT_CPUS=4 HERMIT_MEM=8G uhyve /path/to/the/unikernel/binary
 
 ## Debugging of Hermit apps (unstable)
 
-Basic support of (single-core) applications is already integrated into uhyve.
-By specifying variable `HERMIT_GDB_PORT=port`, uhyve is working as gdbserver and is waiting on port `port` for a connection to a gdb.
-For instance, with the following command uhyve is waiting on port `6677` for a connection.
+Basic support of (single-core) applications is already integrated into Uhyve.
+By specifying variable `HERMIT_GDB_PORT=port`, Uhyve is working as gdbserver and is waiting on port `port` for a connection to a gdb.
+For instance, with the following command Uhyve is waiting on port `6677` for a connection.
 
 ```bash
 HERMIT_GDB_PORT=6677 uhyve /path_to_the_unikernel/hello_world
