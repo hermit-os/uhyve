@@ -1,6 +1,6 @@
-//! Utility to place the uhyve interface version in the elf header of the hermit kernel.
+//! Utility to place the Uhyve interface version in the elf header of the hermit kernel.
 
-/// Defines the uhyve interface version in the note section.
+/// Defines the Uhyve interface version in the note section.
 ///
 /// This macro must be used in a module that is guaranteed to be linked.
 /// See <https://github.com/rust-lang/rust/issues/99721>.
@@ -13,7 +13,7 @@ macro_rules! define_uhyve_interface_version {
 	};
 }
 
-/// Note type for specifying the uhyve interface version in an elf header.
+/// Note type for specifying the Uhyve interface version in an elf header.
 pub const NT_UHYVE_INTERFACE_VERSION: u32 = 0x5b00;
 
 /// A elf note header entry containing the used Uhyve interface version as little-endian 32-bit value.
