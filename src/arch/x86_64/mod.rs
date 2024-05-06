@@ -43,7 +43,7 @@ pub fn detect_freq_from_cpuid(
 	let tsc_frequency_hz = cpuid.get_tsc_info().map(|tinfo| {
 		if tinfo.tsc_frequency().is_some() {
 			tinfo.tsc_frequency()
-		} else if tinfo.denominator() != 0 && tinfo.numerator() != 0  {
+		} else if tinfo.denominator() != 0 && tinfo.numerator() != 0 {
 			// Skylake and Kabylake don't report the crystal clock, approximate with base frequency:
 			cpuid
 				.get_processor_frequency_info()
