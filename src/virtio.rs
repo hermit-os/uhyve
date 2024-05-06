@@ -331,3 +331,9 @@ impl PciDevice for VirtioNetPciDevice {
 		}
 	}
 }
+
+impl Default for VirtioNetPciDevice {
+	fn default() -> Self {
+		Self::new()
+	}
+}
