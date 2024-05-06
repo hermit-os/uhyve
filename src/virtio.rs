@@ -582,15 +582,29 @@ impl PciDevice for VirtioNetPciDevice {
 		dest.copy_from_slice(&self.config_space[address as usize..][..dest.len()]);
 	}
 
-	fn handle_write(&mut self, address: u32, dest: &[u8]) {
-		// TODO: we are temporarily stepping over this to allow us to have a register size
-		// larger than 0x10. Hacky solution!
-		for (i, var) in dest.iter().enumerate() {
-			if i == 1 && address == BAR0_REGISTER as u32 {
-				self.config_space[(address as usize) + i] = *var & !(0x10);
-			} else {
-				self.config_space[(address as usize) + i] = *var;
+	fn handle_write(&mut self, address: u32, data: &[u8]) {
+		match address {
+			0..=0x03 | 0x06..=0x0F | 0x28..=0x3C => {
+				error!("Kernel tries to write into an invalid PCI header location ({address:#x})");
+				panic!()
 			}
+			0x04 => {
+				// Command register
+				for i in 0..2 {
+					self.config_space[0x04 + i] = data[i];
+				}
+			}
+			0x10 | 0x14 => {
+				// BAR0 -> BAR detection writes something to this register and reads it back. We protect the lowest bit to ensure it stays a 64-Bit address field
+				for i in 1..=3 {
+					self.config_space[address as usize + i] = data[i];
+				}
+			}
+			0x05 | 0x11..=0x13 | 0x15..=0x17 => warn!("Unaligned PCI BAR access"),
+
+			// ignore read/write to the other BARs
+			0x18..=0x27 => {}
+			_ => error!("Kernel tries to write outside of PCI header! ({address:#x})"),
 		}
 	}
 }
