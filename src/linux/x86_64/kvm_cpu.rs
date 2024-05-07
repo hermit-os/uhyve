@@ -391,8 +391,8 @@ impl VirtualCPU for KvmCpu {
 							let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 							virtio_device.read_link_status(addr);
 						}
-						_ => {
-							info!("Unhanded IO Exit");
+						port => {
+							warn!("guest read from unknown I/O port {port:#x}");
 						}
 					},
 					VcpuExit::IoOut(port, addr) => {
@@ -474,8 +474,8 @@ impl VirtualCPU for KvmCpu {
 										self.parent_vm.virtio_device.lock().unwrap();
 									virtio_device.write_pfn(addr, &self.parent_vm.mem);
 								}
-								_ => {
-									panic!("Unhandled IO exit: 0x{:x}", port);
+								port => {
+									warn!("guest wrote to unknown I/O port {port:#x}");
 								}
 							}
 						}
