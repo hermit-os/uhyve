@@ -1,10 +1,19 @@
 //! VirtIO capability structures.
 
-use std::mem::size_of;
-
 use zerocopy::AsBytes;
 
-use crate::net::{BROADCAST_MAC_ADDR, UHYVE_NET_MTU, UHYVE_QUEUE_SIZE, virtio::config::cfg_type};
+use super::pci::ConfigAddress;
+use crate::{
+	net::{
+		BROADCAST_MAC_ADDR, UHYVE_NET_MTU, UHYVE_QUEUE_SIZE,
+		virtio::{
+			config::cfg_type,
+			pci::{COMMON_CFG_START, DEVICE_CFG_START, ISR_CFG_START, get_offset},
+		},
+	},
+	pci::PciError,
+	virtqueue::VirtqueueNotification,
+};
 
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, AsBytes)]
@@ -21,16 +30,6 @@ impl From<u32> for FeatureSelector {
 			_ => Self::Low, // TODO, should this panic, or should we set to an invalid value?
 		}
 	}
-}
-
-/// Collection of all VirtIO Capabilities
-#[derive(Clone, Debug, Default)]
-#[repr(C)]
-pub struct VirtioCapColl {
-	pub common: ComCfg,
-	pub isr: IsrStatus,
-	pub notif: NotifCfg,
-	pub dev: NetDevCfg,
 }
 
 /// Vendor-specific PCI capability.
@@ -82,7 +81,27 @@ impl Default for PciCap {
 		}
 	}
 }
+impl PciCap {
+	pub fn read(&self, address: u8, dest: &mut [u8]) -> Result<(), PciError> {
+		if address + dest.len() as u8 > std::mem::size_of::<Self>() as u8 {
+			return Err(PciError::InvalidAddress(address as u32));
+		}
+		match address {
+			0..=0x3f => {
+				dest.copy_from_slice(
+					&self.as_bytes()[address as usize..address as usize + dest.len()],
+				);
+				Ok(())
+			}
+			_ => Err(PciError::InvalidAddress(address as u32)),
+		}
+	}
+	pub fn write(&mut self, address: u8, _data: &[u8]) -> Result<(), PciError> {
+		Err(PciError::ReadOnlyAccess(address as u32))
+	}
+}
 
+// TODO: Replace with virtio_bindings::Virtio_net_config?
 /// Virtio device configuration layout.
 #[derive(Clone, Debug)]
 #[repr(C)]
@@ -104,6 +123,12 @@ pub struct NetDevCfg {
 	_rss_max_key_size: u8,
 	_rss_max_indirection_table_length: u16,
 	_supported_hash_types: u32,
+}
+impl NetDevCfg {
+	pub const MAC_ADDRESS: ConfigAddress = get_offset!(DEVICE_CFG_START, NetDevCfg, mac);
+	// pub const MAC_ADDRESS_1: ConfigAddress = ConfigAddress(MAC_ADDRESS.0 + 4);
+	pub const NET_STATUS: ConfigAddress = get_offset!(DEVICE_CFG_START, NetDevCfg, status);
+	pub const MTU: ConfigAddress = get_offset!(DEVICE_CFG_START, NetDevCfg, mtu);
 }
 
 impl Default for NetDevCfg {
@@ -133,6 +158,9 @@ pub struct IsrStatus {
 	/// this register resets it to 0.
 	pub flags: u8,
 }
+impl IsrStatus {
+	pub const ISR_FLAGS: ConfigAddress = get_offset!(ISR_CFG_START, IsrStatus, flags);
+}
 
 /// Notification location. This is a standard PciCap, followed by an offset multiplier.
 ///
@@ -142,9 +170,10 @@ pub struct IsrStatus {
 /// `cap.length` must be at least 2 and larg enough to support queue notification offset.
 ///
 /// See section 4.1.4.4.1 virtio v1.2
-#[derive(Clone, Debug)]
+#[derive(AsBytes, Clone, Debug)]
 #[repr(C)]
-pub struct NotifCfg {
+// TODO: Rename Notif -> Notify
+pub struct NotifyCap {
 	pub cap: PciCap,
 	/// Combind with queue_notify_off to derive the Queue Notify address
 	/// within a BAR for a virtqueue.
@@ -153,18 +182,37 @@ pub struct NotifCfg {
 	/// is used for all queues. (section 4.1.4.4 virtio v1.2)
 	pub notify_off_multiplier: u32,
 }
-
-impl Default for NotifCfg {
+impl NotifyCap {
+	pub fn read(&self, address: u8, dest: &mut [u8]) -> Result<(), PciError> {
+		if address + dest.len() as u8 > std::mem::size_of::<Self>() as u8 {
+			return Err(PciError::InvalidAddress(address as u32));
+		}
+		match address {
+			0..=0x3f => {
+				dest.copy_from_slice(
+					&self.as_bytes()[address as usize..address as usize + dest.len()],
+				);
+				Ok(())
+			}
+			_ => Err(PciError::InvalidAddress(address as u32)),
+		}
+	}
+	pub fn write(&mut self, address: u8, _data: &[u8]) -> Result<(), PciError> {
+		Err(PciError::ReadOnlyAccess(address as u32))
+	}
+}
+impl Default for NotifyCap {
 	fn default() -> Self {
 		Self {
 			cap: PciCap {
-				cap_len: std::mem::size_of::<NotifCfg>() as u8,
+				cap_len: std::mem::size_of::<NotifyCap>() as u8,
 				cfg_type: cfg_type::NOTIFY_CFG,
-				offset: offsets::NOTIFY_CAP.0,
-				length: (std::mem::size_of::<NotifCfg>() * 8) as u32,
+				offset: 0,
+				// We have two notification addresses. TODO: We prob. only need one
+				length: std::mem::size_of::<VirtqueueNotification>() as u32 * 2,
 				..Default::default()
 			},
-			notify_off_multiplier: Default::default(),
+			notify_off_multiplier: 0,
 		}
 	}
 }
@@ -172,7 +220,7 @@ impl Default for NotifCfg {
 /// Common configuration, section 4.1.4.3 virtio v1.2
 ///
 /// All data should be treated as little-endian.
-#[derive(Clone, Copy, Debug)]
+#[derive(AsBytes, Clone, Copy, Debug)]
 #[repr(C)]
 pub struct ComCfg {
 	/// **read-write**: The driver uses this to select device_feature.
@@ -252,6 +300,66 @@ pub struct ComCfg {
 	/// ***read-write**: The driver uses this to selectively reset the queue.
 	/// This field exists only if VIRTIO_F_RING_RESET has been negotiated.
 	pub queue_reset: u16,
+
+	_padding: [u8; 4],
+}
+impl ComCfg {
+	pub const DEVICE_FEATURE_SELECT: ConfigAddress =
+		get_offset!(COMMON_CFG_START, Self, device_feature_select);
+
+	pub const DEVICE_FEATURE: ConfigAddress = get_offset!(COMMON_CFG_START, Self, device_feature);
+
+	pub const DRIVER_FEATURE_SELECT: ConfigAddress =
+		get_offset!(COMMON_CFG_START, ComCfg, driver_feature_select);
+
+	pub const DRIVER_FEATURE: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, driver_feature);
+
+	pub const CONFIG_MSIX_VECTOR: ConfigAddress =
+		get_offset!(COMMON_CFG_START, ComCfg, config_msix_vector);
+
+	pub const DEVICE_STATUS: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, device_status);
+
+	pub const QUEUE_SELECT: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_select);
+
+	pub const QUEUE_SIZE: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_size);
+
+	pub const QUEUE_MSIX_VECTOR: ConfigAddress =
+		get_offset!(COMMON_CFG_START, ComCfg, queue_msix_vector);
+
+	pub const QUEUE_ENABLE: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_enable);
+
+	pub const QUEUE_NOTIFY_OFFSET: ConfigAddress =
+		get_offset!(COMMON_CFG_START, ComCfg, queue_notify_off);
+
+	pub const QUEUE_DESC: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_desc);
+
+	pub const QUEUE_DRIVER: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_driver);
+
+	pub const QUEUE_DEVICE: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_device);
+
+	pub const QUEUE_NOTIFY_DATA: ConfigAddress =
+		get_offset!(COMMON_CFG_START, ComCfg, queue_notify_data);
+
+	pub const QUEUE_RESET: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_reset);
+
+	pub fn read(&self, address: u8, dest: &mut [u8]) -> Result<(), PciError> {
+		if address + dest.len() as u8 > std::mem::size_of::<Self>() as u8 {
+			return Err(PciError::InvalidAddress(address as u32));
+		}
+		const SELF_SIZE: u8 = std::mem::size_of::<ComCfg>() as u8;
+		match address {
+			SELF_SIZE..=u8::MAX => Err(PciError::InvalidAddress(address as u32)),
+			_ => {
+				dest.copy_from_slice(
+					&self.as_bytes()[address as usize..address as usize + dest.len()],
+				);
+				Ok(())
+			}
+		}
+	}
+	pub fn write(&mut self, address: u8, _data: &[u8]) -> Result<(), PciError> {
+		Err(PciError::ReadOnlyAccess(address as u32))
+	}
 }
 
 impl Default for ComCfg {
@@ -276,81 +384,7 @@ impl Default for ComCfg {
 			queue_device: 0,
 			queue_notify_data: 0,
 			queue_reset: 0,
+			_padding: Default::default(),
 		}
 	}
 }
-
-pub mod offsets {
-	use crate::net::virtio::{ConfigAddress, PCI_CAP_PTR_START};
-
-	pub const CFG_START: ConfigAddress =
-		ConfigAddress::from_configuration_address(PCI_CAP_PTR_START);
-
-	pub const COMMON_CFG_OFFSET: u32 = 0x40;
-	pub const COMMON_CFG: ConfigAddress =
-		ConfigAddress::from_configuration_address(COMMON_CFG_OFFSET);
-
-	pub const NOTIFY_CAP_OFFSET: u32 = 0x60;
-	pub const NOTIFY_CAP: ConfigAddress =
-		ConfigAddress::from_configuration_address(NOTIFY_CAP_OFFSET);
-
-	pub const ISR_CFG_OFFSET: u32 = 0x80;
-	pub const ISR_CFG: ConfigAddress = ConfigAddress::from_configuration_address(ISR_CFG_OFFSET);
-
-	const NOTIFY_CFG_OFFSET: u32 = 0x100;
-	pub const NOTIFY_CFG: ConfigAddress =
-		ConfigAddress::from_configuration_address(NOTIFY_CFG_OFFSET);
-
-	pub const DEVICE_CFG_OFFSET: u32 = 0x180;
-	pub const DEVICE_CFG: ConfigAddress =
-		ConfigAddress::from_configuration_address(DEVICE_CFG_OFFSET);
-}
-
-// TODO: use appropriate constants and offsets
-pub const PCICAP_COM: PciCap = PciCap {
-	cap_vndr: cfg_type::VENDOR_CFG,
-	cap_next: 0x50,
-	cap_len: size_of::<PciCap>() as u8,
-	cfg_type: cfg_type::COMMON_CFG,
-	bar_index: 0,
-	id: 0,
-	_padding: [0u8; 2],
-	offset: offsets::COMMON_CFG.0,
-	length: (size_of::<ComCfg>() * 8) as u32,
-};
-
-pub const PCICAP_ISR: PciCap = PciCap {
-	cap_vndr: cfg_type::VENDOR_CFG,
-	cap_next: 0x60,
-	cap_len: size_of::<PciCap>() as u8,
-	cfg_type: cfg_type::ISR_CFG,
-	bar_index: 0,
-	id: 0,
-	_padding: [0; 2],
-	offset: offsets::ISR_CFG.0,
-	length: (size_of::<IsrStatus>() * 8) as u32,
-};
-
-pub const PCICAP_NOTIF: PciCap = PciCap {
-	cap_vndr: cfg_type::VENDOR_CFG,
-	cap_next: 0x80,
-	cap_len: size_of::<NotifCfg>() as u8,
-	cfg_type: cfg_type::NOTIFY_CFG,
-	bar_index: 0,
-	id: 0,
-	_padding: [0; 2],
-	offset: offsets::NOTIFY_CFG.0,
-	length: (size_of::<NotifCfg>() * 8) as u32,
-};
-
-pub const PCICAP_DEV: PciCap = PciCap {
-	cap_vndr: cfg_type::VENDOR_CFG,
-	cap_next: 0,
-	cap_len: size_of::<PciCap>() as u8,
-	cfg_type: cfg_type::DEVICE_CFG,
-	bar_index: 0,
-	id: 0,
-	_padding: [0; 2],
-	offset: offsets::DEVICE_CFG.0,
-	length: (size_of::<PciCap>() * 8) as u32,
-};

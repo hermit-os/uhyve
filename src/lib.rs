@@ -57,3 +57,4 @@ pub enum HypervisorError {
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
 
 pub mod net;
+mod pci;
