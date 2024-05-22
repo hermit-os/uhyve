@@ -4,7 +4,6 @@ use std::{
 	fmt,
 	io::{Read, Write},
 	mem,
-	ops::{Index, IndexMut, RangeFrom},
 	sync::{
 		Arc,
 		atomic::{AtomicBool, Ordering},
@@ -21,42 +20,30 @@ use virtio_bindings::{
 use virtio_queue::{Descriptor, DescriptorChain, Error as VirtIOError, Queue, QueueOwnedT, QueueT};
 use vm_memory::{GuestAddress, GuestMemoryMmap};
 use vmm_sys_util::eventfd::EventFd;
-use zerocopy::AsBytes;
 
 use crate::{
 	consts::{UHYVE_IRQ_NET, UHYVE_NET_MTU},
 	net::{
 		tap::Tap,
 		virtio::{
-			ConfigAddress, IOBASE, PCI_CAP_PTR_START, VIRTIO_NET_S_LINK_UP, VIRTIO_VENDOR_ID,
-			capabilities::*,
+			IOBASE, VIRTIO_NET_S_LINK_UP,
 			config::{
 				device_id,
 				interrupt::{NOTIFY_CONFIGURUTION_CHANGED, NOTIFY_USED_BUFFER},
 				status,
 			},
 			features::{UHYVE_NET_FEATURES_HIGH, UHYVE_NET_FEATURES_LOW},
-			offsets,
+			pci::{HeaderConf, MEM_NOTIFY, MEM_NOTIFY_1},
 		},
 	},
+	pci::MemoryBar64,
 	virtqueue::{self, QUEUE_LIMIT},
 };
 
 const VIRTIO_NET_HEADER_SZ: usize = mem::size_of::<virtio_net_hdr_v1>();
 
-// PCI Spec 2.0 - 7.5.1
-const VENDOR_ID_REGISTER: usize = 0x0;
-const DEVICE_ID_REGISTER: usize = 0x2;
-// const COMMAND_REGISTER: usize = 0x4;
-const STATUS_REGISTER: usize = 0x6;
-const CLASS_REGISTER: usize = 0x8;
-const BAR0_REGISTER: usize = 0x10;
-const BASE_ADDRESS_SIZE: usize = 0x100;
-const PCI_CAPABILITY_LIST_POINTER: usize = 0x34;
-const PCI_INTERRUPT_REGISTER: usize = 0x3C;
 const RX_QUEUE: u16 = 0;
 const TX_QUEUE: u16 = 1;
-const PCI_MEM_BASE_ADDRESS_64BIT: u16 = 1 << 2;
 pub const VIRTIO_PCI_MEM_BAR_PFN: u16 = 1 << 3;
 
 use crate::net::virtio::capabilities::FeatureSelector;
@@ -66,55 +53,10 @@ pub trait PciDevice {
 	fn handle_write(&mut self, address: u32, src: &[u8]);
 }
 
-#[derive(Debug)]
-struct PciConfigSpace {
-	pub slice: [u8; BASE_ADDRESS_SIZE],
-}
-
-impl PciConfigSpace {
-	pub fn new() -> Self {
-		Self {
-			slice: [0u8; BASE_ADDRESS_SIZE],
-		}
-	}
-
-	pub fn write_slice<T>(&mut self, data: T, offset: u8)
-	where
-		T: AsBytes,
-	{
-		let slice = data.as_bytes();
-		self.slice[(offset as usize)..][..slice.len()].copy_from_slice(slice)
-	}
-}
-
-impl Index<usize> for PciConfigSpace {
-	type Output = u8;
-
-	fn index(&self, index: usize) -> &Self::Output {
-		&self.slice[index]
-	}
-}
-
-impl IndexMut<usize> for PciConfigSpace {
-	fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-		&mut self.slice[index]
-	}
-}
-
-impl Index<RangeFrom<usize>> for PciConfigSpace {
-	type Output = [u8];
-
-	fn index(&self, index: RangeFrom<usize>) -> &Self::Output {
-		&self.slice[..][index]
-	}
-}
-
 /// Struct to manage uhyve's network device.
 pub struct VirtioNetPciDevice {
-	/// PCI configuration space
-	config_space: PciConfigSpace,
-	/// VirtIO capabilities.
-	capabilities: VirtioCapColl,
+	/// PCI configuration space & VirtIO capabilities.
+	header_caps: HeaderConf,
 	/// records if ISR status must be alerted. This is set by the thread and
 	/// read by read_isr_notify
 	isr_changed: Arc<AtomicBool>,
@@ -132,48 +74,32 @@ pub struct VirtioNetPciDevice {
 	/// Store all negotiated feature sets. Chapter 2.2 virtio v1.2
 	feature_set: u64,
 }
-
 impl fmt::Debug for VirtioNetPciDevice {
+	// TODO: More exhaustive debug print
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		f.debug_struct("VirtioNetPciDevice")
-			.field("status", &self.capabilities.common.device_status)
+			.field("status", &self.header_caps.common_cfg.device_status)
 			.finish()
 	}
 }
 
 impl VirtioNetPciDevice {
-	pub fn new(guest_mmap: Arc<GuestMemoryMmap>) -> VirtioNetPciDevice {
-		let mut config_space: PciConfigSpace = PciConfigSpace::new();
-
-		write_data!(config_space, VENDOR_ID_REGISTER, VIRTIO_VENDOR_ID);
-		write_data!(config_space, DEVICE_ID_REGISTER, device_id::NET_DEVICE);
-		write_data!(
-			config_space,
-			CLASS_REGISTER,
-			crate::net::UHYVE_PCI_CLASS_INFO
-		);
-
-		// write the correct feature flags to BAR0
-		write_data!(
-			config_space,
-			BAR0_REGISTER,
-			IOBASE | (PCI_MEM_BASE_ADDRESS_64BIT | VIRTIO_PCI_MEM_BAR_PFN) as u32
-		);
-		// Set the IRQ line
-		write_data!(config_space, PCI_INTERRUPT_REGISTER, UHYVE_IRQ_NET);
-		// nullify the status register.
-		write_data!(config_space, STATUS_REGISTER, 0);
+	pub fn new(guest_mmap: Arc<vm_memory::GuestMemoryMmap>) -> VirtioNetPciDevice {
+		let mut header_caps = HeaderConf::new();
+		header_caps.pci_config_hdr.device_id = device_id::NET_DEVICE;
+		header_caps.pci_config_hdr.base_address_registers[0] = MemoryBar64::new(IOBASE as u64);
+		header_caps.pci_config_hdr.interrupt_line = UHYVE_IRQ_NET;
+		header_caps.common_cfg.num_queues = 2;
+		header_caps.common_cfg.device_feature_select = FeatureSelector::Low;
+		header_caps.common_cfg.device_feature = UHYVE_NET_FEATURES_LOW;
 
 		// Create invalid virtqueues. Improper, unsafe and poor practice!
 		// Ideally, we would mark and watch the queues as ready.
 		let rx_queue = Arc::new(Mutex::new(Queue::new(QUEUE_LIMIT as u16).unwrap()));
 		let tx_queue = Arc::new(Mutex::new(Queue::new(QUEUE_LIMIT as u16).unwrap()));
 
-		let capabilities = VirtioCapColl::default();
-
 		VirtioNetPciDevice {
-			config_space,
-			capabilities,
+			header_caps,
 			isr_changed: Arc::new(AtomicBool::new(false)),
 			rx_queue,
 			tx_queue,
@@ -187,39 +113,14 @@ impl VirtioNetPciDevice {
 
 	/// Write the capabilities to the config_space and register eventFDs to the VM
 	pub fn setup(&mut self, vm: &VmFd) {
-		self.config_space
-			.write_slice(PCICAP_COM, PCI_CAP_PTR_START as u8);
-
-		self.config_space
-			.write_slice(PCICAP_ISR, PCICAP_COM.cap_next);
-
-		self.config_space
-			.write_slice(PCICAP_NOTIF, PCICAP_ISR.cap_next);
-
-		self.config_space
-			.write_slice(PCICAP_DEV, PCICAP_NOTIF.cap_next);
-
-		self.capabilities.common.num_queues = 2;
-		self.capabilities.common.device_feature_select = FeatureSelector::Low;
-		self.capabilities.common.device_feature = UHYVE_NET_FEATURES_LOW;
-
-		// Set capabilities pointer address, device as available
-		write_data!(
-			self.config_space,
-			STATUS_REGISTER,
-			status::DEVICE_NEEDS_RESET | status::PCI_CAPABILITIES_LIST_ENABLE
-		);
-		write_data!(
-			self.config_space,
-			PCI_CAPABILITY_LIST_POINTER,
-			PCI_CAP_PTR_START
-		);
+		self.header_caps.pci_config_hdr.status =
+			(status::DEVICE_NEEDS_RESET | status::PCI_CAPABILITIES_LIST_ENABLE) as u16;
 
 		let notifd = self.notify_evtfd.insert(EventFd::new(0).unwrap());
 
 		vm.register_ioevent(
 			notifd,
-			&IoEventAddress::Mmio(offsets::MEM_NOTIFY.guest_address()),
+			&IoEventAddress::Mmio(MEM_NOTIFY.guest_address()),
 			NoDatamatch,
 		)
 		.unwrap();
@@ -227,14 +128,14 @@ impl VirtioNetPciDevice {
 		// TODO: Possibly remove 2nd MEM_NOTIFY address?
 		vm.register_ioevent(
 			notifd,
-			&IoEventAddress::Mmio(offsets::MEM_NOTIFY_1.guest_address()),
+			&IoEventAddress::Mmio(MEM_NOTIFY_1.guest_address()),
 			NoDatamatch,
 		)
 		.unwrap();
 
 		vm.register_irqfd(
 			self.irq_evtfd.insert(EventFd::new(EFD_NONBLOCK).unwrap()),
-			UHYVE_IRQ_NET,
+			UHYVE_IRQ_NET as u32,
 		)
 		.unwrap();
 	}
@@ -261,20 +162,20 @@ impl VirtioNetPciDevice {
 	pub fn write_reset_queue(&mut self) {
 		if self.feature_set & (1 << VIRTIO_F_RING_RESET) != 0 {
 			// reset only selected queue
-			let mut queue = match self.capabilities.common.queue_select {
+			let mut queue = match self.header_caps.common_cfg.queue_select {
 				RX_QUEUE => self.rx_queue.lock(),
 				TX_QUEUE => self.tx_queue.lock(),
 				_ => panic!("invalid queue selected!"),
 			};
 			queue.reset();
 		}
-		self.capabilities.common.queue_reset = 0;
+		self.header_caps.common_cfg.queue_reset = 0;
 	}
 
 	/// Read queue_reset from common capability structure when VIRTIO_F_RING_RESET is negotiated.
 	/// Virtqueue Reset: chapter 2.6.1 virtio v1.2
 	pub fn read_queue_reset(&self, data: &mut [u8]) {
-		data[0] = self.capabilities.common.queue_reset as u8;
+		data[0] = self.header_caps.common_cfg.queue_reset as u8;
 	}
 
 	// Virtio handshake: chapter 3 virtio v1.2
@@ -283,8 +184,8 @@ impl VirtioNetPciDevice {
 		if dest[0] == status::UNINITIALIZED {
 			// reset the device.
 			self.write_status_reg(status::UNINITIALIZED);
-			self.capabilities.common.driver_feature = 0;
-			self.capabilities.common.queue_select = 0;
+			self.header_caps.common_cfg.driver_feature = 0;
+			self.header_caps.common_cfg.queue_select = 0;
 			self.rx_queue.as_ref().lock().reset();
 			self.tx_queue.as_ref().lock().reset();
 		} else if status == status::DEVICE_NEEDS_RESET || status == status::UNINITIALIZED {
@@ -304,16 +205,14 @@ impl VirtioNetPciDevice {
 	/// Gets the mac address from the TAP device.
 	/// This function is reliant on tap devices as the underlying packet sending mechanism
 	fn get_mac_addr(&mut self) {
-		self.capabilities.dev.mac = self.iface.as_ref().unwrap().mac_address_as_bytes();
+		self.header_caps.dev.mac = self.iface.as_ref().unwrap().mac_address_as_bytes();
 	}
 
-	/// Write the MAC address to the input slice. Since reads are not [u8; 6],
-	/// but may be 2, 4, or 8 bytes, we'll need to calculate the slice.
-	pub fn read_mac_address(&self, addr: u64, data: &mut [u8]) {
-		let start = ConfigAddress::from_guest_address(addr).capability_space_start()
-			- offsets::MAC_ADDRESS.capability_space_start();
-
-		data.copy_from_slice(&self.capabilities.dev.mac[start..(start + data.len())])
+	/// Write the MAC address to the input slice.
+	pub fn read_mac_address(&self, data: &mut [u8]) {
+		for (d, m) in data.iter_mut().zip(self.header_caps.dev.mac.iter()).take(6) {
+			*d = *m;
+		}
 	}
 
 	/// Driver acknowledges device
@@ -423,36 +322,36 @@ impl VirtioNetPciDevice {
 
 			// "should've would've panicked by now, if no mac existed!" BAD!
 			self.get_mac_addr();
-			self.capabilities.dev.status |= VIRTIO_NET_S_LINK_UP as u16;
+			self.header_caps.dev.status |= VIRTIO_NET_S_LINK_UP as u16;
 		}
 	}
 
 	fn write_status_reg(&mut self, status: u8) {
-		self.capabilities.dev.status = status as u16;
+		self.header_caps.dev.status = status as u16;
 	}
 
 	pub fn read_status_reg(&self) -> u8 {
-		self.capabilities.dev.status as u8
+		self.header_caps.dev.status as u8
 	}
 
 	#[inline]
 	pub fn read_net_status(&self, data: &mut [u8]) {
-		data.copy_from_slice(&self.capabilities.dev.status.to_le_bytes())
+		data.copy_from_slice(&self.header_caps.dev.status.to_le_bytes())
 	}
 
 	#[inline]
 	pub fn read_mtu(&self, data: &mut [u8]) {
-		data.copy_from_slice(&self.capabilities.dev.mtu.to_le_bytes())
+		data.copy_from_slice(&self.header_caps.dev.mtu.to_le_bytes())
 	}
 
 	#[inline]
 	pub fn read_queue_size(&self, data: &mut [u8]) {
-		data.copy_from_slice(&self.capabilities.common.queue_size.to_le_bytes())
+		data.copy_from_slice(&self.header_caps.common_cfg.queue_size.to_le_bytes())
 	}
 
 	#[inline]
 	pub fn read_queue_notify_offset(&self, data: &mut [u8]) {
-		data.copy_from_slice(&self.capabilities.common.queue_notify_off.to_le_bytes());
+		data.copy_from_slice(&self.header_caps.common_cfg.queue_notify_off.to_le_bytes());
 	}
 
 	pub fn write_selected_queue(&mut self, data: &[u8]) {
@@ -462,18 +361,36 @@ impl VirtioNetPciDevice {
 		// VirtIO 4.1.4.3.1: Set queue_size to 0 if current queue is 'unavailable'.
 		// We only support 2, so handling like this for now.
 		if val != RX_QUEUE && val != TX_QUEUE {
-			self.capabilities.common.queue_size = 0;
+			self.header_caps.common_cfg.queue_size = 0;
 		}
 		// trace!("Select queue: {val}");
-		self.capabilities.common.queue_select = val;
+		self.header_caps.common_cfg.queue_select = val;
 	}
 
 	pub fn write_queue_device(&mut self, data: &[u8]) {
-		self.capabilities.common.queue_device = u64::from_le_bytes(data.try_into().unwrap())
+		let data_u64 = match data.len() {
+			1 => [data[0], 0, 0, 0, 0, 0, 0, 0],
+			2 => [data[0], data[1], 0, 0, 0, 0, 0, 0],
+			4 => [data[0], data[1], data[2], data[3], 0, 0, 0, 0],
+			8 => [
+				data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+			],
+			_ => panic!("Invalid write length"),
+		};
+		self.header_caps.common_cfg.queue_device = u64::from_le_bytes(data_u64)
 	}
 
 	pub fn write_queue_driver(&mut self, data: &[u8]) {
-		self.capabilities.common.queue_driver = u64::from_le_bytes(data.try_into().unwrap())
+		let data_u64 = match data.len() {
+			1 => [data[0], 0, 0, 0, 0, 0, 0, 0],
+			2 => [data[0], data[1], 0, 0, 0, 0, 0, 0],
+			4 => [data[0], data[1], data[2], data[3], 0, 0, 0, 0],
+			8 => [
+				data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+			],
+			_ => panic!("Invalid write length"),
+		};
+		self.header_caps.common_cfg.queue_driver = u64::from_le_bytes(data_u64)
 	}
 
 	/// Enable or disable the currently selected queue.
@@ -486,7 +403,7 @@ impl VirtioNetPciDevice {
 
 		let stat = val == 1;
 
-		let mut queue = match self.capabilities.common.queue_select {
+		let mut queue = match self.header_caps.common_cfg.queue_select {
 			RX_QUEUE => self.rx_queue.lock(),
 			TX_QUEUE => self.tx_queue.lock(),
 			_ => {
@@ -499,7 +416,7 @@ impl VirtioNetPciDevice {
 		if stat && !queue.is_valid(self.guest_mmap.as_ref()) {
 			error!("tried to set queue as ready, but is not valid")
 		}
-		self.capabilities.common.queue_enable = val;
+		self.header_caps.common_cfg.queue_enable = val;
 	}
 
 	/// Register virtqueue and grab the host-address pointer
@@ -519,7 +436,7 @@ impl VirtioNetPciDevice {
 				crate::consts::PAGE_SIZE,
 			) as u64);
 
-			let mut queue = match self.capabilities.common.queue_select {
+			let mut queue = match self.header_caps.common_cfg.queue_select {
 				RX_QUEUE => self.rx_queue.as_ref().lock(),
 				TX_QUEUE => self.tx_queue.as_ref().lock(),
 				_ => panic!("Invalid queue selected!"),
@@ -539,14 +456,14 @@ impl VirtioNetPciDevice {
 		if self.read_status_reg() == status::ACKNOWLEDGE | status::DRIVER {
 			let requested_features: u32 = u32::from_le_bytes(data.try_into().unwrap());
 
-			self.capabilities.common.driver_feature =
-				match self.capabilities.common.driver_feature_select {
+			self.header_caps.common_cfg.driver_feature =
+				match self.header_caps.common_cfg.driver_feature_select {
 					FeatureSelector::Low => {
-						(self.capabilities.common.driver_feature | requested_features)
+						(self.header_caps.common_cfg.driver_feature | requested_features)
 							& UHYVE_NET_FEATURES_LOW
 					}
 					FeatureSelector::High => {
-						(self.capabilities.common.driver_feature | requested_features)
+						(self.header_caps.common_cfg.driver_feature | requested_features)
 							& UHYVE_NET_FEATURES_HIGH
 					}
 				}
@@ -554,17 +471,17 @@ impl VirtioNetPciDevice {
 	}
 
 	pub fn write_device_feature_select(&mut self, data: &[u8]) {
-		self.capabilities.common.device_feature_select =
+		self.header_caps.common_cfg.device_feature_select =
 			FeatureSelector::from(u32::from_le_bytes(data.try_into().unwrap()))
 	}
 
 	pub fn write_driver_feature_select(&mut self, data: &[u8]) {
-		self.capabilities.common.driver_feature_select =
+		self.header_caps.common_cfg.driver_feature_select =
 			FeatureSelector::from(u32::from_le_bytes(data.try_into().unwrap()))
 	}
 
 	pub fn read_host_features(&self, data: &mut [u8]) {
-		match self.capabilities.common.device_feature_select {
+		match self.header_caps.common_cfg.device_feature_select {
 			FeatureSelector::Low => data.copy_from_slice(&UHYVE_NET_FEATURES_LOW.to_le_bytes()),
 			FeatureSelector::High => data.copy_from_slice(&UHYVE_NET_FEATURES_HIGH.to_le_bytes()),
 			// _ => data.fill(0), // VirtIO 4.1.4.3.1: present zero for any invalid select
@@ -579,32 +496,24 @@ impl VirtioNetPciDevice {
 
 impl PciDevice for VirtioNetPciDevice {
 	fn handle_read(&self, address: u32, dest: &mut [u8]) {
-		dest.copy_from_slice(&self.config_space[address as usize..][..dest.len()]);
+		// println!(
+		// 	"VirtioPCI: reading {} bytes from {address:#x}: {:?}",
+		// 	dest.len(),
+		// 	&self.config_space.slice[address as usize..(address as usize + dest.len())]
+		// );
+		if let Err(e) = self.header_caps.read(address, dest) {
+			error!("PCI Read error: {e:?}");
+		}
 	}
 
 	fn handle_write(&mut self, address: u32, data: &[u8]) {
-		match address {
-			0..=0x03 | 0x06..=0x0F | 0x28..=0x3C => {
-				error!("Kernel tries to write into an invalid PCI header location ({address:#x})");
-				panic!()
-			}
-			0x04 => {
-				// Command register
-				for i in 0..2 {
-					self.config_space[0x04 + i] = data[i];
-				}
-			}
-			0x10 | 0x14 => {
-				// BAR0 -> BAR detection writes something to this register and reads it back. We protect the lowest bit to ensure it stays a 64-Bit address field
-				for i in 1..=3 {
-					self.config_space[address as usize + i] = data[i];
-				}
-			}
-			0x05 | 0x11..=0x13 | 0x15..=0x17 => warn!("Unaligned PCI BAR access"),
-
-			// ignore read/write to the other BARs
-			0x18..=0x27 => {}
-			_ => error!("Kernel tries to write outside of PCI header! ({address:#x})"),
+		// println!(
+		// 	"VirtioPCI: writing {} bytes to {address:#x}: {:?}",
+		// 	data.len(),
+		// 	data
+		// );
+		if let Err(e) = self.header_caps.write(address, data) {
+			error!("PCI Write error: {e:?}");
 		}
 	}
 }

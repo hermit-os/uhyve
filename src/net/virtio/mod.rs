@@ -1,6 +1,5 @@
 pub mod capabilities;
-
-use std::ops::Add;
+pub mod pci;
 
 pub use virtio_bindings::{
 	bindings::virtio_net::{VIRTIO_NET_F_MAC, VIRTIO_NET_F_MTU, VIRTIO_NET_F_STATUS},
@@ -95,130 +94,10 @@ pub mod config {
 	}
 }
 
-/// Stores an address in the PCI configuration space.
-#[derive(Eq, PartialEq, Clone, Copy, Debug)]
-pub struct ConfigAddress(pub(crate) u32);
-
-impl Add<usize> for ConfigAddress {
-	type Output = Self;
-
-	fn add(self, rhs: usize) -> Self::Output {
-		ConfigAddress(self.0 + rhs as u32)
-	}
-}
-
-impl ConfigAddress {
-	/// Returns offset from the PCI **Configuration** space start.
-	/// Panics if the address is before PCI_CAP_PTR_START (configuration header)
-	pub const fn capability_space_start(&self) -> usize {
-		if self.0 < crate::net::virtio::PCI_CAP_PTR_START {
-			panic!("Address is in PCI configuration header!")
-		}
-		(self.0 - crate::net::virtio::PCI_CAP_PTR_START) as usize
-	}
-
-	pub const fn from_configuration_address(address: u32) -> Self {
-		Self(address)
-	}
-
-	pub fn from_guest_address(address: u64) -> Self {
-		if address < IOBASE as u64 || address >= CONFIG_SPACE_END {
-			panic!("Address provided is not within IOSPACE")
-		}
-		Self(u32::try_from(address).unwrap() - IOBASE)
-	}
-
-	pub fn guest_address(&self) -> u64 {
-		(self.0 + IOBASE).into()
-	}
-}
-
-macro_rules! get_offset {
-	($offset:expr, $ty:ty, $field:ident) => {
-		unsafe {
-			let base_ptr: *const _ = std::mem::MaybeUninit::<$ty>::uninit().as_ptr();
-			let f: *const _ = std::ptr::addr_of!((*base_ptr).$field);
-			ConfigAddress::from_configuration_address(
-				(f as *const u8).offset_from(base_ptr as *const u8) as u32 + $offset as u32,
-			)
-		}
-	};
-}
-
-/// Contains immutable offsets of uhyve's virtio configuration.
-pub mod offsets {
-	use super::capabilities::{
-		ComCfg, IsrStatus, NetDevCfg,
-		offsets::{COMMON_CFG_OFFSET, DEVICE_CFG_OFFSET, ISR_CFG_OFFSET, NOTIFY_CFG},
-	};
-	use crate::net::virtio::ConfigAddress;
-
-	// Common configuration.
-	pub const DEVICE_FEATURE_SELECT: ConfigAddress =
-		get_offset!(COMMON_CFG_OFFSET, ComCfg, device_feature_select);
-
-	pub const DEVICE_FEATURE: ConfigAddress =
-		get_offset!(COMMON_CFG_OFFSET, ComCfg, device_feature);
-
-	pub const DRIVER_FEATURE_SELECT: ConfigAddress =
-		get_offset!(COMMON_CFG_OFFSET, ComCfg, driver_feature_select);
-
-	pub const DRIVER_FEATURE: ConfigAddress =
-		get_offset!(COMMON_CFG_OFFSET, ComCfg, driver_feature);
-
-	pub const CONFIG_MSIX_VECTOR: ConfigAddress =
-		get_offset!(COMMON_CFG_OFFSET, ComCfg, config_msix_vector);
-
-	pub const DEVICE_STATUS: ConfigAddress = get_offset!(COMMON_CFG_OFFSET, ComCfg, device_status);
-
-	pub const QUEUE_SELECT: ConfigAddress = get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_select);
-
-	pub const QUEUE_SIZE: ConfigAddress = get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_size);
-
-	pub const QUEUE_MSIX_VECTOR: ConfigAddress =
-		get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_msix_vector);
-
-	pub const QUEUE_ENABLE: ConfigAddress = get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_enable);
-
-	pub const QUEUE_NOTIFY_OFFSET: ConfigAddress =
-		get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_notify_off);
-
-	pub const QUEUE_DESC: ConfigAddress = get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_desc);
-
-	pub const QUEUE_DRIVER: ConfigAddress = get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_driver);
-
-	pub const QUEUE_DEVICE: ConfigAddress = get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_device);
-
-	pub const QUEUE_NOTIFY_DATA: ConfigAddress =
-		get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_notify_data);
-
-	pub const QUEUE_RESET: ConfigAddress = get_offset!(COMMON_CFG_OFFSET, ComCfg, queue_reset);
-
-	/// Notify structure in case config changes take place
-	pub const ISR_NOTIFY: ConfigAddress = get_offset!(ISR_CFG_OFFSET, IsrStatus, flags);
-
-	// TODO: should this really be a seperate address?
-	// or can we use seperate notify addresses for seperate things?
-	pub const MEM_NOTIFY: ConfigAddress = NOTIFY_CFG;
-	pub const MEM_NOTIFY_1: ConfigAddress = ConfigAddress(NOTIFY_CFG.0 + 1);
-
-	// Device configuration.
-	pub const MAC_ADDRESS: ConfigAddress = get_offset!(DEVICE_CFG_OFFSET, NetDevCfg, mac);
-	pub const MAC_ADDRESS_1: ConfigAddress = ConfigAddress(MAC_ADDRESS.0 + 4);
-	pub const NET_STATUS: ConfigAddress = get_offset!(DEVICE_CFG_OFFSET, NetDevCfg, status);
-	pub const MTU: ConfigAddress = get_offset!(DEVICE_CFG_OFFSET, NetDevCfg, mtu);
-}
-
 /// Virtio PCI vendor ID, section 4.1.2 v1.2
 pub const VIRTIO_VENDOR_ID: u16 = 0x1AF4;
 
 /// For now, use an address large enough to be outside of kvm_userspace,
 /// as IO/MMIO writes are otherwise dismissed.
 pub const IOBASE: u32 = 0xFE000000;
-pub const PCI_CAP_PTR_START: u32 = 0x40;
-pub const CONFIG_SPACE_START: u64 = (IOBASE + PCI_CAP_PTR_START) as u64;
-
-pub const CONFIG_SPACE_SIZE: usize = 0x200;
-
 const VIRTIO_MSI_NO_VECTOR: u16 = 0xffff;
-const CONFIG_SPACE_END: u64 = CONFIG_SPACE_START + CONFIG_SPACE_SIZE as u64;
