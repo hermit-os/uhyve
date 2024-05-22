@@ -18,6 +18,17 @@ pub use virtio_bindings::bindings::virtio_ring::{
 	VRING_DESC_F_INDIRECT, VRING_DESC_F_NEXT, VRING_DESC_F_WRITE,
 };
 
+// A virtqueue notification as described in the Virtio standard v1.2 Sec. 2.9 & 4.1.5.2.
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct VirtqueueNotification {
+	/// VQ number to be notified
+	pub vqn: u16,
+	/// next_off: Offset within the ring to the next available ring entry (lower 15 bytes)
+	/// wrap: wrap counter (msb)
+	pub next_off_wrap: u16,
+}
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct VringDescriptor {
