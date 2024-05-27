@@ -533,52 +533,23 @@ impl VirtualCPU for KvmCpu {
 						match addr {
 							0x9_F000..0xA_0000 | 0xF_0000..0x10_0000 => {} // Search for MP floating table
 							_ => {
+								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
 								match ConfigAddress::from_guest_address(addr).unwrap() {
-									IsrStatus::ISR_FLAGS => {
-										let virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										virtio_device.read_isr_notify(data);
-									}
+									IsrStatus::ISR_FLAGS => virtio_device.read_isr_notify(data),
 									ComCfg::DEVICE_STATUS => {
-										let virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										data[0] = virtio_device.read_status_reg();
+										data[0] = virtio_device.read_status_reg()
 									}
 									ComCfg::DEVICE_FEATURE => {
-										let virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										virtio_device.read_host_features(data);
+										virtio_device.read_host_features(data)
 									}
-									ComCfg::QUEUE_SIZE => {
-										let virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										virtio_device.read_queue_size(data);
-									}
+									ComCfg::QUEUE_SIZE => virtio_device.read_queue_size(data),
 									ComCfg::QUEUE_NOTIFY_OFFSET => {
-										let virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										virtio_device.read_queue_notify_offset(data);
+										virtio_device.read_queue_notify_offset(data)
 									}
-									NetDevCfg::MAC_ADDRESS => {
-										let virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										virtio_device.read_mac_address(data);
-									}
-									NetDevCfg::NET_STATUS => {
-										let virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										virtio_device.read_net_status(data);
-									}
-									NetDevCfg::MTU => {
-										let virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										virtio_device.read_mtu(data);
-									}
-									ComCfg::QUEUE_RESET => {
-										let virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										virtio_device.read_queue_reset(data);
-									}
+									NetDevCfg::MAC_ADDRESS => virtio_device.read_mac_address(data),
+									NetDevCfg::NET_STATUS => virtio_device.read_net_status(data),
+									NetDevCfg::MTU => virtio_device.read_mtu(data),
+									ComCfg::QUEUE_RESET => virtio_device.read_queue_reset(data),
 									_ => {
 										warn!("unhandled read! {addr:#x?}")
 									}
@@ -601,72 +572,34 @@ impl VirtualCPU for KvmCpu {
 						panic!("{:?}", VcpuExit::InternalError)
 					}
 					VcpuExit::MmioWrite(addr, data) => {
+						let mut virtio_device = self.peripherals.virtio_device.lock().unwrap();
 						match ConfigAddress::from_guest_address(addr).unwrap() {
-							ComCfg::DEVICE_STATUS => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.write_status(data);
-							}
+							ComCfg::DEVICE_STATUS => virtio_device.write_status(data),
 							ComCfg::DRIVER_FEATURE_SELECT => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-
-								virtio_device.write_driver_feature_select(data);
+								virtio_device.write_driver_feature_select(data)
 							}
 							ComCfg::DEVICE_FEATURE_SELECT => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-
-								virtio_device.write_device_feature_select(data);
+								virtio_device.write_device_feature_select(data)
 							}
-							ComCfg::DRIVER_FEATURE => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.write_requested_features(data);
-							}
-							ComCfg::QUEUE_SELECT => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.write_selected_queue(data);
-							}
-							ComCfg::QUEUE_DESC => {
-								// write descriptor address
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.write_pfn(data);
-							}
-							ComCfg::QUEUE_ENABLE => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.queue_enable(data);
-							}
-							ComCfg::QUEUE_DRIVER => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.write_queue_driver(data);
-							}
-							ComCfg::QUEUE_DEVICE => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.write_queue_driver(data);
-							}
-							ComCfg::QUEUE_RESET => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.write_reset_queue();
-							}
+							ComCfg::DRIVER_FEATURE => virtio_device.write_requested_features(data),
+							ComCfg::QUEUE_SELECT => virtio_device.write_selected_queue(data),
+							ComCfg::QUEUE_DESC => virtio_device.write_pfn(data), // write descriptor address
+							ComCfg::QUEUE_ENABLE => virtio_device.queue_enable(data),
+							ComCfg::QUEUE_DRIVER => virtio_device.write_queue_driver(data),
+							ComCfg::QUEUE_DEVICE => virtio_device.write_queue_driver(data),
+							ComCfg::QUEUE_RESET => virtio_device.write_reset_queue(),
 							IsrStatus::ISR_FLAGS => {
-								panic!("Guest should not write to ISR!");
+								panic!("Guest should not write to ISR!")
 							}
 							MEM_NOTIFY | MEM_NOTIFY_1 => {
 								// TODO: are we only writing to two addresses or alerting/switching twice?
 								panic!(
 									"Writing to MemNotify address! Is IOEventFD correctly configured?"
-								);
+								)
 							}
 							_ => {
 								self.print_registers();
-								panic!("undefined mmio write to {addr:#x}");
+								panic!("undefined mmio write to {addr:#x}")
 							}
 						}
 					}
