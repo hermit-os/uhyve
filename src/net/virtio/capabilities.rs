@@ -3,18 +3,38 @@
 use bitflags::bitflags;
 use zerocopy::AsBytes;
 
-use super::pci::ConfigAddress;
 use crate::{
 	net::{
 		BROADCAST_MAC_ADDR, UHYVE_NET_MTU, UHYVE_QUEUE_SIZE,
-		virtio::{
-			config::cfg_type,
-			pci::{COMMON_CFG_START, DEVICE_CFG_START, ISR_CFG_START, get_offset},
+		virtio::pci::{
+			COMMON_CFG_START, ConfigAddress, DEVICE_CFG_START, ISR_CFG_START, get_offset,
 		},
 	},
 	pci::PciError,
 	virtqueue::VirtqueueNotification,
 };
+
+/// Virtio capability type IDs. See section 4.1.4 virtio v1.2
+#[derive(Debug, Clone, Copy, AsBytes, PartialEq, Eq)]
+#[repr(u8)]
+#[allow(non_camel_case_types)]
+pub enum CfgType {
+	INVALID_CFG = 0x00,
+	/// Common configuration
+	COMMON_CFG = 0x01,
+	/// Notifications
+	NOTIFY_CFG = 0x02,
+	/// ISR status
+	ISR_CFG = 0x03,
+	/// Device-specific configuration
+	DEVICE_CFG = 0x04,
+	/// PCI configuration access
+	PCI_CFG = 0x05,
+	/// Shared memory region
+	_SHARED_MEMORY_CFG = 0x08,
+	/// Vendor-specific data
+	VENDOR_CFG = 0x09,
+}
 
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, AsBytes)]
@@ -48,7 +68,7 @@ pub struct PciCap {
 	pub cap_len: u8,
 
 	/// Identifies the structure. See [`crate::net::virtio::config::cfg_type`]
-	pub cfg_type: u8,
+	pub cfg_type: CfgType,
 
 	/// Index of the device BAR register
 	bar_index: u8,
@@ -70,10 +90,10 @@ pub struct PciCap {
 impl Default for PciCap {
 	fn default() -> Self {
 		Self {
-			cap_vndr: cfg_type::VENDOR_CFG,
+			cap_vndr: 0x09, // Virtio v1.2 Sec. 4.1.4
 			cap_next: 0,
 			cap_len: std::mem::size_of::<PciCap>() as u8,
-			cfg_type: cfg_type::INVALID_CFG,
+			cfg_type: CfgType::INVALID_CFG,
 			bar_index: 0,
 			id: 0,
 			_padding: [0u8; 2],
@@ -218,7 +238,7 @@ impl Default for NotifyCap {
 		Self {
 			cap: PciCap {
 				cap_len: std::mem::size_of::<NotifyCap>() as u8,
-				cfg_type: cfg_type::NOTIFY_CFG,
+				cfg_type: CfgType::NOTIFY_CFG,
 				offset: 0,
 				// We have two notification addresses. TODO: We prob. only need one
 				length: std::mem::size_of::<VirtqueueNotification>() as u32 * 2,
