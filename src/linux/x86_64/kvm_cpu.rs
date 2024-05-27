@@ -450,41 +450,33 @@ impl VirtualCPU for KvmCpu {
 					}
 
 					VcpuExit::MmioRead(addr, data) => {
+						let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 						match ConfigAddress::from_guest_address(addr).unwrap() {
 							IsrStatus::ISR_FLAGS => {
-								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.read_isr_notify(data);
 							}
 							ComCfg::DEVICE_STATUS => {
-								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 								data[0] = virtio_device.read_status_reg();
 							}
 							ComCfg::DEVICE_FEATURE => {
-								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.read_host_features(data);
 							}
 							ComCfg::QUEUE_SIZE => {
-								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.read_queue_size(data);
 							}
 							ComCfg::QUEUE_NOTIFY_OFFSET => {
-								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.read_queue_notify_offset(data);
 							}
 							NetDevCfg::MAC_ADDRESS => {
-								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.read_mac_address(data);
 							}
 							NetDevCfg::NET_STATUS => {
-								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.read_net_status(data);
 							}
 							NetDevCfg::MTU => {
-								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.read_mtu(data);
 							}
 							ComCfg::QUEUE_RESET => {
-								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.read_queue_reset(data);
 							}
 							_ => {
@@ -494,58 +486,37 @@ impl VirtualCPU for KvmCpu {
 					}
 
 					VcpuExit::MmioWrite(addr, data) => {
+						let mut virtio_device = self.parent_vm.virtio_device.lock().unwrap();
 						match ConfigAddress::from_guest_address(addr).unwrap() {
 							ComCfg::DEVICE_STATUS => {
-								let mut virtio_device =
-									self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.write_status(data);
 							}
 							ComCfg::DRIVER_FEATURE_SELECT => {
-								let mut virtio_device =
-									self.parent_vm.virtio_device.lock().unwrap();
-
 								virtio_device.write_driver_feature_select(data);
 							}
 							ComCfg::DEVICE_FEATURE_SELECT => {
-								let mut virtio_device =
-									self.parent_vm.virtio_device.lock().unwrap();
-
 								virtio_device.write_device_feature_select(data);
 							}
 							ComCfg::DRIVER_FEATURE => {
-								let mut virtio_device =
-									self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.write_requested_features(data);
 							}
 							ComCfg::QUEUE_SELECT => {
-								let mut virtio_device =
-									self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.write_selected_queue(data);
 							}
 							ComCfg::QUEUE_DESC => {
 								// write descriptor address
-								let mut virtio_device =
-									self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.write_pfn(data);
 							}
 							ComCfg::QUEUE_ENABLE => {
-								let mut virtio_device =
-									self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.queue_enable(data);
 							}
 							ComCfg::QUEUE_DRIVER => {
-								let mut virtio_device =
-									self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.write_queue_driver(data);
 							}
 							ComCfg::QUEUE_DEVICE => {
-								let mut virtio_device =
-									self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.write_queue_driver(data);
 							}
 							ComCfg::QUEUE_RESET => {
-								let mut virtio_device =
-									self.parent_vm.virtio_device.lock().unwrap();
 								virtio_device.write_reset_queue();
 							}
 							IsrStatus::ISR_FLAGS => {
