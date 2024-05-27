@@ -26,7 +26,10 @@ use crate::{
 	net::{
 		tap::Tap,
 		virtio::{
-			capabilities::IsrStatus, config::device_id, features::{UHYVE_NET_FEATURES_HIGH, UHYVE_NET_FEATURES_LOW}, pci::{HeaderConf, MEM_NOTIFY, MEM_NOTIFY_1}, DeviceStatus, IOBASE
+			capabilities::IsrStatus,
+			features::{UHYVE_NET_FEATURES_HIGH, UHYVE_NET_FEATURES_LOW},
+			pci::{HeaderConf, MEM_NOTIFY, MEM_NOTIFY_1},
+			DeviceStatus, IOBASE, NET_DEVICE_ID,
 		},
 	},
 	pci::MemoryBar64,
@@ -79,7 +82,7 @@ impl fmt::Debug for VirtioNetPciDevice {
 impl VirtioNetPciDevice {
 	pub fn new(guest_mmap: Arc<vm_memory::GuestMemoryMmap>) -> VirtioNetPciDevice {
 		let mut header_caps = HeaderConf::new();
-		header_caps.pci_config_hdr.device_id = device_id::NET_DEVICE;
+		header_caps.pci_config_hdr.device_id = NET_DEVICE_ID;
 		header_caps.pci_config_hdr.base_address_registers[0] = MemoryBar64::new(IOBASE as u64);
 		header_caps.pci_config_hdr.interrupt_line = UHYVE_IRQ_NET;
 		header_caps.common_cfg.num_queues = 2;
