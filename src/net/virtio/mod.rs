@@ -17,38 +17,46 @@ pub mod features {
 	pub const UHYVE_NET_FEATURES_HIGH: u32 = ((1_usize << VIRTIO_F_VERSION_1) >> 32) as u32;
 }
 
+use bitflags::bitflags;
 pub use virtio_bindings::bindings::virtio_net::{VIRTIO_NET_HDR_GSO_NONE, VIRTIO_NET_S_LINK_UP};
+use zerocopy::AsBytes;
 
-pub mod config {
-	/// Virtio device status field. See section 2.1 virtio v1.2
-	pub mod status {
+/// Virtio device status field. See section 2.1 virtio v1.2
+#[derive(Copy, Clone, Debug, AsBytes, PartialEq, Eq)]
+#[repr(C)]
+pub struct DeviceStatus(u16);
+bitflags! {
+	impl DeviceStatus : u16 {
 		/// Despite not being a valid virtio Flag, 0 represents an uninitialized or reset device.
-		pub const UNINITIALIZED: u8 = 0;
+		const UNINITIALIZED = 0;
 		/// Indicates the guest has found the device and recognises it as valid.
-		pub const ACKNOWLEDGE: u8 = 1;
+		const ACKNOWLEDGE = 1;
 
 		/// Indicates the guest knows how to drive the device.
-		pub const DRIVER: u8 = 2;
+		const DRIVER = 2;
 
 		/// Indicates the driver is set up and ready to drive the device.
-		pub const DRIVER_OK: u8 = 4;
+		const DRIVER_OK = 4;
 
 		/// indicates the driver has acknowledged the features it understands and negotiation is
 		/// complete.
-		pub const FEATURES_OK: u8 = 8;
+		const FEATURES_OK = 8;
 
 		/// Indicates that the device has experienced an error from which it can’t recover.
-		pub const DEVICE_NEEDS_RESET: u8 = 64;
+		const DEVICE_NEEDS_RESET = 64;
 
 		/// Indicates that the PCI capabilities pointer points to a linked list at register address
 		/// 0x34.
 		///
 		/// See: PCI-to-PCI bridge architechture, section 3.2.4.4
-		pub const PCI_CAPABILITIES_LIST_ENABLE: u8 = 16;
+		const PCI_CAPABILITIES_LIST_ENABLE = 16;
 
 		/// Failed to initialize.
-		pub const FAILED: u8 = 128;
+		const FAILED = 128;
 	}
+}
+
+pub mod config {
 
 	/// Virtio ISR status flags. See section 4.1.4.5 virtio v1.2
 	pub mod interrupt {

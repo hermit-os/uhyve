@@ -1,5 +1,6 @@
 //! VirtIO capability structures.
 
+use bitflags::bitflags;
 use zerocopy::AsBytes;
 
 use super::pci::ConfigAddress;
@@ -101,6 +102,17 @@ impl PciCap {
 	}
 }
 
+#[derive(Copy, Clone, Debug, AsBytes, PartialEq, Eq)]
+#[repr(C)]
+pub struct NetDevStatus(u16);
+bitflags! {
+	impl NetDevStatus: u16 {
+		const UNINITIALIZED = 0;
+		const VIRTIO_NET_S_LINK_UP = 1;
+		const VIRTIO_NET_S_ANNOUNCE = 2;
+	}
+}
+
 // TODO: Replace with virtio_bindings::Virtio_net_config?
 /// Virtio device configuration layout.
 #[derive(Clone, Debug)]
@@ -110,7 +122,7 @@ pub struct NetDevCfg {
 	pub mac: [u8; 6],
 
 	/// **read-write** Status field: VIRTIO_NET_S_LINK_UP and VIRTIO_NET_S_ANNOUNCE.
-	pub status: u16,
+	pub status: NetDevStatus,
 
 	/// **read-only**: only exists if VIRTIO_F_MQ or VIRTIO_NET_F_RSS are negotiated, however
 	/// implements and does not use it. TODO
@@ -135,7 +147,7 @@ impl Default for NetDevCfg {
 	fn default() -> Self {
 		Self {
 			mac: BROADCAST_MAC_ADDR,
-			status: 0,
+			status: NetDevStatus::UNINITIALIZED,
 			_max_virtqueue_pairs: 0,
 			mtu: UHYVE_NET_MTU as u16,
 			_speed: 0u32,
