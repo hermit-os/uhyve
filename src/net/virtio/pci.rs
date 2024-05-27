@@ -2,9 +2,9 @@ use std::{mem::size_of, ops::Add};
 
 /// Configuration Structures for Virtio PCI devices
 use crate::{
-	virtqueue::VirtqueueNotification,
-	net::virtio::{capabilities::*, config::cfg_type},
+	net::virtio::capabilities::*,
 	pci::{PciError, PciType0ConfigSpaceHeader, IOBASE},
+	virtqueue::VirtqueueNotification,
 };
 
 pub const HDR_END: u8 = size_of::<PciType0ConfigSpaceHeader>() as u8 - 1;
@@ -151,21 +151,21 @@ impl HeaderConf {
 		h.pci_config_hdr.capabilities_ptr = COMMON_CAP_START;
 		h.common_cap.cap_next = ISR_CAP_START;
 		h.common_cap.offset = COMMON_CFG_START as u32;
-		h.common_cap.cfg_type = cfg_type::COMMON_CFG;
+		h.common_cap.cfg_type = CfgType::COMMON_CFG;
 		h.common_cap.length = size_of::<ComCfg>() as u32;
 
 		h.isr_cap.cap_next = NOTIFY_CAP_START;
 		h.isr_cap.offset = ISR_CFG_START as u32;
-		h.isr_cap.cfg_type = cfg_type::ISR_CFG;
+		h.isr_cap.cfg_type = CfgType::ISR_CFG;
 		h.isr_cap.length = size_of::<IsrStatus>() as u32;
 
 		h.notify_cap.cap.cap_next = DEVICE_CAP_START;
 		h.notify_cap.cap.offset = NOTIFY_REGION_START as u32;
-		h.notify_cap.cap.cfg_type = cfg_type::NOTIFY_CFG;
+		h.notify_cap.cap.cfg_type = CfgType::NOTIFY_CFG;
 
 		h.device_cap.cap_next = 0;
 		h.device_cap.offset = DEVICE_CFG_START as u32;
-		h.device_cap.cfg_type = cfg_type::DEVICE_CFG;
+		h.device_cap.cfg_type = CfgType::DEVICE_CFG;
 		h.device_cap.length = size_of::<NetDevCfg>() as u32;
 
 		h
