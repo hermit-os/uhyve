@@ -57,25 +57,17 @@ bitflags! {
 	}
 }
 
-pub mod config {
-
-	/// Virtio Device IDs.
-	///
-	/// The device is calculated by adding 0x1040 to the virtio device ID as in section 5, or have a
-	/// transitional device ID.
-	///
-	/// See sections 4.1.2.1 and 5 virtio v1.2
-	pub mod device_id {
-		const ROOT_DEVICE_ID: u16 = 0x1040;
-		pub const NET_DEVICE: u16 = ROOT_DEVICE_ID + 1;
-		const _BLOCK_DEVICE: u16 = ROOT_DEVICE_ID + 2;
-		const _CONSOLE_DEVICE: u16 = ROOT_DEVICE_ID + 3;
-		const _SOCKET_DEVICE: u16 = ROOT_DEVICE_ID + 19;
-		// const TRANSITIONAL_NETWORK_CARD: u32 = 0x1000;
-	}
-
-
-}
+// Virtio Device IDs.
+//
+// The device is calculated by adding 0x1040 to the virtio device ID as in section 5, or have a
+// transitional device ID.
+//
+// See sections 4.1.2.1 and 5 virtio v1.2
+const ROOT_DEVICE_ID: u16 = 0x1040;
+pub const NET_DEVICE_ID: u16 = ROOT_DEVICE_ID + 1;
+const _BLOCK_DEVICE_ID: u16 = ROOT_DEVICE_ID + 2;
+const _CONSOLE_DEVICE_ID: u16 = ROOT_DEVICE_ID + 3;
+const _SOCKET_DEVICE_ID: u16 = ROOT_DEVICE_ID + 19;
 
 /// Virtio PCI vendor ID, section 4.1.2 v1.2
 pub const VIRTIO_VENDOR_ID: u16 = 0x1AF4;
