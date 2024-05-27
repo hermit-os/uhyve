@@ -43,6 +43,7 @@ instrument = ["rftrace", "rftrace-frontend"]
 
 [dependencies]
 align-address = "0.3.0"
+bitflags = "2.9"
 byte-unit = { version = "5", features = ["byte"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 nix = { version = "0.28", features = ["mman", "pthread", "signal", "net"] }
@@ -95,7 +96,6 @@ memory_addresses = { version = "0.2.2", default-features = false, features = [
 ] }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
-bitflags = "2.9"
 memory_addresses = { version = "0.2.2", default-features = false, features = [
   "aarch64",
 ] }
