@@ -82,24 +82,7 @@ pub mod config {
 		// const TRANSITIONAL_NETWORK_CARD: u32 = 0x1000;
 	}
 
-	/// Virtio capability type IDs. See section 4.1.4 virtio v1.2
-	pub mod cfg_type {
-		pub const INVALID_CFG: u8 = 0x00;
-		/// Common configuration
-		pub const COMMON_CFG: u8 = 0x01;
-		/// Notifications
-		pub const NOTIFY_CFG: u8 = 0x02;
-		/// ISR status
-		pub const ISR_CFG: u8 = 0x03;
-		/// Device-specific configuration
-		pub const DEVICE_CFG: u8 = 0x04;
-		/// PCI configuration access
-		pub const PCI_CFG: u8 = 0x05;
-		/// Shared memory region
-		const _SHARED_MEMORY_CFG: u8 = 0x08;
-		/// Vendor-specific data
-		pub const VENDOR_CFG: u8 = 0x09;
-	}
+
 }
 
 /// Virtio PCI vendor ID, section 4.1.2 v1.2
