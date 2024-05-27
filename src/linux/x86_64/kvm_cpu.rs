@@ -11,12 +11,12 @@ use crate::{
 	consts::*,
 	hypercall,
 	linux::KVM,
-	net::virtio::{
+	pci::PciDevice,
+	vcpu::{VcpuStopReason, VirtualCPU},
+	virtio::{
 		capabilities::{ComCfg, IsrStatus, NetDevCfg},
 		pci::{ConfigAddress, MEM_NOTIFY, MEM_NOTIFY_1},
 	},
-	vcpu::{VcpuStopReason, VirtualCPU},
-	virtio::*,
 	vm::UhyveVm,
 	HypervisorError, HypervisorResult,
 };

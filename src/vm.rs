@@ -26,7 +26,10 @@ use crate::arch::x86_64::{
 };
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 use crate::linux::x86_64::kvm_cpu::initialize_kvm;
-use crate::{arch, consts::*, os::HypervisorError, params::Params, vcpu::VirtualCPU, virtio::*};
+use crate::{
+	arch, consts::*, os::HypervisorError, params::Params, vcpu::VirtualCPU,
+	virtio::net::VirtioNetPciDevice,
+};
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
 

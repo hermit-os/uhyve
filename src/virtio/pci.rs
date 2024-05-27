@@ -1,10 +1,10 @@
+//! Configuration Structures for Virtio PCI devices
+
 use std::{mem::size_of, ops::Add};
 
-/// Configuration Structures for Virtio PCI devices
 use crate::{
-	net::virtio::capabilities::*,
 	pci::{PciError, PciType0ConfigSpaceHeader, IOBASE},
-	virtqueue::VirtqueueNotification,
+	virtio::{capabilities::*, virtqueue::VirtqueueNotification},
 };
 
 pub const HDR_END: u8 = size_of::<PciType0ConfigSpaceHeader>() as u8 - 1;
@@ -39,18 +39,6 @@ pub const NOTIFY_REGION_END: u8 =
 
 pub const DEVICE_CFG_START: u8 = NOTIFY_REGION_END + 1;
 pub const DEVICE_CFG_END: u8 = DEVICE_CFG_START + size_of::<NetDevCfg>() as u8 - 1;
-
-pub const MAC_ADDRESS: ConfigAddress =
-	ConfigAddress::from_configuration_address(DEVICE_CAP_START as u32);
-
-/// Contains immutable offsets of uhyve's virtio configuration.
-// pub mod offsets {
-// 	use super::capabilities::{
-// 		ComCfg, IsrStatus, NetDevCfg,
-// 	};
-// 	use crate::net::virtio::ConfigAddress;
-
-// mod offsets {
 
 /// An address in the PCI configuration space.
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]

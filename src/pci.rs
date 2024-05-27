@@ -3,15 +3,18 @@ use zerocopy::AsBytes;
 
 use crate::{
 	consts::GUEST_PAGE_SIZE,
-	net::{
-		virtio::{DeviceStatus, VIRTIO_VENDOR_ID},
-		PCI_ETHERNET_REVISION_ID, UHYVE_PCI_CLASS_INFO,
-	},
+	net::{PCI_ETHERNET_REVISION_ID, UHYVE_PCI_CLASS_INFO},
+	virtio::{DeviceStatus, VIRTIO_VENDOR_ID},
 };
 
 /// For now, use an address large enough to be outside of kvm_userspace,
 /// as IO/MMIO writes are otherwise dismissed.
 pub const IOBASE: u32 = 0xFE000000;
+
+pub trait PciDevice {
+	fn handle_read(&self, address: u32, dest: &mut [u8]);
+	fn handle_write(&mut self, address: u32, src: &[u8]);
+}
 
 #[derive(Error, Debug)]
 pub enum PciError {

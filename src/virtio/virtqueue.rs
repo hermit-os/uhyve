@@ -1,3 +1,6 @@
+// TODO: replace with https://crates.io/crates/virtio-queue
+#![allow(dead_code)]
+
 use std::{
 	marker::PhantomData,
 	mem,
@@ -9,14 +12,10 @@ use uhyve_interface::GuestPhysAddr;
 
 use crate::consts::PAGE_SIZE;
 
-pub const QUEUE_LIMIT: usize = 256;
-pub const VIRTQ_DESC_F_AVAIL: u16 = 1 << 7;
-pub const VIRTQ_DESC_F_USED: u16 = 1 << 15;
+pub(crate) const QUEUE_LIMIT: usize = 256;
 
 use virtio_bindings::bindings::virtio_ring::VRING_AVAIL_F_NO_INTERRUPT;
-pub use virtio_bindings::bindings::virtio_ring::{
-	VRING_DESC_F_INDIRECT, VRING_DESC_F_NEXT, VRING_DESC_F_WRITE,
-};
+pub use virtio_bindings::bindings::virtio_ring::VRING_DESC_F_WRITE;
 
 // A virtqueue notification as described in the Virtio standard v1.2 Sec. 2.9 & 4.1.5.2.
 #[repr(C)]
