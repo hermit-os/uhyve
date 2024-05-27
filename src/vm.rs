@@ -37,7 +37,7 @@ use crate::{
 	serial::{Destination, UhyveSerial},
 	stats::{CpuStats, VmStats},
 	vcpu::VirtualCPU,
-	virtio::*,
+	virtio::net::VirtioNetPciDevice,
 };
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;

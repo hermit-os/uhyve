@@ -13,14 +13,14 @@ use crate::{
 	hypercall,
 	linux::KVM,
 	mem::mem_as_slice,
-	net::virtio::{
+	params::Params,
+	pci::PciDevice,
+	stats::{CpuStats, VmExit},
+	vcpu::{VcpuStopReason, VirtualCPU},
+	virtio::{
 		capabilities::{ComCfg, IsrStatus, NetDevCfg},
 		pci::{ConfigAddress, MEM_NOTIFY, MEM_NOTIFY_1},
 	},
-	params::Params,
-	stats::{CpuStats, VmExit},
-	vcpu::{VcpuStopReason, VirtualCPU},
-	virtio::*,
 	vm::{
 		KernelInfo, VirtualizationBackend, VmPeripherals, internal::VirtualizationBackendInternal,
 	},

@@ -22,31 +22,23 @@ use vmm_sys_util::eventfd::EventFd;
 
 use crate::{
 	consts::{UHYVE_IRQ_NET, UHYVE_NET_MTU},
-	net::{
-		tap::Tap,
-		virtio::{
-			capabilities::IsrStatus,
-			features::{UHYVE_NET_FEATURES_HIGH, UHYVE_NET_FEATURES_LOW},
-			pci::{HeaderConf, MEM_NOTIFY, MEM_NOTIFY_1},
-			DeviceStatus, IOBASE, NET_DEVICE_ID,
-		},
+	net::tap::Tap,
+	pci::{MemoryBar64, PciDevice},
+	virtio::{
+		capabilities::IsrStatus,
+		features::{UHYVE_NET_FEATURES_HIGH, UHYVE_NET_FEATURES_LOW},
+		pci::{HeaderConf, MEM_NOTIFY, MEM_NOTIFY_1},
+		virtqueue::{self, QUEUE_LIMIT},
+		DeviceStatus, IOBASE, NET_DEVICE_ID,
 	},
-	pci::MemoryBar64,
-	virtqueue::{self, QUEUE_LIMIT},
 };
 
 const VIRTIO_NET_HEADER_SZ: usize = mem::size_of::<virtio_net_hdr_v1>();
 
 const RX_QUEUE: u16 = 0;
 const TX_QUEUE: u16 = 1;
-pub const VIRTIO_PCI_MEM_BAR_PFN: u16 = 1 << 3;
 
-use crate::net::virtio::capabilities::{FeatureSelector, NetDevStatus};
-
-pub trait PciDevice {
-	fn handle_read(&self, address: u32, dest: &mut [u8]);
-	fn handle_write(&mut self, address: u32, src: &[u8]);
-}
+use crate::virtio::capabilities::{FeatureSelector, NetDevStatus};
 
 /// Struct to manage uhyve's network device.
 pub struct VirtioNetPciDevice {
@@ -497,22 +489,12 @@ impl VirtioNetPciDevice {
 
 impl PciDevice for VirtioNetPciDevice {
 	fn handle_read(&self, address: u32, dest: &mut [u8]) {
-		// println!(
-		// 	"VirtioPCI: reading {} bytes from {address:#x}: {:?}",
-		// 	dest.len(),
-		// 	&self.config_space.slice[address as usize..(address as usize + dest.len())]
-		// );
 		if let Err(e) = self.header_caps.read(address, dest) {
 			error!("PCI Read error: {e:?}");
 		}
 	}
 
 	fn handle_write(&mut self, address: u32, data: &[u8]) {
-		// println!(
-		// 	"VirtioPCI: writing {} bytes to {address:#x}: {:?}",
-		// 	data.len(),
-		// 	data
-		// );
 		if let Err(e) = self.header_caps.write(address, data) {
 			error!("PCI Write error: {e:?}");
 		}

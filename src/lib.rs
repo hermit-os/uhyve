@@ -31,8 +31,6 @@ pub mod params;
 mod serial;
 pub mod stats;
 mod vcpu;
-mod virtio;
-mod virtqueue;
 pub mod vm;
 
 pub use arch::*;
@@ -58,3 +56,4 @@ pub type HypervisorResult<T> = Result<T, HypervisorError>;
 
 pub mod net;
 mod pci;
+mod virtio;

@@ -4,20 +4,18 @@ use bitflags::bitflags;
 use zerocopy::AsBytes;
 
 use crate::{
-	net::{
-		BROADCAST_MAC_ADDR, UHYVE_NET_MTU, UHYVE_QUEUE_SIZE,
-		virtio::pci::{
-			COMMON_CFG_START, ConfigAddress, DEVICE_CFG_START, ISR_CFG_START, get_offset,
-		},
-	},
+	net::{BROADCAST_MAC_ADDR, UHYVE_NET_MTU, UHYVE_QUEUE_SIZE},
 	pci::PciError,
-	virtqueue::VirtqueueNotification,
+	virtio::{
+		pci::{COMMON_CFG_START, ConfigAddress, DEVICE_CFG_START, ISR_CFG_START, get_offset},
+		virtqueue::VirtqueueNotification,
+	},
 };
 
 /// Virtio capability type IDs. See section 4.1.4 virtio v1.2
 #[derive(Debug, Clone, Copy, AsBytes, PartialEq, Eq)]
 #[repr(u8)]
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, dead_code)]
 pub enum CfgType {
 	INVALID_CFG = 0x00,
 	/// Common configuration
@@ -134,7 +132,7 @@ bitflags! {
 }
 
 // TODO: Replace with virtio_bindings::Virtio_net_config?
-/// Virtio device configuration layout.
+/// Virtio device configuration layout. Virtio v1.2 Section 5.1.4
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub struct NetDevCfg {
@@ -209,7 +207,6 @@ impl IsrStatus {
 /// See section 4.1.4.4.1 virtio v1.2
 #[derive(AsBytes, Clone, Debug)]
 #[repr(C)]
-// TODO: Rename Notif -> Notify
 pub struct NotifyCap {
 	pub cap: PciCap,
 	/// Combind with queue_notify_off to derive the Queue Notify address
@@ -234,6 +231,7 @@ impl NotifyCap {
 			_ => Err(PciError::InvalidAddress(address as u32)),
 		}
 	}
+	#[allow(dead_code)]
 	pub fn write(&mut self, address: u8, _data: &[u8]) -> Result<(), PciError> {
 		Err(PciError::ReadOnlyAccess(address as u32))
 	}
@@ -259,6 +257,7 @@ impl Default for NotifyCap {
 /// All data should be treated as little-endian.
 #[derive(AsBytes, Clone, Copy, Debug)]
 #[repr(C)]
+#[allow(dead_code)]
 pub struct ComCfg {
 	/// **read-write**: The driver uses this to select device_feature.
 	///
@@ -340,6 +339,7 @@ pub struct ComCfg {
 
 	_padding: [u8; 4],
 }
+#[allow(dead_code)]
 impl ComCfg {
 	pub const DEVICE_FEATURE_SELECT: ConfigAddress =
 		get_offset!(COMMON_CFG_START, Self, device_feature_select);
