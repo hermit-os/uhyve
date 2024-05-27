@@ -59,15 +59,6 @@ bitflags! {
 
 pub mod config {
 
-	/// Virtio ISR status flags. See section 4.1.4.5 virtio v1.2
-	pub mod interrupt {
-		/// Notify that the buffers/Virtqueues have been changed
-		pub const NOTIFY_USED_BUFFER: u8 = 1 << 0;
-		/// Notify that the device configuration has been changed.
-		///
-		/// *Note: libhermit-rs does not support configuration changes at this time.*
-		pub const NOTIFY_CONFIGURUTION_CHANGED: u8 = 1 << 1;
-	}
 	/// Virtio Device IDs.
 	///
 	/// The device is calculated by adding 0x1040 to the virtio device ID as in section 5, or have a

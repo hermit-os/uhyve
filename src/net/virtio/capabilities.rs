@@ -180,18 +180,23 @@ impl Default for NetDevCfg {
 }
 
 /// ISR capability, refers to at a single byte which ocntains an 8-bit ISR status field to be used
-/// for INT#x interrupt handling. The offset has no alignmen requirements.
+/// for INT#x interrupt handling. The offset has no alignment requirements. See Virtio v1.2 Sec. 4.1.4.5.
 ///
 /// See section 4.1.5.3 and 4.1.5.4 on usage.
-#[derive(Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, AsBytes, PartialEq, Eq, Default)]
 #[repr(C)]
-pub struct IsrStatus {
-	/// Bit 0 of `flags` refers to a queue interrupt, bit ` to a configuration interrupt. Reading
-	/// this register resets it to 0.
-	pub flags: u8,
+pub struct IsrStatus(u8);
+bitflags! {
+	impl IsrStatus: u8 {
+		/// Notify that the buffers/Virtqueues have been changed
+		const NOTIFY_USED_BUFFER = 0b01;
+		/// Notify that the device configuration has been changed.
+		const NOTIFY_CONFIGURUTION_CHANGED = 0b10;
+	}
 }
 impl IsrStatus {
-	pub const ISR_FLAGS: ConfigAddress = get_offset!(ISR_CFG_START, IsrStatus, flags);
+	pub const ISR_FLAGS: ConfigAddress =
+		ConfigAddress::from_configuration_address(ISR_CFG_START as u32);
 }
 
 /// Notification location. This is a standard PciCap, followed by an offset multiplier.
