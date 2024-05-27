@@ -165,7 +165,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0901fc8eb0aca4c83be0106d6f2db17d86a08dfc2c25f0e84464bf381158add6"
 dependencies = [
  "borsh-derive",
- "cfg_aliases",
+ "cfg_aliases 0.1.1",
 ]
 
 [[package]]
@@ -272,6 +272,12 @@ name = "cfg_aliases"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
+
+[[package]]
+name = "cfg_aliases"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "ciborium"
@@ -739,7 +745,7 @@ version = "1.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5aa12182b93606fff55b70a5cfe6130eaf7407c2ea4f2c2bcc8b113b67c9928f"
 dependencies = [
- "nix",
+ "nix 0.28.0",
  "winapi",
 ]
 
@@ -772,9 +778,21 @@ checksum = "ab2156c4fce2f8df6c499cc1c763e4394b7482525bf2a9701c9d79d215f519e4"
 dependencies = [
  "bitflags 2.5.0",
  "cfg-if",
- "cfg_aliases",
+ "cfg_aliases 0.1.1",
  "libc",
  "memoffset",
+]
+
+[[package]]
+name = "nix"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
+dependencies = [
+ "bitflags 2.5.0",
+ "cfg-if",
+ "cfg_aliases 0.2.1",
+ "libc",
 ]
 
 [[package]]
@@ -1411,7 +1429,7 @@ dependencies = [
  "libc",
  "log",
  "mac_address",
- "nix",
+ "nix 0.29.0",
  "raw-cpuid",
  "rftrace",
  "rftrace-frontend",
