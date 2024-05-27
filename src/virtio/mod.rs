@@ -1,10 +1,9 @@
-pub mod capabilities;
-pub mod pci;
+//! Virtio Datastructures and constants.
 
-pub use virtio_bindings::{
-	bindings::virtio_net::{VIRTIO_NET_F_MAC, VIRTIO_NET_F_MTU, VIRTIO_NET_F_STATUS},
-	virtio_config::{VIRTIO_F_RING_RESET, VIRTIO_F_VERSION_1},
-};
+pub(crate) mod capabilities;
+pub(crate) mod net;
+pub(crate) mod pci;
+pub(crate) mod virtqueue;
 
 pub mod features {
 	use virtio_bindings::{
@@ -18,7 +17,6 @@ pub mod features {
 }
 
 use bitflags::bitflags;
-pub use virtio_bindings::bindings::virtio_net::{VIRTIO_NET_HDR_GSO_NONE, VIRTIO_NET_S_LINK_UP};
 use zerocopy::AsBytes;
 
 /// Virtio device status field. See section 2.1 virtio v1.2

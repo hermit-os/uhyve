@@ -13,5 +13,3 @@ pub const UHYVE_PCI_CLASS_INFO: [u8; 3] = [
 ];
 
 pub mod tap;
-
-pub mod virtio;
