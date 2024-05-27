@@ -26,13 +26,7 @@ use crate::{
 	net::{
 		tap::Tap,
 		virtio::{
-			DeviceStatus, IOBASE,
-			config::{
-				device_id,
-				interrupt::{NOTIFY_CONFIGURUTION_CHANGED, NOTIFY_USED_BUFFER},
-			},
-			features::{UHYVE_NET_FEATURES_HIGH, UHYVE_NET_FEATURES_LOW},
-			pci::{HeaderConf, MEM_NOTIFY, MEM_NOTIFY_1},
+			capabilities::IsrStatus, config::device_id, features::{UHYVE_NET_FEATURES_HIGH, UHYVE_NET_FEATURES_LOW}, pci::{HeaderConf, MEM_NOTIFY, MEM_NOTIFY_1}, DeviceStatus, IOBASE
 		},
 	},
 	pci::MemoryBar64,
@@ -143,16 +137,8 @@ impl VirtioNetPciDevice {
 	pub fn read_isr_notify(&self, data: &mut [u8]) {
 		// We must be alerted from the thread somehow, hence fetching an AtomicBool
 		if self.isr_changed.swap(false, Ordering::AcqRel) {
-			data[0] = NOTIFY_USED_BUFFER;
+			data[0] = IsrStatus::NOTIFY_USED_BUFFER.bits();
 		}
-	}
-
-	#[allow(dead_code)]
-	pub fn configuration_changed_notify(&mut self, data: &mut [u8]) {
-		// Warning: HermitCore does not handle configuration changes!
-		data[0] = NOTIFY_CONFIGURUTION_CHANGED;
-		// ISR may be used as fallback notification
-		// self.capabilities.isr.flags = NOTIFY_CONFIGURUTION_CHANGED
 	}
 
 	/// Reset queue in common capability structure when VIRTIO_F_RING_RESET is negotiated.
