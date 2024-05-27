@@ -27,11 +27,10 @@ use crate::{
 			config::{
 				device_id,
 				interrupt::{NOTIFY_CONFIGURUTION_CHANGED, NOTIFY_USED_BUFFER},
-				status,
 			},
 			features::{UHYVE_NET_FEATURES_HIGH, UHYVE_NET_FEATURES_LOW},
 			pci::{HeaderConf, MEM_NOTIFY, MEM_NOTIFY_1},
-			IOBASE, VIRTIO_NET_S_LINK_UP,
+			DeviceStatus, IOBASE,
 		},
 	},
 	virtqueue::{self, QUEUE_LIMIT},
@@ -44,7 +43,7 @@ const RX_QUEUE: u16 = 0;
 const TX_QUEUE: u16 = 1;
 pub const VIRTIO_PCI_MEM_BAR_PFN: u16 = 1 << 3;
 
-use crate::net::virtio::capabilities::FeatureSelector;
+use crate::net::virtio::capabilities::{FeatureSelector, NetDevStatus};
 
 pub trait PciDevice {
 	fn handle_read(&self, address: u32, dest: &mut [u8]);
@@ -113,7 +112,7 @@ impl VirtioNetPciDevice {
 	/// Write the capabilities to the config_space and register eventFDs to the VM
 	pub fn setup(&mut self, vm: &VmFd) {
 		self.header_caps.pci_config_hdr.status =
-			(status::DEVICE_NEEDS_RESET | status::PCI_CAPABILITIES_LIST_ENABLE) as u16;
+			DeviceStatus::DEVICE_NEEDS_RESET | DeviceStatus::PCI_CAPABILITIES_LIST_ENABLE;
 
 		let notifd = self.notify_evtfd.insert(EventFd::new(0).unwrap());
 
@@ -178,27 +177,60 @@ impl VirtioNetPciDevice {
 	}
 
 	// Virtio handshake: chapter 3 virtio v1.2
-	pub fn write_status(&mut self, dest: &[u8]) {
-		let status = self.read_status_reg();
-		if dest[0] == status::UNINITIALIZED {
-			// reset the device.
-			self.write_status_reg(status::UNINITIALIZED);
+	pub fn write_status(&mut self, data: &[u8]) {
+		let status_reg = &mut self.header_caps.pci_config_hdr.status;
+
+		// A state machine might be a nicer way to structure the code here.
+
+		// Device initialization procedure: See Virtio V1.2 Sec. 4.2.2
+		// Step 1: reset the device
+		if data[0] == DeviceStatus::UNINITIALIZED.bits() as u8 {
+			*status_reg = DeviceStatus::UNINITIALIZED;
 			self.header_caps.common_cfg.driver_feature = 0;
 			self.header_caps.common_cfg.queue_select = 0;
 			self.rx_queue.as_ref().lock().reset();
 			self.tx_queue.as_ref().lock().reset();
-		} else if status == status::DEVICE_NEEDS_RESET || status == status::UNINITIALIZED {
-			self.write_status_reset(dest);
-		} else if status == status::ACKNOWLEDGE {
-			// guest OS acknowledges device
-			self.write_status_acknowledge(dest);
-		} else if status == status::ACKNOWLEDGE | status::DRIVER {
-			// guest OS knows how to drive device, reads features
-			self.write_status_features(dest);
-		} else if status == status::ACKNOWLEDGE | status::DRIVER | status::FEATURES_OK {
-			// guest OS is ready, we'll set ourselves as ready and start the networking interface.
-			self.write_status_ok(dest);
+			return;
 		}
+
+		if status_reg.contains(DeviceStatus::DEVICE_NEEDS_RESET) {
+			error!("Virtio PCI device needs reset but is written to anyway");
+			return;
+		}
+
+		if *status_reg == DeviceStatus::UNINITIALIZED
+			&& data[0] == DeviceStatus::ACKNOWLEDGE.bits() as u8
+		{
+			// Step 2: Guest has noted device
+			status_reg.insert(DeviceStatus::ACKNOWLEDGE)
+		} else if *status_reg == DeviceStatus::ACKNOWLEDGE
+			&& data[0] == (*status_reg | DeviceStatus::DRIVER).bits() as u8
+		{
+			// Step 3: Guest knows how to drive device
+			status_reg.insert(DeviceStatus::DRIVER)
+		} else if *status_reg == DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER
+			&& data[0] == (*status_reg | DeviceStatus::FEATURES_OK).bits() as u8
+		{
+			// Step 5: Fix features
+			status_reg.insert(DeviceStatus::FEATURES_OK)
+		} else if *status_reg
+			== DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER | DeviceStatus::FEATURES_OK
+			&& data[0] == (*status_reg | DeviceStatus::DRIVER_OK).bits() as u8
+		{
+			// Step 8: guest OS is ready
+			status_reg.insert(DeviceStatus::DRIVER_OK);
+			self.start_network_interface();
+		} else {
+			error!(
+				"Invalid status register operation (Status register: {:?}, operation: {:b})",
+				status_reg, data[0]
+			);
+			*status_reg = DeviceStatus::DEVICE_NEEDS_RESET;
+		}
+	}
+
+	pub fn read_status_reg(&self) -> u8 {
+		self.header_caps.pci_config_hdr.status.bits() as u8
 	}
 
 	/// Gets the mac address from the TAP device.
@@ -214,125 +246,89 @@ impl VirtioNetPciDevice {
 		}
 	}
 
-	/// Driver acknowledges device
-	#[inline]
-	fn write_status_reset(&mut self, dest: &[u8]) {
-		if dest[0] == status::ACKNOWLEDGE {
-			self.write_status_reg(dest[0]);
-		}
-	}
+	fn start_network_interface(&mut self) {
+		// Create a TAP device without packet info headers.
+		let iface = self
+			.iface
+			.insert(Arc::new(Tap::new().expect("Could not create TAP device")));
+		let sink = iface.clone();
 
-	/// Driver recognizes the device
-	fn write_status_acknowledge(&mut self, dest: &[u8]) {
-		if dest[0] == status::ACKNOWLEDGE | status::DRIVER {
-			self.write_status_reg(dest[0]);
-		}
-	}
+		let notify_evtfd = self.notify_evtfd.take().unwrap();
 
-	/// finish negotiating features
-	fn write_status_features(&mut self, dest: &[u8]) {
-		if dest[0] == status::ACKNOWLEDGE | status::DRIVER | status::FEATURES_OK {
-			self.write_status_reg(dest[0]);
-		}
-	}
+		let poll_tx_queue = self.tx_queue.clone();
+		let guest_mmap = Arc::clone(&self.guest_mmap);
+		let mmap = guest_mmap.clone();
 
-	/// Complete handshake: set device as ready.
-	fn write_status_ok(&mut self, dest: &[u8]) {
-		if dest[0] == status::ACKNOWLEDGE | status::DRIVER | status::FEATURES_OK | status::DRIVER_OK
-		{
-			self.write_status_reg(dest[0]);
-
-			// Create a TAP device without packet info headers.
-			let iface = self
-				.iface
-				.insert(Arc::new(Tap::new().expect("Could not create TAP device")));
-			let sink = iface.clone();
-
-			let notify_evtfd = self.notify_evtfd.take().unwrap();
-
-			let poll_tx_queue = self.tx_queue.clone();
-			let guest_mmap = Arc::clone(&self.guest_mmap);
-			let mmap = guest_mmap.clone();
-
-			// Start the ioeventfd watcher
-			thread::spawn(move || {
-				debug!("Starting notification watcher.");
-				loop {
-					if notify_evtfd.read().is_ok() {
-						match send_available_packets(&sink, &poll_tx_queue, &mmap) {
-							Ok(_) => {}
-							Err(VirtIOError::QueueNotReady) => {
-								error!("Sending before queue is ready!")
-							}
-							Err(e) => error!("Error sending frames: {e:?}"),
+		// Start the ioeventfd watcher
+		thread::spawn(move || {
+			debug!("Starting notification watcher.");
+			loop {
+				if notify_evtfd.read().is_ok() {
+					match send_available_packets(&sink, &poll_tx_queue, &mmap) {
+						Ok(_) => {}
+						Err(VirtIOError::QueueNotReady) => {
+							error!("Sending before queue is ready!")
 						}
-					} else {
-						panic!("Could not read eventfd. Is the file nonblocking?");
+						Err(e) => error!("Error sending frames: {e:?}"),
+					}
+				} else {
+					panic!("Could not read eventfd. Is the file nonblocking?");
+				}
+			}
+		});
+
+		let poll_rx_queue = self.rx_queue.clone();
+		let stream = self.iface.as_mut().unwrap().clone();
+		let alert = Arc::clone(&self.isr_changed);
+		let mut frame_queue: Vec<([u8; 1500], usize)> = Vec::with_capacity(QUEUE_LIMIT / 2);
+
+		let irq_evtfd = self.irq_evtfd.take().unwrap();
+		let mmap = Arc::clone(&guest_mmap);
+		// Start the rx thread.
+		thread::spawn(move || loop {
+			let mut _delay = time::Instant::now();
+
+			let mut buf = [0u8; UHYVE_NET_MTU];
+			let len = stream.get_iface().read(&mut buf).unwrap();
+			let mmap = mmap.as_ref().clone();
+			frame_queue.push_back((buf, len));
+			// let l = frame_queue.len();
+
+			// Not ideal to wait random values or queue lengths.
+			if _delay
+				.elapsed()
+				.cmp(&time::Duration::from_micros(300))
+				.is_le() && frame_queue.len() < 5
+			{
+				continue;
+			}
+
+			assert!(
+				len <= UHYVE_NET_MTU,
+				"Frame larger than MTU, was the device reconfigured?"
+			);
+
+			match write_packet(&poll_rx_queue, &mut frame_queue, &mmap) {
+				Ok(data_sent) => {
+					if data_sent && poll_rx_queue.lock().needs_notification(&mmap).unwrap() {
+						_delay = time::Instant::now();
+						alert.store(true, Ordering::Release);
+						irq_evtfd.write(1).unwrap();
 					}
 				}
-			});
+				Err(VirtIOError::QueueNotReady) => error!("Sending before queue is ready!"),
+				Err(e) => error!("Could not write frames to guest: {e:?}"),
+			}
+		});
 
-			let poll_rx_queue = self.rx_queue.clone();
-			let stream = self.iface.as_mut().unwrap().clone();
-			let alert = Arc::clone(&self.isr_changed);
-			let mut frame_queue: Vec<([u8; 1500], usize)> = Vec::with_capacity(QUEUE_LIMIT / 2);
-
-			let irq_evtfd = self.irq_evtfd.take().unwrap();
-			let mmap = Arc::clone(&guest_mmap);
-			// Start the rx thread.
-			thread::spawn(move || loop {
-				let mut _delay = time::Instant::now();
-
-				let mut buf = [0u8; UHYVE_NET_MTU];
-				let len = stream.get_iface().read(&mut buf).unwrap();
-				let mmap = mmap.as_ref().clone();
-				frame_queue.push_back((buf, len));
-				// let l = frame_queue.len();
-
-				// Not ideal to wait random values or queue lengths.
-				if _delay
-					.elapsed()
-					.cmp(&time::Duration::from_micros(300))
-					.is_le() && frame_queue.len() < 5
-				{
-					continue;
-				}
-
-				assert!(
-					len <= UHYVE_NET_MTU,
-					"Frame larger than MTU, was the device reconfigured?"
-				);
-
-				match write_packet(&poll_rx_queue, &mut frame_queue, &mmap) {
-					Ok(data_sent) => {
-						if data_sent && poll_rx_queue.lock().needs_notification(&mmap).unwrap() {
-							_delay = time::Instant::now();
-							alert.store(true, Ordering::Release);
-							irq_evtfd.write(1).unwrap();
-						}
-					}
-					Err(VirtIOError::QueueNotReady) => error!("Sending before queue is ready!"),
-					Err(e) => error!("Could not write frames to guest: {e:?}"),
-				}
-			});
-
-			// "should've would've panicked by now, if no mac existed!" BAD!
-			self.get_mac_addr();
-			self.header_caps.dev.status |= VIRTIO_NET_S_LINK_UP as u16;
-		}
-	}
-
-	fn write_status_reg(&mut self, status: u8) {
-		self.header_caps.dev.status = status as u16;
-	}
-
-	pub fn read_status_reg(&self) -> u8 {
-		self.header_caps.dev.status as u8
+		// "should've would've panicked by now, if no mac existed!" BAD!
+		self.get_mac_addr();
+		self.header_caps.dev.status = NetDevStatus::VIRTIO_NET_S_LINK_UP;
 	}
 
 	#[inline]
 	pub fn read_net_status(&self, data: &mut [u8]) {
-		data.copy_from_slice(&self.header_caps.dev.status.to_le_bytes())
+		data.copy_from_slice(&self.header_caps.dev.status.bits().to_le_bytes())
 	}
 
 	#[inline]
@@ -417,7 +413,10 @@ impl VirtioNetPciDevice {
 
 	pub fn reset_device(&mut self) {
 		warn!("RustyHermit does not support device reset!");
-		self.write_status_reg(status::DEVICE_NEEDS_RESET);
+		self.header_caps
+			.pci_config_hdr
+			.status
+			.insert(DeviceStatus::DEVICE_NEEDS_RESET);
 		self.header_caps.common_cfg.driver_feature = 0;
 		self.header_caps.common_cfg.queue_select = 0;
 		self.header_caps.common_cfg.queue_size = 0;
@@ -427,8 +426,8 @@ impl VirtioNetPciDevice {
 
 	/// Register virtqueue and grab the host-address pointer
 	pub fn write_pfn(&mut self, dest: &[u8]) {
-		let status = self.read_status_reg();
-		if status & status::FEATURES_OK != 0 && status & status::DRIVER_OK == 0 {
+		let status = self.header_caps.pci_config_hdr.status;
+		if status.contains(DeviceStatus::FEATURES_OK) && !status.contains(DeviceStatus::DRIVER_OK) {
 			let gpa = unsafe { *(dest.as_ptr() as *const usize) };
 			assert!(gpa != 0, "Received a null pointer as an address!");
 
@@ -459,7 +458,12 @@ impl VirtioNetPciDevice {
 	}
 
 	pub fn write_requested_features(&mut self, data: &[u8]) {
-		if self.read_status_reg() == status::ACKNOWLEDGE | status::DRIVER {
+		if self
+			.header_caps
+			.pci_config_hdr
+			.status
+			.contains(DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER)
+		{
 			let requested_features: u32 = u32::from_le_bytes(data.try_into().unwrap());
 
 			self.header_caps.common_cfg.driver_feature =

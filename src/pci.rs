@@ -3,7 +3,10 @@ use zerocopy::AsBytes;
 
 use crate::{
 	consts::GUEST_PAGE_SIZE,
-	net::{virtio::VIRTIO_VENDOR_ID, PCI_ETHERNET_REVISION_ID, UHYVE_PCI_CLASS_INFO},
+	net::{
+		virtio::{DeviceStatus, VIRTIO_VENDOR_ID},
+		PCI_ETHERNET_REVISION_ID, UHYVE_PCI_CLASS_INFO,
+	},
 };
 
 /// For now, use an address large enough to be outside of kvm_userspace,
@@ -79,7 +82,7 @@ pub struct PciType0ConfigSpaceHeader {
 	pub vendor_id: u16,
 	pub device_id: u16,
 	pub command: u16,
-	pub status: u16,
+	pub status: DeviceStatus,
 	pub revision: u8,
 	pub class_code: [u8; 3],
 	pub cache_line_size: u8,
@@ -104,7 +107,7 @@ impl Default for PciType0ConfigSpaceHeader {
 			vendor_id: VIRTIO_VENDOR_ID,
 			device_id: 0,
 			command: 0,
-			status: 0,
+			status: DeviceStatus::UNINITIALIZED,
 			revision: PCI_ETHERNET_REVISION_ID,
 			class_code: UHYVE_PCI_CLASS_INFO,
 			cache_line_size: 0,
