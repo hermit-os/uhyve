@@ -46,7 +46,7 @@ align-address = "0.3.0"
 bitflags = "2.9"
 byte-unit = { version = "5", features = ["byte"] }
 clap = { version = "4.5", features = ["derive", "env"] }
-nix = { version = "0.28", features = ["mman", "pthread", "signal", "net"] }
+nix = { version = "0.28", features = ["mman", "pthread", "signal", "net", "ioctl"] }
 core_affinity = "0.8"
 either = "1.15"
 env_logger = "0.11"
