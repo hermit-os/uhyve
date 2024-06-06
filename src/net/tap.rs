@@ -1,119 +1,93 @@
-//! Tap device wrapper for uhyve.
-
 use std::{
-	io::{self, Read, Write},
-	os::fd::AsRawFd,
-	str::FromStr,
+	fs::{File, OpenOptions},
+	io::{self, Error, Read, Write},
+	os::unix::io::AsRawFd,
+	sync::Mutex,
 };
 
-use macvtap::{Iface, Mode};
-use nix::{ifaddrs::InterfaceAddress, net::if_::InterfaceFlags, sys::socket::LinkAddr};
+use libc::{ifreq, IFF_NO_PI, IFF_TAP};
+use nix::{ifaddrs::getifaddrs, ioctl_write_int};
 
-use crate::net::UHYVE_NET_MTU;
+use crate::net::NetworkInterface;
 
-/// Wrapper for a tap device, containing the descriptor and mac address.
+/// An existing (externally created) TAP device
 pub struct Tap {
-	tap: Iface,
-	interface_address: InterfaceAddress,
+	fd: File,
+	mac: [u8; 6],
+	name: String,
 }
 
 impl Tap {
-	/// Create a Layer 2 Linux/*BSD tap device, named "tap[0-9]+".
 	pub fn new() -> io::Result<Self> {
 		let iface_name = std::env::var("TAP").unwrap_or("tap10".to_owned());
+		if iface_name.as_bytes().len() > 16 {
+			return Err(Error::other("Interface name must not exceed 16 bytes"));
+		}
+		let mut ifr_name: [i8; 16] = [0; 16];
+		iface_name
+			.as_bytes()
+			.iter()
+			.take(15)
+			.map(|b| *b as i8)
+			.enumerate()
+			.for_each(|(i, b)| ifr_name[i] = b);
 
-		Self::from_str(&iface_name)
-	}
+		let config_str = ifreq {
+			ifr_name,
+			ifr_ifru: libc::__c_anonymous_ifr_ifru {
+				ifru_flags: IFF_TAP as i16 | IFF_NO_PI as i16, // TODO: Investigate if IFF_NO_PI is necessary as well
+			},
+		};
 
-	/// Return the tap device name
-	pub fn name(&self) -> &str {
-		&self.interface_address.interface_name
-	}
+		let fd = OpenOptions::new()
+			.read(true)
+			.write(true)
+			.open("/dev/net/tun")?;
 
-	fn mac_addr(&self) -> LinkAddr {
-		*self
-			.interface_address
-			.address
-			.unwrap()
-			.as_link_addr()
-			.unwrap()
-	}
+		ioctl_write_int!(tun_set_iff, b'T', 202);
 
-	/// Return the MAC address as a byte array
-	pub fn mac_address_as_bytes(&self) -> [u8; 6] {
-		self.mac_addr().addr().unwrap()
-	}
+		let res =
+			unsafe { tun_set_iff(fd.as_raw_fd(), &config_str as *const ifreq as u64).unwrap() };
 
-	/// Get the tap interface struct
-	pub fn get_iface(&self) -> &Iface {
-		&self.tap
-	}
+		if res == -1 {
+			error!("Can't open TAP device {iface_name}");
+			return Err(Error::other("Can't open TAP device"));
+		}
 
-	/// Sends a packet to the interface.
-	///
-	/// **NOTE**: ensure the packet has the appropriate format and header.
-	/// Incorrect packets will be dropped without warning.
-	pub fn send(&mut self, buf: &[u8]) -> io::Result<usize> {
-		self.tap.write(buf)
-	}
+		// Find MAC address of the TAP device
+		let mut mac_addr = None;
+		for ifaddr in getifaddrs().unwrap() {
+			if let Some(address) = ifaddr.address {
+				if ifaddr.interface_name == iface_name {
+					if let Some(link_addr) = address.as_link_addr() {
+						mac_addr = Some(link_addr.addr().unwrap());
+					}
+				}
+			}
+		}
 
-	/// Receives a packet from the interface.
-	///
-	/// Blocks until a packet is sent into the virtual interface. At that point, the content of the
-	/// packet is copied into the provided buffer.
-	///
-	/// Returns the size of the received packet
-	pub fn recv(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-		self.tap.read(buf)
-	}
-}
-
-impl Drop for Tap {
-	fn drop(&mut self) {
-		self.tap.close();
-	}
-}
-
-impl AsRawFd for Tap {
-	fn as_raw_fd(&self) -> i32 {
-		self.tap.as_raw_fd()
-	}
-}
-
-impl Default for Tap {
-	fn default() -> Self {
-		Self::new().unwrap()
-	}
-}
-
-impl FromStr for Tap {
-	type Err = std::io::Error;
-
-	fn from_str(name: &str) -> std::result::Result<Self, Self::Err> {
-		// TODO: MacVTap mode
-		let tap = Iface::new(name, Mode::Tap, UHYVE_NET_MTU.try_into().unwrap())
-		.expect("Failed to create tap device (Device busy, or you may need to enable CAP_NET_ADMIN capability).");
-
-		let interface_address = nix::ifaddrs::getifaddrs()
-			.unwrap()
-			.find(|dev| dev.interface_name == name)
-			.expect("Could not find TAP interface.");
-
-		// TODO: ensure the tap device is header-less
-
-		assert!(
-			interface_address.flags.contains(InterfaceFlags::IFF_TAP),
-			"Interface is not a valid TAP device."
-		);
-
-		assert!(
-			interface_address.flags.contains(InterfaceFlags::IFF_UP),
-			"Interface is not up and running."
-		);
-
-		Ok(Tap {
-			tap,
-			interface_address,
+		Ok(Self {
+			fd,
+			name: iface_name,
+			mac: mac_addr.expect("TAP device without MAC address?"),
 		})
+	}
+}
+impl NetworkInterface for Mutex<Tap> {
+	fn mac_address_as_bytes(&self) -> [u8; 6] {
+		self.lock().unwrap().mac
+	}
+
+	fn send(&self, buf: &[u8]) -> io::Result<usize> {
+		let mut guard = self.lock().unwrap();
+		trace!("sending {} bytes on {}", buf.len(), guard.name);
+		guard.fd.write(buf)
+	}
+
+	fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+		let mut guard = self.lock().unwrap();
+		let res = guard.fd.read(buf);
+		trace!("receiving {res:?} bytes on {}", guard.name);
+		res
 	}
 }
