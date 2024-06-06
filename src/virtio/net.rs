@@ -1,11 +1,9 @@
 #![cfg_attr(target_os = "macos", allow(dead_code))] // no virtio implementation for macos
 use std::{
 	collections::VecDeque as Vec,
-	fmt,
-	io::{Read, Write},
-	mem,
+	fmt, mem,
 	sync::{
-		Arc,
+		self, Arc,
 		atomic::{AtomicBool, Ordering},
 	},
 	thread, time,
@@ -23,14 +21,14 @@ use vmm_sys_util::eventfd::EventFd;
 
 use crate::{
 	consts::{UHYVE_IRQ_NET, UHYVE_NET_MTU},
-	net::tap::Tap,
+	net::{NetworkInterface, macvtap::MacVTap},
 	pci::{MemoryBar64, PciDevice},
 	virtio::{
+		DeviceStatus, IOBASE, NET_DEVICE_ID,
 		capabilities::IsrStatus,
 		features::{UHYVE_NET_FEATURES_HIGH, UHYVE_NET_FEATURES_LOW},
 		pci::{HeaderConf, MEM_NOTIFY, MEM_NOTIFY_1},
 		virtqueue::{self, QUEUE_LIMIT},
-		DeviceStatus, IOBASE, NET_DEVICE_ID,
 	},
 };
 
@@ -53,7 +51,7 @@ pub struct VirtioNetPciDevice {
 	/// transmitted virtqueue
 	tx_queue: Arc<Mutex<Queue>>,
 	/// virtual network interface
-	iface: Option<Arc<Tap>>,
+	iface: Option<Arc<dyn NetworkInterface>>,
 	/// File Descriptor for IRQ event signalling to guest
 	irq_evtfd: Option<EventFd>,
 	/// File Descriptor for polling guest (MMIO) IOEventFD signals
@@ -230,9 +228,10 @@ impl VirtioNetPciDevice {
 
 	fn start_network_interface(&mut self) {
 		// Create a TAP device without packet info headers.
-		let iface = self
-			.iface
-			.insert(Arc::new(Tap::new().expect("Could not create TAP device")));
+		let iface = self.iface.insert(Arc::new(sync::Mutex::new(
+			// Tap::new().expect("Could not create TAP device"),
+			MacVTap::new().expect("Could not create TAP device"),
+		)));
 		let sink = iface.clone();
 
 		let notify_evtfd = self.notify_evtfd.take().unwrap();
@@ -246,7 +245,7 @@ impl VirtioNetPciDevice {
 			debug!("Starting notification watcher.");
 			loop {
 				if notify_evtfd.read().is_ok() {
-					match send_available_packets(&sink, &poll_tx_queue, &mmap) {
+					match send_available_packets(&(*sink), &poll_tx_queue, &mmap) {
 						Ok(_) => {}
 						Err(VirtIOError::QueueNotReady) => {
 							error!("Sending before queue is ready!")
@@ -272,10 +271,9 @@ impl VirtioNetPciDevice {
 				let mut _delay = time::Instant::now();
 
 				let mut buf = [0u8; UHYVE_NET_MTU];
-				let len = stream.get_iface().read(&mut buf).unwrap();
+				let len = stream.recv(&mut buf).unwrap();
 				let mmap = mmap.as_ref().clone();
 				frame_queue.push_back((buf, len));
-				// let l = frame_queue.len();
 
 				// Not ideal to wait random values or queue lengths.
 				if _delay
@@ -551,7 +549,7 @@ fn write_packet(
 }
 
 fn send_available_packets(
-	sink: &Arc<Tap>,
+	sink: &dyn NetworkInterface,
 	tx_queue_locked: &Arc<Mutex<Queue>>,
 	mem: &GuestMemoryMmap,
 ) -> std::result::Result<bool, VirtIOError> {
@@ -582,7 +580,7 @@ fn send_available_packets(
 			let mut buf = vec![0; len as usize];
 			mem.read_slice(&mut buf, desc.addr()).unwrap();
 
-			match sink.get_iface().write(&buf[VIRTIO_NET_HEADER_SZ..]) {
+			match (*sink).send(&buf[VIRTIO_NET_HEADER_SZ..]) {
 				Ok(sent_len) => {
 					if sent_len != len as usize - VIRTIO_NET_HEADER_SZ {
 						error!("Could not send all data provided! sent {sent_len}, vs {len}");
