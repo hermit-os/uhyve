@@ -104,7 +104,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Clippy
         run: cargo clippy --all-targets ${{ matrix.flags }} -- -D warnings
-  
+
   clippy-test-kernel:
     name: Clippy test-kernels
     runs-on: ubuntu-latest
@@ -124,7 +124,7 @@ jobs:
       # TODO: Remove once we have a hermit toolchain upgrade
       # capable of sparse registries
       CARGO_REGISTRIES_CRATES_IO_PROTOCOL: git
-      
+
   coverage:
     name: Coverage
     runs-on: [self-hosted]
