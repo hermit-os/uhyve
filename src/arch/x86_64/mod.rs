@@ -351,7 +351,8 @@ mod tests {
 				PageTableFlags::from_bits_truncate(entry)
 					.difference(
 						PageTableFlags::PRESENT
-							| PageTableFlags::WRITABLE | PageTableFlags::HUGE_PAGE
+							| PageTableFlags::WRITABLE
+							| PageTableFlags::HUGE_PAGE
 					)
 					.is_empty(),
 				"Pagetable bits at {addr:#x} are incorrect"
