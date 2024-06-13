@@ -131,8 +131,11 @@ pub fn virt_to_phys(
 	// - the memory location of the pagetable is not altered by hermit.
 	// - Our indices can't be larger than 512, so we stay in the borders of the page.
 	// - We are page_aligned, and thus also PageTableEntry aligned.
-	let mut pagetable: &[PageTableEntry] =
-		unsafe { std::mem::transmute(mem.slice_at(pagetable_l0, PAGE_SIZE).unwrap()) };
+	let mut pagetable: &[PageTableEntry] = unsafe {
+		std::mem::transmute::<&[u8], &[PageTableEntry]>(
+			mem.slice_at(pagetable_l0, PAGE_SIZE).unwrap(),
+		)
+	};
 	// TODO: Depending on the virtual address length and granule (defined in TCR register by TG and TxSZ), we could reduce the number of pagetable walks. Hermit doesn't do this at the moment.
 	for level in 0..3 {
 		let table_index =
@@ -140,7 +143,11 @@ pub fn virt_to_phys(
 		let pte = PageTableEntry::from(pagetable[table_index]);
 		// TODO: We could stop here if we have a "Block Entry" (ARM equivalent to huge page). Currently not supported.
 
-		pagetable = unsafe { std::mem::transmute(mem.slice_at(pte.address(), PAGE_SIZE).unwrap()) };
+		pagetable = unsafe {
+			std::mem::transmute::<&[u8], &[PageTableEntry]>(
+				mem.slice_at(pte.address(), PAGE_SIZE).unwrap(),
+			)
+		};
 	}
 	let table_index = (addr.as_u64() >> PAGE_BITS & PAGE_MAP_MASK) as usize;
 	let pte = PageTableEntry::from(pagetable[table_index]);
