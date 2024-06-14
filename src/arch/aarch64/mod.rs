@@ -196,7 +196,7 @@ pub fn init_guest_mem(mem: &mut [u8]) {
 		)
 	};
 	pgt_slice.fill(0);
-	// map uhyve ports into the virtual address space
+	// map Uhyve ports into the virtual address space
 	pgt_slice[0] = PT_MEM_CD;
 	// map BootInfo into the virtual address space
 	pgt_slice[BOOT_INFO_ADDR.as_u64() as usize / PAGE_SIZE] = BOOT_INFO_ADDR.as_u64() + PT_MEM;

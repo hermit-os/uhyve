@@ -37,7 +37,7 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 }
 
 /// Small wrapper around [`Uhyve::run`] with default parameters for a small and
-/// simple uhyve vm
+/// simple Uhyve vm
 pub fn run_simple_vm(kernel_path: PathBuf) {
 	let params = Params {
 		verbose: true,

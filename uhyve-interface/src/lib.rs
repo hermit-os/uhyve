@@ -1,6 +1,6 @@
 //! # Uhyve Hypervisor Interface
 //!
-//! The uhyve hypercall interface works as follows:
+//! The Uhyve hypercall interface works as follows:
 //!
 //! - On `x86_64` you use an out port instruction. The address of the `out`-port corresponds to the
 //! hypercall you want to use. You can obtain it from the [`IoPorts`] enum. The data send to
@@ -28,7 +28,7 @@ pub use ::x86_64::addr::VirtAddr as GuestVirtAddr;
 compile_error!("Using uhyve-interface on a non-64-bit system is not (yet?) supported");
 use parameters::*;
 
-/// The version of the uhyve interface. Note: This is not the same as the semver of the crate but
+/// The version of the Uhyve interface. Note: This is not the same as the semver of the crate but
 /// should be increased on every version bump that changes the API.
 pub const UHYVE_INTERFACE_VERSION: u32 = 1;
 
@@ -87,7 +87,7 @@ impl From<Hypercall<'_>> for HypercallAddress {
 	}
 }
 
-/// Hypervisor calls available in uhyve with their respective parameters. See the [module level documentation](crate) on how to invoke them.
+/// Hypervisor calls available in Uhyve with their respective parameters. See the [module level documentation](crate) on how to invoke them.
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum Hypercall<'a> {
