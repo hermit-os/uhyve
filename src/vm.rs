@@ -193,7 +193,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		// TODO: Move kernel address calculations, introduce tests that allow returning a stub to the range.
 		// TODO: Use some proper bitwise arithemtic instead of whatever this is supposed to be.
 		let kernel_random_address: u64 =
-			rng.gen_range(START_ADDRESS_OFFSET..end_address_upper_bound) & 0xFFFFFFFFFFFFFFF0;
+			rng.gen_range(START_ADDRESS_OFFSET..end_address_upper_bound) & 0xffff_ffff_ffff_fff0;
 		let kernel_start_address = object.start_addr().unwrap_or(kernel_random_address) as usize;
 
 		// TODO: Check if kernel_start_address is equal to kernel_random_address. If None, change internal state.
