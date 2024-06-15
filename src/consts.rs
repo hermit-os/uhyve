@@ -20,11 +20,7 @@ pub const EFER_LMA: u64 = 1 << 10; /* Long mode active (read-only) */
 pub const EFER_NXE: u64 = 1 << 11; /* PTE No-Execute bit enable */
 pub const IOAPIC_BASE: u64 = 0xfec00000;
 pub const IOAPIC_SIZE: u64 = 0x1000;
-// TODO: Change to 0x100000 once ASLR is implemented.
-// START_ADDRESS_OFFSET + KERNEL_STACK_SIZE = 0x400000, which was
-// the set address that all binaries, relocatable or not, would previously
-// be loaded on. This maintains "compatibility" for now.
-pub const START_ADDRESS_OFFSET: u64 = 0x380000;
+pub const START_ADDRESS_OFFSET: u64 = 0x100000;
 pub const KERNEL_STACK_SIZE: u64 = 0x20000;
 pub const SHAREDQUEUE_START: usize = 0x80000;
 pub const UHYVE_NET_MTU: usize = 1500;

@@ -1430,6 +1430,7 @@ dependencies = [
  "log",
  "mac_address",
  "nix 0.29.0",
+ "rand",
  "raw-cpuid",
  "rftrace",
  "rftrace-frontend",

@@ -9,6 +9,8 @@ use std::{
 	time::SystemTime,
 };
 
+use rand::Rng;
+
 use hermit_entry::{
 	boot_info::{BootInfo, HardwareInfo, PlatformInfo, RawBootInfo, SerialPortBase},
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
@@ -179,11 +181,19 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
-		// TODO: should be a random start address, if we have a relocatable executable
-		let kernel_start_address = object.start_addr().unwrap_or(KERNEL_STACK_SIZE + START_ADDRESS_OFFSET) as usize;
+		// TODO: If rand::Rng should not be used, use `0x400000` instead.
+		// TODO: Is the value generated properly? Are we using rand properly?
+		let mut rng = rand::thread_rng();
+		// 0xFFFFF0 maintains the generated address, minus the last 4 bits, which are required for paging.
+		// TODO: Find the upper boundary, and decuce it from the max possible address. Remove 0x891230.
+		// TODO: What if we don't have enough space?
+		// TODO: Uhyve should be informed if the value returned by `start_addr()` is equal to zero.
+		let kernel_random_address: u64 = rng.gen_range(START_ADDRESS_OFFSET..0x891230) & 0xFFFFF0;
+		let kernel_start_address = object.start_addr().unwrap_or(kernel_random_address) as usize;
 		let kernel_end_address = kernel_start_address + object.mem_size();
 		self.offset = kernel_start_address as u64;
 
+		println!("{}", self.mem.guest_address.as_u64());
 		if kernel_end_address > self.mem.memory_size - self.mem.guest_address.as_u64() as usize {
 			return Err(LoadKernelError::InsufficientMemory);
 		}
