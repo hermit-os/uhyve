@@ -188,6 +188,8 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		// Although Hermit is supposed to be relocatable by default, at the moment, some edge cases (Hermit C images) exist.
 		// We let hermit_entry do the hard work of establishing whether this is the case. If it is,
 		// the user *will* be warned, and the random value generation using ThreadRng will be _avoided_.
+
+		// TODO: Put everything in this if..else block in unwrap_or instead.
 		if !object.start_addr().is_none() {
 			info!("ASLR disabled: ELF not relocatable.");
 
