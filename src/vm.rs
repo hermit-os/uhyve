@@ -84,6 +84,7 @@ pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 	boot_info: *const RawBootInfo,
 	verbose: bool,
 	pub virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
+	aslr_status: bool,
 	#[allow(dead_code)] // gdb is not supported on macos
 	pub(super) gdb_port: Option<u16>,
 	_vcpu_type: PhantomData<VCpuType>,
@@ -127,6 +128,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			args: params.kernel_args,
 			boot_info: ptr::null(),
 			verbose: params.verbose,
+			aslr_status: false,
 			virtio_device,
 			gdb_port: params.gdb_port,
 			_vcpu_type: PhantomData,
@@ -181,22 +183,36 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
-		// TODO: If rand::Rng should and cannot not be used, use `0x400000` instead.
-		// TODO: Is the value generated properly? Are we using rand properly?
-		let mut rng = rand::thread_rng();
-		let end_address_upper_bound: u64 =
-			self.mem.memory_size as u64 - self.mem.guest_address.as_u64();
+		let kernel_start_address;
 
-		// The heavily caffeinated author artificially modified the range from end_address_upper_bound-0x000001
-		// to end_address_upper_bound+0x000001, so as to check the soundness of this implementation.
+		// Although Hermit is supposed to be relocatable by default, at the moment, some edge cases (Hermit C images) exist.
+		// We let hermit_entry do the hard work of establishing whether this is the case. If it is,
+		// the user *will* be warned, and the random value generation using ThreadRng will be _avoided_.
+		if !object.start_addr().is_none() {
+			info!("ASLR disabled: ELF not relocatable.");
 
-		// TODO: Move kernel address calculations, introduce tests that allow returning a stub to the range.
-		// TODO: Use some proper bitwise arithemtic instead of whatever this is supposed to be.
-		let kernel_random_address: u64 =
-			rng.gen_range(START_ADDRESS_OFFSET..end_address_upper_bound) & 0xffff_ffff_ffff_fff0;
-		let kernel_start_address = object.start_addr().unwrap_or(kernel_random_address) as usize;
+			// As the ELF object is not relocatable, given that the object has a pre-defined start address,
+			// we don't have to choose an address.
+			kernel_start_address = object.start_addr().unwrap() as usize;
+		} else {
+			let mut rng = rand::thread_rng();
+			// TODO: This breaks sometimes, causing the kernel to return InsufficientMemory errors despite the
+			// checks preceeding ASLR support passing. Why?
+			let start_address_upper_bound: u64 = self.mem.memory_size as u64
+				- self.mem.guest_address.as_u64()
+				- object.mem_size() as u64;
 
-		// TODO: Check if kernel_start_address is equal to kernel_random_address. If None, change internal state.
+			// TODO: Add test. (from end_address_upper_bound-0x000001 to end_address_upper_bound+0x000001)
+			// TODO: Is the mask alright?
+
+			let kernel_random_address: u64 = rng
+				.gen_range(START_ADDRESS_OFFSET..start_address_upper_bound)
+				& 0xffff_ffff_ffff_fff0;
+			kernel_start_address = object.start_addr().unwrap_or(kernel_random_address) as usize;
+
+			// TODO: Actually use this variable somewhere for something or completely remove it.
+			self.aslr_status = true;
+		}
 
 		let kernel_end_address = kernel_start_address + object.mem_size();
 		self.offset = kernel_start_address as u64;
@@ -262,6 +278,7 @@ impl<VCpuType: VirtualCPU> fmt::Debug for UhyveVm<VCpuType> {
 			.field("boot_info", &self.boot_info)
 			.field("verbose", &self.verbose)
 			.field("virtio_device", &self.virtio_device)
+			.field("aslr_status", &self.aslr_status)
 			.finish()
 	}
 }
