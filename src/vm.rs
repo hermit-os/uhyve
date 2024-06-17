@@ -215,7 +215,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		let kernel_start_address = object.start_addr().unwrap_or(0x400000) as usize;
 
 		#[cfg(feature = "aslr")]
-		let kernel_start_adress = self.generate_start_address(object.mem_size() as u64) as usize;
+		let kernel_start_address = self.generate_start_address(object.mem_size() as u64) as usize;
 
 		let kernel_end_address = kernel_start_address + object.mem_size();
 		self.offset = kernel_start_address as u64;
