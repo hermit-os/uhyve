@@ -194,17 +194,10 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			0x3000000,
 		);
 
-		// TODO: Add test. (from end_address_upper_bound-0x000001 to end_address_upper_bound+0x000001)
-		// TODO: Is the mask alright?
+		// TODO: Add test. (from start_address_upper_bound-0x000001 to start_address_upper_bound+0x000001)
 		//
 		// We use 0x100000 as the offset for the start address so as to not use the zero page.
-		let kernel_random_address: u64 =
-			rng.gen_range(0x100000..start_address_upper_bound) & 0xffff_ffff_ffff_fff0;
-
-		// TODO: Actually use this variable somewhere for something or completely remove it.
-		self.aslr_status = true;
-
-		kernel_random_address
+		rng.gen_range(0x100000..start_address_upper_bound) & 0xffff_ffff_ffff_fff0
 	}
 
 	pub fn load_kernel(&mut self) -> LoadKernelResult<()> {
@@ -234,6 +227,10 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			kernel_start_address as u64,
 		);
 		self.entry_point = entry_point;
+		#[cfg(feature = "aslr")]
+		{
+			self.aslr_status = true;
+		}
 
 		let boot_info = BootInfo {
 			hardware_info: HardwareInfo {
