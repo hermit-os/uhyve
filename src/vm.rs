@@ -14,7 +14,7 @@ use hermit_entry::{
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
 use log::{error, warn};
-#[cfg(feature = "enable-aslr")]
+#[cfg(feature = "aslr")]
 use rand::Rng;
 use thiserror::Error;
 
@@ -179,7 +179,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		);
 	}
 
-	#[cfg(feature = "enable-aslr")]
+	#[cfg(feature = "aslr")]
 	fn generate_start_address(&mut self, object_mem_size: u64) -> u64 {
 		let mut rng = rand::thread_rng();
 
@@ -211,16 +211,11 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
-		#[cfg(all(feature = "enable-aslr", feature = "disable-aslr"))]
-		compile_error!("\"enable-aslr\" and \"disable-aslr\" cannot be enabled at the same time");
-
-		#[cfg(feature = "disable-aslr")]
+		#[cfg(not(feature = "aslr"))]
 		let kernel_start_address = object.start_addr().unwrap_or(0x400000) as usize;
 
-		#[cfg(feature = "enable-aslr")]
-		{
-			let kernel_start_address = self.generate_start_address(object.mem_size() as u64) as usize;
-		}
+		#[cfg(feature = "aslr")]
+		let kernel_start_adress = self.generate_start_address(object.mem_size() as u64) as usize;
 
 		let kernel_end_address = kernel_start_address + object.mem_size();
 		self.offset = kernel_start_address as u64;
