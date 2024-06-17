@@ -13,8 +13,8 @@ use hermit_entry::{
 	boot_info::{BootInfo, HardwareInfo, PlatformInfo, RawBootInfo, SerialPortBase},
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
-use libc::STATX__RESERVED;
 use log::{error, warn};
+#[cfg(feature = "enable-aslr")]
 use rand::Rng;
 use thiserror::Error;
 
@@ -179,41 +179,47 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		);
 	}
 
+	#[cfg(feature = "enable-aslr")]
+	fn generate_start_address(&mut self, object_mem_size: u64) -> u64 {
+		let mut rng = rand::thread_rng();
+
+		// TODO: This breaks sometimes, causing the _kernel_ to return InsufficientMemory errors, despite the
+		// checks the boot process passing. Why?
+		//
+		// This seems to be a problem on the side of hermit-os/kernel, which does not behave very well if the
+		// start address is way too high. For some mysterious reason, this problem never occurs if we do not
+		// go past 0x3000000.
+		let start_address_upper_bound: u64 = std::cmp::min(
+			self.mem.memory_size as u64 - self.mem.guest_address.as_u64() - object_mem_size,
+			0x3000000,
+		);
+
+		// TODO: Add test. (from end_address_upper_bound-0x000001 to end_address_upper_bound+0x000001)
+		// TODO: Is the mask alright?
+		//
+		// We use 0x100000 as the offset for the start address so as to not use the zero page.
+		let kernel_random_address: u64 =
+			rng.gen_range(0x100000..start_address_upper_bound) & 0xffff_ffff_ffff_fff0;
+
+		// TODO: Actually use this variable somewhere for something or completely remove it.
+		self.aslr_status = true;
+
+		kernel_random_address
+	}
+
 	pub fn load_kernel(&mut self) -> LoadKernelResult<()> {
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
-		let kernel_start_address;
+		#[cfg(all(feature = "enable-aslr", feature = "disable-aslr"))]
+		compile_error!("\"enable-aslr\" and \"disable-aslr\" cannot be enabled at the same time");
 
-		// Although Hermit is supposed to be relocatable by default, at the moment, some edge cases (Hermit C images) exist.
-		// We let hermit_entry do the hard work of establishing whether this is the case. If it is,
-		// the user *will* be warned, and the random value generation using ThreadRng will be _avoided_.
+		#[cfg(feature = "disable-aslr")]
+		let kernel_start_address = object.start_addr().unwrap_or(0x400000) as usize;
 
-		// TODO: Put everything in this if..else block in unwrap_or instead.
-		if !object.start_addr().is_none() {
-			info!("ASLR disabled: ELF not relocatable.");
-
-			// As the ELF object is not relocatable, given that the object has a pre-defined start address,
-			// we don't have to choose an address.
-			kernel_start_address = object.start_addr().unwrap() as usize;
-		} else {
-			let mut rng = rand::thread_rng();
-			// TODO: This breaks sometimes, causing the kernel to return InsufficientMemory errors despite the
-			// checks preceeding ASLR support passing. Why?
-			let start_address_upper_bound: u64 = self.mem.memory_size as u64
-				- self.mem.guest_address.as_u64()
-				- object.mem_size() as u64;
-
-			// TODO: Add test. (from end_address_upper_bound-0x000001 to end_address_upper_bound+0x000001)
-			// TODO: Is the mask alright?
-
-			let kernel_random_address: u64 = rng
-				.gen_range(START_ADDRESS_OFFSET..start_address_upper_bound)
-				& 0xffff_ffff_ffff_fff0;
-			kernel_start_address = object.start_addr().unwrap_or(kernel_random_address) as usize;
-
-			// TODO: Actually use this variable somewhere for something or completely remove it.
-			self.aslr_status = true;
+		#[cfg(feature = "enable-aslr")]
+		{
+			let kernel_start_address = self.generate_start_address(object.mem_size() as u64) as usize;
 		}
 
 		let kernel_end_address = kernel_start_address + object.mem_size();

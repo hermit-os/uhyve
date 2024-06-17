@@ -36,7 +36,9 @@ path = "benches/benchmarks.rs"
 harness = false
 
 [features]
-default = []
+default = ["disable-aslr"]
+disable-aslr = []
+enable-aslr = []
 instrument = ["rftrace", "rftrace-frontend"]
 
 [dependencies]
