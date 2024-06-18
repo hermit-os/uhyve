@@ -2,6 +2,7 @@ use std::{
 	ffi::OsString,
 	fmt, fs, io,
 	marker::PhantomData,
+	mem::MaybeUninit,
 	num::NonZeroU32,
 	path::PathBuf,
 	ptr,
@@ -15,6 +16,9 @@ use hermit_entry::{
 };
 use log::{error, warn};
 use thiserror::Error;
+use vm_memory::{
+	GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion, GuestRegionMmap, MmapRegion,
+};
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::{
@@ -23,8 +27,8 @@ use crate::arch::x86_64::{
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 use crate::linux::x86_64::kvm_cpu::initialize_kvm;
 use crate::{
-	arch, consts::*, mem::MmapMemory, os::HypervisorError, params::Params, vcpu::VirtualCPU,
-	virtio::*,
+	arch, consts::*, os::HypervisorError, params::Params, vcpu::VirtualCPU,
+	virtio::net::VirtioNetPciDevice,
 };
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
@@ -75,7 +79,7 @@ pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 	offset: u64,
 	entry_point: u64,
 	stack_address: u64,
-	pub mem: Arc<MmapMemory>,
+	pub mem: Arc<GuestMemoryMmap>,
 	num_cpus: u32,
 	path: PathBuf,
 	args: Vec<OsString>,
@@ -90,16 +94,18 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VCpuType>> {
 		let memory_size = params.memory_size.get();
 
-		#[cfg(target_os = "linux")]
-		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, params.thp, params.ksm);
-		#[cfg(not(target_os = "linux"))]
-		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, false, false);
+		let regionmap = GuestRegionMmap::new(
+			MmapRegion::new(memory_size).unwrap(),
+			GuestAddress(arch::RAM_START.as_u64()),
+		)
+		.unwrap();
+		let mem = GuestMemoryMmap::from_regions(vec![regionmap]).unwrap();
 
 		// create virtio interface
 		// TODO: Remove allow once fixed:
 		// https://github.com/rust-lang/rust-clippy/issues/11382
 		#[allow(clippy::arc_with_non_send_sync)]
-		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new()));
+		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new(mem.clone())));
 
 		#[cfg(target_os = "linux")]
 		initialize_kvm(&mem, params.pit)?;
@@ -167,11 +173,16 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 
 	/// Initialize the page tables for the guest
 	fn init_guest_mem(&mut self) {
+		let mem_start = GuestAddress(0);
 		debug!("Initialize guest memory");
 		crate::arch::init_guest_mem(
-			unsafe { self.mem.as_slice_mut() } // slice only lives during this fn call
-				.try_into()
-				.expect("Guest memory is not large enough for pagetables"),
+			// slice only lives during this fn call and mem is exclusive at this point
+			unsafe {
+				std::slice::from_raw_parts_mut(
+					self.mem.get_host_address(mem_start).unwrap(),
+					self.mem.find_region(mem_start).unwrap().len() as usize,
+				)
+			},
 		);
 	}
 
@@ -184,7 +195,10 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		let kernel_end_address = kernel_start_address + object.mem_size();
 		self.offset = kernel_start_address as u64;
 
-		if kernel_end_address > self.mem.memory_size - self.mem.guest_address.as_u64() as usize {
+		if !self.mem.check_range(
+			GuestAddress(kernel_start_address as u64),
+			kernel_end_address - kernel_start_address,
+		) {
 			return Err(LoadKernelError::InsufficientMemory);
 		}
 
@@ -193,8 +207,12 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			entry_point,
 		} = object.load_kernel(
 			// Safety: Slice only lives during this fn call, so no aliasing happens
-			&mut unsafe { self.mem.as_slice_uninit_mut() }
-				[kernel_start_address..kernel_end_address],
+			&mut unsafe {
+				std::slice::from_raw_parts_mut(
+					self.mem.get_host_address(GuestAddress(0)).unwrap() as *mut MaybeUninit<u8>,
+					kernel_end_address,
+				)
+			}[kernel_start_address..kernel_end_address],
 			kernel_start_address as u64,
 		);
 		self.entry_point = entry_point;
@@ -202,7 +220,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		let boot_info = BootInfo {
 			hardware_info: HardwareInfo {
 				phys_addr_range: arch::RAM_START.as_u64()
-					..arch::RAM_START.as_u64() + self.mem.memory_size as u64,
+					..arch::RAM_START.as_u64() + self.mem.iter().next().unwrap().len(),
 				serial_port_base: self.verbose().then(|| {
 					SerialPortBase::new((uhyve_interface::HypercallAddress::Uart as u16).into())
 						.unwrap()
@@ -218,8 +236,10 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			},
 		};
 		unsafe {
-			let raw_boot_info_ptr =
-				self.mem.host_address.add(BOOT_INFO_ADDR.as_u64() as usize) as *mut RawBootInfo;
+			let raw_boot_info_ptr = self
+				.mem
+				.get_host_address(GuestAddress(BOOT_INFO_ADDR.as_u64()))
+				.unwrap() as *mut RawBootInfo;
 			*raw_boot_info_ptr = RawBootInfo::from(boot_info);
 			self.boot_info = raw_boot_info_ptr;
 		}

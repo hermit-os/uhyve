@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
 use uhyve_interface::{GuestPhysAddr, Hypercall};
+use vm_memory::{GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
 use vmm_sys_util::eventfd::EventFd;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
@@ -10,9 +11,12 @@ use crate::{
 	consts::*,
 	hypercall,
 	linux::KVM,
-	mem::MmapMemory,
+	pci::PciDevice,
 	vcpu::{VcpuStopReason, VirtualCPU},
-	virtio::*,
+	virtio::{
+		capabilities::{ComCfg, IsrStatus, NetDevCfg},
+		pci::{ConfigAddress, MEM_NOTIFY, MEM_NOTIFY_1},
+	},
 	vm::UhyveVm,
 	HypervisorError, HypervisorResult,
 };
@@ -30,30 +34,37 @@ const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
 
 static KVM_ACCESS: Mutex<Option<VmFd>> = Mutex::new(None);
 
-pub fn initialize_kvm(mem: &MmapMemory, use_pit: bool) -> HypervisorResult<()> {
-	let sz = std::cmp::min(mem.memory_size, KVM_32BIT_GAP_START);
+pub fn initialize_kvm(mem: &GuestMemoryMmap, use_pit: bool) -> HypervisorResult<()> {
+	// TODO: Support multiple regions and iterate over them
+	let mem_region = mem.iter().next().unwrap();
+	let sz = std::cmp::min(mem_region.size(), KVM_32BIT_GAP_START);
 
+	let start_addr = mem_region.start_addr();
+	let region_addr = mem_region.to_region_addr(start_addr).unwrap();
 	let kvm_mem = kvm_userspace_memory_region {
 		slot: 0,
-		flags: mem.flags,
+		flags: 0, // Can be KVM_MEM_LOG_DIRTY_PAGES and KVM_MEM_READONLY
 		memory_size: sz as u64,
-		guest_phys_addr: mem.guest_address.as_u64(),
-		userspace_addr: mem.host_address as u64,
+		guest_phys_addr: start_addr.0,
+		userspace_addr: mem_region.get_host_address(region_addr).unwrap() as u64,
 	};
 
 	// TODO: make vm a global struct in linux blah
 	let vm = KVM.create_vm()?;
 	unsafe { vm.set_user_memory_region(kvm_mem) }?;
 
-	if mem.memory_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
+	if mem_region.size() > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
 		let kvm_mem = kvm_userspace_memory_region {
 			slot: 1,
-			flags: mem.flags,
-			memory_size: (mem.memory_size - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
-			guest_phys_addr: mem.guest_address.as_u64()
+			flags: mem_region.flags() as u32,
+			memory_size: (mem_region.size() - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
+			guest_phys_addr: mem_region.start_addr().0
 				+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
-			userspace_addr: (mem.host_address as usize + KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE)
-				as u64,
+			userspace_addr: (mem_region
+				.get_host_address(mem_region.to_region_addr(mem_region.start_addr()).unwrap())
+				.unwrap() as usize
+				+ KVM_32BIT_GAP_START
+				+ KVM_32BIT_GAP_SIZE) as u64,
 		};
 
 		unsafe { vm.set_user_memory_region(kvm_mem) }?;
@@ -107,7 +118,7 @@ pub fn initialize_kvm(mem: &MmapMemory, use_pit: bool) -> HypervisorResult<()> {
 		.expect("Unable to disable exists due pause instructions");
 
 	let evtfd = EventFd::new(0).unwrap();
-	vm.register_irqfd(&evtfd, UHYVE_IRQ_NET)?;
+	vm.register_irqfd(&evtfd, UHYVE_IRQ_NET as u32)?;
 
 	*KVM_ACCESS.lock().unwrap() = Some(vm);
 	Ok(())
@@ -366,33 +377,8 @@ impl VirtualCPU for KvmCpu {
 							}
 						}
 						PCI_CONFIG_ADDRESS_PORT => {}
-						VIRTIO_PCI_STATUS => {
-							let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
-							virtio_device.read_status(addr);
-						}
-						VIRTIO_PCI_HOST_FEATURES => {
-							let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
-							virtio_device.read_host_features(addr);
-						}
-						VIRTIO_PCI_GUEST_FEATURES => {
-							let mut virtio_device = self.parent_vm.virtio_device.lock().unwrap();
-							virtio_device.read_requested_features(addr);
-						}
-						VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
-							let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
-							virtio_device
-								.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_OFF);
-						}
-						VIRTIO_PCI_ISR => {
-							let mut virtio_device = self.parent_vm.virtio_device.lock().unwrap();
-							virtio_device.reset_interrupt()
-						}
-						VIRTIO_PCI_LINK_STATUS_MSIX_OFF => {
-							let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
-							virtio_device.read_link_status(addr);
-						}
-						port => {
-							warn!("guest read from unknown I/O port {port:#x}");
+						_ => {
+							error!("Unhanded IO Exit")
 						}
 					},
 					VcpuExit::IoOut(port, addr) => {
@@ -449,46 +435,102 @@ impl VirtualCPU for KvmCpu {
 								PCI_CONFIG_ADDRESS_PORT => {
 									self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
 								}
-								VIRTIO_PCI_STATUS => {
-									let mut virtio_device =
-										self.parent_vm.virtio_device.lock().unwrap();
-									virtio_device.write_status(addr);
-								}
-								VIRTIO_PCI_GUEST_FEATURES => {
-									let mut virtio_device =
-										self.parent_vm.virtio_device.lock().unwrap();
-									virtio_device.write_requested_features(addr);
-								}
-								VIRTIO_PCI_QUEUE_NOTIFY => {
-									let mut virtio_device =
-										self.parent_vm.virtio_device.lock().unwrap();
-									virtio_device.handle_notify_output(addr, &self.parent_vm.mem);
-								}
-								VIRTIO_PCI_QUEUE_SEL => {
-									let mut virtio_device =
-										self.parent_vm.virtio_device.lock().unwrap();
-									virtio_device.write_selected_queue(addr);
-								}
-								VIRTIO_PCI_QUEUE_PFN => {
-									let mut virtio_device =
-										self.parent_vm.virtio_device.lock().unwrap();
-									virtio_device.write_pfn(addr, &self.parent_vm.mem);
-								}
-								port => {
-									warn!("guest wrote to unknown I/O port {port:#x}");
+								_ => {
+									panic!("Unhandled IO exit: 0x{:x}", port);
 								}
 							}
 						}
 					}
 					VcpuExit::Debug(debug) => {
-						info!("Caught Debug Interrupt!");
+						// info!("Caught Debug Interrupt!");
 						return Ok(VcpuStopReason::Debug(debug));
 					}
 					VcpuExit::InternalError => {
 						panic!("{:?}", VcpuExit::InternalError)
 					}
+
+					VcpuExit::MmioRead(addr, data) => {
+						let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
+						match ConfigAddress::from_guest_address(addr).unwrap() {
+							IsrStatus::ISR_FLAGS => {
+								virtio_device.read_isr_notify(data);
+							}
+							ComCfg::DEVICE_STATUS => {
+								data[0] = virtio_device.read_status_reg();
+							}
+							ComCfg::DEVICE_FEATURE => {
+								virtio_device.read_host_features(data);
+							}
+							ComCfg::QUEUE_SIZE => {
+								virtio_device.read_queue_size(data);
+							}
+							ComCfg::QUEUE_NOTIFY_OFFSET => {
+								virtio_device.read_queue_notify_offset(data);
+							}
+							NetDevCfg::MAC_ADDRESS => {
+								virtio_device.read_mac_address(data);
+							}
+							NetDevCfg::NET_STATUS => {
+								virtio_device.read_net_status(data);
+							}
+							NetDevCfg::MTU => {
+								virtio_device.read_mtu(data);
+							}
+							ComCfg::QUEUE_RESET => {
+								virtio_device.read_queue_reset(data);
+							}
+							_ => {
+								warn!("unhandled read! {addr:#x?}")
+							}
+						}
+					}
+
+					VcpuExit::MmioWrite(addr, data) => {
+						let mut virtio_device = self.parent_vm.virtio_device.lock().unwrap();
+						match ConfigAddress::from_guest_address(addr).unwrap() {
+							ComCfg::DEVICE_STATUS => {
+								virtio_device.write_status(data);
+							}
+							ComCfg::DRIVER_FEATURE_SELECT => {
+								virtio_device.write_driver_feature_select(data);
+							}
+							ComCfg::DEVICE_FEATURE_SELECT => {
+								virtio_device.write_device_feature_select(data);
+							}
+							ComCfg::DRIVER_FEATURE => {
+								virtio_device.write_requested_features(data);
+							}
+							ComCfg::QUEUE_SELECT => {
+								virtio_device.write_selected_queue(data);
+							}
+							ComCfg::QUEUE_DESC => {
+								// write descriptor address
+								virtio_device.write_pfn(data);
+							}
+							ComCfg::QUEUE_ENABLE => {
+								virtio_device.queue_enable(data);
+							}
+							ComCfg::QUEUE_DRIVER => {
+								virtio_device.write_queue_driver(data);
+							}
+							ComCfg::QUEUE_DEVICE => {
+								virtio_device.write_queue_driver(data);
+							}
+							ComCfg::QUEUE_RESET => {
+								virtio_device.write_reset_queue();
+							}
+							IsrStatus::ISR_FLAGS => {
+								panic!("Guest should not write to ISR!");
+							}
+							MEM_NOTIFY | MEM_NOTIFY_1 => {
+								// TODO: are we only writing to two addresses or alerting/switching twice?
+								panic!("Writing to MemNotify address! Is IOEventFD correctly configured?");
+							}
+							_ => warn!("writing to unhandled MMIO address {addr:#x?}"),
+						}
+					}
 					vcpu_exit => {
-						unimplemented!("{:?}", vcpu_exit)
+						unimplemented!("{:#x?}", vcpu_exit)
 					}
 				},
 				Err(err) => match err.errno() {

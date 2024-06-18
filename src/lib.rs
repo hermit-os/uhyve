@@ -2,6 +2,7 @@
 #![allow(unused_macros)]
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::useless_conversion)]
+#![allow(clippy::extra_unused_type_parameters)]
 
 #[macro_use]
 mod macros;
@@ -26,10 +27,12 @@ pub mod params;
 #[cfg(target_os = "linux")]
 pub mod shared_queue;
 mod vcpu;
-pub mod virtio;
-pub mod virtqueue;
 pub mod vm;
 
 pub use arch::*;
 pub use os::HypervisorError;
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
+
+pub mod net;
+mod pci;
+mod virtio;

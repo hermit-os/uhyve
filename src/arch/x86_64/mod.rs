@@ -10,6 +10,7 @@ use log::{debug, warn};
 use raw_cpuid::{CpuId, CpuIdReaderNative};
 use thiserror::Error;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
+use vm_memory::GuestMemoryMmap;
 use x86_64::{
 	structures::paging::{
 		page_table::{FrameError, PageTableEntry},
@@ -18,7 +19,7 @@ use x86_64::{
 	PhysAddr,
 };
 
-use crate::{consts::*, mem::MmapMemory, paging::PagetableError};
+use crate::{consts::*, mem::mem_get_ref_mut, paging::PagetableError};
 
 pub const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x00);
 const MHZ_TO_HZ: u64 = 1000000;
@@ -195,7 +196,7 @@ pub fn initialize_pagetables(mem: &mut [u8]) {
 /// Converts a virtual address in the guest to a physical address in the guest
 pub fn virt_to_phys(
 	addr: GuestVirtAddr,
-	mem: &MmapMemory,
+	mem: &GuestMemoryMmap,
 	pagetable_l0: GuestPhysAddr,
 ) -> Result<GuestPhysAddr, PagetableError> {
 	/// Number of Offset bits of a virtual address for a 4 KiB page, which are shifted away to get its Page Frame Number (PFN).
@@ -204,8 +205,7 @@ pub fn virt_to_phys(
 	/// Number of bits of the index in each table (PML4, PDPT, PDT, PGT).
 	pub const PAGE_MAP_BITS: usize = 9;
 
-	let mut page_table =
-		unsafe { (mem.host_address(pagetable_l0).unwrap() as *mut PageTable).as_mut() }.unwrap();
+	let mut page_table = unsafe { mem_get_ref_mut::<PageTable>(mem, pagetable_l0).unwrap() };
 	let mut page_bits = 39;
 	let mut entry = PageTableEntry::new();
 
@@ -216,10 +216,8 @@ pub fn virt_to_phys(
 
 		match entry.frame() {
 			Ok(frame) => {
-				page_table = unsafe {
-					(mem.host_address(frame.start_address()).unwrap() as *mut PageTable).as_mut()
-				}
-				.unwrap();
+				page_table =
+					unsafe { mem_get_ref_mut::<PageTable>(mem, frame.start_address()).unwrap() };
 				page_bits -= PAGE_MAP_BITS;
 			}
 			Err(FrameError::FrameNotPresent) => return Err(PagetableError::InvalidAddress),
@@ -239,7 +237,12 @@ pub fn init_guest_mem(mem: &mut [u8]) {
 
 #[cfg(test)]
 mod tests {
+	use vm_memory::{
+		GuestAddress, GuestMemoryMmap, GuestMemoryRegion, GuestRegionMmap, MmapRegion,
+	};
+
 	use super::*;
+	use crate::mem::mem_as_slice;
 	// test is derived from
 	// https://github.com/gz/rust-cpuid/blob/master/examples/tsc_frequency.rs
 	#[test]
@@ -370,8 +373,17 @@ mod tests {
 
 	#[test]
 	fn test_virt_to_phys() {
-		let mem = MmapMemory::new(0, MIN_PHYSMEM_SIZE * 2, GuestPhysAddr::new(0), true, true);
-		initialize_pagetables(unsafe { mem.as_slice_mut() }.try_into().unwrap());
+		let regionmap = GuestRegionMmap::new(
+			MmapRegion::new(MIN_PHYSMEM_SIZE * 2).unwrap(),
+			GuestAddress(0),
+		)
+		.unwrap();
+		let mem_len = regionmap.len();
+		let mem = GuestMemoryMmap::from_regions(vec![regionmap]).unwrap();
+
+		initialize_pagetables(
+			unsafe { mem_as_slice(&mem, PhysAddr::zero(), mem_len as usize) }.unwrap(),
+		);
 
 		// Get the address of the first entry in PML4 (the address of the PML4 itself)
 		let virt_addr = GuestVirtAddr::new(0xFFFFFFFFFFFFF000);
@@ -382,7 +394,7 @@ mod tests {
 		let virt_addr = GuestVirtAddr::new(0xFFFFFFFFFFFFF000 | (4096 - 8));
 		let p_addr = virt_to_phys(virt_addr, &mem, BOOT_PML4).unwrap();
 		assert_eq!(
-			mem.read::<u64>(p_addr).unwrap(),
+			unsafe { *mem_get_ref_mut::<u64>(&mem, p_addr).unwrap() },
 			BOOT_PML4.as_u64() | (PageTableFlags::PRESENT | PageTableFlags::WRITABLE).bits()
 		);
 
@@ -396,10 +408,9 @@ mod tests {
 		let p_addr = virt_to_phys(virt_addr, &mem, BOOT_PML4).unwrap();
 		assert_eq!(p_addr, BOOT_PDE);
 		// That address points to a huge page
-		assert!(
-			PageTableFlags::from_bits_truncate(mem.read::<u64>(p_addr).unwrap()).contains(
-				PageTableFlags::HUGE_PAGE | PageTableFlags::PRESENT | PageTableFlags::WRITABLE
-			)
-		);
+		assert!(PageTableFlags::from_bits_truncate(unsafe {
+			*mem_get_ref_mut(&mem, p_addr).unwrap()
+		},)
+		.contains(PageTableFlags::HUGE_PAGE | PageTableFlags::PRESENT | PageTableFlags::WRITABLE));
 	}
 }

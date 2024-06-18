@@ -24,6 +24,6 @@ pub const KERNEL_STACK_SIZE: u64 = 32_768;
 pub const SHAREDQUEUE_START: usize = 0x80000;
 pub const UHYVE_NET_MTU: usize = 1500;
 pub const UHYVE_QUEUE_SIZE: usize = 8;
-pub const UHYVE_IRQ_NET: u32 = 11;
+pub const UHYVE_IRQ_NET: u8 = 11;
 
 pub const GUEST_PAGE_SIZE: u64 = 0x200000; /* 2 MB pages in guest */
