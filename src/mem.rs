@@ -187,23 +187,33 @@ mod tests {
 
 	#[test]
 	fn test_mmap_memory_readwrite() {
-		let mem = MmapMemory::new(0, 40 * PAGE_SIZE, GuestPhysAddr::new(0x1000), true, true);
-		unsafe {
-			mem.as_slice_mut()[0xfe] = 0xaa;
-			mem.as_slice_mut()[0xff] = 0xbb;
-			mem.as_slice_mut()[0x100] = 0x78;
-			mem.as_slice_mut()[0x101] = 0x56;
-			mem.as_slice_mut()[0x102] = 0x34;
-			mem.as_slice_mut()[0x103] = 0x12;
+		let phys_mem_start_addresses = vec![
+			0x1000,                // "normal" address offset
+			0x2221,                // odd address
+			0x13000,               // something we'd actually use (minimal size for the physical memory)
+			0x000F_FFFF_FFFF_0000, // "physical addresses: no bits in the range 52 to 64 set"
+		];
+
+		for address in phys_mem_start_addresses {
+			let mem = MmapMemory::new(0, 40 * PAGE_SIZE, GuestPhysAddr::new(address), true, true);
+			unsafe {
+				mem.as_slice_mut()[0xfe] = 0xaa;
+				mem.as_slice_mut()[0xff] = 0xbb;
+				mem.as_slice_mut()[0x100] = 0x78;
+				mem.as_slice_mut()[0x101] = 0x56;
+				mem.as_slice_mut()[0x102] = 0x34;
+				mem.as_slice_mut()[0x103] = 0x12;
+			}
+			assert_eq!(
+				mem.read::<u64>(GuestPhysAddr::new(address + 0x100))
+					.unwrap(),
+				0x12345678
+			);
+			// unaligned read
+			assert_eq!(
+				mem.read::<u64>(GuestPhysAddr::new(address + 0xfe)).unwrap(),
+				0x12345678bbaa
+			);
 		}
-		assert_eq!(
-			mem.read::<u64>(GuestPhysAddr::new(0x1100)).unwrap(),
-			0x12345678
-		);
-		// unaligned read
-		assert_eq!(
-			mem.read::<u64>(GuestPhysAddr::new(0x10fe)).unwrap(),
-			0x12345678bbaa
-		);
 	}
 }
