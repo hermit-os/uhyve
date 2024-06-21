@@ -194,7 +194,7 @@ pub fn initialize_pagetables(mem: &mut [u8]) {
 
 /// Converts a virtual address in the guest to a physical address in the guest
 pub fn virt_to_phys(
-	addr: GuestVirtAddr,
+	guest_virt_addr: GuestVirtAddr,
 	mem: &MmapMemory,
 	pagetable_l0: GuestPhysAddr,
 ) -> Result<GuestPhysAddr, PagetableError> {
@@ -210,8 +210,9 @@ pub fn virt_to_phys(
 	let mut entry = PageTableEntry::new();
 
 	for _i in 0..4 {
-		let index =
-			PageTableIndex::new(((addr.as_u64() >> page_bits) & ((1 << PAGE_MAP_BITS) - 1)) as u16);
+		let index = PageTableIndex::new(
+			((guest_virt_addr.as_u64() >> page_bits) & ((1 << PAGE_MAP_BITS) - 1)) as u16,
+		);
 		entry = page_table[index].clone();
 
 		match entry.frame() {
@@ -224,12 +225,12 @@ pub fn virt_to_phys(
 			}
 			Err(FrameError::FrameNotPresent) => return Err(PagetableError::InvalidAddress),
 			Err(FrameError::HugeFrame) => {
-				return Ok(entry.addr() + (addr.as_u64() & !((!0_u64) << page_bits)));
+				return Ok(entry.addr() + (guest_virt_addr.as_u64() & !((!0_u64) << page_bits)));
 			}
 		}
 	}
 
-	Ok(entry.addr() + (addr.as_u64() & !((!0u64) << PAGE_BITS)))
+	Ok(entry.addr() + (guest_virt_addr.as_u64() & !((!0u64) << PAGE_BITS)))
 }
 
 pub fn init_guest_mem(mem: &mut [u8]) {
@@ -345,17 +346,20 @@ mod tests {
 		);
 
 		for i in (0..4096).step_by(8) {
-			let addr = BOOT_PDE.as_u64() as usize + i;
-			let entry = u64::from_le_bytes(mem[addr..(addr + 8)].try_into().unwrap());
+			let guest_phys_addr = BOOT_PDE.as_u64() as usize + i;
+			let entry = u64::from_le_bytes(
+				mem[guest_phys_addr..(guest_phys_addr + 8)]
+					.try_into()
+					.unwrap(),
+			);
 			assert!(
 				PageTableFlags::from_bits_truncate(entry)
 					.difference(
 						PageTableFlags::PRESENT
-							| PageTableFlags::WRITABLE
-							| PageTableFlags::HUGE_PAGE
+							| PageTableFlags::WRITABLE | PageTableFlags::HUGE_PAGE
 					)
 					.is_empty(),
-				"Pagetable bits at {addr:#x} are incorrect"
+				"Pagetable bits at {guest_phys_addr:#x} are incorrect"
 			)
 		}
 

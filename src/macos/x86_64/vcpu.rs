@@ -130,18 +130,17 @@ lazy_static! {
 		let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::PINBASED).unwrap() };
 		cap2ctrl(cap, PIN_BASED_INTR | PIN_BASED_NMI | PIN_BASED_VIRTUAL_NMI)
 	};
-	static ref CAP_PROCBASED: u64 = {
-		let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::PROCBASED).unwrap() };
-		cap2ctrl(
-			cap,
-			CPU_BASED_SECONDARY_CTLS
-				| CPU_BASED_MWAIT
-				| CPU_BASED_MSR_BITMAPS
-				| CPU_BASED_MONITOR
-				| CPU_BASED_TSC_OFFSET
-				| CPU_BASED_TPR_SHADOW,
-		)
-	};
+	static ref CAP_PROCBASED: u64 =
+		{
+			let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::PROCBASED).unwrap() };
+			cap2ctrl(
+				cap,
+				CPU_BASED_SECONDARY_CTLS
+					| CPU_BASED_MWAIT | CPU_BASED_MSR_BITMAPS
+					| CPU_BASED_MONITOR | CPU_BASED_TSC_OFFSET
+					| CPU_BASED_TPR_SHADOW,
+			)
+		};
 	static ref CAP_PROCBASED2: u64 = {
 		let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::PROCBASED2).unwrap() };
 		cap2ctrl(cap, CPU_BASED2_RDTSCP | CPU_BASED2_APIC_REG_VIRT)

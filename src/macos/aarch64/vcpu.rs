@@ -158,12 +158,16 @@ impl VirtualCPU for XhyveCpu {
 
 					// data abort from lower or current level
 					if ec == 0b100100u64 || ec == 0b100101u64 {
-						let addr: u16 = exception.physical_address.try_into().unwrap();
+						let guest_phys_addr: u16 = exception.physical_address.try_into().unwrap();
 						let pc = self.vcpu.read_register(Register::PC)?;
 
 						let data_addr = GuestPhysAddr::new(self.vcpu.read_register(Register::X8)?);
 						if let Some(hypercall) = unsafe {
-							hypercall::address_to_hypercall(&self.parent_vm.mem, addr, data_addr)
+							hypercall::address_to_hypercall(
+								&self.parent_vm.mem,
+								guest_phys_addr,
+								data_addr,
+							)
 						} {
 							match hypercall {
 								Hypercall::SerialWriteByte(_char) => {
@@ -207,7 +211,7 @@ impl VirtualCPU for XhyveCpu {
 							self.vcpu.write_register(Register::PC, pc + 4)?;
 						} else {
 							#[allow(clippy::match_single_binding)]
-							match addr {
+							match guest_phys_addr {
 								_ => {
 									error!("Unable to handle exception {:?}", exception);
 									self.print_registers();

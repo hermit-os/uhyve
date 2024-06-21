@@ -95,11 +95,17 @@ impl MmapMemory {
 	/// This is unsafe, as can create multiple aliasing. During the lifetime of
 	/// the returned slice, the memory must not be altered to prevent undfined
 	/// behaviour.
-	pub unsafe fn slice_at(&self, addr: GuestPhysAddr, len: usize) -> Result<&[u8], MemoryError> {
-		if addr.as_u64() as usize + len >= self.memory_size - self.guest_address.as_u64() as usize {
+	pub unsafe fn slice_at(
+		&self,
+		guest_phys_addr: GuestPhysAddr,
+		len: usize,
+	) -> Result<&[u8], MemoryError> {
+		if guest_phys_addr.as_u64() as usize + len
+			>= self.memory_size - self.guest_address.as_u64() as usize
+		{
 			Err(MemoryError::BoundsViolation)
 		} else {
-			Ok(unsafe { std::slice::from_raw_parts(self.host_address(addr)?, len) })
+			Ok(unsafe { std::slice::from_raw_parts(self.host_address(guest_phys_addr)?, len) })
 		}
 	}
 
@@ -112,21 +118,26 @@ impl MmapMemory {
 	/// behavior.
 	pub unsafe fn slice_at_mut(
 		&self,
-		addr: GuestPhysAddr,
+		guest_phys_addr: GuestPhysAddr,
 		len: usize,
 	) -> Result<&mut [u8], MemoryError> {
-		if addr.as_u64() as usize + len >= self.memory_size - self.guest_address.as_u64() as usize {
+		if guest_phys_addr.as_u64() as usize + len
+			>= self.memory_size - self.guest_address.as_u64() as usize
+		{
 			Err(MemoryError::BoundsViolation)
 		} else {
-			Ok(unsafe { std::slice::from_raw_parts_mut(self.host_address(addr)? as *mut u8, len) })
+			Ok(unsafe {
+				std::slice::from_raw_parts_mut(self.host_address(guest_phys_addr)? as *mut u8, len)
+			})
 		}
 	}
 
 	/// Returns the host address of the given internal physical address in the
 	/// memory, if the address is valid.
-	pub fn host_address(&self, addr: GuestPhysAddr) -> Result<*const u8, MemoryError> {
-		if addr < self.guest_address
-			|| addr.as_u64() as usize > self.guest_address.as_u64() as usize + self.memory_size
+	pub fn host_address(&self, guest_phys_addr: GuestPhysAddr) -> Result<*const u8, MemoryError> {
+		if guest_phys_addr < self.guest_address
+			|| guest_phys_addr.as_u64() as usize
+				> self.guest_address.as_u64() as usize + self.memory_size
 		{
 			return Err(MemoryError::WrongMemoryError);
 		}
@@ -134,24 +145,33 @@ impl MmapMemory {
 			// Safety:
 			// - The new ptr is checked to be within the mmap'd memory region above
 			// - to overflow an isize, the guest memory needs to be larger than 2^63 (which is rather unlikely anytime soon).
-			unsafe { self.host_address.add((addr - self.guest_address) as usize) as usize }
-				as *const u8,
+			unsafe {
+				self.host_address
+					.add((guest_phys_addr - self.guest_address) as usize) as usize
+			} as *const u8,
 		)
 	}
 
 	/// Read the value in the memory at the given address
-	pub fn read<T>(&self, addr: GuestPhysAddr) -> Result<T, MemoryError> {
-		Ok(unsafe { self.host_address(addr)?.cast::<T>().read_unaligned() })
+	pub fn read<T>(&self, guest_phys_addr: GuestPhysAddr) -> Result<T, MemoryError> {
+		Ok(unsafe {
+			self.host_address(guest_phys_addr)?
+				.cast::<T>()
+				.read_unaligned()
+		})
 	}
 
 	/// Get a reference to the type at the given address in the memory.
-	pub unsafe fn get_ref<T>(&self, addr: GuestPhysAddr) -> Result<&T, MemoryError> {
-		Ok(unsafe { &*(self.host_address(addr)? as *const T) })
+	pub unsafe fn get_ref<T>(&self, guest_phys_addr: GuestPhysAddr) -> Result<&T, MemoryError> {
+		Ok(unsafe { &*(self.host_address(guest_phys_addr)? as *const T) })
 	}
 
 	/// Get a mutable reference to the type at the given address in the memory.
-	pub unsafe fn get_ref_mut<T>(&self, addr: GuestPhysAddr) -> Result<&mut T, MemoryError> {
-		Ok(unsafe { &mut *(self.host_address(addr)? as *mut T) })
+	pub unsafe fn get_ref_mut<T>(
+		&self,
+		guest_phys_addr: GuestPhysAddr,
+	) -> Result<&mut T, MemoryError> {
+		Ok(unsafe { &mut *(self.host_address(guest_phys_addr)? as *mut T) })
 	}
 }
 
