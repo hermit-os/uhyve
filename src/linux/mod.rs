@@ -10,14 +10,13 @@ use std::{
 	io,
 	net::{TcpListener, TcpStream},
 	os::unix::prelude::JoinHandleExt,
-	sync::{Arc, Barrier},
+	sync::{Arc, Barrier, LazyLock},
 	thread,
 };
 
 use core_affinity::CoreId;
 use gdbstub::stub::{DisconnectReason, GdbStub};
 use kvm_ioctls::Kvm;
-use lazy_static::lazy_static;
 use libc::{SIGRTMAX, SIGRTMIN};
 use nix::sys::{
 	pthread::{pthread_kill, Pthread},
@@ -33,9 +32,7 @@ use crate::{
 	vm::UhyveVm,
 };
 
-lazy_static! {
-	static ref KVM: Kvm = Kvm::new().unwrap();
-}
+static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
 
 /// The signal for kicking vCPUs out of KVM_RUN.
 ///

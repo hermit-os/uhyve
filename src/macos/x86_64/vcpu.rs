@@ -2,11 +2,10 @@
 
 use std::{
 	arch::x86_64::__cpuid_count,
-	sync::{Arc, Mutex},
+	sync::{Arc, LazyLock, Mutex},
 };
 
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
-use lazy_static::lazy_static;
 use log::{debug, trace};
 use uhyve_interface::{GuestPhysAddr, Hypercall};
 use x86_64::{
@@ -125,36 +124,34 @@ fn cap2ctrl(cap: u64, ctrl: u64) -> u64 {
 	(ctrl | (cap & 0xffffffff)) & (cap >> 32)
 }
 
-lazy_static! {
-	static ref CAP_PINBASED: u64 = {
-		let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::PINBASED).unwrap() };
-		cap2ctrl(cap, PIN_BASED_INTR | PIN_BASED_NMI | PIN_BASED_VIRTUAL_NMI)
-	};
-	static ref CAP_PROCBASED: u64 = {
-		let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::PROCBASED).unwrap() };
-		cap2ctrl(
-			cap,
-			CPU_BASED_SECONDARY_CTLS
-				| CPU_BASED_MWAIT
-				| CPU_BASED_MSR_BITMAPS
-				| CPU_BASED_MONITOR
-				| CPU_BASED_TSC_OFFSET
-				| CPU_BASED_TPR_SHADOW,
-		)
-	};
-	static ref CAP_PROCBASED2: u64 = {
-		let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::PROCBASED2).unwrap() };
-		cap2ctrl(cap, CPU_BASED2_RDTSCP | CPU_BASED2_APIC_REG_VIRT)
-	};
-	static ref CAP_ENTRY: u64 = {
-		let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::ENTRY).unwrap() };
-		cap2ctrl(cap, VMENTRY_LOAD_EFER | VMENTRY_GUEST_IA32E)
-	};
-	static ref CAP_EXIT: u64 = {
-		let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::EXIT).unwrap() };
-		cap2ctrl(cap, 0)
-	};
-}
+static CAP_PINBASED: LazyLock<u64> = LazyLock::new(|| {
+	let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::PINBASED).unwrap() };
+	cap2ctrl(cap, PIN_BASED_INTR | PIN_BASED_NMI | PIN_BASED_VIRTUAL_NMI)
+});
+static CAP_PROCBASED: LazyLock<u64> = LazyLock::new(|| {
+	let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::PROCBASED).unwrap() };
+	cap2ctrl(
+		cap,
+		CPU_BASED_SECONDARY_CTLS
+			| CPU_BASED_MWAIT
+			| CPU_BASED_MSR_BITMAPS
+			| CPU_BASED_MONITOR
+			| CPU_BASED_TSC_OFFSET
+			| CPU_BASED_TPR_SHADOW,
+	)
+});
+static CAP_PROCBASED2: LazyLock<u64> = LazyLock::new(|| {
+	let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::PROCBASED2).unwrap() };
+	cap2ctrl(cap, CPU_BASED2_RDTSCP | CPU_BASED2_APIC_REG_VIRT)
+});
+static CAP_ENTRY: LazyLock<u64> = LazyLock::new(|| {
+	let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::ENTRY).unwrap() };
+	cap2ctrl(cap, VMENTRY_LOAD_EFER | VMENTRY_GUEST_IA32E)
+});
+static CAP_EXIT: LazyLock<u64> = LazyLock::new(|| {
+	let cap: u64 = { read_vmx_cap(&xhypervisor::VMXCap::EXIT).unwrap() };
+	cap2ctrl(cap, 0)
+});
 
 pub struct XhyveCpu {
 	id: u32,
