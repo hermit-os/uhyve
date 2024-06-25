@@ -104,6 +104,7 @@ pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 	offset: u64,
 	entry_point: u64,
 	stack_address: u64,
+	guest_address: u64,
 	pub mem: Arc<MmapMemory>,
 	num_cpus: u32,
 	path: PathBuf,
@@ -119,8 +120,18 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VCpuType>> {
 		let memory_size = params.memory_size.get();
 
+		// TODO: Move functionality to load_kernel. We don't know whether the binaries are relocatable yet.
+		// TODO: Use random address instead of arch::RAM_START here.
 		#[cfg(target_os = "linux")]
+		#[cfg(target_arch = "x86_64")]
 		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, params.thp, params.ksm);
+
+		// TODO: guest_address is only taken into account on Linux platforms.
+		// TODO: Before changing this, fix init_guest_mem in `src/arch/aarch64/mod.rs`
+		#[cfg(target_os = "linux")]
+		#[cfg(not(target_arch = "x86_64"))]
+		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, params.thp, params.ksm);
+
 		#[cfg(not(target_os = "linux"))]
 		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, false, false);
 
@@ -148,6 +159,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			offset: 0,
 			entry_point: 0,
 			stack_address: 0,
+			guest_address: mem.guest_address.as_u64(),
 			mem: mem.into(),
 			num_cpus: cpu_count,
 			path: kernel_path,
@@ -181,6 +193,10 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		self.stack_address
 	}
 
+	pub fn guest_address(&self) -> u64 {
+		self.guest_address
+	}
+
 	/// Returns the number of cores for the vm.
 	pub fn num_cpus(&self) -> u32 {
 		self.num_cpus
@@ -201,6 +217,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			unsafe { self.mem.as_slice_mut() } // slice only lives during this fn call
 				.try_into()
 				.expect("Guest memory is not large enough for pagetables"),
+			self.guest_address,
 		);
 	}
 
@@ -208,8 +225,13 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
+		// The offset of the kernel in the Memory. Must be larger than BOOT_INFO_OFFSET + KERNEL_STACK_SIZE
+		let kernel_offset = 0x40_000_usize;
 		// TODO: should be a random start address, if we have a relocatable executable
-		let kernel_start_address = object.start_addr().unwrap_or(0x400000) as usize;
+		let kernel_start_address = object
+			.start_addr()
+			.unwrap_or(self.mem.guest_address.as_u64() + kernel_offset as u64)
+			as usize;
 		let kernel_end_address = kernel_start_address + object.mem_size();
 		self.offset = kernel_start_address as u64;
 
@@ -223,7 +245,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		} = object.load_kernel(
 			// Safety: Slice only lives during this fn call, so no aliasing happens
 			&mut unsafe { self.mem.as_slice_uninit_mut() }
-				[kernel_start_address..kernel_end_address],
+				[self.offset as usize..object.mem_size() + self.offset as usize],
 			kernel_start_address as u64,
 		);
 		self.entry_point = entry_point;
@@ -248,7 +270,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		};
 		unsafe {
 			let raw_boot_info_ptr =
-				self.mem.host_address.add(BOOT_INFO_ADDR.as_u64() as usize) as *mut RawBootInfo;
+				self.mem.host_address.add(BOOT_INFO_ADDR_OFFSET as usize) as *mut RawBootInfo;
 			*raw_boot_info_ptr = RawBootInfo::from(boot_info);
 			self.boot_info = raw_boot_info_ptr;
 		}
@@ -268,6 +290,7 @@ impl<VCpuType: VirtualCPU> fmt::Debug for UhyveVm<VCpuType> {
 		f.debug_struct("UhyveVm")
 			.field("entry_point", &self.entry_point)
 			.field("stack_address", &self.stack_address)
+			.field("guest_address", &self.guest_address)
 			.field("mem", &self.mem)
 			.field("num_cpus", &self.num_cpus)
 			.field("path", &self.path)

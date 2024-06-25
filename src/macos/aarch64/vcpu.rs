@@ -26,7 +26,13 @@ pub struct XhyveCpu {
 }
 
 impl XhyveCpu {
-	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
+	fn init(
+		&mut self,
+		entry_point: u64,
+		stack_address: u64,
+		guest_address: u64,
+		cpu_id: u32,
+	) -> HypervisorResult<()> {
 		debug!("Initialize VirtualCPU");
 
 		/* pstate = all interrupts masked */
@@ -36,7 +42,7 @@ impl XhyveCpu {
 		self.vcpu
 			.write_system_register(SystemRegister::SP_EL1, stack_address)?;
 		self.vcpu
-			.write_register(Register::X0, BOOT_INFO_ADDR.as_u64())?;
+			.write_register(Register::X0, guest_address + BOOT_INFO_ADDR_OFFSET)?;
 		self.vcpu.write_register(Register::X1, cpu_id.into())?;
 
 		/*
@@ -88,7 +94,7 @@ impl XhyveCpu {
 		self.vcpu
 			.write_system_register(SystemRegister::TTBR1_EL1, 0)?;
 		self.vcpu
-			.write_system_register(SystemRegister::TTBR0_EL1, BOOT_PGT.as_u64())?;
+			.write_system_register(SystemRegister::TTBR0_EL1, guest_address + PGT_OFFSET)?;
 
 		/*
 		* Prepare system control register (SCTRL)
@@ -142,7 +148,12 @@ impl VirtualCPU for XhyveCpu {
 			parent_vm: parent_vm.clone(),
 			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
 		};
-		vcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
+		vcpu.init(
+			parent_vm.get_entry_point(),
+			parent_vm.stack_address(),
+			parent_vm.guest_address(),
+			id,
+		)?;
 
 		Ok(vcpu)
 	}

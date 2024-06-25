@@ -4,7 +4,7 @@ use bitflags::bitflags;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 
 use crate::{
-	consts::{BOOT_INFO_ADDR, BOOT_PGT},
+	consts::{BOOT_INFO_ADDR_OFFSET, PGT_OFFSET},
 	mem::MmapMemory,
 	paging::PagetableError,
 };
@@ -115,7 +115,6 @@ fn is_valid_address(virtual_address: GuestVirtAddr) -> bool {
 pub fn virt_to_phys(
 	addr: GuestVirtAddr,
 	mem: &MmapMemory,
-	pagetable_l0: GuestPhysAddr,
 ) -> Result<GuestPhysAddr, PagetableError> {
 	if !is_valid_address(addr) {
 		return Err(PagetableError::InvalidAddress);
@@ -133,7 +132,7 @@ pub fn virt_to_phys(
 	// - We are page_aligned, and thus also PageTableEntry aligned.
 	let mut pagetable: &[PageTableEntry] = unsafe {
 		std::mem::transmute::<&[u8], &[PageTableEntry]>(
-			mem.slice_at(pagetable_l0, PAGE_SIZE).unwrap(),
+			mem.slice_at(mem.guest_address, PAGE_SIZE).unwrap(),
 		)
 	};
 	// TODO: Depending on the virtual address length and granule (defined in TCR register by TG and TxSZ), we could reduce the number of pagetable walks. Hermit doesn't do this at the moment.
@@ -155,43 +154,43 @@ pub fn virt_to_phys(
 	Ok(pte.address())
 }
 
-pub fn init_guest_mem(mem: &mut [u8]) {
+pub fn init_guest_mem(mem: &mut [u8], _guest_address: u64) {
 	let mem_addr = std::ptr::addr_of_mut!(mem[0]);
 
-	assert!(mem.len() >= BOOT_PGT.as_u64() as usize + 512 * size_of::<u64>());
+	assert!(mem.len() >= PGT_OFFSET as usize + 512 * size_of::<u64>());
 	let pgt_slice = unsafe {
-		std::slice::from_raw_parts_mut(mem_addr.offset(BOOT_PGT.as_u64() as isize) as *mut u64, 512)
+		std::slice::from_raw_parts_mut(mem_addr.offset(PGT_OFFSET as isize) as *mut u64, 512)
 	};
 	pgt_slice.fill(0);
-	pgt_slice[0] = BOOT_PGT.as_u64() + 0x1000 + PT_PT;
-	pgt_slice[511] = BOOT_PGT.as_u64() + PT_PT + PT_SELF;
+	pgt_slice[0] = PGT_OFFSET + 0x1000 + PT_PT;
+	pgt_slice[511] = PGT_OFFSET + PT_PT + PT_SELF;
 
-	assert!(mem.len() >= BOOT_PGT.as_u64() as usize + 0x1000 + 512 * size_of::<u64>());
+	assert!(mem.len() >= PGT_OFFSET as usize + 0x1000 + 512 * size_of::<u64>());
 	let pgt_slice = unsafe {
 		std::slice::from_raw_parts_mut(
-			mem_addr.offset(BOOT_PGT.as_u64() as isize + 0x1000) as *mut u64,
+			mem_addr.offset(PGT_OFFSET as isize + 0x1000) as *mut u64,
 			512,
 		)
 	};
 	pgt_slice.fill(0);
-	pgt_slice[0] = BOOT_PGT.as_u64() + 0x2000 + PT_PT;
+	pgt_slice[0] = PGT_OFFSET + 0x2000 + PT_PT;
 
-	assert!(mem.len() >= BOOT_PGT.as_u64() as usize + 0x2000 + 512 * size_of::<u64>());
+	assert!(mem.len() >= PGT_OFFSET as usize + 0x2000 + 512 * size_of::<u64>());
 	let pgt_slice = unsafe {
 		std::slice::from_raw_parts_mut(
-			mem_addr.offset(BOOT_PGT.as_u64() as isize + 0x2000) as *mut u64,
+			mem_addr.offset(PGT_OFFSET as isize + 0x2000) as *mut u64,
 			512,
 		)
 	};
 	pgt_slice.fill(0);
-	pgt_slice[0] = BOOT_PGT.as_u64() + 0x3000 + PT_PT;
-	pgt_slice[1] = BOOT_PGT.as_u64() + 0x4000 + PT_PT;
-	pgt_slice[2] = BOOT_PGT.as_u64() + 0x5000 + PT_PT;
+	pgt_slice[0] = PGT_OFFSET + 0x3000 + PT_PT;
+	pgt_slice[1] = PGT_OFFSET + 0x4000 + PT_PT;
+	pgt_slice[2] = PGT_OFFSET + 0x5000 + PT_PT;
 
-	assert!(mem.len() >= BOOT_PGT.as_u64() as usize + 0x3000 + 512 * size_of::<u64>());
+	assert!(mem.len() >= PGT_OFFSET as usize + 0x3000 + 512 * size_of::<u64>());
 	let pgt_slice = unsafe {
 		std::slice::from_raw_parts_mut(
-			mem_addr.offset(BOOT_PGT.as_u64() as isize + 0x3000) as *mut u64,
+			mem_addr.offset(PGT_OFFSET as isize + 0x3000) as *mut u64,
 			512,
 		)
 	};
@@ -199,12 +198,12 @@ pub fn init_guest_mem(mem: &mut [u8]) {
 	// map Uhyve ports into the virtual address space
 	pgt_slice[0] = PT_MEM_CD;
 	// map BootInfo into the virtual address space
-	pgt_slice[BOOT_INFO_ADDR.as_u64() as usize / PAGE_SIZE] = BOOT_INFO_ADDR.as_u64() + PT_MEM;
+	pgt_slice[BOOT_INFO_ADDR_OFFSET as usize / PAGE_SIZE] = BOOT_INFO_ADDR_OFFSET + PT_MEM;
 
-	assert!(mem.len() >= BOOT_PGT.as_u64() as usize + 0x4000 + 512 * size_of::<u64>());
+	assert!(mem.len() >= PGT_OFFSET as usize + 0x4000 + 512 * size_of::<u64>());
 	let pgt_slice = unsafe {
 		std::slice::from_raw_parts_mut(
-			mem_addr.offset(BOOT_PGT.as_u64() as isize + 0x4000) as *mut u64,
+			mem_addr.offset(PGT_OFFSET as isize + 0x4000) as *mut u64,
 			512,
 		)
 	};
@@ -212,10 +211,10 @@ pub fn init_guest_mem(mem: &mut [u8]) {
 		*i = 0x200000u64 + (idx * PAGE_SIZE) as u64 + PT_MEM;
 	}
 
-	assert!(mem.len() >= BOOT_PGT.as_u64() as usize + 0x5000 + 512 * size_of::<u64>());
+	assert!(mem.len() >= PGT_OFFSET as usize + 0x5000 + 512 * size_of::<u64>());
 	let pgt_slice = unsafe {
 		std::slice::from_raw_parts_mut(
-			mem_addr.offset(BOOT_PGT.as_u64() as isize + 0x5000) as *mut u64,
+			mem_addr.offset(PGT_OFFSET as isize + 0x5000) as *mut u64,
 			512,
 		)
 	};
