@@ -1,6 +1,5 @@
 use std::{
 	env, fmt, fs, io,
-	mem::MaybeUninit,
 	num::NonZeroU32,
 	os::unix::prelude::JoinHandleExt,
 	path::PathBuf,
@@ -9,13 +8,16 @@ use std::{
 	time::SystemTime,
 };
 
+use align_address::Align;
 use core_affinity::CoreId;
 use hermit_entry::{
 	boot_info::{BootInfo, HardwareInfo, LoadInfo, PlatformInfo, RawBootInfo, SerialPortBase},
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
+	HermitVersion,
 };
 use internal::VirtualizationBackendInternal;
 use log::error;
+use rand::Rng;
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
 
@@ -47,6 +49,20 @@ pub enum LoadKernelError {
 }
 
 type LoadKernelResult<T> = Result<T, LoadKernelError>;
+
+/// Generates a random guest address for Uhyve's virtualized memory.
+/// This function gets invoked when a new UhyveVM gets created, provided that the object file is relocatable.
+fn generate_address(object_mem_size: usize) -> GuestPhysAddr {
+	let mut rng = rand::thread_rng();
+	// TODO: Also allow mappings beyond the 32 Bit gap
+	let start_address_upper_bound: u64 =
+		0x0000_0000_CFF0_0000 - object_mem_size as u64 - KERNEL_OFFSET;
+
+	GuestPhysAddr::new(
+		rng.gen_range(0x0..start_address_upper_bound)
+			.align_down(0x20_0000),
+	)
+}
 
 #[cfg(target_os = "linux")]
 pub type DefaultBackend = crate::linux::x86_64::kvm_cpu::KvmVm;
@@ -106,6 +122,7 @@ unsafe impl Sync for VmPeripherals {}
 /// static information that does not change during execution
 #[derive(Debug)]
 pub(crate) struct KernelInfo {
+	/// The first instruction after boot
 	pub entry_point: GuestPhysAddr,
 	/// The starting position of the image in physical memory
 	#[cfg_attr(target_os = "macos", allow(dead_code))] // currently only needed in gdb
@@ -113,6 +130,8 @@ pub(crate) struct KernelInfo {
 	pub params: Params,
 	pub path: PathBuf,
 	pub stack_address: GuestPhysAddr,
+	/// The location of the whole guest in the physical address space
+	pub guest_address: GuestPhysAddr,
 }
 
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
@@ -124,32 +143,88 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
 		let memory_size = params.memory_size.get();
 
+		let elf = fs::read(&kernel_path)?;
+		let object: KernelObject<'_> =
+			KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
+
+		let hermit_version = object.hermit_version();
+		if let Some(version) = hermit_version {
+			info!("Loading a Hermit v{version} kernel");
+		} else {
+			info!("Loading a pre Hermit v0.10.0 kernel");
+		}
+
+		// The memory layout of uhyve looks as follows:
+		//
+		//     0x0000_0000 ┌───────────────────┐
+		//                 │ Hypercalls        │
+		//                 ├───────────────────┤
+		//                 │ not present       │
+		//                 │                   │
+		//    guest_address├───────────────────┤ ▲ ▲ ▲ ▲
+		//                 │                   │ │ │ │ │BOOT_INFO_OFFSET
+		//                 ├───────────────────┤ │ │ │ ▼
+		//                 │ Boot Info         │ │ │ │FDT_OFFSET
+		//                 ├───────────────────┤ │ │ ▼
+		//                 │ Device Tree (FDT) │ │ │
+		//                 ├───────────────────┤ │ │
+		//                 │                   │ │ │PAGETABLE_OFFSET
+		//                 ├───────────────────┤ │ ▼
+		//                 │ Pagetables        │ │
+		//    stack_address├───────────────────┤ │
+		//                 │ Stack             │ │KERNEL_OFFSET
+		//   kernel_address├───────────────────┤ ▼
+		//                 │ Kernel            │
+		//   entry_point──►│                   │
+		//                 │                   │
+		//                 ├───────────────────┤
+		//                 │ Kernel Memory     │
+		//                 │                   │
+		//                 └───────────────────┘
+
+		let (guest_address, kernel_address) = if let Some(start_addr) = object.start_addr() {
+			if params.aslr {
+				warn!("ASLR is enabled but kernel is not relocatable - disabling ASLR");
+			}
+			(arch::RAM_START, GuestPhysAddr::from(start_addr))
+		} else {
+			let guest_address = if params.aslr {
+				generate_address(object.mem_size())
+			} else {
+				arch::RAM_START
+			};
+			(guest_address, (guest_address + KERNEL_OFFSET))
+		}
+		.into();
+
+		debug!("Kernel gets loaded to {kernel_address:#x}");
+
 		#[cfg(target_os = "linux")]
-		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, params.thp, params.ksm);
+		let mut mem = MmapMemory::new(0, memory_size, guest_address, params.thp, params.ksm);
+
 		#[cfg(not(target_os = "linux"))]
-		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, false, false);
+		let mut mem = MmapMemory::new(0, memory_size, guest_address, false, false);
 
 		let (
 			LoadedKernel {
 				load_info,
 				entry_point,
 			},
-			kernel_address,
-		) = load_kernel_to_mem(&kernel_path, unsafe { mem.as_slice_uninit_mut() })
+			kernel_end_address,
+		) = load_kernel_to_mem(&object, &mut mem, kernel_address - guest_address)
 			.expect("Unable to load Kernel {kernel_path}");
 
-		let stack_address = GuestPhysAddr::new(
-			kernel_address
-				.as_u64()
-				.checked_sub(KERNEL_STACK_SIZE)
-				.expect(
-				"there should be enough space for the boot stack before the kernel start address",
-			),
+		assert!(
+			kernel_address.as_u64() > KERNEL_STACK_SIZE,
+			"there should be enough space for the boot stack before the kernel start address",
 		);
+		let stack_address = kernel_address - KERNEL_STACK_SIZE;
+		debug!("Stack starts at {stack_address:#x}");
 
 		let kernel_info = Arc::new(KernelInfo {
 			entry_point: entry_point.into(),
 			kernel_address,
+			guest_address: mem.guest_address,
 			path: kernel_path,
 			params,
 			stack_address,
@@ -202,8 +277,22 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		write_fdt_into_mem(&peripherals.mem, &kernel_info.params, freq);
 		write_boot_info_to_mem(&peripherals.mem, load_info, cpu_count as u64, freq);
 
+		let legacy_mapping = if let Some(version) = hermit_version {
+			// actually, all versions that have the tag in the elf are valid, but an explicit check doesn't hurt
+			version
+				< HermitVersion {
+					major: 0,
+					minor: 10,
+					patch: 0,
+				}
+		} else {
+			true
+		};
 		init_guest_mem(
 			unsafe { peripherals.mem.as_slice_mut() }, // slice only lives during this fn call
+			peripherals.mem.guest_address,
+			kernel_end_address - guest_address,
+			legacy_mapping,
 		);
 		debug!("VM initialization complete");
 
@@ -314,6 +403,7 @@ impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 		f.debug_struct(&format!("UhyveVm<{}>", VirtIf::BACKEND::NAME))
 			.field("entry_point", &self.kernel_info.entry_point)
 			.field("stack_address", &self.kernel_info.stack_address)
+			.field("guest_address", &self.kernel_info.guest_address)
 			.field("mem", &self.peripherals.mem)
 			.field("path", &self.kernel_info.path)
 			.field("virtio_device", &self.peripherals.virtio_device)
@@ -324,11 +414,21 @@ impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 }
 
 /// Initialize the page tables for the guest
-fn init_guest_mem(mem: &mut [u8]) {
+/// `memory_size` is the length of the memory from the start of the physical
+/// memory till the end of the kernel in bytes.
+fn init_guest_mem(
+	mem: &mut [u8],
+	guest_addr: GuestPhysAddr,
+	memory_size: u64,
+	legacy_mapping: bool,
+) {
 	debug!("Initialize guest memory");
 	crate::arch::init_guest_mem(
 		mem.try_into()
 			.expect("Guest memory is not large enough for pagetables"),
+		guest_addr,
+		memory_size,
+		legacy_mapping,
 	);
 }
 
@@ -361,9 +461,9 @@ fn write_fdt_into_mem(mem: &MmapMemory, params: &Params, cpu_freq: Option<NonZer
 	let fdt = fdt.finish().unwrap();
 
 	debug!("fdt.len() = {}", fdt.len());
-	assert!(fdt.len() < (BOOT_INFO_ADDR - FDT_ADDR) as usize);
+	assert!(fdt.len() < (BOOT_INFO_OFFSET - FDT_OFFSET) as usize);
 	unsafe {
-		let fdt_ptr = mem.host_address.add(FDT_ADDR.as_u64() as usize);
+		let fdt_ptr = mem.host_address.add(FDT_OFFSET as usize);
 		fdt_ptr.copy_from_nonoverlapping(fdt.as_ptr(), fdt.len());
 	}
 }
@@ -374,7 +474,10 @@ fn write_boot_info_to_mem(
 	num_cpus: u64,
 	cpu_freq: Option<NonZeroU32>,
 ) {
-	debug!("Writing BootInfo to memory");
+	debug!(
+		"Writing BootInfo to {:?}",
+		mem.guest_address + BOOT_INFO_OFFSET
+	);
 	let boot_info = BootInfo {
 		hardware_info: HardwareInfo {
 			phys_addr_range: mem.guest_address.as_u64()
@@ -382,7 +485,11 @@ fn write_boot_info_to_mem(
 			serial_port_base: SerialPortBase::new(
 				(uhyve_interface::HypercallAddress::Uart as u16).into(),
 			),
-			device_tree: Some(FDT_ADDR.as_u64().try_into().unwrap()),
+			device_tree: Some(
+				(mem.guest_address.as_u64() + FDT_OFFSET)
+					.try_into()
+					.unwrap(),
+			),
 		},
 		load_info,
 		platform_info: PlatformInfo::Uhyve {
@@ -393,34 +500,31 @@ fn write_boot_info_to_mem(
 		},
 	};
 	unsafe {
-		let raw_boot_info_ptr =
-			mem.host_address.add(BOOT_INFO_ADDR.as_u64() as usize) as *mut RawBootInfo;
+		let raw_boot_info_ptr = mem.host_address.add(BOOT_INFO_OFFSET as usize) as *mut RawBootInfo;
 		*raw_boot_info_ptr = RawBootInfo::from(boot_info);
 	}
 }
 
-/// loads the kernel image into `mem`. `offset` is the start address of `mem`.
+/// loads the kernel `object` into `mem`. `relative_offset` is the start address the kernel relative to `mem`.
+/// Returns the loaded kernel marker and the kernel's end address.
 fn load_kernel_to_mem(
-	kernel_path: &PathBuf,
-	mem: &mut [MaybeUninit<u8>],
+	object: &KernelObject<'_>,
+	mem: &mut MmapMemory,
+	relative_offset: u64,
 ) -> LoadKernelResult<(LoadedKernel, GuestPhysAddr)> {
-	let elf = fs::read(kernel_path)?;
-	let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
+	let kernel_end_address = mem.guest_address + relative_offset + object.mem_size();
 
-	// TODO: should be a random start address, if we have a relocatable executable
-	let kernel_address = GuestPhysAddr::new(object.start_addr().unwrap_or(0x400000));
-	let kernel_end_address = kernel_address + object.mem_size();
-
-	if kernel_end_address.as_u64() > mem.len() as u64 - arch::RAM_START.as_u64() {
+	if kernel_end_address > mem.guest_address + mem.memory_size {
 		return Err(LoadKernelError::InsufficientMemory);
 	}
 
 	Ok((
 		object.load_kernel(
 			// Safety: Slice only lives during this fn call, so no aliasing happens
-			&mut mem[kernel_address.as_u64() as usize..kernel_end_address.as_u64() as usize],
-			kernel_address.as_u64(),
+			&mut unsafe { mem.as_slice_uninit_mut() }
+				[relative_offset as usize..relative_offset as usize + object.mem_size()],
+			relative_offset + mem.guest_address.as_u64(),
 		),
-		kernel_address,
+		kernel_end_address,
 	))
 }

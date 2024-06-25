@@ -36,10 +36,12 @@ path = "benches/benchmarks.rs"
 harness = false
 
 [features]
-default = []
+default = ["aslr"]
+aslr = ["dep:rand"]
 instrument = ["rftrace", "rftrace-frontend"]
 
 [dependencies]
+align-address = "0.3.0"
 byte-unit = { version = "5", features = ["byte"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 nix = { version = "0.29", features = ["mman", "pthread", "signal"] }
@@ -48,7 +50,7 @@ either = "1.13"
 env_logger = "0.11"
 gdbstub = "0.7"
 gdbstub_arch = "0.3"
-hermit-entry = { version = "0.10", features = ["loader"] }
+hermit-entry = { version = "0.10.3", features = ["loader"] }
 libc = "0.2"
 log = "0.4"
 mac_address = "1.1"
@@ -59,6 +61,7 @@ uhyve-interface = { version = "0.1.1", path = "uhyve-interface", features = ["st
 virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
 rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.2", optional = true }
+rand = { version = "0.8.5", optional = true }
 shell-words = "1"
 sysinfo = { version = "0.33.1", default-features = false, features = ["system"] }
 vm-fdt = "0.3"

@@ -276,6 +276,7 @@ impl KvmCpu {
 		&self,
 		entry_point: GuestPhysAddr,
 		stack_address: GuestPhysAddr,
+		guest_address: GuestPhysAddr,
 		cpu_id: u32,
 	) -> Result<(), kvm_ioctls::Error> {
 		//debug!("Setup long mode");
@@ -288,7 +289,7 @@ impl KvmCpu {
 			| Cr0Flags::PAGING;
 		sregs.cr0 = cr0.bits();
 
-		sregs.cr3 = BOOT_PML4.as_u64();
+		sregs.cr3 = (guest_address + PML4_OFFSET).as_u64();
 
 		let cr4 = Cr4Flags::PHYSICAL_ADDRESS_EXTENSION;
 		sregs.cr4 = cr4.bits();
@@ -319,7 +320,7 @@ impl KvmCpu {
 		sregs.ss = seg;
 		//sregs.fs = seg;
 		//sregs.gs = seg;
-		sregs.gdt.base = BOOT_GDT.as_u64();
+		sregs.gdt.base = (guest_address + GDT_OFFSET).as_u64();
 		sregs.gdt.limit = ((std::mem::size_of::<u64>() * BOOT_GDT_MAX) - 1) as u16;
 
 		self.vcpu.set_sregs(&sregs)?;
@@ -327,7 +328,7 @@ impl KvmCpu {
 		let mut regs = self.vcpu.get_regs()?;
 		regs.rflags = 2;
 		regs.rip = entry_point.as_u64();
-		regs.rdi = BOOT_INFO_ADDR.as_u64();
+		regs.rdi = (guest_address + BOOT_INFO_OFFSET).as_u64();
 		regs.rsi = cpu_id.into();
 		regs.rsp = stack_address.as_u64();
 
@@ -344,10 +345,15 @@ impl KvmCpu {
 		&self.vcpu
 	}
 
+	pub fn get_root_pagetable(&self) -> GuestPhysAddr {
+		GuestPhysAddr::new(self.vcpu.get_sregs().unwrap().cr3)
+	}
+
 	fn init(&mut self, cpu_id: u32) -> HypervisorResult<()> {
 		self.setup_long_mode(
 			self.kernel_info.entry_point,
 			self.kernel_info.stack_address,
+			self.kernel_info.guest_address,
 			cpu_id,
 		)?;
 		self.setup_cpuid()?;
@@ -468,12 +474,16 @@ impl VirtualCPU for KvmCpu {
 									sysopen,
 									&mut self.peripherals.file_mapping.lock().unwrap(),
 								),
-								Hypercall::FileRead(sysread) => {
-									hypercall::read(&self.peripherals.mem, sysread)
-								}
-								Hypercall::FileWrite(syswrite) => {
-									hypercall::write(&self.peripherals, syswrite)?
-								}
+								Hypercall::FileRead(sysread) => hypercall::read(
+									&self.peripherals.mem,
+									sysread,
+									self.get_root_pagetable(),
+								),
+								Hypercall::FileWrite(syswrite) => hypercall::write(
+									&self.peripherals,
+									syswrite,
+									self.get_root_pagetable(),
+								)?,
 								Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
 									&self.peripherals.mem,
 									sysunlink,

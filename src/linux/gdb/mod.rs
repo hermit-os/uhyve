@@ -23,7 +23,6 @@ use x86_64::registers::debug::Dr6Flags;
 use self::breakpoints::SwBreakpoints;
 use crate::{
 	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
-	consts::BOOT_PML4,
 	linux::{x86_64::kvm_cpu::KvmVm, KickSignal},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::UhyveVm,
@@ -127,7 +126,12 @@ impl SingleThreadBase for GdbUhyve {
 		// Safety: mem is copied to data before mem can be modified.
 		let src = unsafe {
 			self.vm.peripherals.mem.slice_at(
-				virt_to_phys(guest_addr, &self.vm.peripherals.mem, BOOT_PML4).map_err(|_err| ())?,
+				virt_to_phys(
+					guest_addr,
+					&self.vm.peripherals.mem,
+					self.vm.vcpus[0].get_root_pagetable(),
+				)
+				.map_err(|_err| ())?,
 				data.len(),
 			)
 		}
@@ -143,7 +147,7 @@ impl SingleThreadBase for GdbUhyve {
 				virt_to_phys(
 					GuestVirtAddr::new(start_addr),
 					&self.vm.peripherals.mem,
-					BOOT_PML4,
+					self.vm.vcpus[0].get_root_pagetable(),
 				)
 				.map_err(|_err| ())?,
 				data.len(),

@@ -50,6 +50,9 @@ pub struct Params {
 
 	/// Environment variables of the kernel
 	pub env: EnvVars,
+
+	/// Load the kernel to a random address
+	pub aslr: bool,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -71,6 +74,7 @@ impl Default for Params {
 			output: Default::default(),
 			stats: false,
 			env: EnvVars::default(),
+			aslr: true,
 		}
 	}
 }

@@ -656,9 +656,9 @@ checksum = "fbf6a919d6cf397374f7dfeeea91d974c7c0a7221d0d0f4f20d859d329e53fcc"
 
 [[package]]
 name = "hermit-entry"
-version = "0.10.2"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3489d14d0767c3d6a151e6e08effa39270356b7c6fe589775da8676a57c4d4cd"
+checksum = "c92a8deb1f5da66f858a5e86cf441575cd6ebdc60d41a6be232f0f9c8e18cecc"
 dependencies = [
  "align-address",
  "const_parse",
@@ -1500,6 +1500,7 @@ dependencies = [
 name = "uhyve"
 version = "0.4.0"
 dependencies = [
+ "align-address",
  "assert_fs",
  "bitflags 2.8.0",
  "burst",
@@ -1520,6 +1521,7 @@ dependencies = [
  "mac_address",
  "memory_addresses",
  "nix 0.29.0",
+ "rand",
  "raw-cpuid 11.3.0",
  "rftrace",
  "rftrace-frontend",

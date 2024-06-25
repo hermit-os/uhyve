@@ -14,7 +14,7 @@ use crate::{
 		mair, tcr_size, MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_DEVICE_GRE, MT_NORMAL, MT_NORMAL_NC,
 		PSR, TCR_FLAGS, TCR_TG1_4K, VA_BITS,
 	},
-	consts::*,
+	consts::{BOOT_INFO_OFFSET, PGT_OFFSET},
 	hypercall::{self, copy_argv, copy_env},
 	params::Params,
 	stats::{CpuStats, VmExit},
@@ -49,7 +49,12 @@ impl VirtualizationBackendInternal for XhyveVm {
 				None
 			},
 		};
-		vcpu.init(kernel_info.entry_point, kernel_info.stack_address, id)?;
+		vcpu.init(
+			kernel_info.entry_point,
+			kernel_info.stack_address,
+			kernel_info.guest_address,
+			id,
+		)?;
 
 		Ok(vcpu)
 	}
@@ -87,6 +92,7 @@ impl XhyveCpu {
 		&mut self,
 		entry_point: GuestPhysAddr,
 		stack_address: GuestPhysAddr,
+		guest_address: GuestPhysAddr,
 		cpu_id: u32,
 	) -> HypervisorResult<()> {
 		debug!("Initialize VirtualCPU");
@@ -99,7 +105,7 @@ impl XhyveCpu {
 		self.vcpu
 			.write_system_register(SystemRegister::SP_EL1, stack_address.as_u64())?;
 		self.vcpu
-			.write_register(Register::X0, BOOT_INFO_ADDR.as_u64())?;
+			.write_register(Register::X0, (guest_address + BOOT_INFO_OFFSET).as_u64())?;
 		self.vcpu.write_register(Register::X1, cpu_id.into())?;
 
 		/*
@@ -150,8 +156,10 @@ impl XhyveCpu {
 		// Load TTBRx
 		self.vcpu
 			.write_system_register(SystemRegister::TTBR1_EL1, 0)?;
-		self.vcpu
-			.write_system_register(SystemRegister::TTBR0_EL1, BOOT_PGT.as_u64())?;
+		self.vcpu.write_system_register(
+			SystemRegister::TTBR0_EL1,
+			(guest_address + PGT_OFFSET).as_u64(),
+		)?;
 
 		/*
 		* Prepare system control register (SCTRL)
@@ -195,6 +203,14 @@ impl XhyveCpu {
 			.write_system_register(SystemRegister::SCTLR_EL1, sctrl_el1)?;
 
 		Ok(())
+	}
+
+	pub fn get_root_pagetable(&self) -> GuestPhysAddr {
+		GuestPhysAddr::new(
+			self.vcpu
+				.read_system_register(SystemRegister::TTBR0_EL1)
+				.unwrap(),
+		)
 	}
 }
 
@@ -269,12 +285,17 @@ impl VirtualCPU for XhyveCpu {
 									sysopen,
 									&mut self.peripherals.file_mapping.lock().unwrap(),
 								),
-								Hypercall::FileRead(sysread) => {
-									hypercall::read(&self.peripherals.mem, sysread)
-								}
-								Hypercall::FileWrite(syswrite) => {
-									hypercall::write(&self.peripherals, syswrite).unwrap()
-								}
+								Hypercall::FileRead(sysread) => hypercall::read(
+									&self.peripherals.mem,
+									sysread,
+									self.get_root_pagetable(),
+								),
+								Hypercall::FileWrite(syswrite) => hypercall::write(
+									&self.peripherals,
+									syswrite,
+									self.get_root_pagetable(),
+								)
+								.unwrap(),
 								Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
 									&self.peripherals.mem,
 									sysunlink,

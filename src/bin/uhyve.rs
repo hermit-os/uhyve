@@ -103,6 +103,10 @@ struct MemoryArgs {
 	#[clap(short = 'm', long, default_value_t, env = "HERMIT_MEMORY_SIZE")]
 	memory_size: GuestMemorySize,
 
+	/// Disable ASLR
+	#[clap(long)]
+	no_aslr: bool,
+
 	/// Transparent Hugepages
 	///
 	/// Advise the kernel to enable Transparent Hugepages [THP] on the virtual RAM.
@@ -262,6 +266,7 @@ impl From<Args> for Params {
 			memory_args:
 				MemoryArgs {
 					memory_size,
+					no_aslr,
 					#[cfg(target_os = "linux")]
 					thp,
 					#[cfg(target_os = "linux")]
@@ -290,6 +295,7 @@ impl From<Args> for Params {
 			thp,
 			#[cfg(target_os = "linux")]
 			ksm,
+			aslr: !no_aslr,
 			cpu_count,
 			#[cfg(target_os = "linux")]
 			pit,

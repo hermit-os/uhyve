@@ -4,10 +4,7 @@ use gdbstub::target::{self, ext::breakpoints::WatchKind, TargetResult};
 use uhyve_interface::GuestVirtAddr;
 
 use super::GdbUhyve;
-use crate::{
-	arch::x86_64::{registers, virt_to_phys},
-	consts::BOOT_PML4,
-};
+use crate::arch::x86_64::{registers, virt_to_phys};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SwBreakpoint {
 	addr: u64,
@@ -58,7 +55,7 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 					virt_to_phys(
 						GuestVirtAddr::new(addr),
 						&self.vm.peripherals.mem,
-						BOOT_PML4,
+						self.vm.vcpus[0].get_root_pagetable(),
 					)
 					.map_err(|_err| ())?,
 					kind,
@@ -83,7 +80,7 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 					virt_to_phys(
 						GuestVirtAddr::new(addr),
 						&self.vm.peripherals.mem,
-						BOOT_PML4,
+						self.vm.vcpus[0].get_root_pagetable(),
 					)
 					.map_err(|_err| ())?,
 					kind,

@@ -46,7 +46,6 @@ fn gdb() -> io::Result<()> {
 	write!(
 		&mut command_file,
 		"target remote :{port}
-symbol-file {bin_path} -o 0x400000
 break gdb::main
 continue
 
@@ -88,7 +87,6 @@ pipe print _x|cat >> {output_path}
 continue
 ",
 		port = port,
-		bin_path = bin_path.display(),
 		output_path = output_path.display()
 	)?;
 

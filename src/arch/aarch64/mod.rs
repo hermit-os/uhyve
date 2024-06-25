@@ -1,20 +1,29 @@
 use std::mem::size_of;
 
+use align_address::Align;
 use bitflags::bitflags;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 
 use crate::{
-	consts::{BOOT_INFO_ADDR, BOOT_PGT},
+	consts::{PAGETABLES_END, PAGETABLES_OFFSET, PGT_OFFSET},
 	mem::MmapMemory,
-	paging::PagetableError,
+	paging::{BumpAllocator, PagetableError},
 };
 
-pub const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x00);
+pub(crate) const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x00);
 
-pub const PT_DEVICE: u64 = 0x707;
-pub const PT_PT: u64 = 0x713;
-pub const PT_MEM: u64 = 0x713;
-pub const PT_MEM_CD: u64 = 0x70F;
+const SIZE_4KIB: u64 = 0x1000;
+
+// PageTableEntry Flags
+/// Present + 4KiB + device memory + inner_sharable + accessed
+pub const PT_DEVICE: u64 = 0b11100000111;
+/// Present + 4KiB + normal + inner_sharable + accessed
+pub const PT_PT: u64 = 0b11100010011;
+/// Present + 4KiB + normal + inner_sharable + accessed
+pub const PT_MEM: u64 = 0b11100010011;
+/// Present + 4KiB + device + inner_sharable + accessed
+pub const PT_MEM_CD: u64 = 0b11100001111;
+/// Self reference flag
 pub const PT_SELF: u64 = 1 << 55;
 
 /*
@@ -115,7 +124,7 @@ fn is_valid_address(virtual_address: GuestVirtAddr) -> bool {
 pub fn virt_to_phys(
 	addr: GuestVirtAddr,
 	mem: &MmapMemory,
-	pagetable_l0: GuestPhysAddr,
+	pgt: GuestPhysAddr,
 ) -> Result<GuestPhysAddr, PagetableError> {
 	if !is_valid_address(addr) {
 		return Err(PagetableError::InvalidAddress);
@@ -132,9 +141,7 @@ pub fn virt_to_phys(
 	// - Our indices can't be larger than 512, so we stay in the borders of the page.
 	// - We are page_aligned, and thus also PageTableEntry aligned.
 	let mut pagetable: &[PageTableEntry] = unsafe {
-		std::mem::transmute::<&[u8], &[PageTableEntry]>(
-			mem.slice_at(pagetable_l0, PAGE_SIZE).unwrap(),
-		)
+		std::mem::transmute::<&[u8], &[PageTableEntry]>(mem.slice_at(pgt, PAGE_SIZE).unwrap())
 	};
 	// TODO: Depending on the virtual address length and granule (defined in TCR register by TG and TxSZ), we could reduce the number of pagetable walks. Hermit doesn't do this at the moment.
 	for level in 0..3 {
@@ -155,71 +162,129 @@ pub fn virt_to_phys(
 	Ok(pte.address())
 }
 
-pub fn init_guest_mem(mem: &mut [u8]) {
+pub fn init_guest_mem(
+	mem: &mut [u8],
+	guest_address: GuestPhysAddr,
+	length: u64,
+	_legacy_mapping: bool,
+) {
+	warn!("aarch64 pagetable initialization is untested!");
+
 	let mem_addr = std::ptr::addr_of_mut!(mem[0]);
 
-	assert!(mem.len() >= BOOT_PGT.as_u64() as usize + 512 * size_of::<u64>());
+	assert!(mem.len() >= PGT_OFFSET as usize + 512 * size_of::<u64>());
+
 	let pgt_slice = unsafe {
-		std::slice::from_raw_parts_mut(mem_addr.offset(BOOT_PGT.as_u64() as isize) as *mut u64, 512)
+		std::slice::from_raw_parts_mut(mem_addr.offset(PGT_OFFSET as isize) as *mut u64, 512)
 	};
 	pgt_slice.fill(0);
-	pgt_slice[0] = BOOT_PGT.as_u64() + 0x1000 + PT_PT;
-	pgt_slice[511] = BOOT_PGT.as_u64() + PT_PT + PT_SELF;
+	pgt_slice[511] = (guest_address + PGT_OFFSET) | PT_PT | PT_SELF;
 
-	assert!(mem.len() >= BOOT_PGT.as_u64() as usize + 0x1000 + 512 * size_of::<u64>());
-	let pgt_slice = unsafe {
+	let mut boot_frame_allocator = BumpAllocator::<SIZE_4KIB>::new(
+		guest_address + PAGETABLES_OFFSET,
+		(PAGETABLES_END - PAGETABLES_OFFSET) / SIZE_4KIB,
+	);
+
+	// Hypercalls are MMIO reads/writes in the lowest 4KiB of address space. Thus, we need to provide pagetable entries for this region.
+	let pgd0_addr = boot_frame_allocator.allocate().unwrap().as_u64();
+	pgt_slice[0] = pgd0_addr | PT_PT;
+	let pgd0_slice = unsafe {
 		std::slice::from_raw_parts_mut(
-			mem_addr.offset(BOOT_PGT.as_u64() as isize + 0x1000) as *mut u64,
+			mem_addr.offset((pgd0_addr - guest_address.as_u64()) as isize) as *mut u64,
 			512,
 		)
 	};
-	pgt_slice.fill(0);
-	pgt_slice[0] = BOOT_PGT.as_u64() + 0x2000 + PT_PT;
+	pgd0_slice.fill(0);
+	let pud0_addr = boot_frame_allocator.allocate().unwrap().as_u64();
+	pgd0_slice[0] = pud0_addr | PT_PT;
 
-	assert!(mem.len() >= BOOT_PGT.as_u64() as usize + 0x2000 + 512 * size_of::<u64>());
-	let pgt_slice = unsafe {
+	let pud0_slice = unsafe {
 		std::slice::from_raw_parts_mut(
-			mem_addr.offset(BOOT_PGT.as_u64() as isize + 0x2000) as *mut u64,
+			mem_addr.offset((pud0_addr - guest_address.as_u64()) as isize) as *mut u64,
 			512,
 		)
 	};
-	pgt_slice.fill(0);
-	pgt_slice[0] = BOOT_PGT.as_u64() + 0x3000 + PT_PT;
-	pgt_slice[1] = BOOT_PGT.as_u64() + 0x4000 + PT_PT;
-	pgt_slice[2] = BOOT_PGT.as_u64() + 0x5000 + PT_PT;
+	pud0_slice.fill(0);
+	let pmd0_addr = boot_frame_allocator.allocate().unwrap().as_u64();
+	pud0_slice[0] = pmd0_addr | PT_PT;
 
-	assert!(mem.len() >= BOOT_PGT.as_u64() as usize + 0x3000 + 512 * size_of::<u64>());
-	let pgt_slice = unsafe {
+	let pmd0_slice = unsafe {
 		std::slice::from_raw_parts_mut(
-			mem_addr.offset(BOOT_PGT.as_u64() as isize + 0x3000) as *mut u64,
+			mem_addr.offset((pmd0_addr - guest_address.as_u64()) as isize) as *mut u64,
 			512,
 		)
 	};
-	pgt_slice.fill(0);
-	// map Uhyve ports into the virtual address space
-	pgt_slice[0] = PT_MEM_CD;
-	// map BootInfo into the virtual address space
-	pgt_slice[BOOT_INFO_ADDR.as_u64() as usize / PAGE_SIZE] = BOOT_INFO_ADDR.as_u64() + PT_MEM;
+	pmd0_slice.fill(0);
+	// Hypercall/IO mapping
+	pmd0_slice[0] = PT_MEM;
 
-	assert!(mem.len() >= BOOT_PGT.as_u64() as usize + 0x4000 + 512 * size_of::<u64>());
-	let pgt_slice = unsafe {
-		std::slice::from_raw_parts_mut(
-			mem_addr.offset(BOOT_PGT.as_u64() as isize + 0x4000) as *mut u64,
-			512,
-		)
-	};
-	for (idx, i) in pgt_slice.iter_mut().enumerate() {
-		*i = 0x200000u64 + (idx * PAGE_SIZE) as u64 + PT_MEM;
-	}
+	for frame_addr in (guest_address.align_down(SIZE_4KIB).as_u64()
+		..(guest_address + length).align_up(SIZE_4KIB).as_u64())
+		.step_by(SIZE_4KIB as usize)
+	{
+		let idx_l4 = (frame_addr as usize / (0x80_0000_0000)) & (0xFFF);
+		let idx_l3 = (frame_addr as usize / (0x4000_0000)) & (0xFFF);
+		let idx_l2 = (frame_addr as usize / (0x20_0000)) & (0xFFF);
+		let idx_l1 = (frame_addr as usize / (0x1000)) & (0xFFF);
+		debug!("mapping frame {frame_addr:x} to pagetable {idx_l4}-{idx_l3}-{idx_l2}-{idx_l1}");
 
-	assert!(mem.len() >= BOOT_PGT.as_u64() as usize + 0x5000 + 512 * size_of::<u64>());
-	let pgt_slice = unsafe {
-		std::slice::from_raw_parts_mut(
-			mem_addr.offset(BOOT_PGT.as_u64() as isize + 0x5000) as *mut u64,
-			512,
-		)
-	};
-	for (idx, i) in pgt_slice.iter_mut().enumerate() {
-		*i = 0x400000u64 + (idx * PAGE_SIZE) as u64 + PT_MEM;
+		let (pgd_addr, new) = if pgt_slice[idx_l4] == 0 {
+			(boot_frame_allocator.allocate().unwrap() | PT_PT, true)
+		} else {
+			(
+				PageTableEntry::from(pgt_slice[idx_l4]).address().as_u64(),
+				false,
+			)
+		};
+		let pgd_slice = unsafe {
+			std::slice::from_raw_parts_mut(
+				mem_addr.offset((pgd_addr - guest_address.as_u64()) as isize) as *mut u64,
+				512,
+			)
+		};
+		if new {
+			pgd_slice.fill(0);
+			pgt_slice[idx_l4] = pgd_addr | PT_PT;
+		}
+
+		let (pud_addr, new) = if pgd_slice[idx_l3] == 0 {
+			(boot_frame_allocator.allocate().unwrap() | PT_PT, true)
+		} else {
+			(
+				PageTableEntry::from(pgd_slice[idx_l3]).address().as_u64(),
+				false,
+			)
+		};
+		let pud_slice = unsafe {
+			std::slice::from_raw_parts_mut(
+				mem_addr.offset((pud_addr - guest_address.as_u64()) as isize) as *mut u64,
+				512,
+			)
+		};
+		if new {
+			pud_slice.fill(0);
+			pgd_slice[idx_l3] = pud_addr | PT_PT;
+		}
+
+		let (pmd_addr, new) = if pud_slice[idx_l2] == 0 {
+			(boot_frame_allocator.allocate().unwrap() | PT_PT, true)
+		} else {
+			(
+				PageTableEntry::from(pud_slice[idx_l2]).address().as_u64(),
+				false,
+			)
+		};
+		let pmd_slice = unsafe {
+			std::slice::from_raw_parts_mut(
+				mem_addr.offset((pmd_addr - guest_address.as_u64()) as isize) as *mut u64,
+				512,
+			)
+		};
+		if new {
+			pmd_slice.fill(0);
+			pud_slice[idx_l2] = pmd_addr | PT_PT;
+		}
+
+		pmd_slice[idx_l1] = frame_addr | PT_MEM
 	}
 }
