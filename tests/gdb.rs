@@ -43,7 +43,7 @@ fn gdb() -> io::Result<()> {
 	write!(
 		&mut command_file,
 		"target remote :{port}
-symbol-file {bin_path} -o 0x400000
+symbol-file {bin_path} -o 0x40000
 break gdb::main
 continue
 
