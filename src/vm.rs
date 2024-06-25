@@ -146,6 +146,7 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	kernel_address: GuestPhysAddr,
 	entry_point: GuestPhysAddr,
 	stack_address: GuestPhysAddr,
+	guest_address: GuestPhysAddr,
 	pub mem: Arc<MmapMemory>,
 	path: PathBuf,
 	boot_info: *const RawBootInfo,
@@ -161,8 +162,18 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
 		let memory_size = params.memory_size.get();
 
+		// TODO: Move functionality to load_kernel. We don't know whether the binaries are relocatable yet.
+		// TODO: Use random address instead of arch::RAM_START here.
 		#[cfg(target_os = "linux")]
+		#[cfg(target_arch = "x86_64")]
 		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, params.thp, params.ksm);
+
+		// TODO: guest_address is only taken into account on Linux platforms.
+		// TODO: Before changing this, fix init_guest_mem in `src/arch/aarch64/mod.rs`
+		#[cfg(target_os = "linux")]
+		#[cfg(not(target_arch = "x86_64"))]
+		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, params.thp, params.ksm);
+
 		#[cfg(not(target_os = "linux"))]
 		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, false, false);
 
@@ -215,6 +226,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			kernel_address: GuestPhysAddr::zero(),
 			entry_point: GuestPhysAddr::zero(),
 			stack_address: GuestPhysAddr::zero(),
+			guest_address: mem.guest_address,
 			mem: mem.into(),
 			path: kernel_path,
 			boot_info: ptr::null(),
@@ -261,6 +273,10 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		self.stack_address
 	}
 
+	pub fn guest_address(&self) -> GuestPhysAddr {
+		self.guest_address
+	}
+
 	/// Returns the number of cores for the vm.
 	pub fn num_cpus(&self) -> u32 {
 		self.params.cpu_count.get()
@@ -285,6 +301,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			unsafe { self.mem.as_slice_mut() } // slice only lives during this fn call
 				.try_into()
 				.expect("Guest memory is not large enough for pagetables"),
+			self.guest_address,
 		);
 	}
 
@@ -292,8 +309,14 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
+		// The offset of the kernel in the Memory. Must be larger than BOOT_INFO_OFFSET + KERNEL_STACK_SIZE
+		let kernel_offset = 0x40_000_usize;
 		// TODO: should be a random start address, if we have a relocatable executable
-		self.kernel_address = GuestPhysAddr::new(object.start_addr().unwrap_or(0x400000));
+		self.kernel_address = GuestPhysAddr::new(
+			object
+				.start_addr()
+				.unwrap_or(self.mem.guest_address.as_u64() + kernel_offset as u64),
+		);
 		let kernel_end_address = self.kernel_address + object.mem_size();
 
 		if kernel_end_address.as_u64()
@@ -332,9 +355,9 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			.unwrap();
 
 		debug!("fdt.len() = {}", fdt.len());
-		assert!(fdt.len() < (BOOT_INFO_ADDR - FDT_ADDR) as usize);
+		assert!(fdt.len() < (BOOT_INFO_OFFSET - FDT_OFFSET) as usize);
 		unsafe {
-			let fdt_ptr = self.mem.host_address.add(FDT_ADDR.as_u64() as usize);
+			let fdt_ptr = self.mem.host_address.add(FDT_OFFSET as usize);
 			fdt_ptr.copy_from_nonoverlapping(fdt.as_ptr(), fdt.len());
 		}
 
@@ -345,7 +368,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 				serial_port_base: SerialPortBase::new(
 					(uhyve_interface::HypercallAddress::Uart as u16).into(),
 				),
-				device_tree: Some(FDT_ADDR.as_u64().try_into().unwrap()),
+				device_tree: Some(FDT_OFFSET.try_into().unwrap()),
 			},
 			load_info,
 			platform_info: PlatformInfo::Uhyve {
@@ -357,7 +380,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		};
 		unsafe {
 			let raw_boot_info_ptr =
-				self.mem.host_address.add(BOOT_INFO_ADDR.as_u64() as usize) as *mut RawBootInfo;
+				self.mem.host_address.add(BOOT_INFO_OFFSET as usize) as *mut RawBootInfo;
 			*raw_boot_info_ptr = RawBootInfo::from(boot_info);
 			self.boot_info = raw_boot_info_ptr;
 		}
@@ -380,6 +403,7 @@ impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 		f.debug_struct(&format!("UhyveVm<{}>", VirtIf::NAME))
 			.field("entry_point", &self.entry_point)
 			.field("stack_address", &self.stack_address)
+			.field("guest_address", &self.guest_address)
 			.field("mem", &self.mem)
 			.field("path", &self.path)
 			.field("boot_info", &self.boot_info)
