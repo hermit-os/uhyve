@@ -25,6 +25,8 @@ jobs:
           cargo test --lib
           cargo test --bins --examples
           cargo test --doc
+    env:
+      RUST_BACKTRACE: 1
 
   integration-tests:
     name: Integration Tests
