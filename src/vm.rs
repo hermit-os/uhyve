@@ -5,7 +5,7 @@ use std::{
 	num::NonZeroU32,
 	path::PathBuf,
 	ptr,
-	sync::{Arc, Mutex},
+	sync::{Arc, Mutex, OnceLock},
 	time::SystemTime,
 };
 
@@ -16,6 +16,7 @@ use hermit_entry::{
 use log::{error, warn};
 use sysinfo::System;
 use thiserror::Error;
+use uhyve_interface::GuestPhysAddr;
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::{
@@ -29,6 +30,8 @@ use crate::{
 };
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
+
+pub static GUEST_ADDRESS: OnceLock<GuestPhysAddr> = OnceLock::new();
 
 #[derive(Error, Debug)]
 pub enum LoadKernelError {
@@ -104,7 +107,7 @@ pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 	offset: u64,
 	entry_point: u64,
 	stack_address: u64,
-	guest_address: u64,
+	guest_address: GuestPhysAddr,
 	pub mem: Arc<MmapMemory>,
 	num_cpus: u32,
 	path: PathBuf,
@@ -119,21 +122,40 @@ pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VCpuType>> {
 		let memory_size = params.memory_size.get();
+		let guest_address = *GUEST_ADDRESS.get_or_init(|| arch::RAM_START);
 
 		// TODO: Move functionality to load_kernel. We don't know whether the binaries are relocatable yet.
 		// TODO: Use random address instead of arch::RAM_START here.
 		#[cfg(target_os = "linux")]
 		#[cfg(target_arch = "x86_64")]
-		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, params.thp, params.ksm);
+		let mem = MmapMemory::new(
+			0,
+			memory_size,
+			guest_address,
+			params.thp,
+			params.ksm,
+		);
 
 		// TODO: guest_address is only taken into account on Linux platforms.
 		// TODO: Before changing this, fix init_guest_mem in `src/arch/aarch64/mod.rs`
 		#[cfg(target_os = "linux")]
 		#[cfg(not(target_arch = "x86_64"))]
-		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, params.thp, params.ksm);
+		let mem = MmapMemory::new(
+			0,
+			memory_size,
+			guest_address,
+			params.thp,
+			params.ksm,
+		);
 
 		#[cfg(not(target_os = "linux"))]
-		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, false, false);
+		let mem = MmapMemory::new(
+			0,
+			memory_size,
+			guest_address,
+			false,
+			false,
+		);
 
 		// create virtio interface
 		// TODO: Remove allow once fixed:
@@ -159,7 +181,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			offset: 0,
 			entry_point: 0,
 			stack_address: 0,
-			guest_address: mem.guest_address.as_u64(),
+			guest_address,
 			mem: mem.into(),
 			num_cpus: cpu_count,
 			path: kernel_path,
@@ -194,7 +216,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 	}
 
 	pub fn guest_address(&self) -> u64 {
-		self.guest_address
+		self.guest_address.as_u64()
 	}
 
 	/// Returns the number of cores for the vm.
@@ -217,7 +239,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			unsafe { self.mem.as_slice_mut() } // slice only lives during this fn call
 				.try_into()
 				.expect("Guest memory is not large enough for pagetables"),
-			self.guest_address,
+				self.mem.guest_address.as_u64()
 		);
 	}
 
@@ -230,7 +252,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		// TODO: should be a random start address, if we have a relocatable executable
 		let kernel_start_address = object
 			.start_addr()
-			.unwrap_or(self.mem.guest_address.as_u64() + kernel_offset as u64)
+			.unwrap_or_else(|| self.mem.guest_address.as_u64() + kernel_offset as u64)
 			as usize;
 		let kernel_end_address = kernel_start_address + object.mem_size();
 		self.offset = kernel_start_address as u64;
@@ -290,7 +312,7 @@ impl<VCpuType: VirtualCPU> fmt::Debug for UhyveVm<VCpuType> {
 		f.debug_struct("UhyveVm")
 			.field("entry_point", &self.entry_point)
 			.field("stack_address", &self.stack_address)
-			.field("guest_address", &self.guest_address)
+			.field("guest_address", &self.guest_address.as_u64())
 			.field("mem", &self.mem)
 			.field("num_cpus", &self.num_cpus)
 			.field("path", &self.path)
