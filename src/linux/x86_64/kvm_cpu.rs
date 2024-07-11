@@ -85,7 +85,7 @@ impl VirtualizationBackend for KvmVm {
 				slot: 1,
 				flags: mem.flags,
 				memory_size: (mem.memory_size - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
-				guest_phys_addr: mem.guest_address.as_u64()
+				guest_phys_addr: (*crate::vm::GUEST_ADDRESS.get().unwrap()).as_u64()
 					+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
 				userspace_addr: (mem.host_address as usize
 					+ KVM_32BIT_GAP_START

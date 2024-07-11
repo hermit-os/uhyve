@@ -118,8 +118,9 @@ pub fn virt_to_phys(
 	/// Number of bits of the index in each table (PML4, PDPT, PDT, PGT).
 	pub const PAGE_MAP_BITS: usize = 9;
 
+	let guest_address = (*crate::vm::GUEST_ADDRESS.get().unwrap()).as_u64();
 	let mut page_table = unsafe {
-		(mem.host_address(GuestPhysAddr::new(mem.guest_address.as_u64() + PML4_OFFSET))
+		(mem.host_address(GuestPhysAddr::new(guest_address + PML4_OFFSET))
 			.unwrap() as *mut PageTable)
 			.as_mut()
 	}
@@ -251,7 +252,10 @@ mod tests {
 			.is_test(true)
 			.try_init();
 
+		use crate::vm::GUEST_ADDRESS;
 		let guest_address = GuestPhysAddr::new(0x11111000);
+		let _ = *GUEST_ADDRESS.get_or_init(|| guest_address);
+
 		let mem = MmapMemory::new(
 			0,
 			MIN_PHYSMEM_SIZE * 2,
