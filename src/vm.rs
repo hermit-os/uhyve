@@ -5,7 +5,7 @@ use std::{
 	num::NonZeroU32,
 	path::PathBuf,
 	ptr, str,
-	sync::{Arc, Mutex},
+	sync::{Arc, Mutex, OnceLock},
 	time::SystemTime,
 };
 
@@ -35,6 +35,8 @@ use crate::{
 };
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
+
+pub static GUEST_ADDRESS: OnceLock<GuestPhysAddr> = OnceLock::new();
 
 #[derive(Error, Debug)]
 pub enum LoadKernelError {
@@ -161,21 +163,22 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
 		let memory_size = params.memory_size.get();
+		let guest_address = *GUEST_ADDRESS.get_or_init(|| arch::RAM_START);
 
 		// TODO: Move functionality to load_kernel. We don't know whether the binaries are relocatable yet.
 		// TODO: Use random address instead of arch::RAM_START here.
 		#[cfg(target_os = "linux")]
 		#[cfg(target_arch = "x86_64")]
-		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, params.thp, params.ksm);
+		let mem = MmapMemory::new(0, memory_size, guest_address, params.thp, params.ksm);
 
 		// TODO: guest_address is only taken into account on Linux platforms.
 		// TODO: Before changing this, fix init_guest_mem in `src/arch/aarch64/mod.rs`
 		#[cfg(target_os = "linux")]
 		#[cfg(not(target_arch = "x86_64"))]
-		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, params.thp, params.ksm);
+		let mem = MmapMemory::new(0, memory_size, guest_address, params.thp, params.ksm);
 
 		#[cfg(not(target_os = "linux"))]
-		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, false, false);
+		let mem = MmapMemory::new(0, memory_size, guest_address, false, false);
 
 		// create virtio interface
 		// TODO: Remove allow once fixed:
@@ -301,7 +304,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			unsafe { self.mem.as_slice_mut() } // slice only lives during this fn call
 				.try_into()
 				.expect("Guest memory is not large enough for pagetables"),
-			self.guest_address,
+			self.mem.guest_address,
 		);
 	}
 
@@ -315,7 +318,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		self.kernel_address = GuestPhysAddr::new(
 			object
 				.start_addr()
-				.unwrap_or(self.mem.guest_address.as_u64() + kernel_offset as u64),
+				.unwrap_or_else(||self.mem.guest_address.as_u64() + kernel_offset as u64),
 		);
 		let kernel_end_address = self.kernel_address + object.mem_size();
 
@@ -403,7 +406,7 @@ impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 		f.debug_struct(&format!("UhyveVm<{}>", VirtIf::NAME))
 			.field("entry_point", &self.entry_point)
 			.field("stack_address", &self.stack_address)
-			.field("guest_address", &self.guest_address)
+			.field("guest_address", &self.guest_address.as_u64())
 			.field("mem", &self.mem)
 			.field("path", &self.path)
 			.field("boot_info", &self.boot_info)

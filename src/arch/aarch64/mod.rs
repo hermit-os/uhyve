@@ -120,6 +120,8 @@ pub fn virt_to_phys(
 		return Err(PagetableError::InvalidAddress);
 	}
 
+	let guest_address = *crate::vm::GUEST_ADDRESS.get().unwrap();
+
 	// Assumptions:
 	// - We use 4KiB granule
 	// - We use maximum VA length
@@ -132,7 +134,7 @@ pub fn virt_to_phys(
 	// - We are page_aligned, and thus also PageTableEntry aligned.
 	let mut pagetable: &[PageTableEntry] = unsafe {
 		std::mem::transmute::<&[u8], &[PageTableEntry]>(
-			mem.slice_at(mem.guest_address, PAGE_SIZE).unwrap(),
+			mem.slice_at(guest_address, PAGE_SIZE).unwrap(),
 		)
 	};
 	// TODO: Depending on the virtual address length and granule (defined in TCR register by TG and TxSZ), we could reduce the number of pagetable walks. Hermit doesn't do this at the moment.
