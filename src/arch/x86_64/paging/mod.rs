@@ -99,10 +99,7 @@ mod tests {
 
 		let mut mem: Vec<u8> = vec![0; MIN_PHYSMEM_SIZE];
 		// This will return a pagetable setup that we will check.
-		initialize_pagetables(
-			(&mut mem[0..MIN_PHYSMEM_SIZE]).try_into().unwrap(),
-			guest_address,
-		);
+		initialize_pagetables((&mut mem[0..MIN_PHYSMEM_SIZE]).try_into().unwrap(), guest_address);
 
 		// Check PDPTE address
 		let addr_pdpte = u64::from_le_bytes(
