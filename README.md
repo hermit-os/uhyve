@@ -7,20 +7,19 @@
 
 ## Introduction
 
-Uhyve is small hypervisor to boot the [Hermit kernel](https://github.com/hermitcore/kernel), which  is a unikernel operating system targeting a scalable and predictable runtime behavior for HPC and cloud environments.
+Uhyve is a small hypervisor specialized for the [Hermit kernel](https://github.com/hermitcore/kernel).
 
-**Warning:** At the moment Uhyve grants full host file system access from within the unikernel with the permissions of the user running Uhyve.
-Thus, it should not be used for applications which require isolation from the host system.
+> [!WARNING]
+> For the time being, Uhyve provides the unikernel full host file system access with the permissions of the user running Uhyve.
+> Thus, it should not be used for applications which require isolation from the host system.
 
 ## Installation
 
-An installation of the Rust toolchain is required.
-Please visit the [Rust website](https://www.rust-lang.org/) and follow the installation instructions.
+1. Install the Rust toolchain. The Rust Foundation provides [installation instructions](https://www.rust-lang.org/tools/install).
+2. Install Uhyve:
 
-Install Uhyve with
-
-```console
-$ cargo install --locked uhyve
+```sh
+cargo install --locked uhyve
 ```
 
 ## Requirements
@@ -33,28 +32,30 @@ To check if your system supports virtualization, you can use the following comma
 if egrep -c '(vmx|svm)' /proc/cpuinfo > /dev/null; then echo "Virtualization support found"; fi
 ```
 
-On Linux, Uhyve depends on the virtualization solution [KVM](https://www.linux-kvm.org/page/Main_Page) (Kernel-based Virtual Machine).
+Uhyve on Linux depends on the virtualization solution [KVM (Kernel-based Virtual Machine)](https://www.linux-kvm.org/page/Main_Page).
 If the following command gives you some output, you are ready to go!
 
 ```sh
 lsmod | grep kvm
 ```
 
-**NOTE:** If in case the above steps don't work, make sure to check in your BIOS settings that virtualization is enabled there.
+> [!NOTE]
+> If the above steps don't work, make sure that you have enabled virtualization in your UEFI/BIOS settings.
 
 ### macOS
 
-**Disclaimer:** Currently, Uhyve is mainly developed for Linux.
-The macOS version has not been tested extensively and does not support all features of the Linux version.
+> [!WARNING]
+> Currently, Uhyve is mainly developed for Linux.
+> The macOS version has not been tested extensively and does not support all features of the Linux version.
 
-Apple's *Command Line Tools* must be installed.
-The following terminal command installs these tools *without* Apple's IDE Xcode:
+You can install Apple's [Xcode Command Line Tools](https://developer.apple.com/xcode/resources) using the following command:
 
 ```sh
 xcode-select --install
 ```
 
 Additionally, the included hypervisor bases on the [Hypervisor Framework](https://developer.apple.com/documentation/hypervisor) depending on OS X Yosemite (10.10) or newer.
+
 To verify if your processor is able to support this framework, run the following in your Terminal:
 
 ```sh
@@ -67,7 +68,7 @@ Starting with Big Sur, all processes using the Hypervisor API must have the [com
 
 ## Building from source
 
-To build from source, simply checkout the code and use `cargo build`.
+To build from source, simply checkout the code and use `cargo build`:
 
 ```sh
 git clone https://github.com/hermitcore/uhyve.git
@@ -75,9 +76,9 @@ cd uhyve
 cargo build --release
 ```
 
-## Signing Uhyve to run on macOS Big Sur
+### macOS Big Sur: Signing Uhyve
 
-`uhyve` can be self-signed with the following command.
+`uhyve` can be self-signed using the following command:
 
 ```sh
 codesign -s - --entitlements app.entitlements --force path_to_uhyve/uhyve
@@ -85,7 +86,7 @@ codesign -s - --entitlements app.entitlements --force path_to_uhyve/uhyve
 
 The file `app.entitlements` must have following content:
 
-```sh
+```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -96,19 +97,29 @@ The file `app.entitlements` must have following content:
 </plist>
 ```
 
-For further details have a look at [Apple's documentation](https://developer.apple.com/documentation/bundleresources/entitlements/com_apple_security_hypervisor).
+For further information, please consult [Apple's Documentation](https://developer.apple.com/documentation/bundleresources/entitlements/com_apple_security_hypervisor).
 
-## Running Hermit apps within Uhyve
+## Usage
 
-Use the hypervisor to start the unikernel.
+### Running Hermit apps within Uhyve
+
+Assuming that you have **installed** Uhyve, run the hypervisor to start the unikernel:
 ```sh
 uhyve /path/to/the/unikernel/binary
 ```
 
+> [!NOTE]
+> This repository ships a few binaries that can be used for testing.
+>
+> If you want to compile Hermit binaries yourself (or create your own), take a look at the following repositories:
+> - [hermit-os/hermit-rs](https://github.com/hermit-os/hermit-rs)
+> - [hermit-os/hermit-rs-template](https://github.com/hermit-os/hermit-rs-template)
+> - [hermit-os/hermit-playground](https://github.com/hermit-os/hermit-playground)
+
 ### Configuration
 
-Uhyve can be configured via environment variables.
-The following variables are supported.
+Uhyve can be configured using environment variables.
+The following variables are supported:
 
 - `HERMIT_CPUS`: specifies the number of cores the virtual machine may use.
 - `HERMIT_MEM`: defines the memory size of the virtual machine. The suffixes *M* and *G* can be used to specify a value in megabytes or gigabytes, respectively.
@@ -119,27 +130,11 @@ By default, the loader initializes a system with one core and 512 MiB RAM.
 
 **Example:** the following command starts the demo application in a virtual machine, which has 4 cores and 8GiB memory:
 
-```bash
+```sh
 HERMIT_CPUS=4 HERMIT_MEM=8G uhyve /path/to/the/unikernel/binary
 ```
 
-## Debugging of Hermit apps (unstable)
-
-Basic support of (single-core) applications is already integrated into Uhyve.
-By specifying variable `HERMIT_GDB_PORT=port`, Uhyve is working as gdbserver and is waiting on port `port` for a connection to a gdb.
-For instance, with the following command Uhyve is waiting on port `6677` for a connection.
-
-```bash
-HERMIT_GDB_PORT=6677 uhyve /path_to_the_unikernel/hello_world
-```
-
-In principle, every gdb-capable IDE should be able to debug Hermit applications. (Eclipse, VSCode, ...)
-
-The repository [hermit-rs](https://github.com/hermitcore/hermit-rs) provides [example configuration files](https://github.com/hermitcore/hermit-rs/tree/master/.vscode) to debug a Hermit application with Visual Code.
-
-![Debugging Hermit apps](img/vs_code.png)
-
-## Known issues
+### Known issues
 
  * Uhyve isn't able to pass more than 128 environment variables to the unikernel.
 
@@ -152,6 +147,38 @@ Licensed under either of
 
 at your option.
 
-## Contribution
-
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
+
+---
+
+## Contributing
+
+### Testing Hermit apps using `cargo run`
+
+As mentioned above, the Uhyve repository ships some binaries that can be used for testing purposes.
+
+```sh
+cargo run -- -v data/x86_64/rusty_demo
+cargo run -- -v data/x86_64/hello_world
+cargo run -- -v data/x86_64/hello_c
+```
+
+### Debugging Hermit apps
+
+Basic support of (single-core) applications is already integrated into Uhyve.
+
+By specifying variable `HERMIT_GDB_PORT=port`, Uhyve is working as gdbserver and is waiting on port `port` for a connection to a gdb.
+For instance, with the following command Uhyve is waiting on port `6677` for a connection.
+
+```bash
+HERMIT_GDB_PORT=6677 uhyve /path_to_the_unikernel/hello_world
+```
+
+In principle, every gdb-capable IDE should be able to debug Hermit applications. (Eclipse, VSCode, ...)
+
+#### Visual Studio Code / VSCodium
+
+The repository [hermit-rs](https://github.com/hermitcore/hermit-rs) provides [example configuration files](https://github.com/hermitcore/hermit-rs/tree/master/.vscode) to debug a Hermit application with Visual Code.
+
+![Debugging Hermit apps](img/vs_code.png)
+
