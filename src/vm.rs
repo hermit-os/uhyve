@@ -14,6 +14,7 @@ use hermit_entry::{
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
 use log::{error, warn};
+use sysinfo::System;
 use thiserror::Error;
 
 #[cfg(target_arch = "x86_64")]
@@ -23,8 +24,8 @@ use crate::arch::x86_64::{
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 use crate::linux::x86_64::kvm_cpu::initialize_kvm;
 use crate::{
-	arch, consts::*, mem::MmapMemory, os::HypervisorError, params::Params, vcpu::VirtualCPU,
-	virtio::*,
+	arch, arch::FrequencyDetectionFailed, consts::*, mem::MmapMemory, os::HypervisorError,
+	params::Params, vcpu::VirtualCPU, virtio::*,
 };
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
@@ -41,18 +42,46 @@ pub enum LoadKernelError {
 
 pub type LoadKernelResult<T> = Result<T, LoadKernelError>;
 
+pub fn detect_freq_from_sysinfo() -> std::result::Result<u32, FrequencyDetectionFailed> {
+	debug!("Trying to detect CPU frequency using sysinfo");
+
+	let mut system = System::new();
+	system.refresh_cpu_frequency();
+
+	let frequency = system.cpus().first().unwrap().frequency();
+	println!("frequencies: {frequency:?}");
+
+	if !system.cpus().iter().all(|cpu| cpu.frequency() == frequency) {
+		// Even if the CPU frequencies are not all equal, the
+		// frequency of the "first" CPU is treated as "authoritative".
+		eprintln!("CPU frequencies are not all equal");
+	}
+
+	if frequency > 0 {
+		Ok(frequency.try_into().unwrap())
+	} else {
+		Err(FrequencyDetectionFailed)
+	}
+}
+
 // TODO: move to architecture specific section
 fn detect_cpu_freq() -> u32 {
 	#[cfg(target_arch = "aarch64")]
-	let mhz: u32 = 0;
+	let mhz: u32 = detect_freq_from_sysinfo().unwrap_or_else(|_| {
+		debug!("Failed to detect using sysinfo");
+		0
+	});
 	#[cfg(target_arch = "x86_64")]
 	let mhz = {
-		let cpuid = raw_cpuid::CpuId::new();
-		let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
-			debug!("Failed to detect from cpuid");
-			detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
-				debug!("Failed to detect from hypervisor_info");
-				get_cpu_frequency_from_os().unwrap_or(0)
+		let mhz: u32 = detect_freq_from_sysinfo().unwrap_or_else(|_| {
+			debug!("Failed to detect using sysinfo");
+			let cpuid = raw_cpuid::CpuId::new();
+			detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
+				debug!("Failed to detect from cpuid");
+				detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
+					debug!("Failed to detect from hypervisor_info");
+					get_cpu_frequency_from_os().unwrap_or(0)
+				})
 			})
 		});
 		debug!("detected a cpu frequency of {} Mhz", mhz);
@@ -254,3 +283,25 @@ impl<VCpuType: VirtualCPU> fmt::Debug for UhyveVm<VCpuType> {
 #[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl<VCpuType: VirtualCPU> Send for UhyveVm<VCpuType> {}
 unsafe impl<VCpuType: VirtualCPU> Sync for UhyveVm<VCpuType> {}
+
+#[cfg(test)]
+mod tests {
+	#[test]
+	// derived from test_get_cpu_frequency_from_os() in src/arch/x86_64/mod.rs
+	fn test_detect_freq_from_sysinfo() {
+		let freq_res = crate::vm::detect_freq_from_sysinfo();
+
+		#[cfg(target_os = "macos")]
+		// The CI always returns 0 as freq and thus a None in the MacOS CI
+		if option_env!("CI").is_some() {
+			return;
+		}
+
+		assert!(freq_res.is_ok());
+		let freq = freq_res.unwrap();
+		// The unit of the value for the first core must be in MHz.
+		// We presume that more than 10 GHz is incorrect.
+		assert!(freq > 0);
+		assert!(freq < 10000);
+	}
+}

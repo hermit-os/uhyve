@@ -8,7 +8,6 @@ use std::{
 
 use log::{debug, warn};
 use raw_cpuid::{CpuId, CpuIdReaderNative};
-use thiserror::Error;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 use x86_64::{
 	structures::paging::{
@@ -24,9 +23,7 @@ pub const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x00);
 const MHZ_TO_HZ: u64 = 1000000;
 const KHZ_TO_HZ: u64 = 1000;
 
-#[derive(Error, Debug)]
-#[error("Frequency detection failed")]
-pub struct FrequencyDetectionFailed;
+use crate::arch::FrequencyDetectionFailed;
 
 pub fn detect_freq_from_cpuid(
 	cpuid: &CpuId<CpuIdReaderNative>,
@@ -315,8 +312,10 @@ mod tests {
 		let freq_res = crate::x86_64::get_cpu_frequency_from_os();
 		assert!(freq_res.is_ok());
 		let freq = freq_res.unwrap();
+		// The unit of the value for the first core must be in MHz.
+		// We presume that more than 10 GHz is incorrect.
 		assert!(freq > 0);
-		assert!(freq < 10000); //More than 10Ghz is probably wrong
+		assert!(freq < 10000);
 	}
 
 	#[test]
