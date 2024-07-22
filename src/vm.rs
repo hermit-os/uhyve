@@ -48,6 +48,8 @@ pub enum LoadKernelError {
 	InsufficientMemory,
 }
 
+use rand::Rng;
+
 pub type LoadKernelResult<T> = Result<T, LoadKernelError>;
 
 pub fn detect_freq_from_sysinfo() -> std::result::Result<u32, FrequencyDetectionFailed> {
@@ -102,6 +104,32 @@ fn detect_cpu_freq() -> u32 {
 	mhz
 }
 
+/// Generates a random guest address for Uhyve's virtualized memory, provided that the feature is enabled.
+/// For this purpose, ThreadRng is used. Currently, this feature only works on Linux (x86_64).
+///
+/// This function gets invoked when a new UhyveVM gets created, provided that the object file is relocatable.
+fn generate_address(object_mem_size: usize, _params_mem_size: usize) -> u64 {
+	#[cfg(feature = "aslr")]
+	#[cfg(not(all(target_arch = "x86_64", target_os = "linux")))]
+	compile_error!("ASLR is only supported on Linux (x86_64)");
+
+	#[cfg(feature = "aslr")]
+	{
+		// TODO: Investigate soundness.
+		// TODO: Implement more secure alternatives.
+		let mut rng = rand::thread_rng();
+		let start_address_upper_bound: u64 =
+			0x000F_FFFF_FFFF_0000 - object_mem_size as u64 - KERNEL_OFFSET as u64;
+
+		return rng.gen_range(0x100000..start_address_upper_bound) & 0x000F_FFFF_FFFF_0000;
+	}
+
+	#[cfg(not(feature = "aslr"))]
+	{
+		arch::RAM_START.as_u64() as u64
+	}
+}
+
 #[cfg(target_os = "linux")]
 pub type DefaultBackend = crate::linux::x86_64::kvm_cpu::KvmVm;
 #[cfg(target_os = "macos")]
@@ -148,6 +176,7 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	kernel_address: GuestPhysAddr,
 	entry_point: GuestPhysAddr,
 	stack_address: GuestPhysAddr,
+	start_address: GuestPhysAddr,
 	/// The location of the whole guest in the physical address space
 	guest_address: GuestPhysAddr,
 	pub mem: Arc<MmapMemory>,
@@ -163,11 +192,30 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
+		let mut guest_address = arch::RAM_START;
 		let memory_size = params.memory_size.get();
-		let guest_address = *GUEST_ADDRESS.get_or_init(|| arch::RAM_START);
 
-		// TODO: Move functionality to load_kernel. We don't know whether the binaries are relocatable yet.
-		// TODO: Use random address instead of arch::RAM_START here.
+		// Reads ELF file, returns libc:ENOENT if the file is not found.
+		// TODO: Restore map_err(LoadKernelError::ParseKernelError) or use a separate struct
+		let elf = fs::read(&kernel_path)?;
+		let object =
+			KernelObject::parse(&elf).map_err(|_err| HypervisorError::new(libc::ENOENT))?;
+
+		// If the feature turns out to be explicitly disabled, even with a relocatable binary,
+		// generate_address will return arch::RAM_START. At this stage, we still need
+		// to store the u64 somewhere, as this is what MmapMemory needs.
+		let start_address = object.start_addr().unwrap_or_else(|| {
+			let _generated_address = generate_address(object.mem_size(), memory_size);
+			// This sets the generated address and initializes the singleton GUEST_ADDRESS that
+			// we use for the virt_to_phys functions
+			guest_address = GuestPhysAddr::new(0x99000);
+			0x99000 + KERNEL_OFFSET
+		});
+
+		dbg!(GuestPhysAddr::new(start_address));
+		dbg!(guest_address);
+		let _ = *GUEST_ADDRESS.get_or_init(|| guest_address);
+
 		#[cfg(target_os = "linux")]
 		#[cfg(target_arch = "x86_64")]
 		let mem = MmapMemory::new(0, memory_size, guest_address, params.thp, params.ksm);
@@ -230,7 +278,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			kernel_address: GuestPhysAddr::zero(),
 			entry_point: GuestPhysAddr::zero(),
 			stack_address: GuestPhysAddr::zero(),
-			guest_address: mem.guest_address,
+			start_address: GuestPhysAddr::new(start_address),
+			guest_address,
 			mem: mem.into(),
 			path: kernel_path,
 			boot_info: ptr::null(),
@@ -310,18 +359,11 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	}
 
 	pub fn load_kernel(&mut self) -> LoadKernelResult<()> {
+		// TODO: Remove the duplicate load in load_kernel.
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
-		// The offset of the kernel in the Memory. Must be larger than BOOT_INFO_OFFSET + KERNEL_STACK_SIZE
-		let kernel_offset = 0x40_000_usize;
-		// TODO: should be a random start address, if we have a relocatable executable
-		self.kernel_address = GuestPhysAddr::new(
-			object
-				.start_addr()
-				.unwrap_or_else(||self.mem.guest_address.as_u64() + kernel_offset as u64),
-		);
-		let kernel_end_address = self.kernel_address + object.mem_size();
+		let kernel_end_address = self.start_address + object.mem_size();
 
 		if kernel_end_address.as_u64()
 			> self.mem.memory_size as u64 - self.mem.guest_address.as_u64()
@@ -335,8 +377,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		} = object.load_kernel(
 			// Safety: Slice only lives during this fn call, so no aliasing happens
 			&mut unsafe { self.mem.as_slice_uninit_mut() }
-				[self.kernel_address.as_u64() as usize..kernel_end_address.as_u64() as usize],
-			self.kernel_address.as_u64(),
+				[KERNEL_OFFSET as usize..object.mem_size() + KERNEL_OFFSET as usize],
+			self.start_address.as_u64(),
 		);
 		self.entry_point = GuestPhysAddr::new(entry_point);
 
@@ -390,7 +432,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		}
 
 		self.stack_address = GuestPhysAddr::new(
-			self.kernel_address
+			self.start_address
 				.as_u64()
 				.checked_sub(KERNEL_STACK_SIZE)
 				.expect(
@@ -407,7 +449,7 @@ impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 		f.debug_struct(&format!("UhyveVm<{}>", VirtIf::NAME))
 			.field("entry_point", &self.entry_point)
 			.field("stack_address", &self.stack_address)
-			.field("guest_address", &self.guest_address.as_u64())
+			.field("guest_address", &self.guest_address)
 			.field("mem", &self.mem)
 			.field("path", &self.path)
 			.field("boot_info", &self.boot_info)
