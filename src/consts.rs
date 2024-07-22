@@ -15,6 +15,10 @@ pub const PGT_OFFSET: u64 = 0x10000;
 pub const PDPTE_OFFSET: u64 = 0x11000;
 pub const PDE_OFFSET: u64 = 0x12000;
 pub const BOOT_INFO_ADDR_OFFSET: u64 = 0x9000;
+pub const KERNEL_OFFSET: u64 = 0x40000;
+
+// The offset of the kernel in the memory.
+// Must be larger than BOOT_INFO_OFFSET + KERNEL_STACK_SIZE
 pub const MIN_PHYSMEM_SIZE: usize = 0x13000;
 
 pub const EFER_SCE: u64 = 1; /* System Call Extensions */
