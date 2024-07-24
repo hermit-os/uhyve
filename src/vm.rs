@@ -103,7 +103,7 @@ fn detect_cpu_freq() -> u32 {
 /// For this purpose, ThreadRng is used. Currently, this feature only works on Linux (x86_64).
 ///
 /// This function gets invoked when a new UhyveVM gets created, provided that the object file is relocatable.
-fn generate_address(object_mem_size: usize, params_mem_size: usize) -> u64 {
+fn generate_address(object_mem_size: usize, _params_mem_size: usize) -> u64 {
 	#[cfg(feature = "aslr")]
 	#[cfg(not(all(target_arch = "x86_64", target_os = "linux")))]
 	compile_error!("ASLR is only supported on Linux (x86_64)");
@@ -162,7 +162,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		// generate_address will return arch::RAM_START. At this stage, we still need
 		// to store the u64 somewhere, as this is what MmapMemory needs.
 		let offset = object.start_addr().unwrap_or_else(|| {
-			let generated_address = generate_address(object.mem_size(), memory_size);
+			let _generated_address = generate_address(object.mem_size(), memory_size);
 			// This sets the generated address and initializes the singleton GUEST_ADDRESS that
 			// we use for the virt_to_phys functions
 			guest_address = GuestPhysAddr::new(0x99000);
