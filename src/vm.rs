@@ -16,7 +16,7 @@ use hermit_entry::{
 use log::{error, warn};
 use sysinfo::System;
 use thiserror::Error;
-use uhyve_interface::{GuestPhysAddr};
+use uhyve_interface::GuestPhysAddr;
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::{
@@ -101,7 +101,7 @@ fn detect_cpu_freq() -> u32 {
 
 /// Generates a random guest address for Uhyve's virtualized memory, provided that the feature is enabled.
 /// For this purpose, ThreadRng is used. Currently, this feature only works on Linux (x86_64).
-/// 
+///
 /// This function gets invoked when a new UhyveVM gets created, provided that the object file is relocatable.
 fn generate_address(object_mem_size: usize, params_mem_size: usize) -> u64 {
 	#[cfg(feature = "aslr")]
@@ -113,9 +113,10 @@ fn generate_address(object_mem_size: usize, params_mem_size: usize) -> u64 {
 		// TODO: Investigate soundness.
 		// TODO: Implement more secure alternatives.
 		let mut rng = rand::thread_rng();
-		let start_address_upper_bound: u64 = 0x000F_FFFF_FFFF_0000 - object_mem_size as u64 - KERNEL_OFFSET as u64;
+		let start_address_upper_bound: u64 =
+			0x000F_FFFF_FFFF_0000 - object_mem_size as u64 - KERNEL_OFFSET as u64;
 
-		return rng.gen_range(0x100000..start_address_upper_bound) & 0x000F_FFFF_FFFF_0000
+		return rng.gen_range(0x100000..start_address_upper_bound) & 0x000F_FFFF_FFFF_0000;
 	}
 
 	#[cfg(not(feature = "aslr"))]
@@ -134,7 +135,6 @@ pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 	offset: u64,
 	entry_point: u64,
 	stack_address: u64,
-	start_address: GuestPhysAddr,
 	guest_address: GuestPhysAddr,
 	pub mem: Arc<MmapMemory>,
 	num_cpus: u32,
@@ -155,14 +155,13 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		// Reads ELF file, returns libc:ENOENT if the file is not found.
 		// TODO: Restore map_err(LoadKernelError::ParseKernelError) or use a separate struct
 		let elf = fs::read(&kernel_path)?;
-		let object = KernelObject::parse(&elf).map_err(
-			|_err| HypervisorError::new(libc::ENOENT)
-		)?;
+		let object =
+			KernelObject::parse(&elf).map_err(|_err| HypervisorError::new(libc::ENOENT))?;
 
 		// If the feature turns out to be explicitly disabled, even with a relocatable binary,
 		// generate_address will return arch::RAM_START. At this stage, we still need
 		// to store the u64 somewhere, as this is what MmapMemory needs.
-		let start_address = object.start_addr().unwrap_or_else(|| {
+		let offset = object.start_addr().unwrap_or_else(|| {
 			let generated_address = generate_address(object.mem_size(), memory_size);
 			// This sets the generated address and initializes the singleton GUEST_ADDRESS that
 			// we use for the virt_to_phys functions
@@ -170,40 +169,22 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			0x99000 + KERNEL_OFFSET
 		});
 
-		dbg!(GuestPhysAddr::new(start_address));
+		dbg!(GuestPhysAddr::new(offset));
 		dbg!(guest_address);
 		let _ = *GUEST_ADDRESS.get_or_init(|| guest_address);
 
 		#[cfg(target_os = "linux")]
 		#[cfg(target_arch = "x86_64")]
-		let mem = MmapMemory::new(
-			0,
-			memory_size,
-			guest_address,
-			params.thp,
-			params.ksm,
-		);
+		let mem = MmapMemory::new(0, memory_size, guest_address, params.thp, params.ksm);
 
 		// TODO: guest_address is only taken into account on Linux platforms.
 		// TODO: Before changing this, fix init_guest_mem in `src/arch/aarch64/mod.rs`
 		#[cfg(target_os = "linux")]
 		#[cfg(not(target_arch = "x86_64"))]
-		let mem = MmapMemory::new(
-			0,
-			memory_size,
-			guest_address,
-			params.thp,
-			params.ksm,
-		);
+		let mem = MmapMemory::new(0, memory_size, guest_address, params.thp, params.ksm);
 
 		#[cfg(not(target_os = "linux"))]
-		let mem = MmapMemory::new(
-			0,
-			memory_size,
-			guest_address,
-			false,
-			false,
-		);
+		let mem = MmapMemory::new(0, memory_size, guest_address, false, false);
 
 		// create virtio interface
 		// TODO: Remove allow once fixed:
@@ -226,10 +207,9 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		);
 
 		let mut vm = Self {
-			offset: 0,
+			offset,
 			entry_point: 0,
 			stack_address: 0,
-			start_address: GuestPhysAddr::new(start_address),
 			guest_address,
 			mem: mem.into(),
 			num_cpus: cpu_count,
@@ -288,7 +268,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			unsafe { self.mem.as_slice_mut() } // slice only lives during this fn call
 				.try_into()
 				.expect("Guest memory is not large enough for pagetables"),
-				self.mem.guest_address.as_u64()
+			self.mem.guest_address.as_u64(),
 		);
 	}
 
@@ -297,8 +277,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
-		let kernel_end_address = self.start_address.as_u64() as usize + object.mem_size();
-		self.offset = self.start_address.as_u64();
+		let kernel_end_address = self.offset as usize + object.mem_size();
 
 		if kernel_end_address > self.mem.memory_size - self.mem.guest_address.as_u64() as usize {
 			return Err(LoadKernelError::InsufficientMemory);
@@ -310,8 +289,8 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		} = object.load_kernel(
 			// Safety: Slice only lives during this fn call, so no aliasing happens
 			&mut unsafe { self.mem.as_slice_uninit_mut() }
-			[KERNEL_OFFSET as usize..object.mem_size() + KERNEL_OFFSET as usize],
-			self.start_address.as_u64(),
+				[KERNEL_OFFSET as usize..object.mem_size() + KERNEL_OFFSET as usize],
+			self.offset,
 		);
 		self.entry_point = entry_point;
 
@@ -340,11 +319,9 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			self.boot_info = raw_boot_info_ptr;
 		}
 
-		self.stack_address = (self.start_address.as_u64())
-			.checked_sub(KERNEL_STACK_SIZE)
-			.expect(
-				"there should be enough space for the boot stack before the kernel start address",
-			);
+		self.stack_address = (self.offset).checked_sub(KERNEL_STACK_SIZE).expect(
+			"there should be enough space for the boot stack before the kernel start address",
+		);
 
 		Ok(())
 	}
