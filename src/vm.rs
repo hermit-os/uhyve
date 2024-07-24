@@ -176,7 +176,6 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	kernel_address: GuestPhysAddr,
 	entry_point: GuestPhysAddr,
 	stack_address: GuestPhysAddr,
-	start_address: GuestPhysAddr,
 	guest_address: GuestPhysAddr,
 	pub mem: Arc<MmapMemory>,
 	path: PathBuf,
@@ -203,7 +202,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		// If the feature turns out to be explicitly disabled, even with a relocatable binary,
 		// generate_address will return arch::RAM_START. At this stage, we still need
 		// to store the u64 somewhere, as this is what MmapMemory needs.
-		let start_address = object.start_addr().unwrap_or_else(|| {
+		let offset = object.start_addr().unwrap_or_else(|| {
 			let _generated_address = generate_address(object.mem_size(), memory_size);
 			// This sets the generated address and initializes the singleton GUEST_ADDRESS that
 			// we use for the virt_to_phys functions
@@ -211,7 +210,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			0x99000 + KERNEL_OFFSET
 		});
 
-		dbg!(GuestPhysAddr::new(start_address));
+		dbg!(GuestPhysAddr::new(offset));
 		dbg!(guest_address);
 		let _ = *GUEST_ADDRESS.get_or_init(|| guest_address);
 
@@ -274,10 +273,9 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		};
 
 		let mut vm = Self {
-			kernel_address: GuestPhysAddr::zero(),
+			kernel_address: GuestPhysAddr::new(offset),
 			entry_point: GuestPhysAddr::zero(),
 			stack_address: GuestPhysAddr::zero(),
-			start_address: GuestPhysAddr::new(start_address),
 			guest_address,
 			mem: mem.into(),
 			path: kernel_path,
@@ -362,7 +360,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
-		let kernel_end_address = self.start_address + object.mem_size();
+		let kernel_end_address = self.kernel_address + object.mem_size();
 
 		if kernel_end_address.as_u64()
 			> self.mem.memory_size as u64 - self.mem.guest_address.as_u64()
@@ -377,7 +375,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			// Safety: Slice only lives during this fn call, so no aliasing happens
 			&mut unsafe { self.mem.as_slice_uninit_mut() }
 				[KERNEL_OFFSET as usize..object.mem_size() + KERNEL_OFFSET as usize],
-			self.start_address.as_u64(),
+			self.kernel_address.as_u64(),
 		);
 		self.entry_point = GuestPhysAddr::new(entry_point);
 
@@ -430,14 +428,11 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			self.boot_info = raw_boot_info_ptr;
 		}
 
-		self.stack_address = GuestPhysAddr::new(
-			self.start_address
-				.as_u64()
-				.checked_sub(KERNEL_STACK_SIZE)
-				.expect(
-				"there should be enough space for the boot stack before the kernel start address",
-			),
+		assert!(
+			self.kernel_address.as_u64() > KERNEL_STACK_SIZE,
+			"there should be enough space for the boot stack before the kernel start address",
 		);
+		self.stack_address = self.kernel_address - KERNEL_STACK_SIZE;
 
 		Ok(())
 	}
