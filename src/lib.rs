@@ -23,8 +23,6 @@ mod hypercall;
 pub mod mem;
 pub mod paging;
 pub mod params;
-#[cfg(target_os = "linux")]
-pub mod shared_queue;
 mod vcpu;
 pub mod virtio;
 pub mod virtqueue;
