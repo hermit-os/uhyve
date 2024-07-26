@@ -3,8 +3,8 @@
 //! The Uhyve hypercall interface works as follows:
 //!
 //! - On `x86_64` you use an out port instruction. The address of the `out`-port corresponds to the
-//! hypercall you want to use. You can obtain it from the [`IoPorts`] enum. The data send to
-//! that port is the physical memory address (of the VM) of the parameters of that hypercall.
+//!   hypercall you want to use. You can obtain it from the [`IoPorts`] enum. The data send to
+//!   that port is the physical memory address (of the VM) of the parameters of that hypercall.
 //! - On `aarch64` you write to the respective [`HypercallAddress`]. The 64-bit value written to that location is the guest's physical memory address of the hypercall's parameter.
 
 #![cfg_attr(not(feature = "std"), no_std)]
