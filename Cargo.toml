@@ -62,7 +62,7 @@ rftrace-frontend = { version = "0.1", optional = true }
 sysinfo = { version = "0.30.13", default-features = false }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-kvm-bindings = "0.8"
+kvm-bindings = "0.9"
 kvm-ioctls = "0.17"
 vmm-sys-util = "0.12"
 
