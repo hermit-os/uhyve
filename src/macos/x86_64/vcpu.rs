@@ -161,7 +161,7 @@ pub struct XhyveCpu {
 }
 
 impl XhyveCpu {
-	fn setup_system_gdt(&mut self) -> Result<(), xhypervisor::Error> {
+	fn setup_system_gdt(&mut self, guest_address: u64) -> Result<(), xhypervisor::Error> {
 		debug!("Setup GDT");
 
 		self.vcpu.write_vmcs(VMCS_GUEST_CS_LIMIT, 0)?;
@@ -184,7 +184,7 @@ impl XhyveCpu {
 		self.vcpu.write_vmcs(VMCS_GUEST_GS_AR, 0x4093)?;
 
 		self.vcpu
-			.write_vmcs(VMCS_GUEST_GDTR_BASE, BOOT_GDT.as_u64())?;
+			.write_vmcs(VMCS_GUEST_GDTR_BASE, guest_address + GDT_OFFSET)?;
 		self.vcpu.write_vmcs(
 			VMCS_GUEST_GDTR_LIMIT,
 			((std::mem::size_of::<u64>() * BOOT_GDT_MAX) - 1) as u64,
@@ -230,7 +230,7 @@ impl XhyveCpu {
 		Ok(())
 	}
 
-	fn setup_system_64bit(&mut self) -> Result<(), xhypervisor::Error> {
+	fn setup_system_64bit(&mut self, guest_address: u64) -> Result<(), xhypervisor::Error> {
 		debug!("Setup 64bit mode");
 
 		let cr0 = Cr0Flags::PROTECTED_MODE_ENABLE
@@ -253,7 +253,7 @@ impl XhyveCpu {
 		self.vcpu.write_register(&Register::CR0, cr0.bits())?;
 		self.vcpu.write_register(&Register::CR4, cr4.bits())?;
 		self.vcpu
-			.write_register(&Register::CR3, BOOT_PML4.as_u64())?;
+			.write_register(&Register::CR3, guest_address + PML4_OFFSET)?;
 		self.vcpu.write_register(&Register::DR7, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_ESP, 0)?;
 		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_EIP, 0)?;
@@ -591,7 +591,13 @@ impl XhyveCpu {
 		&self.vcpu
 	}
 
-	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
+	fn init(
+		&mut self,
+		entry_point: u64,
+		stack_address: u64,
+		guest_address: u64,
+		cpu_id: u32,
+	) -> HypervisorResult<()> {
 		self.setup_capabilities()?;
 		self.setup_msr()?;
 
@@ -612,7 +618,7 @@ impl XhyveCpu {
 		self.vcpu.write_register(&Register::RDX, 0)?;
 		self.vcpu.write_register(&Register::RSI, cpu_id.into())?;
 		self.vcpu
-			.write_register(&Register::RDI, BOOT_INFO_ADDR.as_u64())?;
+			.write_register(&Register::RDI, guest_address + BOOT_INFO_ADDR_OFFSET)?;
 		self.vcpu.write_register(&Register::R8, 0)?;
 		self.vcpu.write_register(&Register::R9, 0)?;
 		self.vcpu.write_register(&Register::R10, 0)?;
@@ -621,8 +627,8 @@ impl XhyveCpu {
 		self.vcpu.write_register(&Register::R13, 0)?;
 		self.vcpu.write_register(&Register::R14, 0)?;
 		self.vcpu.write_register(&Register::R15, 0)?;
-		self.setup_system_gdt()?;
-		self.setup_system_64bit()?;
+		self.setup_system_gdt(guest_address)?;
+		self.setup_system_64bit(guest_address)?;
 
 		Ok(())
 	}
@@ -636,7 +642,12 @@ impl VirtualCPU for XhyveCpu {
 			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
 			apic_base: APIC_DEFAULT_BASE,
 		};
-		vcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
+		vcpu.init(
+			parent_vm.get_entry_point(),
+			parent_vm.stack_address(),
+			parent_vm.guest_address(),
+			id,
+		)?;
 
 		Ok(vcpu)
 	}

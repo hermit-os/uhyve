@@ -7,7 +7,6 @@ use std::{
 use uhyve_interface::{parameters::*, GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC};
 
 use crate::{
-	consts::BOOT_PML4,
 	mem::{MemoryError, MmapMemory},
 	virt_to_phys,
 };
@@ -102,7 +101,7 @@ pub fn read(mem: &MmapMemory, sysread: &mut ReadPrams) {
 	unsafe {
 		let bytes_read = libc::read(
 			sysread.fd,
-			mem.host_address(virt_to_phys(sysread.buf, mem, BOOT_PML4).unwrap())
+			mem.host_address(virt_to_phys(sysread.buf, mem).unwrap())
 				.unwrap() as *mut libc::c_void,
 			sysread.len,
 		);
@@ -121,17 +120,15 @@ pub fn write(mem: &MmapMemory, syswrite: &WriteParams) -> io::Result<()> {
 		unsafe {
 			let step = libc::write(
 				syswrite.fd,
-				mem.host_address(
-					virt_to_phys(syswrite.buf + bytes_written as u64, mem, BOOT_PML4).unwrap(),
-				)
-				.map_err(|e| match e {
-					MemoryError::BoundsViolation => {
-						unreachable!("Bounds violation after host_address function")
-					}
-					MemoryError::WrongMemoryError => {
-						Error::new(ErrorKind::AddrNotAvailable, e.to_string())
-					}
-				})? as *const libc::c_void,
+				mem.host_address(virt_to_phys(syswrite.buf + bytes_written as u64, mem).unwrap())
+					.map_err(|e| match e {
+						MemoryError::BoundsViolation => {
+							unreachable!("Bounds violation after host_address function")
+						}
+						MemoryError::WrongMemoryError => {
+							Error::new(ErrorKind::AddrNotAvailable, e.to_string())
+						}
+					})? as *const libc::c_void,
 				syswrite.len - bytes_written,
 			);
 			if step >= 0 {
