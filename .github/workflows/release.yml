@@ -15,7 +15,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-20.04
             filename_suffix: "${{ github.ref_name }}-linux-amd64"
     steps:
       - uses: actions/checkout@v4
