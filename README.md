@@ -178,7 +178,7 @@ In principle, every gdb-capable IDE should be able to debug Hermit applications.
 
 #### Visual Studio Code / VSCodium
 
-The repository [hermit-rs](https://github.com/hermitcore/hermit-rs) provides [example configuration files](https://github.com/hermitcore/hermit-rs/tree/master/.vscode) to debug a Hermit application with Visual Code.
+The repository [hermit-rs](https://github.com/hermitcore/hermit-rs) provides [example configuration files](https://github.com/hermitcore/hermit-rs/tree/master/.vscode) to debug a Hermit application with [Visual Studio Code](https://code.visualstudio.com/), [VSCodium](https://vscodium.com/) or derivatives of [Eclipse Theia](https://theia-ide.org/).
 
 ![Debugging Hermit apps](img/vs_code.png)
 
