@@ -550,6 +550,19 @@ impl VirtualCPU for KvmCpu {
 							}
 						}
 					}
+					VcpuExit::MmioRead(addr, _targ) => {
+						match addr {
+							0x9_F000..0xA_0000 | 0xF_0000..0x10_0000 => {} // Search for MP floating table
+							_ => {
+								self.print_registers();
+								panic!("mmio read to {addr:#x}");
+							}
+						}
+					}
+					VcpuExit::MmioWrite(addr, _targ) => {
+						self.print_registers();
+						panic!("undefined mmio write to {addr:#x}");
+					}
 					VcpuExit::Debug(debug) => {
 						if let Some(s) = self.stats.as_mut() {
 							s.increment_val(VmExit::Debug)
