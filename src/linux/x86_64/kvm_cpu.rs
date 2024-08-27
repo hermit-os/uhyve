@@ -308,10 +308,6 @@ impl KvmCpu {
 		Ok(())
 	}
 
-	fn show_dtable(name: &str, dtable: &kvm_dtable) {
-		println!("{name}                 {dtable:?}");
-	}
-
 	fn show_segment(name: &str, seg: &kvm_segment) {
 		println!("{name}       {seg:?}");
 	}
@@ -491,6 +487,7 @@ impl VirtualCPU for KvmCpu {
 						return Ok(VcpuStopReason::Debug(debug));
 					}
 					VcpuExit::InternalError => {
+						self.print_registers();
 						panic!("{:?}", VcpuExit::InternalError)
 					}
 					vcpu_exit => {
@@ -524,8 +521,34 @@ impl VirtualCPU for KvmCpu {
 		println!();
 		println!("Registers:");
 		println!("----------");
-		println!("{regs:?}{sregs:?}");
-
+		println!(
+			"rax: {:#18x}       r8: {:#18x}   cr0: {:#18x}",
+			regs.rax, regs.r8, sregs.cr0
+		);
+		println!(
+			"rbx: {:#18x}       r9: {:#18x}   cr2: {:#18x}",
+			regs.rbx, regs.r9, sregs.cr2
+		);
+		println!(
+			"rcx: {:#18x}      r10: {:#18x}   cr3: {:#18x}",
+			regs.rcx, regs.r10, sregs.cr3
+		);
+		println!(
+			"rdx: {:#18x}      r11: {:#18x}   cr4: {:#18x}",
+			regs.rdx, regs.r11, sregs.cr4
+		);
+		println!(
+			"rsi: {:#18x}      r12: {:#18x}   cr8: {:#18x}",
+			regs.rsi, regs.r12, sregs.cr8
+		);
+		println!(
+			"rdi: {:#18x}      r13: {:#18x}   efer:{:#18x}",
+			regs.rdi, regs.r13, sregs.efer
+		);
+		println!("rsp: {:#18x}      r14: {:#18x}", regs.rsp, regs.r14);
+		println!("rbp: {:#18x}      r15: {:#18x}", regs.rbp, regs.r15);
+		println!("rip: {:#18x}   rflags: {:#18x}", regs.rip, regs.rflags);
+		println!();
 		println!("Segment registers:");
 		println!("------------------");
 		println!("register  selector  base              limit     type  p dpl db s l g avl");
@@ -537,15 +560,13 @@ impl VirtualCPU for KvmCpu {
 		KvmCpu::show_segment("gs ", &sregs.gs);
 		KvmCpu::show_segment("tr ", &sregs.tr);
 		KvmCpu::show_segment("ldt", &sregs.ldt);
-		KvmCpu::show_dtable("gdt", &sregs.gdt);
-		KvmCpu::show_dtable("idt", &sregs.idt);
+		println!("gtd: {:x?}", sregs.gdt);
+		println!("gtd: {:x?}", sregs.gdt);
 
 		println!();
 		println!("\nAPIC:");
 		println!("-----");
-		println!(
-			"efer: {:016x}  apic base: {:016x}",
-			sregs.efer, sregs.apic_base
-		);
+		println!("apic_base: {:#18x}", sregs.apic_base);
+		println!("interrupt_bitmap: {:x?}", sregs.interrupt_bitmap);
 	}
 }
