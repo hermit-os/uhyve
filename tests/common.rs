@@ -13,7 +13,15 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 	let kernel = kernel.as_ref();
 	println!("Building Kernel {}", kernel.display());
 	let kernel_src_path = Path::new("tests/test-kernels");
-	let cmd = Command::new("cargo")
+	let cargo = if let Some(cargo_home) = env::var_os("CARGO_HOME") {
+		let mut cargo = PathBuf::from(cargo_home);
+		cargo.push("bin");
+		cargo.push("cargo");
+		cargo
+	} else {
+		Path::new("cargo").to_path_buf()
+	};
+	let cmd = Command::new(cargo)
 		.arg("build")
 		.arg("-Zbuild-std=std,panic_abort")
 		.arg("--target=x86_64-unknown-hermit")
@@ -23,6 +31,8 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 		.env_clear()
 		// Retain PATH since it is used to find cargo and cc
 		.env("PATH", env::var_os("PATH").unwrap())
+		.env("CARGO_HOME", env::var_os("CARGO_HOME").unwrap())
+		.env("RUSTUP_HOME", env::var_os("RUSTUP_HOME").unwrap())
 		.current_dir(kernel_src_path)
 		.status()
 		.expect("failed to execute `cargo build`");
