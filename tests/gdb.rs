@@ -6,12 +6,11 @@ mod common;
 use std::{
 	fs::File,
 	io::{self, Write},
-	process::Command,
 	thread,
 };
 
 use assert_fs::{assert::PathAssert, fixture::PathChild, TempDir};
-use common::build_hermit_bin;
+use common::{build_hermit_bin, rust_gdb};
 use uhyvelib::{
 	params::{Output, Params},
 	vm::UhyveVm,
@@ -90,7 +89,7 @@ continue
 		output_path = output_path.display()
 	)?;
 
-	let status = Command::new("rust-gdb")
+	let status = rust_gdb()
 		.arg("-batch-silent")
 		.arg(format!("-command={}", command_path.display()))
 		.arg(&bin_path)

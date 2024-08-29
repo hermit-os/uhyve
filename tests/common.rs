@@ -20,16 +20,12 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path> + std::fmt::Display) -> PathBuf
 	let kernel_src_path = Path::new("tests/test-kernels");
 	println!("Building test kernel: {}", kernel.display());
 
-	let cmd = Command::new("cargo")
+	let cmd = cargo()
 		.arg("build")
 		.arg("-Zbuild-std=std,panic_abort")
 		.arg("--target=x86_64-unknown-hermit")
 		.arg("--bin")
 		.arg(kernel)
-		// Remove environment variables related to the current cargo instance (toolchain version, coverage flags)
-		.env_clear()
-		// Retain PATH since it is used to find cargo and cc
-		.env("PATH", env::var_os("PATH").unwrap())
 		.env("HERMIT_LOG_LEVEL_FILTER", "Debug")
 		.current_dir(kernel_src_path)
 		.status()
@@ -80,4 +76,46 @@ pub fn check_result(res: &VmResult) {
 		println!("Kernel Output:\n{}", res.output.as_ref().unwrap());
 		panic!();
 	}
+}
+
+pub fn cargo() -> Command {
+	sanitize("cargo")
+}
+
+#[allow(dead_code)] // This is only used by the gdb test.
+pub fn rust_gdb() -> Command {
+	sanitize("rust-gdb")
+}
+
+fn sanitize(cmd: &str) -> Command {
+	let cmd = {
+		let exe = format!("{cmd}{}", env::consts::EXE_SUFFIX);
+		// On windows, the userspace toolchain ends up in front of the rustup proxy in $PATH.
+		// To reach the rustup proxy nonetheless, we explicitly query $CARGO_HOME.
+		let mut cargo_home = home::cargo_home().unwrap();
+		cargo_home.push("bin");
+		cargo_home.push(&exe);
+		if cargo_home.exists() {
+			cargo_home
+		} else {
+			// Custom `$CARGO_HOME` values do not necessarily reflect in the environment.
+			// For these cases, our best bet is using `$PATH` for resolution.
+			PathBuf::from(exe)
+		}
+	};
+
+	let mut cmd = Command::new(cmd);
+
+	// Remove rust-toolchain-specific environment variables from kernel cargo
+	cmd.env_remove("LD_LIBRARY_PATH");
+	env::vars()
+		.filter(|(key, _value)| {
+			key.starts_with("CARGO") && !key.starts_with("CARGO_HOME")
+				|| key.starts_with("RUST") && !key.starts_with("RUSTUP_HOME")
+		})
+		.for_each(|(key, _value)| {
+			cmd.env_remove(&key);
+		});
+
+	cmd
 }
