@@ -59,7 +59,7 @@ uhyve-interface = { version = "0.1.1", path = "uhyve-interface", features = ["st
 virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
 rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }
-sysinfo = { version = "0.31.3", default-features = false, features = ["system"] }
+sysinfo = { version = "0.31.4", default-features = false, features = ["system"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.9"
