@@ -4,7 +4,7 @@ use std::{
 	time::{Duration, Instant},
 };
 
-use uhyve_interface::HypercallAddress;
+use uhyve_interface::v1::HypercallAddress;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum VmExit {
