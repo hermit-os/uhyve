@@ -1,7 +1,10 @@
 use std::{num::NonZero, sync::Arc};
 
 use log::debug;
-use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress};
+use uhyve_interface::{
+	GuestPhysAddr,
+	v1::{Hypercall, HypercallAddress},
+};
 use xhypervisor::{
 	self, Gic, MemPerm, Register, SystemRegister, VirtualCpuExitReason, create_vm, map_mem,
 	protect_mem,

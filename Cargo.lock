@@ -1795,6 +1795,7 @@ dependencies = [
  "env_logger",
  "gdbstub",
  "gdbstub_arch",
+ "hermit-abi",
  "hermit-entry",
  "home",
  "kvm-bindings",
