@@ -75,11 +75,8 @@ jobs:
           components: rustfmt
       - name: Format
         run: cargo fmt --all -- --check
-      - name: Install rustfmt for Test Kernels
-        run: rustup component add rustfmt
-        working-directory: tests/test-kernels
       - name: Format Test Kernels
-        run: cargo fmt --all -- --check
+        run: cargo +nightly fmt --all -- --check
         working-directory: tests/test-kernels
 
   clippy:
