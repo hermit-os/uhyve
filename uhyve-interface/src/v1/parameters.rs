@@ -1,8 +1,8 @@
 //! Parameters for hypercalls.
 
-use crate::{GuestPhysAddr, GuestVirtAddr, MAX_ARGC_ENVC};
+use crate::{GuestPhysAddr, GuestVirtAddr, v1::MAX_ARGC_ENVC};
 
-/// Parameters for a [`Cmdsize`](crate::Hypercall::Cmdsize) hypercall which provides the lengths of the items in the argument end environment vector.
+/// Parameters for a [`Cmdsize`](crate::v1::Hypercall::Cmdsize) hypercall which provides the lengths of the items in the argument end environment vector.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct CmdsizeParams {
@@ -21,7 +21,7 @@ impl CmdsizeParams {
 	/// - `path` is usually the path and name of the application. E.g., "/home/hermit/app"
 	/// - `args` is a list of strings that form the parameters. (E.g., `["-v", "myarg"]`)
 	///
-	/// Note that this hypercall only transfers the sizes. It usually has to be followed up with the [`Cmdval` Hypercall](crate::Hypercall::Cmdval).
+	/// Note that this hypercall only transfers the sizes. It usually has to be followed up with the [`Cmdval` Hypercall](crate::v1::Hypercall::Cmdval).
 	pub fn update(&mut self, path: &std::path::Path, args: &[String]) {
 		self.argc = 0;
 
@@ -47,7 +47,7 @@ impl CmdsizeParams {
 	}
 }
 
-/// Parameters for a [`Cmdval`](crate::Hypercall::Cmdval) hypercall, which copies the arguments end environment of the application into the VM's memory.
+/// Parameters for a [`Cmdval`](crate::v1::Hypercall::Cmdval) hypercall, which copies the arguments end environment of the application into the VM's memory.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct CmdvalParams {
@@ -57,7 +57,7 @@ pub struct CmdvalParams {
 	pub envp: GuestPhysAddr,
 }
 
-/// Parameters for a [`Exit`](crate::Hypercall::Exit) hypercall.
+/// Parameters for a [`Exit`](crate::v1::Hypercall::Exit) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct ExitParams {
@@ -65,7 +65,7 @@ pub struct ExitParams {
 	pub arg: i32,
 }
 
-/// Parameters for a [`FileUnlink`](crate::Hypercall::FileUnlink) hypercall.
+/// Parameters for a [`FileUnlink`](crate::v1::Hypercall::FileUnlink) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct UnlinkParams {
@@ -75,7 +75,7 @@ pub struct UnlinkParams {
 	pub ret: i32,
 }
 
-/// Parameters for a [`FileWrite`](crate::Hypercall::FileWrite) hypercall.
+/// Parameters for a [`FileWrite`](crate::v1::Hypercall::FileWrite) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct WriteParams {
@@ -87,7 +87,7 @@ pub struct WriteParams {
 	pub len: usize,
 }
 
-/// Parameters for a [`FileRead`](crate::Hypercall::FileRead) hypercall.
+/// Parameters for a [`FileRead`](crate::v1::Hypercall::FileRead) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct ReadParams {
@@ -101,7 +101,7 @@ pub struct ReadParams {
 	pub ret: isize,
 }
 
-/// Parameters for a [`FileClose`](crate::Hypercall::FileClose) hypercall.
+/// Parameters for a [`FileClose`](crate::v1::Hypercall::FileClose) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct CloseParams {
@@ -111,7 +111,7 @@ pub struct CloseParams {
 	pub ret: i32,
 }
 
-/// Parameters for a [`FileOpen`](crate::Hypercall::FileOpen) hypercall.
+/// Parameters for a [`FileOpen`](crate::v1::Hypercall::FileOpen) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct OpenParams {
@@ -125,7 +125,7 @@ pub struct OpenParams {
 	pub ret: i32,
 }
 
-/// Parameters for a [`FileLseek`](crate::Hypercall::FileLseek) hypercall
+/// Parameters for a [`FileLseek`](crate::v1::Hypercall::FileLseek) hypercall
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct LseekParams {
@@ -137,7 +137,7 @@ pub struct LseekParams {
 	pub whence: i32,
 }
 
-/// Parameters for a [`SerialWriteBuffer`](crate::Hypercall::SerialWriteBuffer) hypercall.
+/// Parameters for a [`SerialWriteBuffer`](crate::v1::Hypercall::SerialWriteBuffer) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct SerialWriteBufferParams {
