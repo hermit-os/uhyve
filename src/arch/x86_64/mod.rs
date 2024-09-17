@@ -320,6 +320,11 @@ mod tests {
 
 	#[test]
 	fn test_pagetable_initialization() {
+		let _ = env_logger::builder()
+			.filter(None, log::LevelFilter::Debug)
+			.is_test(true)
+			.try_init();
+
 		let mut mem: Vec<u8> = vec![0; MIN_PHYSMEM_SIZE];
 		initialize_pagetables((&mut mem[0..MIN_PHYSMEM_SIZE]).try_into().unwrap());
 
@@ -369,6 +374,11 @@ mod tests {
 
 	#[test]
 	fn test_virt_to_phys() {
+		let _ = env_logger::builder()
+			.filter(None, log::LevelFilter::Trace)
+			.is_test(true)
+			.try_init();
+
 		let mem = MmapMemory::new(0, MIN_PHYSMEM_SIZE * 2, GuestPhysAddr::new(0), true, true);
 		initialize_pagetables(unsafe { mem.as_slice_mut() }.try_into().unwrap());
 
