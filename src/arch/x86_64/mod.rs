@@ -250,7 +250,14 @@ mod tests {
 			.is_test(true)
 			.try_init();
 
-		let mem = MmapMemory::new(0, MIN_PHYSMEM_SIZE * 2, GuestPhysAddr::new(0), true, true);
+		let mem = MmapMemory::new(
+			0,
+			align_up!(MIN_PHYSMEM_SIZE * 2, 0x20_0000),
+			GuestPhysAddr::zero(),
+			true,
+			true,
+		);
+		println!("mmap memory created {mem:?}");
 		initialize_pagetables(unsafe { mem.as_slice_mut() }.try_into().unwrap());
 
 		// Get the address of the first entry in PML4 (the address of the PML4 itself)
