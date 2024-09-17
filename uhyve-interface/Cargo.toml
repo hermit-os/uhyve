@@ -1,6 +1,6 @@
 [package]
 name = "uhyve-interface"
-version = "0.1.4"
+version = "0.2.0"
 edition = "2024"
 authors = ["The Hermit Project Developers"]
 description = "The interface between uhyve and a guest VM"
@@ -10,10 +10,10 @@ keywords = ["hypervisor", "unikernel", "hermit"]
 categories = ["os"]
 
 [dependencies]
+hermit-abi = "0.5"
 log = { version = "0.4", optional = true }
 memory_addresses = "0.3"
 num_enum = { version = "0.7", default-features = false }
-hermit-abi = "0.5"
 
 [features]
 std = ["dep:log"]

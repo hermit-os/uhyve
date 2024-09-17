@@ -7,7 +7,8 @@ use std::{
 
 use uhyve_interface::{
 	GuestPhysAddr,
-	v1::{Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*},
+	v1::{self, MAX_ARGC_ENVC},
+	v2::{self, parameters::*},
 };
 
 use crate::{
@@ -22,17 +23,18 @@ use crate::{
 };
 
 /// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
-/// parameter that was send to that address by the guest.
+/// parameter that was sent to that address by the guest.
 ///
 /// # Safety
 ///
 /// - The return value is only valid, as long as the guest is halted.
 /// - This fn must not be called multiple times on the same data, to avoid creating mutable aliasing.
-pub unsafe fn address_to_hypercall(
+pub unsafe fn address_to_hypercall_v1(
 	mem: &MmapMemory,
 	addr: u16,
 	data: GuestPhysAddr,
-) -> Option<Hypercall<'_>> {
+) -> Option<v1::Hypercall<'_>> {
+	use v1::{Hypercall, HypercallAddress};
 	// Using a macro here is necessary because it:
 	// - is used to reduce repetition,
 	// - has to capture values from the environment (mem, data),
@@ -59,6 +61,44 @@ pub unsafe fn address_to_hypercall(
 	})
 }
 
+/// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
+/// parameter that was sent to that address by the guest.
+///
+/// # Safety
+///
+/// - The return value is only valid, as long as the guest is halted.
+/// - This fn must not be called multiple times on the same data, to avoid creating mutable aliasing.
+pub unsafe fn address_to_hypercall_v2(
+	mem: &MmapMemory,
+	addr: u64,
+	data: GuestPhysAddr,
+) -> Option<v2::Hypercall<'_>> {
+	use v2::{Hypercall, HypercallAddress};
+	// Using a macro here is necessary because it:
+	// - is used to reduce repetition,
+	// - has to capture values from the environment (mem, data),
+	// - has to be generic over its return type.
+	//
+	// So neither functions nor closures can serve this purpose alone.
+	macro_rules! get_data {
+		() => {{ unsafe { mem.get_ref_mut(data).unwrap() } }};
+	}
+
+	Some(match HypercallAddress::try_from(addr).ok()? {
+		HypercallAddress::FileClose => Hypercall::FileClose(get_data!()),
+		HypercallAddress::FileLseek => Hypercall::FileLseek(get_data!()),
+		HypercallAddress::FileOpen => Hypercall::FileOpen(get_data!()),
+		HypercallAddress::FileRead => Hypercall::FileRead(get_data!()),
+		HypercallAddress::FileWrite => Hypercall::FileWrite(get_data!()),
+		HypercallAddress::FileUnlink => Hypercall::FileUnlink(get_data!()),
+		HypercallAddress::Exit => Hypercall::Exit(data.as_u64() as i32),
+		HypercallAddress::SerialReadBuffer => Hypercall::SerialReadBuffer(get_data!()),
+		HypercallAddress::SerialWriteBuffer => Hypercall::SerialWriteBuffer(get_data!()),
+		HypercallAddress::SerialWriteByte => Hypercall::SerialWriteByte(data.as_u64() as u8),
+		_ => return None,
+	})
+}
+
 /// Translates the last error in `errno` to a value suitable to return from the hypercall.
 fn translate_last_errno() -> Option<i32> {
 	let errno = io::Error::last_os_error().raw_os_error()?;
@@ -67,7 +107,9 @@ fn translate_last_errno() -> Option<i32> {
 	macro_rules! error_pairs {
 		($($x:ident),*) => {{[ $((libc::$x, hermit_abi::errno::$x)),* ]}}
 	}
-	for (e_host, e_guest) in error_pairs!(EBADF, EEXIST, EFAULT, EINVAL, EPERM, ENOENT, EROFS) {
+	for (e_host, e_guest) in error_pairs!(
+		EBADF, EEXIST, EFAULT, EINVAL, EIO, EOVERFLOW, EPERM, ENOENT, EROFS
+	) {
 		if errno == e_host {
 			return Some(e_guest);
 		}
@@ -184,26 +226,52 @@ pub fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
 	};
 }
 
-/// Handles a read syscall on the host.
-pub fn read(
+/// Handles a v1 read hypercall (for which a guest-provided guest virtual address must be
+/// converted to a guest physical address by the host).
+pub fn read_v1(
 	mem: &MmapMemory,
-	sysread: &mut ReadParams,
+	sysread: &mut v1::parameters::ReadParams,
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
 ) {
+	sysread.ret = if let Ok(guest_phys_addr) = virt_to_phys(sysread.buf, mem, root_pt) {
+		let mut tmp = v2::parameters::ReadParams {
+			fd: sysread.fd,
+			buf: guest_phys_addr,
+			len: sysread.len as u64,
+			ret: 0i64,
+		};
+		read(mem, &mut tmp, file_map);
+		tmp.ret
+			.try_into()
+			.unwrap_or_else(|ret| panic!("Unable to fit return value {} in read_v1.", ret))
+	} else {
+		warn!("Unable to convert guest virtual address into guest physical address");
+		-EFAULT as isize
+	}
+}
+
+/// Handles a read syscall on the host.
+pub fn read(
+	mem: &MmapMemory,
+	sysread: &mut v2::parameters::ReadParams,
+	file_map: &mut UhyveFileMap,
+) {
 	sysread.ret = if let Some(fdata) = file_map.fdmap.get_mut(GuestFd(sysread.fd.into_raw_fd())) {
-		let guest_phys_addr = virt_to_phys(sysread.buf, mem, root_pt);
-		if let Ok(guest_phys_addr) = guest_phys_addr
-			&& let Ok(host_address) = mem.host_address(guest_phys_addr)
-		{
+		if let Ok(host_address) = mem.host_address(sysread.buf) {
 			match fdata {
 				FdData::Raw(rfd) => {
-					let bytes_read =
-						unsafe { libc::read(*rfd, host_address as *mut libc::c_void, sysread.len) };
-					if bytes_read >= 0 {
-						bytes_read
+					let bytes_read = unsafe {
+						libc::read(
+							*rfd,
+							host_address as *mut libc::c_void,
+							sysread.len as usize,
+						)
+					};
+					if bytes_read < 0 {
+						-translate_last_errno().unwrap_or(1) as i64
 					} else {
-						-translate_last_errno().unwrap_or(1) as isize
+						bytes_read as i64
 					}
 				}
 				FdData::Virtual { data, offset } => {
@@ -212,7 +280,7 @@ pub fn read(
 						let pos = cmp::min(*offset, data.len() as u64);
 						&data[pos as usize..]
 					};
-					let amt = cmp::min(remaining.len() as u64, sysread.len as u64) as usize;
+					let amt = cmp::min(remaining.len() as u64, sysread.len) as usize;
 					assert!(amt <= isize::MAX as usize);
 
 					// SAFETY: the input slices can't overlap, as `host_address` is owned by the guest
@@ -224,38 +292,52 @@ pub fn read(
 							amt,
 						)
 					};
-					amt as isize
+					amt as i64
 				}
 			}
 		} else {
 			warn!("Unable to get host address for read buffer");
-			-EFAULT as isize
+			-EFAULT as i64
 		}
 	} else {
-		-EBADF as isize
+		-EBADF as i64
 	};
 }
 
-/// Handles an write syscall on the host.
-pub fn write(
+/// Handles a v1 write hypercall (for which a guest-provided guest virtual address must be
+/// converted to a guest physical address by the host).
+pub fn write_v1(
 	peripherals: &VmPeripherals,
-	syswrite: &WriteParams,
+	syswrite: &v1::parameters::WriteParams,
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
 ) -> io::Result<()> {
-	// uhyve-interface TODO: add capability to return non-fatal errors to
-	// the guest, e.g. via an `syswrite.ret` like with other hypercalls.
-
 	let guest_phys_addr = virt_to_phys(syswrite.buf, &peripherals.mem, root_pt).map_err(|e| {
 		io::Error::new(
 			io::ErrorKind::InvalidInput,
 			format!("invalid syswrite buffer: {e:?}"),
 		)
 	})?;
+	let mut tmp = v2::parameters::WriteParams {
+		fd: syswrite.fd,
+		buf: guest_phys_addr,
+		len: syswrite.len as u64,
+		ret: 0i64,
+	};
+	write(peripherals, &mut tmp, file_map)
+}
+
+/// Handles an write syscall on the host.
+pub fn write(
+	peripherals: &VmPeripherals,
+	syswrite: &mut v2::parameters::WriteParams,
+	file_map: &mut UhyveFileMap,
+) -> io::Result<()> {
 	let mut bytes = unsafe {
+		let guest_phys_addr = syswrite.buf;
 		peripherals
 			.mem
-			.slice_at(guest_phys_addr, syswrite.len)
+			.slice_at(guest_phys_addr, syswrite.len.try_into().unwrap())
 			.map_err(|e| {
 				io::Error::new(
 					io::ErrorKind::InvalidInput,
@@ -267,13 +349,15 @@ pub fn write(
 	match file_map.fdmap.get_mut(GuestFd(syswrite.fd.into_raw_fd())) {
 		None => {
 			// We don't write anything if the file descriptor is not available,
-			// but this is OK for now, as we have no means of returning an error code
-			// and writes are not necessarily guaranteed to write anything.
-			Ok(())
+			// but this is OK, as writes are not necessarily guaranteed to write
+			// anything.
+			syswrite.ret = -EBADF as i64;
+			Err(io::Error::other("Bad file descriptor"))
 		}
 
 		Some(FdData::Virtual { .. }) => {
 			// virtual fds are read-only
+			syswrite.ret = -EROFS as i64;
 			Err(io::Error::new(
 				io::ErrorKind::ReadOnlyFilesystem,
 				format!(
@@ -284,9 +368,19 @@ pub fn write(
 		}
 
 		// Handles to standard outputs differs to that of e.g. files.
-		Some(FdData::Raw(1 | 2)) => peripherals.serial.output(bytes),
+		Some(FdData::Raw(1 | 2)) => {
+			// Assumption: Everything is printed successfully on the host.
+			// We could assume that this will always succeed and leave it at zero, but:
+			// - having some "write" scenarios that treat a zero as an error
+			//   and some that don't is not very clean.
+			// - there is a debug_assert in the kernel that depends on this,
+			//   just in case.
+			syswrite.ret = bytes.len().try_into().unwrap();
+			peripherals.serial.output(bytes)
+		}
 
 		Some(FdData::Raw(r)) => {
+			syswrite.ret = 0;
 			while !bytes.is_empty() {
 				let step = unsafe {
 					libc::write(
@@ -296,8 +390,10 @@ pub fn write(
 					)
 				};
 				if step >= 0 {
+					syswrite.ret += step as i64;
 					bytes = &bytes[step as usize..];
 				} else {
+					syswrite.ret = -translate_last_errno().unwrap_or(1) as i64;
 					return Err(io::Error::last_os_error());
 				}
 			}
@@ -307,43 +403,63 @@ pub fn write(
 	}
 }
 
+/// Handles a v1 lseek syscall on the host, which has a different struct format.
+pub fn lseek_v1(syslseek: &mut v1::parameters::LseekParams, file_map: &mut UhyveFileMap) {
+	let mut tmp = LseekParams {
+		offset: syslseek.offset as i64,
+		whence: syslseek.whence as u32,
+		fd: syslseek.fd,
+	};
+	lseek(&mut tmp, file_map);
+	if tmp.offset < 0 {
+		tmp.offset = -1;
+	}
+	syslseek.offset = tmp
+		.offset
+		.try_into()
+		.unwrap_or_else(|ret| panic!("Unable to fit return value {} in lseek_v1.", ret));
+}
+
 /// Handles an lseek syscall on the host.
 pub fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 	syslseek.offset = match file_map.fdmap.get_mut(GuestFd(syslseek.fd.into_raw_fd())) {
-		Some(FdData::Raw(r)) => unsafe {
-			libc::lseek(*r, syslseek.offset as i64, syslseek.whence) as isize
-		},
+		Some(FdData::Raw(r)) => unsafe { libc::lseek(*r, syslseek.offset, syslseek.whence as i32) },
 		Some(FdData::Virtual { data, offset }) => {
 			#[forbid(unused_variables, unreachable_patterns)]
-			let tmp = match syslseek.whence {
+			let tmp: i64 = match syslseek.whence as i32 {
 				SEEK_SET => 0,
-				SEEK_CUR => *offset as isize,
-				SEEK_END => data.get().len() as isize,
-				_ => -1,
+				SEEK_CUR => *offset as i64,
+				SEEK_END => data.get().len() as i64,
+				_ => -EINVAL as i64,
 			};
 			if tmp >= 0 {
-				let tmp2 = (tmp as i64) + (syslseek.offset as i64);
+				let tmp2 = tmp + syslseek.offset;
 				match tmp2.try_into() {
 					Ok(tmp3) => {
 						*offset = tmp3;
-						tmp2 as isize
+						tmp2
 					}
-					_ => -1,
+					_ => -EOVERFLOW as i64,
 				}
 			} else {
 				tmp
 			}
 		}
 		None => {
-			// TODO: Return -EBADF to the ret field, as soon as it is implemented for LseekParams
 			warn!("lseek attempted to use an unknown file descriptor");
-			-1
+			-EBADF as i64
 		}
 	};
 }
 
 /// Copies the arguments of the application into the VM's memory to the destinations specified in `syscmdval`.
-pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &MmapMemory) {
+#[allow(unused)]
+pub fn copy_argv(
+	path: &OsStr,
+	argv: &[String],
+	syscmdval: &v1::parameters::CmdvalParams,
+	mem: &MmapMemory,
+) {
 	// copy kernel path as first argument
 	let argvp = mem
 		.host_address(syscmdval.argv)
@@ -375,7 +491,8 @@ pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &
 }
 
 /// Copies the environment variables into the VM's memory to the destinations specified in `syscmdval`.
-pub fn copy_env(env: &EnvVars, syscmdval: &CmdvalParams, mem: &MmapMemory) {
+#[allow(unused)]
+pub fn copy_env(env: &EnvVars, syscmdval: &v1::parameters::CmdvalParams, mem: &MmapMemory) {
 	let envp = mem
 		.host_address(syscmdval.envp)
 		.expect("Systemcall parameters for Cmdval are invalid") as *const GuestPhysAddr;
