@@ -268,7 +268,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 				phys_addr_range: self.mem.guest_address.as_u64()
 					..self.mem.guest_address.as_u64() + self.mem.memory_size as u64,
 				serial_port_base: self.verbose().then(|| {
-					SerialPortBase::new((uhyve_interface::HypercallAddress::Uart as u16).into())
+					SerialPortBase::new((uhyve_interface::v1::HypercallAddress::Uart as u16).into())
 						.unwrap()
 				}),
 				device_tree: Some(FDT_ADDR.as_u64().try_into().unwrap()),
