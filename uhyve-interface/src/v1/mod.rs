@@ -9,18 +9,16 @@
 
 // TODO: Throw this out, once https://github.com/rust-lang/rfcs/issues/2783 or https://github.com/rust-lang/rust/issues/86772 is resolved
 
-use num_enum::TryFromPrimitive;
-
 pub mod parameters;
-use crate::v1::parameters::*;
+use parameters::*;
 
 /// Enum containing all valid port mappings for hypercalls.
 ///
 /// The discriminants of this enum are the respective ports, so one can get the code by calling
 /// e.g., `HypercallPorts::FileWrite as u16`.
-#[non_exhaustive]
 #[repr(u16)]
-#[derive(Debug, Eq, PartialEq, TryFromPrimitive, Clone, Copy, Hash)]
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, num_enum::TryFromPrimitive, Hash)]
 pub enum HypercallAddress {
 	/// Port address = `0x400`
 	FileWrite = 0x400,
@@ -54,37 +52,21 @@ pub enum HypercallAddress {
 	/// Port address = `0x880`
 	SerialBufferWrite = 0x880,
 }
-impl From<Hypercall<'_>> for HypercallAddress {
-	fn from(value: Hypercall) -> Self {
-		match value {
-			Hypercall::Cmdsize(_) => Self::Cmdsize,
-			Hypercall::Cmdval(_) => Self::Cmdval,
-			Hypercall::Exit(_) => Self::Exit,
-			Hypercall::FileClose(_) => Self::FileClose,
-			Hypercall::FileLseek(_) => Self::FileLseek,
-			Hypercall::FileOpen(_) => Self::FileOpen,
-			Hypercall::FileRead(_) => Self::FileRead,
-			Hypercall::FileWrite(_) => Self::FileWrite,
-			Hypercall::FileUnlink(_) => Self::FileUnlink,
-			Hypercall::SerialWriteByte(_) => Self::Uart,
-			Hypercall::SerialWriteBuffer(_) => Self::SerialBufferWrite,
-		}
-	}
-}
-impl From<&Hypercall<'_>> for HypercallAddress {
-	fn from(value: &Hypercall) -> Self {
-		match value {
-			Hypercall::Cmdsize(_) => Self::Cmdsize,
-			Hypercall::Cmdval(_) => Self::Cmdval,
-			Hypercall::Exit(_) => Self::Exit,
-			Hypercall::FileClose(_) => Self::FileClose,
-			Hypercall::FileLseek(_) => Self::FileLseek,
-			Hypercall::FileOpen(_) => Self::FileOpen,
-			Hypercall::FileRead(_) => Self::FileRead,
-			Hypercall::FileWrite(_) => Self::FileWrite,
-			Hypercall::FileUnlink(_) => Self::FileUnlink,
-			Hypercall::SerialWriteByte(_) => Self::Uart,
-			Hypercall::SerialWriteBuffer(_) => Self::SerialBufferWrite,
+
+into_hypercall_addresses! {
+	impl From<Hypercall> for HypercallAddress {
+		match {
+			Cmdsize,
+			Cmdval,
+			Exit,
+			FileClose,
+			FileLseek,
+			FileOpen,
+			FileRead,
+			FileWrite,
+			FileUnlink,
+			SerialWriteByte => Uart,
+			SerialWriteBuffer => SerialBufferWrite,
 		}
 	}
 }
@@ -105,7 +87,7 @@ pub enum Hypercall<'a> {
 	FileLseek(&'a mut LseekParams),
 	FileOpen(&'a mut OpenParams),
 	FileRead(&'a mut ReadParams),
-	FileWrite(&'a WriteParams),
+	FileWrite(&'a mut WriteParams),
 	FileUnlink(&'a mut UnlinkParams),
 	/// Write a char to the terminal.
 	SerialWriteByte(u8),
