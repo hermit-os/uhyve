@@ -16,6 +16,7 @@ use hermit_entry::{
 use log::{error, warn};
 use sysinfo::System;
 use thiserror::Error;
+use uhyve_interface::GuestPhysAddr;
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::{
@@ -142,9 +143,9 @@ impl Default for Output {
 
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	/// The starting position of the image in physical memory
-	offset: u64,
-	entry_point: u64,
-	stack_address: u64,
+	kernel_address: GuestPhysAddr,
+	entry_point: GuestPhysAddr,
+	stack_address: GuestPhysAddr,
 	pub mem: Arc<MmapMemory>,
 	path: PathBuf,
 	boot_info: *const RawBootInfo,
@@ -211,9 +212,9 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		};
 
 		let mut vm = Self {
-			offset: 0,
-			entry_point: 0,
-			stack_address: 0,
+			kernel_address: GuestPhysAddr::zero(),
+			entry_point: GuestPhysAddr::zero(),
+			stack_address: GuestPhysAddr::zero(),
 			mem: mem.into(),
 			path: kernel_path,
 			boot_info: ptr::null(),
@@ -248,15 +249,15 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	}
 
 	/// Returns the section offsets relative to their base addresses
-	pub fn get_offset(&self) -> u64 {
-		self.offset
+	pub fn kernel_start_addr(&self) -> GuestPhysAddr {
+		self.kernel_address
 	}
 
-	pub fn get_entry_point(&self) -> u64 {
+	pub fn entry_point(&self) -> GuestPhysAddr {
 		self.entry_point
 	}
 
-	pub fn stack_address(&self) -> u64 {
+	pub fn stack_address(&self) -> GuestPhysAddr {
 		self.stack_address
 	}
 
@@ -292,11 +293,12 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
 		// TODO: should be a random start address, if we have a relocatable executable
-		let kernel_start_address = object.start_addr().unwrap_or(0x400000) as usize;
-		let kernel_end_address = kernel_start_address + object.mem_size();
-		self.offset = kernel_start_address as u64;
+		self.kernel_address = GuestPhysAddr::new(object.start_addr().unwrap_or(0x400000));
+		let kernel_end_address = self.kernel_address + object.mem_size();
 
-		if kernel_end_address > self.mem.memory_size - self.mem.guest_address.as_u64() as usize {
+		if kernel_end_address.as_u64()
+			> self.mem.memory_size as u64 - self.mem.guest_address.as_u64()
+		{
 			return Err(LoadKernelError::InsufficientMemory);
 		}
 
@@ -306,10 +308,10 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		} = object.load_kernel(
 			// Safety: Slice only lives during this fn call, so no aliasing happens
 			&mut unsafe { self.mem.as_slice_uninit_mut() }
-				[kernel_start_address..kernel_end_address],
-			kernel_start_address as u64,
+				[self.kernel_address.as_u64() as usize..kernel_end_address.as_u64() as usize],
+			self.kernel_address.as_u64(),
 		);
-		self.entry_point = entry_point;
+		self.entry_point = GuestPhysAddr::new(entry_point);
 
 		let sep = self
 			.args()
@@ -360,11 +362,14 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			self.boot_info = raw_boot_info_ptr;
 		}
 
-		self.stack_address = (kernel_start_address as u64)
-			.checked_sub(KERNEL_STACK_SIZE)
-			.expect(
+		self.stack_address = GuestPhysAddr::new(
+			self.kernel_address
+				.as_u64()
+				.checked_sub(KERNEL_STACK_SIZE)
+				.expect(
 				"there should be enough space for the boot stack before the kernel start address",
-			);
+			),
+		);
 
 		Ok(())
 	}
