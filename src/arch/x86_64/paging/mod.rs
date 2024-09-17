@@ -96,6 +96,11 @@ mod tests {
 
 	#[test]
 	fn test_pagetable_initialization() {
+		let _ = env_logger::builder()
+			.filter(None, log::LevelFilter::Debug)
+			.is_test(true)
+			.try_init();
+
 		let guest_address = GuestPhysAddr::new(0x20_0000);
 
 		let mut mem: Vec<u8> = vec![0; MIN_PHYSMEM_SIZE];

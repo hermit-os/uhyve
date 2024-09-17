@@ -246,6 +246,11 @@ mod tests {
 
 	#[test]
 	fn test_virt_to_phys() {
+		let _ = env_logger::builder()
+			.filter(None, log::LevelFilter::Trace)
+			.is_test(true)
+			.try_init();
+
 		let guest_address = GuestPhysAddr::new(0x11111000);
 		let mem = MmapMemory::new(0, MIN_PHYSMEM_SIZE * 2, guest_address, true, true);
 		init_guest_mem(
