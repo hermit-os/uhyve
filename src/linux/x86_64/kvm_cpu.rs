@@ -55,7 +55,7 @@ impl VirtualizationBackend for KvmVm {
 				None
 			},
 		};
-		kvcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
+		kvcpu.init(parent_vm.entry_point(), parent_vm.stack_address(), id)?;
 
 		Ok(kvcpu)
 	}
@@ -260,8 +260,8 @@ impl KvmCpu {
 
 	fn setup_long_mode(
 		&self,
-		entry_point: u64,
-		stack_address: u64,
+		entry_point: GuestPhysAddr,
+		stack_address: GuestPhysAddr,
 		cpu_id: u32,
 	) -> Result<(), kvm_ioctls::Error> {
 		//debug!("Setup long mode");
@@ -312,10 +312,10 @@ impl KvmCpu {
 
 		let mut regs = self.vcpu.get_regs()?;
 		regs.rflags = 2;
-		regs.rip = entry_point;
+		regs.rip = entry_point.as_u64();
 		regs.rdi = BOOT_INFO_ADDR.as_u64();
 		regs.rsi = cpu_id.into();
-		regs.rsp = stack_address;
+		regs.rsp = stack_address.as_u64();
 
 		self.vcpu.set_regs(&regs)?;
 
@@ -334,7 +334,12 @@ impl KvmCpu {
 		&mut self.vcpu
 	}
 
-	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
+	fn init(
+		&mut self,
+		entry_point: GuestPhysAddr,
+		stack_address: GuestPhysAddr,
+		cpu_id: u32,
+	) -> HypervisorResult<()> {
 		self.setup_long_mode(entry_point, stack_address, cpu_id)?;
 		self.setup_cpuid()?;
 

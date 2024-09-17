@@ -178,7 +178,7 @@ impl VirtualizationBackend for XhyveVm {
 				None
 			},
 		};
-		vcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
+		vcpu.init(parent_vm.entry_point(), parent_vm.stack_address(), id)?;
 
 		Ok(vcpu)
 	}
@@ -632,7 +632,12 @@ impl XhyveCpu {
 		&self.vcpu
 	}
 
-	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
+	fn init(
+		&mut self,
+		entry_point: GuestPhysAddr,
+		stack_address: GuestPhysAddr,
+		cpu_id: u32,
+	) -> HypervisorResult<()> {
 		self.setup_capabilities()?;
 		self.setup_msr()?;
 
@@ -643,9 +648,11 @@ impl XhyveCpu {
 		self.vcpu.write_vmcs(VMCS_GUEST_SYSENTER_ESP, 0)?;
 
 		debug!("Setup general purpose registers");
-		self.vcpu.write_register(&Register::RIP, entry_point)?;
+		self.vcpu
+			.write_register(&Register::RIP, entry_point.as_u64())?;
 		self.vcpu.write_register(&Register::RFLAGS, 0x2)?;
-		self.vcpu.write_register(&Register::RSP, stack_address)?;
+		self.vcpu
+			.write_register(&Register::RSP, stack_address.as_u64())?;
 		self.vcpu.write_register(&Register::RBP, 0)?;
 		self.vcpu.write_register(&Register::RAX, 0)?;
 		self.vcpu.write_register(&Register::RBX, 0)?;
