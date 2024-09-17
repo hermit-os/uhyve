@@ -1,6 +1,9 @@
 #[cfg(target_os = "hermit")]
 use hermit as _;
-use uhyve_interface::{GuestPhysAddr, HypercallAddress, parameters::SerialWriteBufferParams};
+use uhyve_interface::{
+	GuestPhysAddr,
+	v1::{HypercallAddress, parameters::SerialWriteBufferParams},
+};
 #[cfg(target_arch = "x86_64")]
 use x86_64::{
 	VirtAddr,

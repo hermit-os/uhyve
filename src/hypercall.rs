@@ -5,7 +5,10 @@ use std::{
 	os::{fd::IntoRawFd, unix::ffi::OsStrExt},
 };
 
-use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*};
+use uhyve_interface::{
+	GuestPhysAddr,
+	v1::{Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*},
+};
 
 use crate::{
 	isolation::{
