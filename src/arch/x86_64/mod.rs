@@ -251,7 +251,10 @@ mod tests {
 			.is_test(true)
 			.try_init();
 
+		use crate::vm::GUEST_ADDRESS;
 		let guest_address = GuestPhysAddr::new(0x11111000);
+		let _ = *GUEST_ADDRESS.get_or_init(|| guest_address);
+
 		let mem = MmapMemory::new(
 			0,
 			align_up!(MIN_PHYSMEM_SIZE * 2, 0x20_0000),
