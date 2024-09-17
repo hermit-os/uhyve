@@ -113,7 +113,10 @@ pub fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::consts::{GDT_OFFSET, PDE_OFFSET, PDPTE_OFFSET, PML4_OFFSET};
+	use crate::{
+		consts::{GDT_OFFSET, PDE_OFFSET, PDPTE_OFFSET, PML4_OFFSET},
+		mem::HugePageAlignedMem,
+	};
 
 	#[test]
 	fn test_pagetable_initialization() {
@@ -124,16 +127,13 @@ mod tests {
 
 		let guest_address = GuestPhysAddr::new(0x20_0000);
 
-		let mut mem: Vec<u8> = vec![0; MIN_PHYSMEM_SIZE];
+		let aligned_mem = HugePageAlignedMem::<MIN_PHYSMEM_SIZE>::new();
 		// This will return a pagetable setup that we will check.
-		initialize_pagetables(
-			(&mut mem[0..MIN_PHYSMEM_SIZE]).try_into().unwrap(),
-			guest_address,
-		);
+		initialize_pagetables((aligned_mem.mem).try_into().unwrap(), guest_address);
 
 		// Check PDPTE address
 		let addr_pdpte = GuestPhysAddr::new(u64::from_le_bytes(
-			mem[(PML4_OFFSET as usize)..(PML4_OFFSET as usize + 8)]
+			aligned_mem.mem[(PML4_OFFSET as usize)..(PML4_OFFSET as usize + 8)]
 				.try_into()
 				.unwrap(),
 		));
@@ -144,7 +144,7 @@ mod tests {
 
 		// Check PDE
 		let addr_pde = GuestPhysAddr::new(u64::from_le_bytes(
-			mem[(PDPTE_OFFSET as usize)..(PDPTE_OFFSET as usize + 8)]
+			aligned_mem.mem[(PDPTE_OFFSET as usize)..(PDPTE_OFFSET as usize + 8)]
 				.try_into()
 				.unwrap(),
 		));
@@ -156,7 +156,11 @@ mod tests {
 		// Check PDE's pagetable bits
 		for i in (0..4096).step_by(8) {
 			let pde_addr = (PDE_OFFSET) as usize + i;
-			let entry = u64::from_le_bytes(mem[pde_addr..(pde_addr + 8)].try_into().unwrap());
+			let entry = u64::from_le_bytes(
+				aligned_mem.mem[pde_addr..(pde_addr + 8)]
+					.try_into()
+					.unwrap(),
+			);
 			assert!(
 				PageTableFlags::from_bits_truncate(entry)
 					.difference(
@@ -173,7 +177,8 @@ mod tests {
 		let gdt_results = [0x0, 0xAF9B000000FFFF, 0xCF93000000FFFF];
 		for (i, res) in gdt_results.iter().enumerate() {
 			let gdt_addr = GDT_OFFSET as usize + i * 8;
-			let gdt_entry = u64::from_le_bytes(mem[gdt_addr..gdt_addr + 8].try_into().unwrap());
+			let gdt_entry =
+				u64::from_le_bytes(aligned_mem.mem[gdt_addr..gdt_addr + 8].try_into().unwrap());
 			assert_eq!(*res, gdt_entry);
 		}
 	}

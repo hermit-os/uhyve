@@ -252,7 +252,14 @@ mod tests {
 			.try_init();
 
 		let guest_address = GuestPhysAddr::new(0x11111000);
-		let mem = MmapMemory::new(0, MIN_PHYSMEM_SIZE * 2, guest_address, true, true);
+		let mem = MmapMemory::new(
+			0,
+			align_up!(MIN_PHYSMEM_SIZE * 2, 0x20_0000),
+			guest_address,
+			true,
+			true,
+		);
+		println!("mmap memory created {mem:?}");
 		init_guest_mem(
 			unsafe { mem.as_slice_mut() }.try_into().unwrap(),
 			guest_address,
