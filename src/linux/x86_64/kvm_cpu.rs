@@ -227,9 +227,9 @@ impl KvmCpu {
 
 	fn setup_long_mode(
 		&self,
-		entry_point: u64,
-		stack_address: u64,
-		guest_address: u64,
+		entry_point: GuestPhysAddr,
+		stack_address: GuestPhysAddr,
+		guest_address: GuestPhysAddr,
 		cpu_id: u32,
 	) -> Result<(), kvm_ioctls::Error> {
 		//debug!("Setup long mode");
@@ -242,7 +242,7 @@ impl KvmCpu {
 			| Cr0Flags::PAGING;
 		sregs.cr0 = cr0.bits();
 
-		sregs.cr3 = guest_address + PML4_OFFSET;
+		sregs.cr3 = guest_address.as_u64() + PML4_OFFSET;
 
 		let cr4 = Cr4Flags::PHYSICAL_ADDRESS_EXTENSION;
 		sregs.cr4 = cr4.bits();
@@ -273,17 +273,17 @@ impl KvmCpu {
 		sregs.ss = seg;
 		//sregs.fs = seg;
 		//sregs.gs = seg;
-		sregs.gdt.base = guest_address + GDT_OFFSET;
+		sregs.gdt.base = guest_address.as_u64() + GDT_OFFSET;
 		sregs.gdt.limit = ((std::mem::size_of::<u64>() * BOOT_GDT_MAX) - 1) as u16;
 
 		self.vcpu.set_sregs(&sregs)?;
 
 		let mut regs = self.vcpu.get_regs()?;
 		regs.rflags = 2;
-		regs.rip = entry_point;
-		regs.rdi = guest_address + BOOT_INFO_ADDR_OFFSET;
+		regs.rip = entry_point.as_u64();
+		regs.rdi = guest_address.as_u64() + BOOT_INFO_ADDR_OFFSET;
 		regs.rsi = cpu_id.into();
-		regs.rsp = stack_address;
+		regs.rsp = stack_address.as_u64();
 
 		self.vcpu.set_regs(&regs)?;
 
@@ -308,9 +308,9 @@ impl KvmCpu {
 
 	fn init(
 		&mut self,
-		entry_point: u64,
-		stack_address: u64,
-		guest_address: u64,
+		entry_point: GuestPhysAddr,
+		stack_address: GuestPhysAddr,
+		guest_address: GuestPhysAddr,
 		cpu_id: u32,
 	) -> HypervisorResult<()> {
 		self.setup_long_mode(entry_point, stack_address, guest_address, cpu_id)?;
@@ -343,9 +343,9 @@ impl VirtualCPU for KvmCpu {
 			pci_addr: None,
 		};
 		kvcpu.init(
-			parent_vm.get_entry_point(),
+			parent_vm.entry_point(),
 			parent_vm.stack_address(),
-			parent_vm.guest_address(),
+			parent_vm.memory_start(),
 			id,
 		)?;
 

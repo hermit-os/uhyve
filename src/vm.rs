@@ -132,9 +132,9 @@ pub type VcpuDefault = crate::macos::XhyveCpu;
 
 pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 	/// The starting position of the image in physical memory
-	offset: u64,
-	entry_point: u64,
-	stack_address: u64,
+	kernel_address: GuestPhysAddr,
+	entry_point: GuestPhysAddr,
+	stack_address: GuestPhysAddr,
 	guest_address: GuestPhysAddr,
 	pub mem: Arc<MmapMemory>,
 	num_cpus: u32,
@@ -207,9 +207,9 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		);
 
 		let mut vm = Self {
-			offset,
-			entry_point: 0,
-			stack_address: 0,
+			kernel_address: GuestPhysAddr::new(offset),
+			entry_point: GuestPhysAddr::new(0),
+			stack_address: GuestPhysAddr::new(0),
 			guest_address,
 			mem: mem.into(),
 			num_cpus: cpu_count,
@@ -232,20 +232,20 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 	}
 
 	/// Returns the section offsets relative to their base addresses
-	pub fn get_offset(&self) -> u64 {
-		self.offset
+	pub fn kernel_start_addr(&self) -> GuestPhysAddr {
+		self.kernel_address
 	}
 
-	pub fn get_entry_point(&self) -> u64 {
+	pub fn entry_point(&self) -> GuestPhysAddr {
 		self.entry_point
 	}
 
-	pub fn stack_address(&self) -> u64 {
+	pub fn stack_address(&self) -> GuestPhysAddr {
 		self.stack_address
 	}
 
-	pub fn guest_address(&self) -> u64 {
-		self.guest_address.as_u64()
+	pub fn memory_start(&self) -> GuestPhysAddr {
+		self.guest_address
 	}
 
 	/// Returns the number of cores for the vm.
@@ -268,7 +268,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			unsafe { self.mem.as_slice_mut() } // slice only lives during this fn call
 				.try_into()
 				.expect("Guest memory is not large enough for pagetables"),
-			self.mem.guest_address.as_u64(),
+			self.mem.guest_address,
 		);
 	}
 
@@ -277,7 +277,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
-		let kernel_end_address = self.offset as usize + object.mem_size();
+		let kernel_end_address = self.kernel_address.as_u64() as usize + object.mem_size();
 
 		if kernel_end_address > self.mem.memory_size - self.mem.guest_address.as_u64() as usize {
 			return Err(LoadKernelError::InsufficientMemory);
@@ -290,9 +290,9 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			// Safety: Slice only lives during this fn call, so no aliasing happens
 			&mut unsafe { self.mem.as_slice_uninit_mut() }
 				[KERNEL_OFFSET as usize..object.mem_size() + KERNEL_OFFSET as usize],
-			self.offset,
+			self.kernel_address.as_u64(),
 		);
-		self.entry_point = entry_point;
+		self.entry_point = GuestPhysAddr::new(entry_point);
 
 		let boot_info = BootInfo {
 			hardware_info: HardwareInfo {
@@ -319,9 +319,11 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			self.boot_info = raw_boot_info_ptr;
 		}
 
-		self.stack_address = (self.offset).checked_sub(KERNEL_STACK_SIZE).expect(
+		assert!(
+			self.kernel_address.as_u64() > KERNEL_STACK_SIZE,
 			"there should be enough space for the boot stack before the kernel start address",
 		);
+		self.stack_address = self.kernel_address - KERNEL_STACK_SIZE;
 
 		Ok(())
 	}

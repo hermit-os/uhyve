@@ -11,8 +11,9 @@ use crate::consts::*;
 /// The memory slice must be larger than [`MIN_PHYSMEM_SIZE`].
 /// Also, the memory `mem` needs to be zeroed for [`PAGE_SIZE`] bytes at the
 /// offsets [`BOOT_PML4`] and [`BOOT_PDPTE`], otherwise the integrity of the
-/// pagetables and thus the integrity of the guest's memory is not ensured
-pub fn initialize_pagetables(mem: &mut [u8], guest_address: u64) {
+/// pagetables and thus the integrity of the guest's memory is not ensured.
+/// `mem` and `GuestPhysAddr` must be 2MiB page aligned.
+pub fn initialize_pagetables(mem: &mut [u8], guest_address: GuestPhysAddr) {
 	assert!(mem.len() >= MIN_PHYSMEM_SIZE);
 	let mem_addr = std::ptr::addr_of_mut!(mem[0]);
 
@@ -58,15 +59,15 @@ pub fn initialize_pagetables(mem: &mut [u8], guest_address: u64) {
 	gdt_entry[BOOT_GDT_DATA] = create_gdt_entry(0xC093, 0, 0xFFFFF);
 
 	pml4[0].set_addr(
-		GuestPhysAddr::new(guest_address + PDPTE_OFFSET),
+		guest_address + PDPTE_OFFSET,
 		PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 	);
 	pml4[511].set_addr(
-		GuestPhysAddr::new(guest_address + PML4_OFFSET),
+		guest_address + PML4_OFFSET,
 		PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 	);
 	pdpte[0].set_addr(
-		GuestPhysAddr::new(guest_address + PDE_OFFSET),
+		guest_address + PDE_OFFSET,
 		PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 	);
 
@@ -95,29 +96,32 @@ mod tests {
 
 	#[test]
 	fn test_pagetable_initialization() {
-		let guest_address = 0x15000;
+		let guest_address = GuestPhysAddr::new(0x20_0000);
 
 		let mut mem: Vec<u8> = vec![0; MIN_PHYSMEM_SIZE];
 		// This will return a pagetable setup that we will check.
-		initialize_pagetables((&mut mem[0..MIN_PHYSMEM_SIZE]).try_into().unwrap(), guest_address);
+		initialize_pagetables(
+			(&mut mem[0..MIN_PHYSMEM_SIZE]).try_into().unwrap(),
+			guest_address,
+		);
 
 		// Check PDPTE address
-		let addr_pdpte = u64::from_le_bytes(
+		let addr_pdpte = GuestPhysAddr::new(u64::from_le_bytes(
 			mem[(PML4_OFFSET as usize)..(PML4_OFFSET as usize + 8)]
 				.try_into()
 				.unwrap(),
-		);
+		));
 		assert_eq!(
 			addr_pdpte - guest_address,
 			PDPTE_OFFSET | (PageTableFlags::PRESENT | PageTableFlags::WRITABLE).bits()
 		);
 
 		// Check PDE
-		let addr_pde = u64::from_le_bytes(
+		let addr_pde = GuestPhysAddr::new(u64::from_le_bytes(
 			mem[(PDPTE_OFFSET as usize)..(PDPTE_OFFSET as usize + 8)]
 				.try_into()
 				.unwrap(),
-		);
+		));
 		assert_eq!(
 			addr_pde - guest_address,
 			PDE_OFFSET | (PageTableFlags::PRESENT | PageTableFlags::WRITABLE).bits()
