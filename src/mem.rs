@@ -180,6 +180,44 @@ impl Index<usize> for MmapMemory {
 	}
 }
 
+/// Wrapper aroud a memory allocation that is aligned to x86 HugePages
+/// (`0x20_0000`). Intended for testing purposes only
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) struct HugePageAlignedMem<'a, const SIZE: usize> {
+	ptr: *mut u8,
+	pub mem: &'a mut [u8],
+}
+#[cfg(test)]
+#[allow(dead_code)]
+impl<const SIZE: usize> HugePageAlignedMem<'_, SIZE> {
+	pub fn new() -> Self {
+		use std::alloc::{alloc_zeroed, Layout};
+		// TODO: Make this generic to arbitrary alignments.
+		let layout = Layout::from_size_align(SIZE, 0x20_0000).unwrap();
+		unsafe {
+			let ptr = alloc_zeroed(layout);
+			if ptr.is_null() {
+				panic!("Allocation failed");
+			}
+			Self {
+				ptr,
+				mem: std::slice::from_raw_parts_mut(ptr, SIZE),
+			}
+		}
+	}
+}
+#[cfg(test)]
+impl<const SIZE: usize> Drop for HugePageAlignedMem<'_, SIZE> {
+	fn drop(&mut self) {
+		use std::alloc::{dealloc, Layout};
+		let layout = Layout::from_size_align(SIZE, 0x20_0000).unwrap();
+		unsafe {
+			dealloc(self.ptr, layout);
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;

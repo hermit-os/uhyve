@@ -113,6 +113,10 @@ fn pretty_print_pagetable(pt: &PageTable) {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::{
+		consts::{BOOT_PDE, BOOT_PDPTE, BOOT_PML4},
+		mem::HugePageAlignedMem,
+	};
 
 	#[test]
 	fn test_pagetable_initialization() {
@@ -121,12 +125,12 @@ mod tests {
 			.is_test(true)
 			.try_init();
 
-		let mut mem: Vec<u8> = vec![0; MIN_PHYSMEM_SIZE];
-		initialize_pagetables((&mut mem[0..MIN_PHYSMEM_SIZE]).try_into().unwrap());
+		let aligned_mem = HugePageAlignedMem::<MIN_PHYSMEM_SIZE>::new();
+		initialize_pagetables((aligned_mem.mem).try_into().unwrap());
 
 		// Test pagetable setup
 		let addr_pdpte = u64::from_le_bytes(
-			mem[(BOOT_PML4.as_u64() as usize)..(BOOT_PML4.as_u64() as usize + 8)]
+			aligned_mem.mem[(BOOT_PML4.as_u64() as usize)..(BOOT_PML4.as_u64() as usize + 8)]
 				.try_into()
 				.unwrap(),
 		);
@@ -135,7 +139,7 @@ mod tests {
 			BOOT_PDPTE.as_u64() | (PageTableFlags::PRESENT | PageTableFlags::WRITABLE).bits()
 		);
 		let addr_pde = u64::from_le_bytes(
-			mem[(BOOT_PDPTE.as_u64() as usize)..(BOOT_PDPTE.as_u64() as usize + 8)]
+			aligned_mem.mem[(BOOT_PDPTE.as_u64() as usize)..(BOOT_PDPTE.as_u64() as usize + 8)]
 				.try_into()
 				.unwrap(),
 		);
@@ -146,7 +150,7 @@ mod tests {
 
 		for i in (0..4096).step_by(8) {
 			let addr = BOOT_PDE.as_u64() as usize + i;
-			let entry = u64::from_le_bytes(mem[addr..(addr + 8)].try_into().unwrap());
+			let entry = u64::from_le_bytes(aligned_mem.mem[addr..(addr + 8)].try_into().unwrap());
 			assert!(
 				PageTableFlags::from_bits_truncate(entry)
 					.difference(
@@ -163,7 +167,8 @@ mod tests {
 		let gdt_results = [0x0, 0xAF9B000000FFFF, 0xCF93000000FFFF];
 		for (i, res) in gdt_results.iter().enumerate() {
 			let gdt_addr = BOOT_GDT.as_u64() as usize + i * 8;
-			let gdt_entry = u64::from_le_bytes(mem[gdt_addr..gdt_addr + 8].try_into().unwrap());
+			let gdt_entry =
+				u64::from_le_bytes(aligned_mem.mem[gdt_addr..gdt_addr + 8].try_into().unwrap());
 			assert_eq!(*res, gdt_entry);
 		}
 	}
