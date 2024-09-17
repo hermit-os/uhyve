@@ -5,7 +5,10 @@ use std::{
 	os::{fd::IntoRawFd, unix::ffi::OsStrExt},
 };
 
-use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*};
+use uhyve_interface::{
+	GuestPhysAddr,
+	v1::{Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*},
+};
 
 use crate::{
 	isolation::{
@@ -62,7 +65,7 @@ fn translate_last_errno() -> Option<i32> {
 
 	// A loop, because rust can't know for sure that errno numbers don't overlap on the host.
 	macro_rules! error_pairs {
-		($($x:ident),*) => {{[ $((libc::$x, uhyve_interface::parameters::$x)),* ]}}
+		($($x:ident),*) => {{[ $((libc::$x, hermit_abi::errno::$x)),* ]}}
 	}
 	for (e_host, e_guest) in error_pairs!(EBADF, EEXIST, EFAULT, EINVAL, EPERM, ENOENT, EROFS) {
 		if errno == e_host {
