@@ -80,6 +80,27 @@ pub fn initialize_pagetables(mem: &mut [u8], guest_address: GuestPhysAddr) {
 	}
 }
 
+#[allow(dead_code)]
+/// Helper fn for debugging pagetables
+fn pretty_print_pagetable(pt: &PageTable) {
+	println!("Idx       Address          Idx       Address          Idx       Address          Idx       Address      ");
+	println!("--------------------------------------------------------------------------------------------------------");
+	for i in (0..512).step_by(4) {
+		println!(
+			"{:3}: {:#18x},   {:3}: {:#18x},   {:3}: {:#18x},   {:3}: {:#18x}",
+			i,
+			pt[i].addr(),
+			i + 1,
+			pt[i + 1].addr(),
+			i + 2,
+			pt[i + 2].addr(),
+			i + 3,
+			pt[i + 3].addr()
+		);
+	}
+	println!("--------------------------------------------------------------------------------------------------------");
+}
+
 // Constructor for a conventional segment GDT (or LDT) entry
 pub fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {
 	((base & 0xff000000u64) << (56 - 24))
