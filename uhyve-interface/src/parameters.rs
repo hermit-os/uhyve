@@ -136,3 +136,11 @@ pub struct LseekParams {
 	/// `whence` value of the lseek call.
 	pub whence: i32,
 }
+
+/// Parameters for a [`SerialWriteBuffer`](crate::Hypercall::SerialWriteBuffer) hypercall.
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct SerialWriteBufferParams {
+	pub buf: GuestPhysAddr,
+	pub len: usize,
+}
