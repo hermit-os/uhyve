@@ -1,6 +1,6 @@
 [package]
 name = "uhyve-interface"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2024"
 authors = [
   "Jonathan Klimt <jonathan.klimt@eonerc.rwth-aachen.de>",
@@ -16,6 +16,7 @@ categories = ["os"]
 num_enum = { version = "0.7", default-features = false }
 log = { version = "0.4", optional = true }
 memory_addresses = "0.2.3"
+bitflags = "2.6.0"
 
 [features]
 std = ["dep:log"]
