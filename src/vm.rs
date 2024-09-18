@@ -1,5 +1,4 @@
 use std::{
-	ffi::OsString,
 	fmt, fs, io,
 	marker::PhantomData,
 	num::NonZeroU32,
@@ -105,11 +104,11 @@ pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 	entry_point: u64,
 	stack_address: u64,
 	pub mem: Arc<MmapMemory>,
+	pub params: Params,
+	memory_size: usize,
 	num_cpus: u32,
 	path: PathBuf,
-	args: Vec<OsString>,
 	boot_info: *const RawBootInfo,
-	verbose: bool,
 	pub virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	#[allow(dead_code)] // gdb is not supported on macos
 	pub(super) gdb_port: Option<u16>,
@@ -117,7 +116,12 @@ pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 }
 impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VCpuType>> {
+		// We expose the params struct, but use some extra variables for the
+		// gdb_port (because of pub(super)) and memory_size (later, num_cpus)
+		// which require a get() to reduce overhead, and, most importantly,
+		// increase flexibility.
 		let memory_size = params.memory_size.get();
+		let gdb_port = params.gdb_port;
 
 		#[cfg(target_os = "linux")]
 		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, params.thp, params.ksm);
@@ -133,14 +137,14 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		#[cfg(target_os = "linux")]
 		initialize_kvm(&mem, params.pit)?;
 
-		let cpu_count = params.cpu_count.get();
+		let num_cpus = params.cpu_count.get();
 
 		assert!(
-			params.gdb_port.is_none() || cfg!(target_os = "linux"),
+			gdb_port.is_none() || cfg!(target_os = "linux"),
 			"gdb is only supported on linux (yet)"
 		);
 		assert!(
-			params.gdb_port.is_none() || cpu_count == 1,
+			gdb_port.is_none() || num_cpus == 1,
 			"gdbstub is only supported with one CPU"
 		);
 
@@ -149,23 +153,19 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			entry_point: 0,
 			stack_address: 0,
 			mem: mem.into(),
-			num_cpus: cpu_count,
+			params,
+			memory_size,
+			num_cpus,
 			path: kernel_path,
-			args: params.kernel_args,
 			boot_info: ptr::null(),
-			verbose: params.verbose,
 			virtio_device,
-			gdb_port: params.gdb_port,
+			gdb_port,
 			_vcpu_type: PhantomData,
 		};
 
 		vm.init_guest_mem();
 
 		Ok(vm)
-	}
-
-	fn verbose(&self) -> bool {
-		self.verbose
 	}
 
 	/// Returns the section offsets relative to their base addresses
@@ -181,17 +181,23 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		self.stack_address
 	}
 
-	/// Returns the number of cores for the vm.
+	// Returns the struct containing all parameters.
+	pub fn params(&self) -> &Params {
+		&self.params
+	}
+
+	// Returns the total memory size made available.
+	pub fn memory_size(&self) -> usize {
+		self.memory_size
+	}
+
+	// Returns number of cores for the VM.
 	pub fn num_cpus(&self) -> u32 {
 		self.num_cpus
 	}
 
 	pub fn kernel_path(&self) -> &PathBuf {
 		&self.path
-	}
-
-	pub fn args(&self) -> &Vec<OsString> {
-		&self.args
 	}
 
 	/// Initialize the page tables for the guest
@@ -232,7 +238,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			hardware_info: HardwareInfo {
 				phys_addr_range: self.mem.guest_address.as_u64()
 					..self.mem.guest_address.as_u64() + self.mem.memory_size as u64,
-				serial_port_base: self.verbose().then(|| {
+				serial_port_base: self.params.verbose.then(|| {
 					SerialPortBase::new((uhyve_interface::HypercallAddress::Uart as u16).into())
 						.unwrap()
 				}),
@@ -241,7 +247,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			load_info,
 			platform_info: PlatformInfo::Uhyve {
 				has_pci: cfg!(target_os = "linux"),
-				num_cpus: u64::from(self.num_cpus()).try_into().unwrap(),
+				num_cpus: u64::from(self.num_cpus).try_into().unwrap(),
 				cpu_freq: NonZeroU32::new(detect_cpu_freq() * 1000),
 				boot_time: SystemTime::now().into(),
 			},
@@ -269,10 +275,11 @@ impl<VCpuType: VirtualCPU> fmt::Debug for UhyveVm<VCpuType> {
 			.field("entry_point", &self.entry_point)
 			.field("stack_address", &self.stack_address)
 			.field("mem", &self.mem)
+			.field("params", &self.params)
+			.field("memory_size", &self.memory_size)
 			.field("num_cpus", &self.num_cpus)
 			.field("path", &self.path)
 			.field("boot_info", &self.boot_info)
-			.field("verbose", &self.verbose)
 			.field("virtio_device", &self.virtio_device)
 			.finish()
 	}

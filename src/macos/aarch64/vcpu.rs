@@ -174,12 +174,14 @@ impl VirtualCPU for XhyveCpu {
 								Hypercall::Exit(sysexit) => {
 									return Ok(VcpuStopReason::Exit(sysexit.arg));
 								}
-								Hypercall::Cmdsize(syssize) => syssize
-									.update(self.parent_vm.kernel_path(), self.parent_vm.args()),
+								Hypercall::Cmdsize(syssize) => syssize.update(
+									self.parent_vm.kernel_path(),
+									&self.parent_vm.params.kernel_args,
+								),
 								Hypercall::Cmdval(syscmdval) => {
 									copy_argv(
 										self.parent_vm.kernel_path().as_os_str(),
-										self.parent_vm.args(),
+										&self.parent_vm.params.kernel_args,
 										syscmdval,
 										&self.parent_vm.mem,
 									);

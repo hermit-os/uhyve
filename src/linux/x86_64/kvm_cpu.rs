@@ -402,12 +402,14 @@ impl VirtualCPU for KvmCpu {
 							hypercall::address_to_hypercall(&self.parent_vm.mem, port, data_addr)
 						} {
 							match hypercall {
-								Hypercall::Cmdsize(syssize) => syssize
-									.update(self.parent_vm.kernel_path(), self.parent_vm.args()),
+								Hypercall::Cmdsize(syssize) => syssize.update(
+									self.parent_vm.kernel_path(),
+									&self.parent_vm.params.kernel_args,
+								),
 								Hypercall::Cmdval(syscmdval) => {
 									hypercall::copy_argv(
 										self.parent_vm.kernel_path().as_os_str(),
-										self.parent_vm.args(),
+										&self.parent_vm.params.kernel_args,
 										syscmdval,
 										&self.parent_vm.mem,
 									);
