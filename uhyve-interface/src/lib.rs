@@ -5,6 +5,8 @@
 pub mod elf;
 /// Version 1 of the Hypercall Interface
 pub mod v1;
+/// Version 2 of the Hypercall Interface
+pub mod v2;
 
 #[cfg(target_arch = "aarch64")]
 pub use ::aarch64::paging::PhysAddr as GuestPhysAddr;
