@@ -5,6 +5,8 @@
 pub mod elf;
 /// Version 1 of the Hypercall Interface
 pub mod v1;
+/// Version 2 of the Hypercall Interface
+pub mod v2;
 
 pub use memory_addresses::{PhysAddr as GuestPhysAddr, VirtAddr as GuestVirtAddr};
 
