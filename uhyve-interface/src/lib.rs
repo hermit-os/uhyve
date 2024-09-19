@@ -1,4 +1,13 @@
-//! # Uhyve Hypervisor Interface
+#![doc(
+	html_favicon_url = "https://media.githubusercontent.com/media/hermit-os/uhyve/main/img/uhyve_128.png"
+)]
+#![doc(
+	html_logo_url = "https://media.githubusercontent.com/media/hermit-os/uhyve/main/img/uhyve_512.png"
+)]
+//! # Uhyve Hypercall Interface
+//!
+//! This crate specifies the interface between the [Hermit Unikernel](https://github.com/hermit-os/kernel) and the hypervisor [Uhyve](https://github.com/hermit-os/uhyve).
+//! It includes the definition of the hypercalls and hypercall parameters and is intended to be used in both projects to ensure a coherent and well defined interface.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
