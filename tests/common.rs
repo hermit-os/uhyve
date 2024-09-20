@@ -11,8 +11,9 @@ use uhyvelib::{params::Params, vm::UhyveVm};
 /// Returns a path to the build binary.
 pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 	let kernel = kernel.as_ref();
-	println!("Building Kernel {}", kernel.display());
 	let kernel_src_path = Path::new("tests/test-kernels");
+	println!("Building test kernel: {}", kernel.display());
+
 	let cmd = Command::new("cargo")
 		.arg("build")
 		.arg("-Zbuild-std=std,panic_abort")
@@ -26,7 +27,8 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 		.current_dir(kernel_src_path)
 		.status()
 		.expect("failed to execute `cargo build`");
-	assert!(cmd.success(), "Test binaries could not be build");
+
+	assert!(cmd.success(), "Test binaries could not be built.");
 	[
 		kernel_src_path,
 		Path::new("target/x86_64-unknown-hermit/debug"),
@@ -39,6 +41,7 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 /// Small wrapper around [`Uhyve::run`] with default parameters for a small and
 /// simple Uhyve vm
 pub fn run_simple_vm(kernel_path: PathBuf) {
+	println!("Launching kernel {}", kernel_path.display());
 	let params = Params {
 		verbose: true,
 		cpu_count: 2.try_into().unwrap(),
