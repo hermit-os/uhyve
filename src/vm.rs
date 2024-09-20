@@ -23,8 +23,14 @@ use crate::arch::x86_64::{
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 use crate::linux::x86_64::kvm_cpu::initialize_kvm;
 use crate::{
-	arch, arch::FrequencyDetectionFailed, consts::*, mem::MmapMemory, os::HypervisorError,
-	params::Params, vcpu::VirtualCPU, virtio::*,
+	arch::{self, FrequencyDetectionFailed},
+	consts::*,
+	fdt::Fdt,
+	mem::MmapMemory,
+	os::HypervisorError,
+	params::Params,
+	vcpu::VirtualCPU,
+	virtio::*,
 };
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
@@ -227,6 +233,28 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		);
 		self.entry_point = entry_point;
 
+		let sep = self
+			.args
+			.iter()
+			.enumerate()
+			.find(|(_i, arg)| *arg == "--")
+			.map(|(i, _arg)| i)
+			.unwrap_or_else(|| self.args.len());
+
+		let fdt = Fdt::new()
+			.unwrap()
+			.kernel_args(&self.args[..sep])
+			.app_args(self.args.get(sep + 1..).unwrap_or_default())
+			.finish()
+			.unwrap();
+
+		debug!("fdt.len() = {}", fdt.len());
+		assert!(fdt.len() < (BOOT_INFO_ADDR - FDT_ADDR) as usize);
+		unsafe {
+			let fdt_ptr = self.mem.host_address.add(FDT_ADDR.as_u64() as usize);
+			fdt_ptr.copy_from_nonoverlapping(fdt.as_ptr(), fdt.len());
+		}
+
 		let boot_info = BootInfo {
 			hardware_info: HardwareInfo {
 				phys_addr_range: self.mem.guest_address.as_u64()
@@ -235,7 +263,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 					SerialPortBase::new((uhyve_interface::HypercallAddress::Uart as u16).into())
 						.unwrap()
 				}),
-				device_tree: None,
+				device_tree: Some(FDT_ADDR.as_u64().try_into().unwrap()),
 			},
 			load_info,
 			platform_info: PlatformInfo::Uhyve {
