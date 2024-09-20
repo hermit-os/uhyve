@@ -1,5 +1,4 @@
 use std::{
-	ffi::OsString,
 	fmt, fs, io,
 	marker::PhantomData,
 	num::NonZeroU32,
@@ -107,7 +106,7 @@ pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 	pub mem: Arc<MmapMemory>,
 	num_cpus: u32,
 	path: PathBuf,
-	args: Vec<OsString>,
+	args: Vec<String>,
 	boot_info: *const RawBootInfo,
 	verbose: bool,
 	pub virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
@@ -190,7 +189,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		&self.path
 	}
 
-	pub fn args(&self) -> &Vec<OsString> {
+	pub fn args(&self) -> &Vec<String> {
 		&self.args
 	}
 
