@@ -11,8 +11,8 @@ authors = [
     "Jonathan Klimt <jonathan.klimt@eonerc.rwth-aachen.de>",
 ]
 edition = "2021"
-description = "A minimal hypervisor for Hermit"
-repository = "https://github.com/hermitcore/uhyve"
+description = "A specialized hypervisor for Hermit"
+repository = "https://github.com/hermit-os/uhyve"
 license = "MIT OR Apache-2.0"
 keywords = ["hypervisor", "unikernel"]
 categories = ["os"]
