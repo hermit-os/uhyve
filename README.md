@@ -163,6 +163,22 @@ cargo run -- -v data/x86_64/hello_world
 cargo run -- -v data/x86_64/hello_c
 ```
 
+### Testing Uhyve using `cargo test`
+
+Some Hermit apps that were specifically created for integration testing can be found in [tests](tests).
+
+As per usual, all of these integration tests can be executed at once using `cargo test`:
+
+```sh
+cargo test --test '*'
+```
+
+If one of these tests fails locally under mysterious circumstances, it may be worth appending
+the [--no-fail-fast][no-fail-fast] flag to the command above. This may help you establish
+whether the root cause can be attributed to your environment.
+
+[no-fail-fast]: https://doc.rust-lang.org/cargo/commands/cargo-test.html#options
+
 ### Debugging Hermit apps
 
 Basic support of (single-core) applications is already integrated into Uhyve.
