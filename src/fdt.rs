@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use vm_fdt::{FdtWriter, FdtWriterNode, FdtWriterResult};
 
 pub struct Fdt {
@@ -56,6 +58,30 @@ impl Fdt {
 	pub fn kernel_args(mut self, kernel_args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
 		for arg in kernel_args {
 			self = self.kernel_arg(arg.as_ref());
+		}
+
+		self
+	}
+
+	pub fn env(mut self, key: &str, value: &str) -> Self {
+		if !self.kernel_args.is_empty() {
+			self.kernel_args.push(' ');
+		}
+
+		let key = shell_words::quote(key);
+		let value = shell_words::quote(value);
+
+		write!(&mut self.kernel_args, "env={key}={value}").unwrap();
+
+		self
+	}
+
+	pub fn envs(
+		mut self,
+		envs: impl IntoIterator<Item = (impl AsRef<str>, impl AsRef<str>)>,
+	) -> Self {
+		for (key, value) in envs {
+			self = self.env(key.as_ref(), value.as_ref());
 		}
 
 		self
