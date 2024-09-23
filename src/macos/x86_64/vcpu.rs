@@ -7,7 +7,7 @@ use std::{
 
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use log::{debug, trace};
-use uhyve_interface::{GuestPhysAddr, Hypercall};
+use uhyve_interface::{v1::Hypercall, GuestPhysAddr};
 use x86_64::{
 	registers::control::{Cr0Flags, Cr4Flags},
 	structures::gdt::SegmentSelector,

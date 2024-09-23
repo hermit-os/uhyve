@@ -1,6 +1,9 @@
 #[cfg(target_os = "hermit")]
 use hermit as _;
-use uhyve_interface::{parameters::SerialWriteBufferParams, GuestPhysAddr, HypercallAddress};
+use uhyve_interface::{
+	v1::{parameters::SerialWriteBufferParams, HypercallAddress},
+	GuestPhysAddr,
+};
 #[cfg(target_arch = "x86_64")]
 use x86_64::{
 	instructions::port::Port,
