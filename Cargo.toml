@@ -36,7 +36,8 @@ path = "benches/benchmarks.rs"
 harness = false
 
 [features]
-default = []
+default = ["aslr"]
+aslr = ["dep:rand"]
 instrument = ["rftrace", "rftrace-frontend"]
 
 [dependencies]
@@ -60,6 +61,7 @@ virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
 rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }
 sysinfo = { version = "0.31.4", default-features = false, features = ["system"] }
+rand = { version = "0.8.5", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.9"

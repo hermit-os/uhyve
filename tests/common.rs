@@ -23,6 +23,7 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 		.env_clear()
 		// Retain PATH since it is used to find cargo and cc
 		.env("PATH", env::var_os("PATH").unwrap())
+		.env("HERMIT_LOG_LEVEL_FILTER", "Debug")
 		.current_dir(kernel_src_path)
 		.status()
 		.expect("failed to execute `cargo build`");
@@ -39,6 +40,7 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 /// Small wrapper around [`Uhyve::run`] with default parameters for a small and
 /// simple Uhyve vm
 pub fn run_simple_vm(kernel_path: PathBuf) {
+	env_logger::init();
 	let params = Params {
 		verbose: true,
 		cpu_count: 2.try_into().unwrap(),

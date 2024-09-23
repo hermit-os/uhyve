@@ -50,7 +50,7 @@ pub fn initialize_kvm(mem: &MmapMemory, use_pit: bool) -> HypervisorResult<()> {
 			slot: 1,
 			flags: mem.flags,
 			memory_size: (mem.memory_size - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
-			guest_phys_addr: mem.guest_address.as_u64()
+			guest_phys_addr: (*crate::vm::GUEST_ADDRESS.get().unwrap()).as_u64()
 				+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
 			userspace_addr: (mem.host_address as usize + KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE)
 				as u64,
@@ -227,8 +227,9 @@ impl KvmCpu {
 
 	fn setup_long_mode(
 		&self,
-		entry_point: u64,
-		stack_address: u64,
+		entry_point: GuestPhysAddr,
+		stack_address: GuestPhysAddr,
+		guest_address: GuestPhysAddr,
 		cpu_id: u32,
 	) -> Result<(), kvm_ioctls::Error> {
 		//debug!("Setup long mode");
@@ -241,7 +242,7 @@ impl KvmCpu {
 			| Cr0Flags::PAGING;
 		sregs.cr0 = cr0.bits();
 
-		sregs.cr3 = BOOT_PML4.as_u64();
+		sregs.cr3 = guest_address.as_u64() + PML4_OFFSET;
 
 		let cr4 = Cr4Flags::PHYSICAL_ADDRESS_EXTENSION;
 		sregs.cr4 = cr4.bits();
@@ -272,17 +273,17 @@ impl KvmCpu {
 		sregs.ss = seg;
 		//sregs.fs = seg;
 		//sregs.gs = seg;
-		sregs.gdt.base = BOOT_GDT.as_u64();
+		sregs.gdt.base = guest_address.as_u64() + GDT_OFFSET;
 		sregs.gdt.limit = ((std::mem::size_of::<u64>() * BOOT_GDT_MAX) - 1) as u16;
 
 		self.vcpu.set_sregs(&sregs)?;
 
 		let mut regs = self.vcpu.get_regs()?;
 		regs.rflags = 2;
-		regs.rip = entry_point;
-		regs.rdi = BOOT_INFO_ADDR.as_u64();
+		regs.rip = entry_point.as_u64();
+		regs.rdi = guest_address.as_u64() + BOOT_INFO_ADDR_OFFSET;
 		regs.rsi = cpu_id.into();
-		regs.rsp = stack_address;
+		regs.rsp = stack_address.as_u64();
 
 		self.vcpu.set_regs(&regs)?;
 
@@ -305,8 +306,14 @@ impl KvmCpu {
 		&mut self.vcpu
 	}
 
-	fn init(&mut self, entry_point: u64, stack_address: u64, cpu_id: u32) -> HypervisorResult<()> {
-		self.setup_long_mode(entry_point, stack_address, cpu_id)?;
+	fn init(
+		&mut self,
+		entry_point: GuestPhysAddr,
+		stack_address: GuestPhysAddr,
+		guest_address: GuestPhysAddr,
+		cpu_id: u32,
+	) -> HypervisorResult<()> {
+		self.setup_long_mode(entry_point, stack_address, guest_address, cpu_id)?;
 		self.setup_cpuid()?;
 
 		// be sure that the multiprocessor is runable
@@ -335,7 +342,12 @@ impl VirtualCPU for KvmCpu {
 			parent_vm: parent_vm.clone(),
 			pci_addr: None,
 		};
-		kvcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
+		kvcpu.init(
+			parent_vm.entry_point(),
+			parent_vm.stack_address(),
+			parent_vm.memory_start(),
+			id,
+		)?;
 
 		Ok(kvcpu)
 	}
@@ -483,11 +495,25 @@ impl VirtualCPU for KvmCpu {
 							}
 						}
 					}
+					VcpuExit::MmioRead(addr, _targ) => {
+						match addr {
+							0x9_F000..0xA_0000 | 0xF_0000..0x10_0000 => {} // Search for MP floating table
+							_ => {
+								self.print_registers();
+								panic!("mmio read to {addr:#x}");
+							}
+						}
+					}
+					VcpuExit::MmioWrite(addr, _targ) => {
+						self.print_registers();
+						panic!("undefined mmio write to {addr:#x}");
+					}
 					VcpuExit::Debug(debug) => {
 						info!("Caught Debug Interrupt!");
 						return Ok(VcpuStopReason::Debug(debug));
 					}
 					VcpuExit::InternalError => {
+						self.print_registers();
 						panic!("{:?}", VcpuExit::InternalError)
 					}
 					vcpu_exit => {
@@ -521,8 +547,34 @@ impl VirtualCPU for KvmCpu {
 		println!();
 		println!("Registers:");
 		println!("----------");
-		println!("{regs:?}{sregs:?}");
-
+		println!(
+			"rax: {:#18x}       r8: {:#18x}   cr0: {:#18x}",
+			regs.rax, regs.r8, sregs.cr0
+		);
+		println!(
+			"rbx: {:#18x}       r9: {:#18x}   cr2: {:#18x}",
+			regs.rbx, regs.r9, sregs.cr2
+		);
+		println!(
+			"rcx: {:#18x}      r10: {:#18x}   cr3: {:#18x}",
+			regs.rcx, regs.r10, sregs.cr3
+		);
+		println!(
+			"rdx: {:#18x}      r11: {:#18x}   cr4: {:#18x}",
+			regs.rdx, regs.r11, sregs.cr4
+		);
+		println!(
+			"rsi: {:#18x}      r12: {:#18x}   cr8: {:#18x}",
+			regs.rsi, regs.r12, sregs.cr8
+		);
+		println!(
+			"rdi: {:#18x}      r13: {:#18x}   efer:{:#18x}",
+			regs.rdi, regs.r13, sregs.efer
+		);
+		println!("rsp: {:#18x}      r14: {:#18x}", regs.rsp, regs.r14);
+		println!("rbp: {:#18x}      r15: {:#18x}", regs.rbp, regs.r15);
+		println!("rip: {:#18x}   rflags: {:#18x}", regs.rip, regs.rflags);
+		println!("");
 		println!("Segment registers:");
 		println!("------------------");
 		println!("register  selector  base              limit     type  p dpl db s l g avl");
@@ -534,15 +586,13 @@ impl VirtualCPU for KvmCpu {
 		KvmCpu::show_segment("gs ", &sregs.gs);
 		KvmCpu::show_segment("tr ", &sregs.tr);
 		KvmCpu::show_segment("ldt", &sregs.ldt);
-		KvmCpu::show_dtable("gdt", &sregs.gdt);
-		KvmCpu::show_dtable("idt", &sregs.idt);
+		println!("gtd: {:x?}", sregs.gdt);
+		println!("gtd: {:x?}", sregs.gdt);
 
 		println!();
 		println!("\nAPIC:");
 		println!("-----");
-		println!(
-			"efer: {:016x}  apic base: {:016x}",
-			sregs.efer, sregs.apic_base
-		);
+		println!("apic_base: {:#18x}", sregs.apic_base);
+		println!("interrupt_bitmap: {:x?}", sregs.interrupt_bitmap);
 	}
 }
