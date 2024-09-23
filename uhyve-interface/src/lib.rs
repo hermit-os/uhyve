@@ -72,8 +72,26 @@ pub enum HypercallAddress {
 	/// Port address = `0x880`
 	SerialBufferWrite = 0x880,
 }
+// TODO: Remove this in the next major version
 impl From<Hypercall<'_>> for HypercallAddress {
 	fn from(value: Hypercall) -> Self {
+		match value {
+			Hypercall::Cmdsize(_) => Self::Cmdsize,
+			Hypercall::Cmdval(_) => Self::Cmdval,
+			Hypercall::Exit(_) => Self::Exit,
+			Hypercall::FileClose(_) => Self::FileClose,
+			Hypercall::FileLseek(_) => Self::FileLseek,
+			Hypercall::FileOpen(_) => Self::FileOpen,
+			Hypercall::FileRead(_) => Self::FileRead,
+			Hypercall::FileWrite(_) => Self::FileWrite,
+			Hypercall::FileUnlink(_) => Self::FileUnlink,
+			Hypercall::SerialWriteByte(_) => Self::Uart,
+			Hypercall::SerialWriteBuffer(_) => Self::SerialBufferWrite,
+		}
+	}
+}
+impl From<&Hypercall<'_>> for HypercallAddress {
+	fn from(value: &Hypercall) -> Self {
 		match value {
 			Hypercall::Cmdsize(_) => Self::Cmdsize,
 			Hypercall::Cmdval(_) => Self::Cmdval,
@@ -114,6 +132,7 @@ pub enum Hypercall<'a> {
 	SerialWriteBuffer(&'a SerialWriteBufferParams),
 }
 impl<'a> Hypercall<'a> {
+	// TODO: Remove this in the next major version
 	/// Get a hypercall's port address.
 	pub fn port(self) -> u16 {
 		HypercallAddress::from(self) as u16
