@@ -1,8 +1,11 @@
+//! Flattened Device Trees (FDT).
+
 use std::{fmt::Write, ops::Range};
 
 use uhyve_interface::GuestPhysAddr;
 use vm_fdt::{FdtWriter, FdtWriterNode, FdtWriterResult};
 
+/// A builder for an FDT.
 pub struct Fdt {
 	writer: FdtWriter,
 	root_node: FdtWriterNode,
@@ -11,6 +14,7 @@ pub struct Fdt {
 }
 
 impl Fdt {
+	/// Creates a new FDT builder.
 	pub fn new() -> FdtWriterResult<Self> {
 		let mut writer = FdtWriter::new()?;
 
@@ -30,14 +34,17 @@ impl Fdt {
 		})
 	}
 
+	/// Builds and returns the FDT.
 	pub fn finish(mut self) -> FdtWriterResult<Vec<u8>> {
-		let chosen_node = self.writer.begin_node("chosen")?;
+		// The bootargs have the format `[KERNEL_ARGS] -- [APP_ARGS]`
 		let bootargs = match (self.kernel_args.as_str(), self.app_args.as_str()) {
 			("", "") => String::new(),
 			(_kernel_args, "") => self.kernel_args,
 			("", app_args) => format!("-- {app_args}"),
 			(kernel_args, app_args) => format!("{kernel_args} -- {app_args}"),
 		};
+
+		let chosen_node = self.writer.begin_node("chosen")?;
 		self.writer.property_string("bootargs", &bootargs)?;
 		self.writer.end_node(chosen_node)?;
 
@@ -46,6 +53,7 @@ impl Fdt {
 		self.writer.finish()
 	}
 
+	/// Adds a `/memory` node to the FDT.
 	pub fn memory(mut self, memory: Range<GuestPhysAddr>) -> FdtWriterResult<Self> {
 		let node_name = format!("memory@{:x}", memory.start);
 		let reg = &[memory.start.as_u64(), memory.end - memory.start][..];
@@ -58,6 +66,7 @@ impl Fdt {
 		Ok(self)
 	}
 
+	/// Adds a kernel argument to the FDT.
 	pub fn kernel_arg(mut self, kernel_arg: &str) -> Self {
 		if !self.kernel_args.is_empty() {
 			self.kernel_args.push(' ');
@@ -68,6 +77,7 @@ impl Fdt {
 		self
 	}
 
+	/// Adds kernel arguments to the FDT.
 	pub fn kernel_args(mut self, kernel_args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
 		for arg in kernel_args {
 			self = self.kernel_arg(arg.as_ref());
@@ -76,6 +86,7 @@ impl Fdt {
 		self
 	}
 
+	/// Adds an environment variable to the FDT.
 	pub fn env(mut self, key: &str, value: &str) -> Self {
 		if !self.kernel_args.is_empty() {
 			self.kernel_args.push(' ');
@@ -89,6 +100,7 @@ impl Fdt {
 		self
 	}
 
+	/// Adds environment variables to the FDT.
 	pub fn envs(
 		mut self,
 		envs: impl IntoIterator<Item = (impl AsRef<str>, impl AsRef<str>)>,
@@ -100,6 +112,7 @@ impl Fdt {
 		self
 	}
 
+	/// Adds an app argument to the FDT.
 	pub fn app_arg(mut self, app_arg: &str) -> Self {
 		if !self.app_args.is_empty() {
 			self.app_args.push(' ');
@@ -110,6 +123,7 @@ impl Fdt {
 		self
 	}
 
+	/// Adds app arguments to the FDT.
 	pub fn app_args(mut self, app_args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
 		for arg in app_args {
 			self = self.app_arg(arg.as_ref());
