@@ -1,5 +1,6 @@
-use std::fmt::Write;
+use std::{fmt::Write, ops::Range};
 
+use uhyve_interface::GuestPhysAddr;
 use vm_fdt::{FdtWriter, FdtWriterNode, FdtWriterResult};
 
 pub struct Fdt {
@@ -43,6 +44,18 @@ impl Fdt {
 		self.writer.end_node(self.root_node)?;
 
 		self.writer.finish()
+	}
+
+	pub fn memory(mut self, memory: Range<GuestPhysAddr>) -> FdtWriterResult<Self> {
+		let node_name = format!("memory@{:x}", memory.start);
+		let reg = &[memory.start.as_u64(), memory.end - memory.start][..];
+
+		let memory_node = self.writer.begin_node(&node_name)?;
+		self.writer.property_string("device_type", "memory")?;
+		self.writer.property_array_u64("reg", reg)?;
+		self.writer.end_node(memory_node)?;
+
+		Ok(self)
 	}
 
 	pub fn kernel_arg(mut self, kernel_arg: &str) -> Self {
