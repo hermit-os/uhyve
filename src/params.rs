@@ -1,5 +1,4 @@
 use std::{
-	ffi::OsString,
 	fmt,
 	num::{NonZeroU32, ParseIntError, TryFromIntError},
 	str::FromStr,
@@ -35,7 +34,7 @@ pub struct Params {
 	pub gdb_port: Option<u16>,
 
 	/// Arguments to forward to the kernel
-	pub kernel_args: Vec<OsString>,
+	pub kernel_args: Vec<String>,
 }
 
 #[allow(clippy::derivable_impls)]

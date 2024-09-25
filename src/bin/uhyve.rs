@@ -1,9 +1,6 @@
 #![warn(rust_2018_idioms)]
 
-use std::{
-	ffi::OsString, iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process,
-	str::FromStr,
-};
+use std::{iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process, str::FromStr};
 
 use clap::{error::ErrorKind, Command, CommandFactory, Parser};
 use core_affinity::CoreId;
@@ -63,8 +60,7 @@ struct Args {
 	kernel: PathBuf,
 
 	/// Arguments to forward to the kernel
-	#[clap(value_parser)]
-	kernel_args: Vec<OsString>,
+	kernel_args: Vec<String>,
 }
 
 #[derive(Parser, Debug)]

@@ -1,5 +1,5 @@
 use std::{
-	ffi::{OsStr, OsString},
+	ffi::OsStr,
 	io::{self, Error, ErrorKind, Write},
 	os::unix::ffi::OsStrExt,
 };
@@ -172,7 +172,7 @@ pub fn uart_buffer(sysuart: &SerialWriteBufferParams, mem: &MmapMemory) {
 }
 
 /// Copies the arguments of the application into the VM's memory to the destinations specified in `syscmdval`.
-pub fn copy_argv(path: &OsStr, argv: &[OsString], syscmdval: &CmdvalParams, mem: &MmapMemory) {
+pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &MmapMemory) {
 	// copy kernel path as first argument
 	let argvp = mem
 		.host_address(syscmdval.argv)

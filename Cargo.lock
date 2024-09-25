@@ -1251,6 +1251,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "shell-words"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24188a676b6ae68c3b2cb3a01be17fbf7240ce009799bb56d5b1409051e78fde"
+
+[[package]]
 name = "simdutf8"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1454,12 +1460,14 @@ dependencies = [
  "raw-cpuid",
  "rftrace",
  "rftrace-frontend",
+ "shell-words",
  "sysinfo",
  "thiserror",
  "time",
  "tun-tap",
  "uhyve-interface",
  "virtio-bindings",
+ "vm-fdt",
  "vmm-sys-util",
  "x86_64",
  "xhypervisor",
@@ -1510,6 +1518,12 @@ name = "virtio-bindings"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68d0df4f5ad79b1dc81b5913ac737e24a84dcd5100f36ed953a1faec18aba241"
+
+[[package]]
+name = "vm-fdt"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e21282841a059bb62627ce8441c491f09603622cd5a21c43bfedc85a2952f23"
 
 [[package]]
 name = "vmm-sys-util"
