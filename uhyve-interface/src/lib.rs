@@ -123,7 +123,7 @@ pub enum Hypercall<'a> {
 	FileClose(&'a mut CloseParams),
 	FileLseek(&'a mut LseekParams),
 	FileOpen(&'a mut OpenParams),
-	FileRead(&'a mut ReadPrams),
+	FileRead(&'a mut ReadParams),
 	FileWrite(&'a WriteParams),
 	FileUnlink(&'a mut UnlinkParams),
 	/// Write a char to the terminal.

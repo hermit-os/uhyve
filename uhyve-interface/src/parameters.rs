@@ -90,7 +90,7 @@ pub struct WriteParams {
 /// Parameters for a [`FileRead`](crate::Hypercall::FileRead) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
-pub struct ReadPrams {
+pub struct ReadParams {
 	/// File descriptor of the file.
 	pub fd: i32,
 	/// Buffer to read the file into.
