@@ -109,6 +109,9 @@ uhyve /path/to/the/unikernel/binary
 ```
 
 > [!NOTE]
+> To see output from the kernel, make sure to use the `-v`/`--verbose` flag or set the environment variable `HERMIT_VERBOSE` to 1.
+
+> [!NOTE]
 > This repository ships a few binaries that can be used for testing.
 >
 > If you want to compile Hermit binaries yourself (or create your own), take a look at the following repositories:
