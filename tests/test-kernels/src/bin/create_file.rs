@@ -4,6 +4,8 @@ use std::{fs::File, io::prelude::*};
 use hermit as _;
 
 fn main() {
+	println!("Hello from create_file!");
+
 	let mut file = File::create("/root/foo.txt").unwrap();
 	file.write_all(b"Hello, world!").unwrap();
 }
