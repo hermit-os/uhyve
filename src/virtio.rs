@@ -192,22 +192,19 @@ impl VirtioNetPciDevice {
 	// This function is reliant on tap devices as the underlying packet sending mechanism
 	// Gets the tap device by name then gets its mac address
 	fn get_mac_addr(&mut self) {
-		match &self.iface {
-			Some(tap) => {
-				let locked_dev = tap.lock().unwrap();
-				match mac_address_by_name(locked_dev.name()) {
-					Ok(Some(ma)) => self.mac_addr = ma.bytes(),
-					Ok(None) => {
-						info!("No MAC address found.");
-						self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET;
-					}
-					Err(e) => {
-						info!("{:?}", e);
-						self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET;
-					}
+		if let Some(tap) = &self.iface {
+			let locked_dev = tap.lock().unwrap();
+			match mac_address_by_name(locked_dev.name()) {
+				Ok(Some(ma)) => self.mac_addr = ma.bytes(),
+				Ok(None) => {
+					info!("No MAC address found.");
+					self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET;
+				}
+				Err(e) => {
+					info!("{:?}", e);
+					self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET;
 				}
 			}
-			None => {}
 		}
 	}
 
