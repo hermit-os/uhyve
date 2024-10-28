@@ -40,7 +40,7 @@ pub unsafe fn address_to_hypercall(
 				Hypercall::FileOpen(sysopen)
 			}
 			HypercallAddress::FileRead => {
-				let sysread = mem.get_ref_mut::<ReadPrams>(data).unwrap();
+				let sysread = mem.get_ref_mut::<ReadParams>(data).unwrap();
 				Hypercall::FileRead(sysread)
 			}
 			HypercallAddress::FileWrite => {
@@ -102,7 +102,7 @@ pub fn close(sysclose: &mut CloseParams) {
 }
 
 /// Handles an read syscall on the host.
-pub fn read(mem: &MmapMemory, sysread: &mut ReadPrams) {
+pub fn read(mem: &MmapMemory, sysread: &mut ReadParams) {
 	unsafe {
 		let bytes_read = libc::read(
 			sysread.fd,
