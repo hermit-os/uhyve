@@ -126,8 +126,8 @@ impl fmt::Display for GuestMemorySize {
 #[derive(Error, Debug)]
 pub enum InvalidGuestMemorySizeError {
 	#[error(
-		"Not enough guest memory. Must be at least {} (is {0})",
-		GuestMemorySize::minimum()
+		"Not enough guest memory. Must be at least {min} (is {0})",
+		min = GuestMemorySize::minimum()
 	)]
 	MemoryTooSmall(Byte),
 	#[error("Invalid amount of guest memory. Must be a multiple of 2 MiB (is {0})")]
