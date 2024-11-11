@@ -1121,11 +1121,12 @@ checksum = "aa2ee2d77e97cb948eb4576a5b7908aac75c02afa337c99aa34b9cef0346bedd"
 
 [[package]]
 name = "rftrace-frontend"
-version = "0.1.0"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "419a5a276d688261074e7356d4061628dca7b0987f9422eeed4c66ecc128639a"
+checksum = "0beac55bcba086801d315cfaa3a777814b296991b6768ba503f38b06f523b1a0"
 dependencies = [
  "byteorder",
+ "cfg-if",
 ]
 
 [[package]]
