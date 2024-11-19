@@ -25,7 +25,7 @@ use xhypervisor::{
 		},
 		vmx_exit,
 	},
-	read_vmx_cap, Register,
+	create_vm, map_mem, read_vmx_cap, MemPerm, Register,
 };
 
 use crate::{
@@ -33,8 +33,10 @@ use crate::{
 	hypercall,
 	hypercall::{copy_argv, copy_env},
 	macos::x86_64::ioapic::IoApic,
+	mem::MmapMemory,
+	params::Params,
 	vcpu::{VcpuStopReason, VirtualCPU},
-	vm::UhyveVm,
+	vm::{UhyveVm, VirtualizationBackend},
 	HypervisorResult,
 };
 
@@ -153,10 +155,36 @@ static CAP_EXIT: LazyLock<u64> = LazyLock::new(|| {
 	cap2ctrl(cap, 0)
 });
 
+pub struct XhyveVm {}
+impl VirtualizationBackend for XhyveVm {
+	type VCPU = XhyveCpu;
+
+	fn new_cpu(&self, id: u32, parent_vm: Arc<UhyveVm<XhyveVm>>) -> HypervisorResult<XhyveCpu> {
+		let mut vcpu = XhyveCpu {
+			id,
+			parent_vm: parent_vm.clone(),
+			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
+			apic_base: APIC_DEFAULT_BASE,
+		};
+		vcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
+
+		Ok(vcpu)
+	}
+
+	fn new(mem: &MmapMemory, _params: &Params) -> HypervisorResult<Self> {
+		debug!("Create VM...");
+		create_vm()?;
+
+		debug!("Map guest memory...");
+		map_mem(unsafe { mem.as_slice_mut() }, 0, MemPerm::ExecAndWrite)?;
+		Ok(Self {})
+	}
+}
+
 pub struct XhyveCpu {
 	id: u32,
 	vcpu: xhypervisor::VirtualCpu,
-	parent_vm: Arc<UhyveVm<Self>>,
+	parent_vm: Arc<UhyveVm<XhyveVm>>,
 	apic_base: u64,
 }
 
@@ -629,18 +657,7 @@ impl XhyveCpu {
 }
 
 impl VirtualCPU for XhyveCpu {
-	fn new(id: u32, parent_vm: Arc<UhyveVm<Self>>) -> HypervisorResult<Self> {
-		let mut vcpu = XhyveCpu {
-			id,
-			parent_vm: parent_vm.clone(),
-			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
-			apic_base: APIC_DEFAULT_BASE,
-		};
-		vcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
-
-		Ok(vcpu)
-	}
-
+	type VirtIf = XhyveVm;
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
 			/*if self.extint_pending == true {

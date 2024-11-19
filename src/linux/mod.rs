@@ -26,10 +26,10 @@ use nix::sys::{
 use crate::{
 	linux::{
 		gdb::{GdbUhyve, UhyveGdbEventLoop},
-		x86_64::kvm_cpu::KvmCpu,
+		x86_64::kvm_cpu::KvmVm,
 	},
 	vcpu::VirtualCPU,
-	vm::UhyveVm,
+	vm::{UhyveVm, VirtualizationBackend},
 };
 
 static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
@@ -67,7 +67,7 @@ impl KickSignal {
 	}
 }
 
-impl UhyveVm<KvmCpu> {
+impl UhyveVm<KvmVm> {
 	/// Runs the VM.
 	///
 	/// Blocks until the VM has finished execution.
@@ -96,6 +96,11 @@ impl UhyveVm<KvmCpu> {
 					.as_ref()
 					.and_then(|core_ids| core_ids.get(cpu_id as usize).copied());
 
+				let mut cpu = parent_vm
+					.virt_backend
+					.new_cpu(cpu_id, parent_vm.clone())
+					.unwrap();
+
 				thread::spawn(move || {
 					debug!("Create thread for CPU {}", cpu_id);
 					match local_cpu_affinity {
@@ -105,8 +110,6 @@ impl UhyveVm<KvmCpu> {
 						}
 						None => debug!("No affinity specified, not binding thread"),
 					}
-
-					let mut cpu = KvmCpu::new(cpu_id, parent_vm.clone()).unwrap();
 
 					thread::sleep(std::time::Duration::from_millis(cpu_id as u64 * 50));
 
@@ -163,7 +166,7 @@ impl UhyveVm<KvmCpu> {
 		}
 
 		let this = Arc::new(self);
-		let cpu = KvmCpu::new(cpu_id, this.clone()).unwrap();
+		let cpu = this.virt_backend.new_cpu(cpu_id, this.clone()).unwrap();
 
 		let connection = wait_for_gdb_connection(this.gdb_port.unwrap()).unwrap();
 		let debugger = GdbStub::new(connection);
