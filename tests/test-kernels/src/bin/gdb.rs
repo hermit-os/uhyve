@@ -4,6 +4,8 @@ use hermit as _;
 static mut WATCH: u8 = 2;
 
 fn main() {
+	println!("Hello from gdb!");
+
 	let _x = 5;
 	opaque(_x);
 	let _x = 3.5;

@@ -49,6 +49,7 @@ continue
 
 next
 next
+next
 pipe print _x|cat >> {output_path}
 set var _x=6
 pipe print _x|cat >> {output_path}

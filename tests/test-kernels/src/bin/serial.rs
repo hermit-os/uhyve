@@ -27,7 +27,7 @@ pub fn virtual_to_physical(virtual_address: VirtAddr) -> Option<GuestPhysAddr> {
 }
 
 fn main() {
-	println!("Test");
+	println!("Hello from serial!");
 
 	let mut serial_byte_port = Port::new(HypercallAddress::Uart as u16);
 	for c in "ABCD\n".bytes() {
