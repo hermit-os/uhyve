@@ -1,6 +1,5 @@
 use std::{
 	env, fmt, fs, io,
-	marker::PhantomData,
 	num::NonZeroU32,
 	path::PathBuf,
 	ptr,
@@ -20,8 +19,6 @@ use thiserror::Error;
 use crate::arch::x86_64::{
 	detect_freq_from_cpuid, detect_freq_from_cpuid_hypervisor_info, get_cpu_frequency_from_os,
 };
-#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
-use crate::linux::x86_64::kvm_cpu::initialize_kvm;
 use crate::{
 	arch::{self, FrequencyDetectionFailed},
 	consts::*,
@@ -29,7 +26,6 @@ use crate::{
 	mem::MmapMemory,
 	os::HypervisorError,
 	params::Params,
-	vcpu::VirtualCPU,
 	virtio::*,
 };
 
@@ -100,11 +96,21 @@ fn detect_cpu_freq() -> u32 {
 }
 
 #[cfg(target_os = "linux")]
-pub type VcpuDefault = crate::linux::x86_64::kvm_cpu::KvmCpu;
+pub type DefaultBackend = crate::linux::x86_64::kvm_cpu::KvmVm;
 #[cfg(target_os = "macos")]
-pub type VcpuDefault = crate::macos::XhyveCpu;
+pub type DefaultBackend = crate::macos::XhyveVm;
 
-pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
+/// Trait marking a interface for creating (accelerated) VMs.
+pub trait VirtualizationBackend: Sized {
+	type VCPU;
+
+	/// Create a new CPU object
+	fn new_cpu(&self, id: u32, parent_vm: Arc<UhyveVm<Self>>) -> HypervisorResult<Self::VCPU>;
+
+	fn new(memory: &MmapMemory, params: &Params) -> HypervisorResult<Self>;
+}
+
+pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	/// The starting position of the image in physical memory
 	offset: u64,
 	entry_point: u64,
@@ -118,10 +124,10 @@ pub struct UhyveVm<VCpuType: VirtualCPU = VcpuDefault> {
 	pub virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	#[allow(dead_code)] // gdb is not supported on macos
 	pub(super) gdb_port: Option<u16>,
-	_vcpu_type: PhantomData<VCpuType>,
+	pub(crate) virt_backend: VirtBackend,
 }
-impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
-	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VCpuType>> {
+impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
+	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
 		let memory_size = params.memory_size.get();
 
 		#[cfg(target_os = "linux")]
@@ -135,8 +141,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 		#[allow(clippy::arc_with_non_send_sync)]
 		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new()));
 
-		#[cfg(target_os = "linux")]
-		initialize_kvm(&mem, params.pit)?;
+		let virt_backend = VirtBackend::new(&mem, &params)?;
 
 		let cpu_count = params.cpu_count.get();
 
@@ -161,7 +166,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 			verbose: params.verbose,
 			virtio_device,
 			gdb_port: params.gdb_port,
-			_vcpu_type: PhantomData,
+			virt_backend,
 		};
 
 		vm.init_guest_mem();
@@ -293,7 +298,7 @@ impl<VCpuType: VirtualCPU> UhyveVm<VCpuType> {
 	}
 }
 
-impl<VCpuType: VirtualCPU> fmt::Debug for UhyveVm<VCpuType> {
+impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		f.debug_struct("UhyveVm")
 			.field("entry_point", &self.entry_point)
@@ -311,8 +316,8 @@ impl<VCpuType: VirtualCPU> fmt::Debug for UhyveVm<VCpuType> {
 // TODO: Investigate soundness
 // https://github.com/hermitcore/uhyve/issues/229
 #[allow(clippy::non_send_fields_in_send_ty)]
-unsafe impl<VCpuType: VirtualCPU> Send for UhyveVm<VCpuType> {}
-unsafe impl<VCpuType: VirtualCPU> Sync for UhyveVm<VCpuType> {}
+unsafe impl<VirtIf: VirtualizationBackend> Send for UhyveVm<VirtIf> {}
+unsafe impl<VirtIf: VirtualizationBackend> Sync for UhyveVm<VirtIf> {}
 
 #[cfg(test)]
 mod tests {

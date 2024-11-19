@@ -31,20 +31,23 @@ use super::HypervisorError;
 use crate::{
 	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
 	consts::BOOT_PML4,
-	linux::{x86_64::kvm_cpu::KvmCpu, KickSignal},
+	linux::{
+		x86_64::kvm_cpu::{KvmCpu, KvmVm},
+		KickSignal,
+	},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::UhyveVm,
 };
 
 pub struct GdbUhyve {
-	vm: Arc<UhyveVm<KvmCpu>>,
+	vm: Arc<UhyveVm<KvmVm>>,
 	vcpu: KvmCpu,
 	hw_breakpoints: HwBreakpoints,
 	sw_breakpoints: SwBreakpoints,
 }
 
 impl GdbUhyve {
-	pub fn new(vm: Arc<UhyveVm<KvmCpu>>, vcpu: KvmCpu) -> Self {
+	pub fn new(vm: Arc<UhyveVm<KvmVm>>, vcpu: KvmCpu) -> Self {
 		Self {
 			vm,
 			vcpu,

@@ -3,7 +3,6 @@ pub mod aarch64;
 #[cfg(target_arch = "x86_64")]
 pub mod x86_64;
 
-pub mod xhyve;
 use std::{
 	sync::{mpsc, Arc},
 	thread,
@@ -12,15 +11,18 @@ use std::{
 use core_affinity::CoreId;
 
 #[cfg(target_arch = "aarch64")]
-pub use crate::macos::aarch64::vcpu::XhyveCpu;
+pub use crate::macos::aarch64::vcpu::{XhyveCpu, XhyveVm};
 #[cfg(target_arch = "x86_64")]
-pub use crate::macos::x86_64::vcpu::XhyveCpu;
-use crate::{vcpu::VirtualCPU, vm::UhyveVm};
+pub use crate::macos::x86_64::vcpu::{XhyveCpu, XhyveVm};
+use crate::{
+	vcpu::VirtualCPU,
+	vm::{UhyveVm, VirtualizationBackend},
+};
 
 pub type HypervisorError = xhypervisor::Error;
 pub type DebugExitInfo = ();
 
-impl UhyveVm<XhyveCpu> {
+impl UhyveVm<XhyveVm> {
 	/// Runs the VM.
 	///
 	/// Blocks until the VM has finished execution.
@@ -53,7 +55,10 @@ impl UhyveVm<XhyveCpu> {
 					None => debug!("No affinity specified, not binding thread"),
 				}
 
-				let mut cpu = XhyveCpu::new(cpu_id, parent_vm.clone()).unwrap();
+				let mut cpu = parent_vm
+					.virt_backend
+					.new_cpu(cpu_id, parent_vm.clone())
+					.unwrap();
 
 				// jump into the VM and execute code of the guest
 				let result = cpu.run();
