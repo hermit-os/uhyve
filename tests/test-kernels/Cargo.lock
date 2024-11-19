@@ -353,7 +353,7 @@ checksum = "696941a0aee7e276a165a978b37918fd5d22c55c3d6bda197813070ca9c0f21c"
 
 [[package]]
 name = "uhyve-interface"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aarch64",
  "num_enum",

@@ -13,6 +13,7 @@ pub const BOOT_PML4: GuestPhysAddr = GuestPhysAddr::new(0x10000);
 pub const BOOT_PGT: GuestPhysAddr = BOOT_PML4;
 pub const BOOT_PDPTE: GuestPhysAddr = GuestPhysAddr::new(0x11000);
 pub const BOOT_PDE: GuestPhysAddr = GuestPhysAddr::new(0x12000);
+pub const FDT_ADDR: GuestPhysAddr = GuestPhysAddr::new(0x5000);
 pub const BOOT_INFO_ADDR: GuestPhysAddr = GuestPhysAddr::new(0x9000);
 pub const EFER_SCE: u64 = 1; /* System Call Extensions */
 pub const EFER_LME: u64 = 1 << 8; /* Long mode enable */

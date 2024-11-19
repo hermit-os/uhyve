@@ -1,5 +1,5 @@
 use std::{
-	ffi::{OsStr, OsString},
+	ffi::OsStr,
 	io::{self, Error, ErrorKind, Write},
 	os::unix::ffi::OsStrExt,
 };
@@ -40,7 +40,7 @@ pub unsafe fn address_to_hypercall(
 				Hypercall::FileOpen(sysopen)
 			}
 			HypercallAddress::FileRead => {
-				let sysread = mem.get_ref_mut::<ReadPrams>(data).unwrap();
+				let sysread = mem.get_ref_mut::<ReadParams>(data).unwrap();
 				Hypercall::FileRead(sysread)
 			}
 			HypercallAddress::FileWrite => {
@@ -102,7 +102,7 @@ pub fn close(sysclose: &mut CloseParams) {
 }
 
 /// Handles an read syscall on the host.
-pub fn read(mem: &MmapMemory, sysread: &mut ReadPrams) {
+pub fn read(mem: &MmapMemory, sysread: &mut ReadParams) {
 	unsafe {
 		let bytes_read = libc::read(
 			sysread.fd,
@@ -172,7 +172,7 @@ pub fn uart_buffer(sysuart: &SerialWriteBufferParams, mem: &MmapMemory) {
 }
 
 /// Copies the arguments of the application into the VM's memory to the destinations specified in `syscmdval`.
-pub fn copy_argv(path: &OsStr, argv: &[OsString], syscmdval: &CmdvalParams, mem: &MmapMemory) {
+pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &MmapMemory) {
 	// copy kernel path as first argument
 	let argvp = mem
 		.host_address(syscmdval.argv)

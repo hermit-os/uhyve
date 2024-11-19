@@ -22,7 +22,7 @@ impl CmdsizeParams {
 	/// - `args` is a list of strings that form the parameters. (E.g., `["-v", "myarg"]`)
 	///
 	/// Note that this hypercall only transfers the sizes. It usually has to be followed up with the [`Cmdval` Hypercall](crate::Hypercall::Cmdval).
-	pub fn update(&mut self, path: &std::path::Path, args: &[std::ffi::OsString]) {
+	pub fn update(&mut self, path: &std::path::Path, args: &[String]) {
 		self.argc = 0;
 
 		self.argsz[0] = path.as_os_str().len() as i32 + 1;
@@ -90,7 +90,7 @@ pub struct WriteParams {
 /// Parameters for a [`FileRead`](crate::Hypercall::FileRead) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
-pub struct ReadPrams {
+pub struct ReadParams {
 	/// File descriptor of the file.
 	pub fd: i32,
 	/// Buffer to read the file into.
