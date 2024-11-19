@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
@@ -11,9 +11,10 @@ use crate::{
 	hypercall,
 	linux::KVM,
 	mem::MmapMemory,
+	params::Params,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	virtio::*,
-	vm::UhyveVm,
+	vm::{UhyveVm, VirtualizationBackend},
 	HypervisorError, HypervisorResult,
 };
 
@@ -28,95 +29,113 @@ const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
 const KVM_32BIT_GAP_SIZE: usize = 768 << 20;
 const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
 
-static KVM_ACCESS: Mutex<Option<VmFd>> = Mutex::new(None);
+pub struct KvmVm {
+	vm_fd: VmFd,
+}
+impl VirtualizationBackend for KvmVm {
+	type VCPU = KvmCpu;
+	fn new_cpu(&self, id: u32, parent_vm: Arc<UhyveVm<KvmVm>>) -> HypervisorResult<KvmCpu> {
+		let vcpu = self.vm_fd.create_vcpu(id as u64)?;
+		let mut kvcpu = KvmCpu {
+			id,
+			vcpu,
+			parent_vm: parent_vm.clone(),
+			pci_addr: None,
+		};
+		kvcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
 
-pub fn initialize_kvm(mem: &MmapMemory, use_pit: bool) -> HypervisorResult<()> {
-	let sz = std::cmp::min(mem.memory_size, KVM_32BIT_GAP_START);
+		Ok(kvcpu)
+	}
 
-	let kvm_mem = kvm_userspace_memory_region {
-		slot: 0,
-		flags: mem.flags,
-		memory_size: sz as u64,
-		guest_phys_addr: mem.guest_address.as_u64(),
-		userspace_addr: mem.host_address as u64,
-	};
+	fn new(mem: &MmapMemory, params: &Params) -> HypervisorResult<Self> {
+		let vm = KVM.create_vm().unwrap();
 
-	// TODO: make vm a global struct in linux blah
-	let vm = KVM.create_vm()?;
-	unsafe { vm.set_user_memory_region(kvm_mem) }?;
+		let sz = std::cmp::min(mem.memory_size, KVM_32BIT_GAP_START);
 
-	if mem.memory_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
 		let kvm_mem = kvm_userspace_memory_region {
-			slot: 1,
+			slot: 0,
 			flags: mem.flags,
-			memory_size: (mem.memory_size - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
-			guest_phys_addr: mem.guest_address.as_u64()
-				+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
-			userspace_addr: (mem.host_address as usize + KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE)
-				as u64,
+			memory_size: sz as u64,
+			guest_phys_addr: mem.guest_address.as_u64(),
+			userspace_addr: mem.host_address as u64,
 		};
 
 		unsafe { vm.set_user_memory_region(kvm_mem) }?;
+
+		if mem.memory_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
+			let kvm_mem = kvm_userspace_memory_region {
+				slot: 1,
+				flags: mem.flags,
+				memory_size: (mem.memory_size - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
+				guest_phys_addr: mem.guest_address.as_u64()
+					+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
+				userspace_addr: (mem.host_address as usize
+					+ KVM_32BIT_GAP_START
+					+ KVM_32BIT_GAP_SIZE) as u64,
+			};
+
+			unsafe { vm.set_user_memory_region(kvm_mem) }?;
+		}
+
+		debug!("Initialize interrupt controller");
+
+		// create basic interrupt controller
+		vm.create_irq_chip()?;
+
+		if params.pit {
+			vm.create_pit2(kvm_pit_config::default()).unwrap();
+		}
+
+		// enable x2APIC support
+		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+			cap: KVM_CAP_X2APIC_API,
+			flags: 0,
+			..Default::default()
+		};
+		cap.args[0] =
+			(KVM_X2APIC_API_USE_32BIT_IDS | KVM_X2APIC_API_DISABLE_BROADCAST_QUIRK).into();
+		vm.enable_cap(&cap)
+			.expect("Unable to enable x2apic support");
+
+		// currently, we support only system, which provides the
+		// cpu feature TSC_DEADLINE
+		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+			cap: KVM_CAP_TSC_DEADLINE_TIMER,
+			..Default::default()
+		};
+		cap.args[0] = 0;
+		vm.enable_cap(&cap)
+			.expect_err("Processor feature `tsc deadline` isn't supported!");
+
+		let cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+			cap: KVM_CAP_IRQFD,
+			..Default::default()
+		};
+		vm.enable_cap(&cap)
+			.expect_err("The support of KVM_CAP_IRQFD is currently required");
+
+		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+			cap: KVM_CAP_X86_DISABLE_EXITS,
+			flags: 0,
+			..Default::default()
+		};
+		cap.args[0] =
+			(KVM_X86_DISABLE_EXITS_PAUSE | KVM_X86_DISABLE_EXITS_MWAIT | KVM_X86_DISABLE_EXITS_HLT)
+				.into();
+		vm.enable_cap(&cap)
+			.expect("Unable to disable exists due pause instructions");
+
+		let evtfd = EventFd::new(0).unwrap();
+		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET)?;
+
+		Ok(Self { vm_fd: vm })
 	}
-
-	debug!("Initialize interrupt controller");
-
-	// create basic interrupt controller
-	vm.create_irq_chip()?;
-
-	if use_pit {
-		vm.create_pit2(kvm_pit_config::default()).unwrap();
-	}
-
-	// enable x2APIC support
-	let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
-		cap: KVM_CAP_X2APIC_API,
-		flags: 0,
-		..Default::default()
-	};
-	cap.args[0] = (KVM_X2APIC_API_USE_32BIT_IDS | KVM_X2APIC_API_DISABLE_BROADCAST_QUIRK).into();
-	vm.enable_cap(&cap)
-		.expect("Unable to enable x2apic support");
-
-	// currently, we support only system, which provides the
-	// cpu feature TSC_DEADLINE
-	let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
-		cap: KVM_CAP_TSC_DEADLINE_TIMER,
-		..Default::default()
-	};
-	cap.args[0] = 0;
-	vm.enable_cap(&cap)
-		.expect_err("Processor feature `tsc deadline` isn't supported!");
-
-	let cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
-		cap: KVM_CAP_IRQFD,
-		..Default::default()
-	};
-	vm.enable_cap(&cap)
-		.expect_err("The support of KVM_CAP_IRQFD is currently required");
-
-	let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
-		cap: KVM_CAP_X86_DISABLE_EXITS,
-		flags: 0,
-		..Default::default()
-	};
-	cap.args[0] =
-		(KVM_X86_DISABLE_EXITS_PAUSE | KVM_X86_DISABLE_EXITS_MWAIT | KVM_X86_DISABLE_EXITS_HLT)
-			.into();
-	vm.enable_cap(&cap)
-		.expect("Unable to disable exists due pause instructions");
-
-	let evtfd = EventFd::new(0).unwrap();
-	vm.register_irqfd(&evtfd, UHYVE_IRQ_NET)?;
-
-	*KVM_ACCESS.lock().unwrap() = Some(vm);
-	Ok(())
 }
 
 pub struct KvmCpu {
 	id: u32,
 	vcpu: VcpuFd,
-	parent_vm: Arc<UhyveVm<Self>>,
+	parent_vm: Arc<UhyveVm<KvmVm>>,
 	pci_addr: Option<u32>,
 }
 
@@ -322,23 +341,7 @@ impl KvmCpu {
 }
 
 impl VirtualCPU for KvmCpu {
-	fn new(id: u32, parent_vm: Arc<UhyveVm<KvmCpu>>) -> HypervisorResult<KvmCpu> {
-		let vcpu = KVM_ACCESS
-			.lock()
-			.unwrap()
-			.as_mut()
-			.expect("KVM is not initialized yet")
-			.create_vcpu(id as u64)?;
-		let mut kvcpu = KvmCpu {
-			id,
-			vcpu,
-			parent_vm: parent_vm.clone(),
-			pci_addr: None,
-		};
-		kvcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
-
-		Ok(kvcpu)
-	}
+	type VirtIf = KvmVm;
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {

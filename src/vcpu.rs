@@ -1,10 +1,9 @@
-use std::sync::Arc;
-
-use crate::vm::UhyveVm;
+use crate::vm::VirtualizationBackend;
 /// The trait and fns that a virtual cpu requires
 use crate::{os::DebugExitInfo, HypervisorResult};
 
 /// Reasons for vCPU exits.
+#[allow(dead_code)]
 pub enum VcpuStopReason {
 	/// The vCPU stopped for debugging.
 	Debug(DebugExitInfo),
@@ -18,8 +17,7 @@ pub enum VcpuStopReason {
 
 /// Functionality a virtual CPU backend must provide to be used by uhyve
 pub trait VirtualCPU: Sized {
-	/// Create a new CPU object
-	fn new(id: u32, vm: Arc<UhyveVm<Self>>) -> HypervisorResult<Self>;
+	type VirtIf: VirtualizationBackend;
 
 	/// Continues execution.
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason>;
@@ -28,5 +26,6 @@ pub trait VirtualCPU: Sized {
 	fn run(&mut self) -> HypervisorResult<Option<i32>>;
 
 	/// Prints the VCPU's registers to stdout.
+	#[allow(dead_code)]
 	fn print_registers(&self);
 }

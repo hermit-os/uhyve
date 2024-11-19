@@ -2,7 +2,7 @@ use byte_unit::Byte;
 use criterion::{criterion_group, Criterion};
 use uhyvelib::{
 	params::Params,
-	vm::{UhyveVm, VcpuDefault},
+	vm::{DefaultBackend, UhyveVm},
 };
 
 pub fn load_vm_hello_world(c: &mut Criterion) {
@@ -14,7 +14,7 @@ pub fn load_vm_hello_world(c: &mut Criterion) {
 		..Default::default()
 	};
 
-	let mut vm = UhyveVm::<VcpuDefault>::new(path, params).expect("Unable to create VM");
+	let mut vm = UhyveVm::<DefaultBackend>::new(path, params).expect("Unable to create VM");
 
 	c.bench_function("vm::load_kernel(hello world)", |b| {
 		b.iter(|| vm.load_kernel().unwrap())
