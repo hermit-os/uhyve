@@ -432,6 +432,9 @@ impl VirtualCPU for KvmCpu {
 									hypercall::unlink(&self.parent_vm.mem, sysunlink)
 								}
 								Hypercall::SerialWriteByte(buf) => hypercall::uart(&[buf])?,
+								Hypercall::SerialWriteBuffer(sysserialwrite) => {
+									hypercall::uart_buffer(sysserialwrite, &self.parent_vm.mem)
+								}
 								_ => panic!("Got unknown hypercall {:?}", hypercall),
 							};
 						} else {

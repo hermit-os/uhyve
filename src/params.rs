@@ -1,5 +1,4 @@
 use std::{
-	ffi::OsString,
 	fmt,
 	num::{NonZeroU32, ParseIntError, TryFromIntError},
 	str::FromStr,
@@ -35,7 +34,7 @@ pub struct Params {
 	pub gdb_port: Option<u16>,
 
 	/// Arguments to forward to the kernel
-	pub kernel_args: Vec<OsString>,
+	pub kernel_args: Vec<String>,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -127,8 +126,8 @@ impl fmt::Display for GuestMemorySize {
 #[derive(Error, Debug)]
 pub enum InvalidGuestMemorySizeError {
 	#[error(
-		"Not enough guest memory. Must be at least {} (is {0})",
-		GuestMemorySize::minimum()
+		"Not enough guest memory. Must be at least {min} (is {0})",
+		min = GuestMemorySize::minimum()
 	)]
 	MemoryTooSmall(Byte),
 	#[error("Invalid amount of guest memory. Must be a multiple of 2 MiB (is {0})")]

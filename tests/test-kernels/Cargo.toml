@@ -7,3 +7,11 @@ publish = false
 
 [target.'cfg(target_os = "hermit")'.dependencies]
 hermit = "0.9"
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86_64 = { version = "0.15", default-features = false, features = [
+  "instructions",
+] }
+
+[dependencies]
+uhyve-interface = { path = "../../uhyve-interface" }

@@ -171,6 +171,9 @@ impl VirtualCPU for XhyveCpu {
 
 									hypercall::uart(&[x8]).unwrap();
 								}
+								Hypercall::SerialWriteBuffer(sysserialwrite) => {
+									hypercall::uart_buffer(sysserialwrite, &self.parent_vm.mem)
+								}
 								Hypercall::Exit(sysexit) => {
 									return Ok(VcpuStopReason::Exit(sysexit.arg));
 								}

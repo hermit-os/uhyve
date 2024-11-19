@@ -1,5 +1,5 @@
 use std::{
-	ffi::{OsStr, OsString},
+	ffi::OsStr,
 	io::{self, Error, ErrorKind, Write},
 	os::unix::ffi::OsStrExt,
 };
@@ -40,7 +40,7 @@ pub unsafe fn address_to_hypercall(
 				Hypercall::FileOpen(sysopen)
 			}
 			HypercallAddress::FileRead => {
-				let sysread = mem.get_ref_mut::<ReadPrams>(data).unwrap();
+				let sysread = mem.get_ref_mut::<ReadParams>(data).unwrap();
 				Hypercall::FileRead(sysread)
 			}
 			HypercallAddress::FileWrite => {
@@ -64,6 +64,10 @@ pub unsafe fn address_to_hypercall(
 				Hypercall::Cmdval(syscmdval)
 			}
 			HypercallAddress::Uart => Hypercall::SerialWriteByte(data.as_u64() as u8),
+			HypercallAddress::SerialBufferWrite => {
+				let sysserialwrite = mem.get_ref_mut(data).unwrap();
+				Hypercall::SerialWriteBuffer(sysserialwrite)
+			}
 			_ => unimplemented!(),
 		})
 	} else {
@@ -98,7 +102,7 @@ pub fn close(sysclose: &mut CloseParams) {
 }
 
 /// Handles an read syscall on the host.
-pub fn read(mem: &MmapMemory, sysread: &mut ReadPrams) {
+pub fn read(mem: &MmapMemory, sysread: &mut ReadParams) {
 	unsafe {
 		let bytes_read = libc::read(
 			sysread.fd,
@@ -158,8 +162,17 @@ pub fn uart(buf: &[u8]) -> io::Result<()> {
 	io::stdout().write_all(buf)
 }
 
+/// Handles a UART syscall by contructing a buffer from parameter
+pub fn uart_buffer(sysuart: &SerialWriteBufferParams, mem: &MmapMemory) {
+	let buf = unsafe {
+		mem.slice_at(sysuart.buf, sysuart.len)
+			.expect("Systemcall parameters for SerialWriteBuffer are invalid")
+	};
+	io::stdout().write_all(buf).unwrap()
+}
+
 /// Copies the arguments of the application into the VM's memory to the destinations specified in `syscmdval`.
-pub fn copy_argv(path: &OsStr, argv: &[OsString], syscmdval: &CmdvalParams, mem: &MmapMemory) {
+pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &MmapMemory) {
 	// copy kernel path as first argument
 	let argvp = mem
 		.host_address(syscmdval.argv)

@@ -750,6 +750,9 @@ impl VirtualCPU for XhyveCpu {
 								hypercall::unlink(&self.parent_vm.mem, sysunlink)
 							}
 							Hypercall::SerialWriteByte(buf) => hypercall::uart(&[buf]).unwrap(),
+							Hypercall::SerialWriteBuffer(sysserialwrite) => {
+								hypercall::uart_buffer(sysserialwrite, &self.parent_vm.mem)
+							}
 							_ => panic!("Got unknown hypercall {:?}", hypercall),
 						}
 						self.vcpu.write_register(&Register::RIP, rip + len)?;

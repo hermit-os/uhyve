@@ -11,6 +11,7 @@ extern crate log;
 
 mod arch;
 pub mod consts;
+mod fdt;
 #[cfg(target_os = "linux")]
 pub mod linux;
 #[cfg(target_os = "linux")]

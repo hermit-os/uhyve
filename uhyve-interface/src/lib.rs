@@ -69,7 +69,10 @@ pub enum HypercallAddress {
 	Uart = 0x800,
 	/// Port address = `0x840`
 	FileUnlink = 0x840,
+	/// Port address = `0x880`
+	SerialBufferWrite = 0x880,
 }
+// TODO: Remove this in the next major version
 impl From<Hypercall<'_>> for HypercallAddress {
 	fn from(value: Hypercall) -> Self {
 		match value {
@@ -83,6 +86,24 @@ impl From<Hypercall<'_>> for HypercallAddress {
 			Hypercall::FileWrite(_) => Self::FileWrite,
 			Hypercall::FileUnlink(_) => Self::FileUnlink,
 			Hypercall::SerialWriteByte(_) => Self::Uart,
+			Hypercall::SerialWriteBuffer(_) => Self::SerialBufferWrite,
+		}
+	}
+}
+impl From<&Hypercall<'_>> for HypercallAddress {
+	fn from(value: &Hypercall) -> Self {
+		match value {
+			Hypercall::Cmdsize(_) => Self::Cmdsize,
+			Hypercall::Cmdval(_) => Self::Cmdval,
+			Hypercall::Exit(_) => Self::Exit,
+			Hypercall::FileClose(_) => Self::FileClose,
+			Hypercall::FileLseek(_) => Self::FileLseek,
+			Hypercall::FileOpen(_) => Self::FileOpen,
+			Hypercall::FileRead(_) => Self::FileRead,
+			Hypercall::FileWrite(_) => Self::FileWrite,
+			Hypercall::FileUnlink(_) => Self::FileUnlink,
+			Hypercall::SerialWriteByte(_) => Self::Uart,
+			Hypercall::SerialWriteBuffer(_) => Self::SerialBufferWrite,
 		}
 	}
 }
@@ -102,13 +123,16 @@ pub enum Hypercall<'a> {
 	FileClose(&'a mut CloseParams),
 	FileLseek(&'a mut LseekParams),
 	FileOpen(&'a mut OpenParams),
-	FileRead(&'a mut ReadPrams),
+	FileRead(&'a mut ReadParams),
 	FileWrite(&'a WriteParams),
 	FileUnlink(&'a mut UnlinkParams),
 	/// Write a char to the terminal.
 	SerialWriteByte(u8),
+	/// Write a buffer to the terminal.
+	SerialWriteBuffer(&'a SerialWriteBufferParams),
 }
 impl<'a> Hypercall<'a> {
+	// TODO: Remove this in the next major version
 	/// Get a hypercall's port address.
 	pub fn port(self) -> u16 {
 		HypercallAddress::from(self) as u16
