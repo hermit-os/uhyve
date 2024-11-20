@@ -123,7 +123,6 @@ The following variables are supported:
 
 - `HERMIT_CPUS`: specifies the number of cores the virtual machine may use.
 - `HERMIT_MEM`: defines the memory size of the virtual machine. The suffixes *M* and *G* can be used to specify a value in megabytes or gigabytes, respectively.
-- setting `HERMIT_VERBOSE` to `1` makes the hypervisor print kernel log messages to the terminal.
 - `HERMIT_GDB_PORT=port` activate a gdb server for the application running inside Uhyve. _See below_
 
 By default, the loader initializes a system with one core and 512 MiB RAM.
@@ -158,9 +157,9 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 As mentioned above, the Uhyve repository ships some binaries that can be used for testing purposes.
 
 ```sh
-cargo run -- -v data/x86_64/rusty_demo
-cargo run -- -v data/x86_64/hello_world
-cargo run -- -v data/x86_64/hello_c
+cargo run -- data/x86_64/rusty_demo
+cargo run -- data/x86_64/hello_world
+cargo run -- data/x86_64/hello_c
 ```
 
 ### Debugging Hermit apps

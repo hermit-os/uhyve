@@ -120,7 +120,6 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	path: PathBuf,
 	args: Vec<String>,
 	boot_info: *const RawBootInfo,
-	verbose: bool,
 	pub virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	#[allow(dead_code)] // gdb is not supported on macos
 	pub(super) gdb_port: Option<u16>,
@@ -163,7 +162,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			path: kernel_path,
 			args: params.kernel_args,
 			boot_info: ptr::null(),
-			verbose: params.verbose,
 			virtio_device,
 			gdb_port: params.gdb_port,
 			virt_backend,
@@ -172,10 +170,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		vm.init_guest_mem();
 
 		Ok(vm)
-	}
-
-	fn verbose(&self) -> bool {
-		self.verbose
 	}
 
 	/// Returns the section offsets relative to their base addresses
@@ -267,10 +261,9 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			hardware_info: HardwareInfo {
 				phys_addr_range: self.mem.guest_address.as_u64()
 					..self.mem.guest_address.as_u64() + self.mem.memory_size as u64,
-				serial_port_base: self.verbose().then(|| {
-					SerialPortBase::new((uhyve_interface::HypercallAddress::Uart as u16).into())
-						.unwrap()
-				}),
+				serial_port_base: SerialPortBase::new(
+					(uhyve_interface::HypercallAddress::Uart as u16).into(),
+				),
 				device_tree: Some(FDT_ADDR.as_u64().try_into().unwrap()),
 			},
 			load_info,
@@ -307,7 +300,6 @@ impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 			.field("num_cpus", &self.num_cpus)
 			.field("path", &self.path)
 			.field("boot_info", &self.boot_info)
-			.field("verbose", &self.verbose)
 			.field("virtio_device", &self.virtio_device)
 			.finish()
 	}
