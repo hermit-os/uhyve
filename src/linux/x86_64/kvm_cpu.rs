@@ -426,15 +426,26 @@ impl VirtualCPU for KvmCpu {
 									hypercall::read(&self.parent_vm.mem, sysread)
 								}
 								Hypercall::FileWrite(syswrite) => {
-									hypercall::write(&self.parent_vm.mem, syswrite)
+									hypercall::write(&self.parent_vm, syswrite)
 										.map_err(|_e| HypervisorError::new(libc::EFAULT))?
 								}
 								Hypercall::FileUnlink(sysunlink) => {
 									hypercall::unlink(&self.parent_vm.mem, sysunlink)
 								}
-								Hypercall::SerialWriteByte(buf) => hypercall::uart(&[buf])?,
+								Hypercall::SerialWriteByte(buf) => self
+									.parent_vm
+									.serial_output(&[buf])
+									.unwrap_or_else(|e| error!("{e:?}")),
 								Hypercall::SerialWriteBuffer(sysserialwrite) => {
-									hypercall::uart_buffer(sysserialwrite, &self.parent_vm.mem)
+									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
+									let buf = unsafe {
+										self.parent_vm.mem.slice_at(sysserialwrite.buf, sysserialwrite.len)
+			.expect("Systemcall parameters for SerialWriteBuffer are invalid")
+									};
+
+									self.parent_vm
+										.serial_output(buf)
+										.unwrap_or_else(|e| error!("{e:?}"))
 								}
 								_ => panic!("Got unknown hypercall {:?}", hypercall),
 							};

@@ -12,7 +12,10 @@ use std::{
 
 use assert_fs::{assert::PathAssert, fixture::PathChild, TempDir};
 use common::build_hermit_bin;
-use uhyvelib::{params::Params, vm::UhyveVm};
+use uhyvelib::{
+	params::{Output, Params},
+	vm::UhyveVm,
+};
 
 #[test]
 fn gdb() -> io::Result<()> {
@@ -26,6 +29,7 @@ fn gdb() -> io::Result<()> {
 			bin_path,
 			Params {
 				gdb_port: Some(port),
+				output: Output::Buffer,
 				..Default::default()
 			},
 		)

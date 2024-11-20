@@ -188,11 +188,20 @@ impl VirtualCPU for XhyveCpu {
 							match hypercall {
 								Hypercall::SerialWriteByte(_char) => {
 									let x8 = (self.vcpu.read_register(Register::X8)? & 0xFF) as u8;
-
-									hypercall::uart(&[x8]).unwrap();
+									self.parent_vm
+										.serial_output(&[x8])
+										.unwrap_or_else(|e| error!("{e:?}"));
 								}
 								Hypercall::SerialWriteBuffer(sysserialwrite) => {
-									hypercall::uart_buffer(sysserialwrite, &self.parent_vm.mem)
+									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
+									let buf = unsafe {
+										self.parent_vm.mem.slice_at(sysserialwrite.buf, sysserialwrite.len)
+           .expect("Systemcall parameters for SerialWriteBuffer are invalid")
+									};
+
+									self.parent_vm
+										.serial_output(buf)
+										.unwrap_or_else(|e| error!("{e:?}"))
 								}
 								Hypercall::Exit(sysexit) => {
 									return Ok(VcpuStopReason::Exit(sysexit.arg));
@@ -217,7 +226,7 @@ impl VirtualCPU for XhyveCpu {
 									hypercall::read(&self.parent_vm.mem, sysread)
 								}
 								Hypercall::FileWrite(syswrite) => {
-									hypercall::write(&self.parent_vm.mem, syswrite).unwrap()
+									hypercall::write(&self.parent_vm, syswrite).unwrap()
 								}
 								Hypercall::FileUnlink(sysunlink) => {
 									hypercall::unlink(&self.parent_vm.mem, sysunlink)

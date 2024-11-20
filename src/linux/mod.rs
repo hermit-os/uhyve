@@ -29,7 +29,7 @@ use crate::{
 		x86_64::kvm_cpu::KvmVm,
 	},
 	vcpu::VirtualCPU,
-	vm::{UhyveVm, VirtualizationBackend, VmResult},
+	vm::{Output, UhyveVm, VirtualizationBackend, VmResult},
 };
 
 static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
@@ -148,7 +148,13 @@ impl UhyveVm<KvmVm> {
 			1 => code[0],
 			_ => panic!("more than one thread finished with an exit code (codes: {code:?})"),
 		};
-		VmResult { code, None }
+		let output = if let Output::Buffer(b) = &this.output {
+			Some(b.lock().unwrap().clone())
+		} else {
+			None
+		};
+
+		VmResult { code, output }
 	}
 
 	fn run_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
@@ -189,7 +195,13 @@ impl UhyveVm<KvmVm> {
 			}
 		};
 
-		VmResult { code, None }
+		let output = if let Output::Buffer(b) = &this.output {
+			Some(b.lock().unwrap().clone())
+		} else {
+			None
+		};
+
+		VmResult { code, output }
 	}
 }
 

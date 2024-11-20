@@ -1,6 +1,7 @@
 use std::{
 	fmt,
 	num::{NonZeroU32, ParseIntError, TryFromIntError},
+	path::PathBuf,
 	str::FromStr,
 };
 
@@ -32,6 +33,9 @@ pub struct Params {
 
 	/// Arguments to forward to the kernel
 	pub kernel_args: Vec<String>,
+
+	/// Kernel output handling
+	pub output: Output,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -48,6 +52,7 @@ impl Default for Params {
 			cpu_count: Default::default(),
 			gdb_port: Default::default(),
 			kernel_args: Default::default(),
+			output: Default::default(),
 		}
 	}
 }
@@ -116,6 +121,19 @@ impl Default for GuestMemorySize {
 impl fmt::Display for GuestMemorySize {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		self.0.fmt(f)
+	}
+}
+
+#[derive(Debug, Clone)]
+pub enum Output {
+	StdIo,
+	File(PathBuf),
+	Buffer,
+	None,
+}
+impl Default for Output {
+	fn default() -> Self {
+		Self::StdIo
 	}
 }
 

@@ -5,7 +5,10 @@ use std::{
 };
 
 use byte_unit::{Byte, Unit};
-use uhyvelib::{params::Params, vm::{UhyveVm, VmResult}};
+use uhyvelib::{
+	params::{Output, Params},
+	vm::{UhyveVm, VmResult},
+};
 
 /// Uses Cargo to build a kernel in the `tests/test-kernels` directory.
 /// Returns a path to the build binary.
@@ -49,6 +52,7 @@ pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 			.unwrap()
 			.try_into()
 			.unwrap(),
+		output: Output::Buffer,
 		..Default::default()
 	};
 	UhyveVm::new(kernel_path, params).unwrap().run(None)

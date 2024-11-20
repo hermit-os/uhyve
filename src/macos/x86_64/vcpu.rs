@@ -762,15 +762,29 @@ impl VirtualCPU for XhyveCpu {
 								hypercall::read(&self.parent_vm.mem, sysread)
 							}
 							Hypercall::FileWrite(syswrite) => {
-								hypercall::write(&self.parent_vm.mem, syswrite).unwrap()
+								hypercall::write(&self.parent_vm, syswrite).unwrap()
 							}
 							Hypercall::FileUnlink(sysunlink) => {
 								hypercall::unlink(&self.parent_vm.mem, sysunlink)
 							}
-							Hypercall::SerialWriteByte(buf) => hypercall::uart(&[buf]).unwrap(),
-							Hypercall::SerialWriteBuffer(sysserialwrite) => {
-								hypercall::uart_buffer(sysserialwrite, &self.parent_vm.mem)
+
+							Hypercall::SerialWriteByte(buf) => {
+								self.parent_vm
+									.serial_output(&[buf])
+									.unwrap_or_else(|e| error!("{e:?}"));
 							}
+							Hypercall::SerialWriteBuffer(sysserialwrite) => {
+								// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
+								let buf = unsafe {
+									self.parent_vm.mem.slice_at(sysserialwrite.buf, sysserialwrite.len)
+           .expect("Systemcall parameters for SerialWriteBuffer are invalid")
+								};
+
+								self.parent_vm
+									.serial_output(buf)
+									.unwrap_or_else(|e| error!("{e:?}"))
+							}
+
 							_ => panic!("Got unknown hypercall {:?}", hypercall),
 						}
 						self.vcpu.write_register(&Register::RIP, rip + len)?;
