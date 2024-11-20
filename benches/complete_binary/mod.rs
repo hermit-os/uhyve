@@ -58,7 +58,7 @@ pub fn run_hello_world(c: &mut Criterion) {
 	let qemu_available = is_program_in_path("qemu-system-x86_64");
 
 	if !qemu_available {
-		println!("QEMU not available, skipping QEMU benchmark");
+		println!("qemu-system-x86_64 not found in path, skipping QEMU benchmark");
 		return;
 	}
 
@@ -133,7 +133,7 @@ pub fn run_rusty_demo(c: &mut Criterion) {
 	let qemu_available = is_program_in_path("qemu-system-x86_64");
 
 	if !qemu_available {
-		println!("QEMU not available, skipping  QEMU benchmark");
+		println!("qemu-system-x86_64 not found in path, skipping QEMU benchmark");
 		return;
 	}
 
