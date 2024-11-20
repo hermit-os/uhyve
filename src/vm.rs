@@ -123,14 +123,13 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	entry_point: u64,
 	stack_address: u64,
 	pub mem: Arc<MmapMemory>,
-	num_cpus: u32,
 	path: PathBuf,
-	args: Vec<String>,
 	boot_info: *const RawBootInfo,
 	pub virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	#[allow(dead_code)] // gdb is not supported on macos
 	pub(super) gdb_port: Option<u16>,
 	pub(crate) virt_backend: VirtBackend,
+	params: Params,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
@@ -165,13 +164,12 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			entry_point: 0,
 			stack_address: 0,
 			mem: mem.into(),
-			num_cpus: cpu_count,
 			path: kernel_path,
-			args: params.kernel_args,
 			boot_info: ptr::null(),
 			virtio_device,
 			gdb_port: params.gdb_port,
 			virt_backend,
+			params,
 		};
 
 		vm.init_guest_mem();
@@ -194,7 +192,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 	/// Returns the number of cores for the vm.
 	pub fn num_cpus(&self) -> u32 {
-		self.num_cpus
+		self.params.cpu_count.get()
 	}
 
 	pub fn kernel_path(&self) -> &PathBuf {
@@ -202,7 +200,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	}
 
 	pub fn args(&self) -> &Vec<String> {
-		&self.args
+		&self.params.kernel_args
 	}
 
 	/// Initialize the page tables for the guest
@@ -240,19 +238,19 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		self.entry_point = entry_point;
 
 		let sep = self
-			.args
+			.args()
 			.iter()
 			.enumerate()
 			.find(|(_i, arg)| *arg == "--")
 			.map(|(i, _arg)| i)
-			.unwrap_or_else(|| self.args.len());
+			.unwrap_or_else(|| self.args().len());
 
 		let fdt = Fdt::new()
 			.unwrap()
 			.memory(self.mem.guest_address..self.mem.guest_address + self.mem.memory_size as u64)
 			.unwrap()
-			.kernel_args(&self.args[..sep])
-			.app_args(self.args.get(sep + 1..).unwrap_or_default())
+			.kernel_args(&self.args()[..sep])
+			.app_args(self.args().get(sep + 1..).unwrap_or_default())
 			.envs(env::vars())
 			.finish()
 			.unwrap();
@@ -304,10 +302,10 @@ impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 			.field("entry_point", &self.entry_point)
 			.field("stack_address", &self.stack_address)
 			.field("mem", &self.mem)
-			.field("num_cpus", &self.num_cpus)
 			.field("path", &self.path)
 			.field("boot_info", &self.boot_info)
 			.field("virtio_device", &self.virtio_device)
+			.field("params", &self.params)
 			.finish()
 	}
 }
