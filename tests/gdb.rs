@@ -30,8 +30,8 @@ fn gdb() -> io::Result<()> {
 			},
 		)
 		.unwrap();
-		let code = vm.run(None);
-		assert_eq!(0, code);
+		let res = vm.run(None);
+		assert_eq!(0, res.code);
 	});
 
 	let temp = TempDir::new().unwrap();

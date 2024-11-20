@@ -274,7 +274,7 @@ fn run_uhyve() -> i32 {
 	let vm = UhyveVm::new(kernel, params)
 		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?");
 
-	vm.run(affinity)
+	vm.run(affinity).code
 }
 
 fn main() {

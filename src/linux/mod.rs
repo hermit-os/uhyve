@@ -29,7 +29,7 @@ use crate::{
 		x86_64::kvm_cpu::KvmVm,
 	},
 	vcpu::VirtualCPU,
-	vm::{UhyveVm, VirtualizationBackend},
+	vm::{UhyveVm, VirtualizationBackend, VmResult},
 };
 
 static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
@@ -71,7 +71,7 @@ impl UhyveVm<KvmVm> {
 	/// Runs the VM.
 	///
 	/// Blocks until the VM has finished execution.
-	pub fn run(mut self, cpu_affinity: Option<Vec<CoreId>>) -> i32 {
+	pub fn run(mut self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
 		KickSignal::register_handler().unwrap();
 
 		self.load_kernel().expect("Unabled to load the kernel");
@@ -83,7 +83,7 @@ impl UhyveVm<KvmVm> {
 		}
 	}
 
-	fn run_no_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> i32 {
+	fn run_no_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
 		// After spinning up all vCPU threads, the main thread waits for any vCPU to end execution.
 		let barrier = Arc::new(Barrier::new(2));
 
@@ -143,14 +143,15 @@ impl UhyveVm<KvmVm> {
 			.into_iter()
 			.filter_map(|thread| thread.join().unwrap())
 			.collect::<Vec<_>>();
-		match code.len() {
+		let code = match code.len() {
 			0 => panic!("No return code from any CPU? Maybe all have been kicked?"),
 			1 => code[0],
 			_ => panic!("more than one thread finished with an exit code (codes: {code:?})"),
-		}
+		};
+		VmResult { code, None }
 	}
 
-	fn run_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> i32 {
+	fn run_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
 		let cpu_id = 0;
 
 		let local_cpu_affinity = cpu_affinity
@@ -170,9 +171,9 @@ impl UhyveVm<KvmVm> {
 
 		let connection = wait_for_gdb_connection(this.gdb_port.unwrap()).unwrap();
 		let debugger = GdbStub::new(connection);
-		let mut debuggable_vcpu = GdbUhyve::new(this, cpu);
+		let mut debuggable_vcpu = GdbUhyve::new(this.clone(), cpu);
 
-		match debugger
+		let code = match debugger
 			.run_blocking::<UhyveGdbEventLoop>(&mut debuggable_vcpu)
 			.unwrap()
 		{
@@ -186,7 +187,9 @@ impl UhyveVm<KvmVm> {
 				eprintln!("Kill command received.");
 				0
 			}
-		}
+		};
+
+		VmResult { code, None }
 	}
 }
 
