@@ -34,6 +34,8 @@ pub struct KvmVm {
 }
 impl VirtualizationBackend for KvmVm {
 	type VCPU = KvmCpu;
+	const NAME: &str = "KvmVm";
+
 	fn new_cpu(&self, id: u32, parent_vm: Arc<UhyveVm<KvmVm>>) -> HypervisorResult<KvmCpu> {
 		let vcpu = self.vm_fd.create_vcpu(id as u64)?;
 		let mut kvcpu = KvmCpu {
