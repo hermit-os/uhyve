@@ -41,6 +41,7 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 /// Small wrapper around [`Uhyve::run`] with default parameters for a small and
 /// simple Uhyve vm
 pub fn run_simple_vm(kernel_path: PathBuf) {
+	env_logger::try_init().ok();
 	println!("Launching kernel {}", kernel_path.display());
 	let params = Params {
 		verbose: true,
