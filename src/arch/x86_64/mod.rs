@@ -189,6 +189,27 @@ pub fn initialize_pagetables(mem: &mut [u8]) {
 	}
 }
 
+#[allow(dead_code)]
+/// Helper fn for debugging pagetables
+fn pretty_print_pagetable(pt: &PageTable) {
+	println!("Idx       Address          Idx       Address          Idx       Address          Idx       Address      ");
+	println!("--------------------------------------------------------------------------------------------------------");
+	for i in (0..512).step_by(4) {
+		println!(
+			"{:3}: {:#18x},   {:3}: {:#18x},   {:3}: {:#18x},   {:3}: {:#18x}",
+			i,
+			pt[i].addr(),
+			i + 1,
+			pt[i + 1].addr(),
+			i + 2,
+			pt[i + 2].addr(),
+			i + 3,
+			pt[i + 3].addr()
+		);
+	}
+	println!("--------------------------------------------------------------------------------------------------------");
+}
+
 /// Converts a virtual address in the guest to a physical address in the guest
 pub fn virt_to_phys(
 	addr: GuestVirtAddr,
