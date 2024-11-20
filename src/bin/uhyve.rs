@@ -44,10 +44,10 @@ struct Args {
 	#[clap(short, long, value_name = "FILE")]
 	output: Option<String>,
 
-	#[clap(flatten, next_help_heading = "MEMORY")]
+	#[clap(flatten, next_help_heading = "Memory OPTIONS")]
 	memory_args: MemoryArgs,
 
-	#[clap(flatten, next_help_heading = "CPU")]
+	#[clap(flatten, next_help_heading = "Cpu OPTIONS")]
 	cpu_args: CpuArgs,
 
 	/// GDB server port
