@@ -1,4 +1,5 @@
 use std::{
+	convert::Infallible,
 	fmt,
 	num::{NonZeroU32, ParseIntError, TryFromIntError},
 	path::PathBuf,
@@ -134,6 +135,16 @@ pub enum Output {
 impl Default for Output {
 	fn default() -> Self {
 		Self::StdIo
+	}
+}
+impl FromStr for Output {
+	type Err = Infallible;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		match s {
+			"none" | "None" => Ok(Self::None),
+			p => Ok(Self::File(p.into())),
+		}
 	}
 }
 

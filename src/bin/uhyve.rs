@@ -7,7 +7,7 @@ use core_affinity::CoreId;
 use either::Either;
 use thiserror::Error;
 use uhyvelib::{
-	params::{CpuCount, GuestMemorySize, Params},
+	params::{CpuCount, GuestMemorySize, Output, Params},
 	vm::UhyveVm,
 };
 
@@ -38,6 +38,12 @@ fn setup_trace() {
 #[derive(Parser, Debug)]
 #[clap(version, author, about)]
 struct Args {
+	/// Kernel output redirection.
+	///
+	/// None discards all output, Omit for stdout
+	#[clap(short, long, value_name = "FILE")]
+	output: Option<String>,
+
 	#[clap(flatten, next_help_heading = "MEMORY")]
 	memory_args: MemoryArgs,
 
@@ -240,6 +246,7 @@ impl From<Args> for Params {
 			gdb_port,
 			kernel: _,
 			kernel_args,
+			output,
 		} = args;
 		Self {
 			memory_size,
@@ -256,7 +263,11 @@ impl From<Args> for Params {
 			gdb_port: None,
 			kernel_args,
 			// TODO
-			output: Default::default(),
+			output: if let Some(outp) = output {
+				Output::from_str(&outp).unwrap()
+			} else {
+				Output::StdIo
+			},
 		}
 	}
 }
