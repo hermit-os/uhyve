@@ -111,6 +111,12 @@ pub trait VirtualizationBackend: Sized {
 	fn new(memory: &MmapMemory, params: &Params) -> HypervisorResult<Self>;
 }
 
+#[derive(Debug, Clone)]
+pub struct VmResult {
+	pub code: i32,
+	pub output: Option<String>,
+}
+
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	/// The starting position of the image in physical memory
 	offset: u64,

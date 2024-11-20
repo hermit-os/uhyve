@@ -16,7 +16,7 @@ pub use crate::macos::aarch64::vcpu::{XhyveCpu, XhyveVm};
 pub use crate::macos::x86_64::vcpu::{XhyveCpu, XhyveVm};
 use crate::{
 	vcpu::VirtualCPU,
-	vm::{UhyveVm, VirtualizationBackend},
+	vm::{UhyveVm, VirtualizationBackend, VmResult},
 };
 
 pub type HypervisorError = xhypervisor::Error;
@@ -26,7 +26,7 @@ impl UhyveVm<XhyveVm> {
 	/// Runs the VM.
 	///
 	/// Blocks until the VM has finished execution.
-	pub fn run(mut self, cpu_affinity: Option<Vec<CoreId>>) -> i32 {
+	pub fn run(mut self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
 		self.load_kernel().expect("Unabled to load the kernel");
 
 		// For communication of the exit code from one vcpu to this thread as return
@@ -75,6 +75,9 @@ impl UhyveVm<XhyveVm> {
 		// ignore the remaining running threads. A better design would be to force
 		// the VCPUs externally to stop, so that the other threads don't block and
 		// can be terminated correctly.
-		exit_rx.recv().unwrap()
+		VmResult {
+			code: exit_rx.recv().unwrap(),
+			output: None,
+		}
 	}
 }
