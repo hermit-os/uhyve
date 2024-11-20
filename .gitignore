@@ -5,4 +5,7 @@ lcov.info
 *.profraw
 *.profdata
 
+# hermit-loader-x86_64, used for benchmarks with QEMU
+hermit-loader-x86-64
+
 .vscode
