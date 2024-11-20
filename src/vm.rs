@@ -103,6 +103,7 @@ pub type DefaultBackend = crate::macos::XhyveVm;
 /// Trait marking a interface for creating (accelerated) VMs.
 pub trait VirtualizationBackend: Sized {
 	type VCPU;
+	const NAME: &str;
 
 	/// Create a new CPU object
 	fn new_cpu(&self, id: u32, parent_vm: Arc<UhyveVm<Self>>) -> HypervisorResult<Self::VCPU>;
@@ -293,7 +294,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		f.debug_struct("UhyveVm")
+		f.debug_struct(&format!("UhyveVm<{}>", VirtIf::NAME))
 			.field("entry_point", &self.entry_point)
 			.field("stack_address", &self.stack_address)
 			.field("mem", &self.mem)

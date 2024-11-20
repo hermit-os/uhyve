@@ -26,6 +26,8 @@ use crate::{
 pub struct XhyveVm {}
 impl VirtualizationBackend for XhyveVm {
 	type VCPU = XhyveCpu;
+	const NAME: &str = "XhyveVm";
+
 	fn new_cpu(&self, id: u32, parent_vm: Arc<UhyveVm<XhyveVm>>) -> HypervisorResult<XhyveCpu> {
 		let mut vcpu = XhyveCpu {
 			id,
