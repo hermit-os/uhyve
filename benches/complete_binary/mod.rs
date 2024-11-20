@@ -62,15 +62,13 @@ pub fn run_hello_world(c: &mut Criterion) {
 		return;
 	}
 
-	let rusty_loader_path = [
-		env!("CARGO_MANIFEST_DIR"),
-		"data/x86_64/hermit-loader-x86_64",
-	]
-	.iter()
-	.collect::<PathBuf>();
+	let loader_path = [env!("CARGO_MANIFEST_DIR"), "hermit-loader-x86_64"]
+		.iter()
+		.collect::<PathBuf>();
 	assert!(
-		rusty_loader_path.exists(),
-		"rusty-loader is missing from bench_data"
+		loader_path.exists(),
+		"hermit-loader-x86_64 was not found in {}, please download it manually and try again",
+		loader_path.into_os_string().into_string().unwrap()
 	);
 
 	group.bench_function("qemu data/x86_64/hello_world", |b| {
@@ -81,7 +79,7 @@ pub fn run_hello_world(c: &mut Criterion) {
 				.arg("-m")
 				.arg("64M")
 				.arg("-kernel")
-				.arg(&rusty_loader_path)
+				.arg(&loader_path)
 				.arg("-initrd")
 				.arg(&hello_world_path)
 				.arg("-display")
@@ -137,15 +135,13 @@ pub fn run_rusty_demo(c: &mut Criterion) {
 		return;
 	}
 
-	let rusty_loader_path = [
-		env!("CARGO_MANIFEST_DIR"),
-		"data/x86_64/hermit-loader-x86_64",
-	]
-	.iter()
-	.collect::<PathBuf>();
+	let loader_path = [env!("CARGO_MANIFEST_DIR"), "hermit-loader-x86_64"]
+		.iter()
+		.collect::<PathBuf>();
 	assert!(
-		rusty_loader_path.exists(),
-		"rusty-loader is missing from bench_data"
+		loader_path.exists(),
+		"hermit-loader-x86_64 was not found in {}, please download it manually and try again",
+		loader_path.into_os_string().into_string().unwrap()
 	);
 
 	group.bench_function("qemu data/x86_64/rusty_demo", |b| {
@@ -156,7 +152,7 @@ pub fn run_rusty_demo(c: &mut Criterion) {
 				.arg("-m")
 				.arg("64M")
 				.arg("-kernel")
-				.arg(&rusty_loader_path)
+				.arg(&loader_path)
 				.arg("-initrd")
 				.arg(&rusty_demo_path)
 				.arg("-display")
