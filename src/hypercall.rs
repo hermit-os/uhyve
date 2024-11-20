@@ -4,7 +4,10 @@ use std::{
 	os::unix::ffi::OsStrExt,
 };
 
-use uhyve_interface::{parameters::*, GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC};
+use uhyve_interface::{
+	v1::{parameters::*, Hypercall, HypercallAddress, MAX_ARGC_ENVC},
+	GuestPhysAddr,
+};
 
 use crate::{
 	consts::BOOT_PML4,

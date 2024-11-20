@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use log::debug;
-use uhyve_interface::{GuestPhysAddr, Hypercall};
+use uhyve_interface::{v1::Hypercall, GuestPhysAddr};
 use xhypervisor::{
 	self, create_vm, map_mem, MemPerm, Register, SystemRegister, VirtualCpuExitReason,
 };
