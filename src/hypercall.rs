@@ -1,6 +1,6 @@
 use std::{
 	ffi::OsStr,
-	io::{self, Error, ErrorKind, Write},
+	io::{self, Error, ErrorKind},
 	os::unix::ffi::OsStrExt,
 };
 
@@ -10,6 +10,7 @@ use crate::{
 	consts::BOOT_PML4,
 	mem::{MemoryError, MmapMemory},
 	virt_to_phys,
+	vm::{UhyveVm, VirtualizationBackend},
 };
 
 /// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
@@ -119,23 +120,49 @@ pub fn read(mem: &MmapMemory, sysread: &mut ReadParams) {
 }
 
 /// Handles an write syscall on the host.
-pub fn write(mem: &MmapMemory, syswrite: &WriteParams) -> io::Result<()> {
+pub fn write<B: VirtualizationBackend>(
+	parent_vm: &UhyveVm<B>,
+	syswrite: &WriteParams,
+) -> io::Result<()> {
 	let mut bytes_written: usize = 0;
 	while bytes_written != syswrite.len {
+		let guest_phys_addr = virt_to_phys(
+			syswrite.buf + bytes_written as u64,
+			&parent_vm.mem,
+			BOOT_PML4,
+		)
+		.unwrap();
+
+		if syswrite.fd == 1 {
+			// fd 0 is stdout
+			let bytes = unsafe {
+				parent_vm
+					.mem
+					.slice_at(guest_phys_addr, syswrite.len)
+					.map_err(|e| {
+						io::Error::new(
+							io::ErrorKind::InvalidInput,
+							format!("invalid syswrite buffer: {e:?}"),
+						)
+					})?
+			};
+			return parent_vm.serial_output(bytes);
+		}
+
 		unsafe {
 			let step = libc::write(
 				syswrite.fd,
-				mem.host_address(
-					virt_to_phys(syswrite.buf + bytes_written as u64, mem, BOOT_PML4).unwrap(),
-				)
-				.map_err(|e| match e {
-					MemoryError::BoundsViolation => {
-						unreachable!("Bounds violation after host_address function")
-					}
-					MemoryError::WrongMemoryError => {
-						Error::new(ErrorKind::AddrNotAvailable, e.to_string())
-					}
-				})? as *const libc::c_void,
+				parent_vm
+					.mem
+					.host_address(guest_phys_addr)
+					.map_err(|e| match e {
+						MemoryError::BoundsViolation => {
+							unreachable!("Bounds violation after host_address function")
+						}
+						MemoryError::WrongMemoryError => {
+							Error::new(ErrorKind::AddrNotAvailable, e.to_string())
+						}
+					})? as *const libc::c_void,
 				syswrite.len - bytes_written,
 			);
 			if step >= 0 {
@@ -155,20 +182,6 @@ pub fn lseek(syslseek: &mut LseekParams) {
 		syslseek.offset =
 			libc::lseek(syslseek.fd, syslseek.offset as i64, syslseek.whence) as isize;
 	}
-}
-
-/// Handles an UART syscall by writing to stdout.
-pub fn uart(buf: &[u8]) -> io::Result<()> {
-	io::stdout().write_all(buf)
-}
-
-/// Handles a UART syscall by contructing a buffer from parameter
-pub fn uart_buffer(sysuart: &SerialWriteBufferParams, mem: &MmapMemory) {
-	let buf = unsafe {
-		mem.slice_at(sysuart.buf, sysuart.len)
-			.expect("Systemcall parameters for SerialWriteBuffer are invalid")
-	};
-	io::stdout().write_all(buf).unwrap()
 }
 
 /// Copies the arguments of the application into the VM's memory to the destinations specified in `syscmdval`.

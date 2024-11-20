@@ -1,8 +1,10 @@
 use std::{
-	env, fmt, fs, io,
+	env, fmt,
+	fs::{self, File, OpenOptions},
+	io::{self, Write},
 	num::NonZeroU32,
 	path::PathBuf,
-	ptr,
+	ptr, str,
 	sync::{Arc, Mutex},
 	time::SystemTime,
 };
@@ -25,7 +27,7 @@ use crate::{
 	fdt::Fdt,
 	mem::MmapMemory,
 	os::HypervisorError,
-	params::Params,
+	params::{self, Params},
 	virtio::*,
 };
 
@@ -117,6 +119,19 @@ pub struct VmResult {
 	pub output: Option<String>,
 }
 
+#[derive(Debug)]
+pub enum Output {
+	StdIo,
+	File(Arc<Mutex<File>>),
+	Buffer(Arc<Mutex<String>>),
+	None,
+}
+impl Default for Output {
+	fn default() -> Self {
+		Self::StdIo
+	}
+}
+
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	/// The starting position of the image in physical memory
 	offset: u64,
@@ -130,6 +145,7 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(super) gdb_port: Option<u16>,
 	pub(crate) virt_backend: VirtBackend,
 	params: Params,
+	pub output: Output,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
@@ -159,6 +175,30 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			"gdbstub is only supported with one CPU"
 		);
 
+		let output = match params.output {
+			params::Output::None => Output::None,
+			params::Output::StdIo => Output::StdIo,
+			params::Output::Buffer => {
+				Output::Buffer(Arc::new(Mutex::new(String::with_capacity(8096))))
+			}
+			params::Output::File(ref path) => {
+				let f = OpenOptions::new()
+					.read(false)
+					.write(true)
+					.create_new(true)
+					.open(path)
+					.map_err(|e| {
+						error!("Cant create kernel output file: {e}");
+						// TODO: proper error handling
+						#[cfg(target_os = "macos")]
+						panic!();
+						#[cfg(not(target_os = "macos"))]
+						e
+					})?;
+				Output::File(Arc::new(Mutex::new(f)))
+			}
+		};
+
 		let mut vm = Self {
 			offset: 0,
 			entry_point: 0,
@@ -170,11 +210,29 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			gdb_port: params.gdb_port,
 			virt_backend,
 			params,
+			output,
 		};
 
 		vm.init_guest_mem();
 
 		Ok(vm)
+	}
+
+	pub fn serial_output(&self, buf: &[u8]) -> io::Result<()> {
+		match &self.output {
+			Output::StdIo => io::stdout().write_all(buf),
+			Output::None => Ok(()),
+			Output::Buffer(b) => {
+				b.lock().unwrap().push_str(str::from_utf8(buf).map_err(|e| {
+					io::Error::new(
+						io::ErrorKind::InvalidData,
+						format!("invalid UTF-8 bytes in output: {e:?}"),
+					)
+				})?);
+				Ok(())
+			}
+			Output::File(f) => f.lock().unwrap().write_all(buf),
+		}
 	}
 
 	/// Returns the section offsets relative to their base addresses

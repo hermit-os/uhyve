@@ -255,6 +255,8 @@ impl From<Args> for Params {
 			#[cfg(target_os = "macos")]
 			gdb_port: None,
 			kernel_args,
+			// TODO
+			output: Default::default(),
 		}
 	}
 }
