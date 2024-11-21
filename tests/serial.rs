@@ -1,12 +1,9 @@
 mod common;
 
-use std::{
-	fs::{read_to_string, remove_file},
-	path::PathBuf,
-};
+use std::{fs::read_to_string, path::PathBuf};
 
 use byte_unit::{Byte, Unit};
-use common::{build_hermit_bin, run_simple_vm};
+use common::{build_hermit_bin, remove_file_if_exists, run_simple_vm};
 use uhyvelib::{
 	params::{Output, Params},
 	vm::UhyveVm,
@@ -30,11 +27,7 @@ fn serial_file_output_test() {
 	env_logger::try_init().ok();
 	let bin_path = build_hermit_bin("serial");
 	let output_path: PathBuf = "testserialout.txt".into();
-	if output_path.exists() {
-		println!("Removing existing file {}", output_path.display());
-		remove_file(&output_path)
-			.unwrap_or_else(|_| panic!("Can't remove {}", output_path.display()));
-	}
+	remove_file_if_exists(&output_path);
 
 	println!("Launching kernel {}", bin_path.display());
 	let params = Params {
@@ -55,5 +48,5 @@ fn serial_file_output_test() {
 	let file_content = read_to_string(&output_path).unwrap();
 	assert!(file_content.contains("Hello from serial!\nABCD\n1234ASDF!@#$\n"));
 
-	remove_file(&output_path).unwrap_or_else(|_| panic!("Can't remove {}", output_path.display()));
+	remove_file_if_exists(&output_path);
 }

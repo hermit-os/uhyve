@@ -1,5 +1,6 @@
 use std::{
 	env,
+	fs::remove_file,
 	path::{Path, PathBuf},
 	process::Command,
 };
@@ -56,4 +57,12 @@ pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 		..Default::default()
 	};
 	UhyveVm::new(kernel_path, params).unwrap().run(None)
+}
+
+/// Removes a file if it already exists on the host OS.
+pub fn remove_file_if_exists(path: &PathBuf) {
+	if path.exists() {
+		println!("Removing existing directory {}", path.display());
+		remove_file(path).unwrap_or_else(|_| panic!("Can't remove {}", path.display()));
+	}
 }

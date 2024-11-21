@@ -1,24 +1,26 @@
 mod common;
 
 use std::{
-	fs::{read, remove_file},
+	fs::{read_to_string, remove_file},
 	path::PathBuf,
 };
 
-use common::{build_hermit_bin, run_simple_vm};
+use common::{build_hermit_bin, remove_file_if_exists, run_simple_vm};
+
+/// Verifies successful file creation on the host OS and its contents.
+pub fn verify_file_equals(testfile: &PathBuf, contents: &str) {
+	assert!(testfile.exists());
+	let file_content = read_to_string(testfile).unwrap();
+	assert_eq!(file_content, contents.to_string());
+}
 
 #[test]
 fn new_file_test() {
-	let testfile = PathBuf::from("foo.txt");
-	if testfile.exists() {
-		println!("Removing existing file {}", testfile.display());
-		remove_file(&testfile).unwrap_or_else(|_| panic!("Can't remove {}", testfile.display()));
-	}
+	let output_path = PathBuf::from("foo.txt");
+	remove_file_if_exists(&output_path);
 	let bin_path = build_hermit_bin("create_file");
 	run_simple_vm(bin_path);
 
-	assert!(testfile.exists());
-	let file_content = read("foo.txt").unwrap();
-	assert_eq!(file_content, "Hello, world!".as_bytes());
-	remove_file(&testfile).unwrap_or_else(|_| panic!("Can't remove {}", testfile.display()));
+	verify_file_equals(&output_path, "Hello, world!");
+	remove_file(&output_path).unwrap_or_else(|_| panic!("Can't remove {}", output_path.display()));
 }
