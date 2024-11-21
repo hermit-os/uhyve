@@ -28,6 +28,7 @@ use crate::{
 	mem::MmapMemory,
 	os::HypervisorError,
 	params::{self, Params},
+	stats::VmStats,
 	virtio::*,
 };
 
@@ -108,7 +109,12 @@ pub trait VirtualizationBackend: Sized {
 	const NAME: &str;
 
 	/// Create a new CPU object
-	fn new_cpu(&self, id: u32, parent_vm: Arc<UhyveVm<Self>>) -> HypervisorResult<Self::VCPU>;
+	fn new_cpu(
+		&self,
+		id: u32,
+		parent_vm: Arc<UhyveVm<Self>>,
+		enable_stats: bool,
+	) -> HypervisorResult<Self::VCPU>;
 
 	fn new(memory: &MmapMemory, params: &Params) -> HypervisorResult<Self>;
 }
@@ -117,6 +123,7 @@ pub trait VirtualizationBackend: Sized {
 pub struct VmResult {
 	pub code: i32,
 	pub output: Option<String>,
+	pub stats: Option<VmStats>,
 }
 
 #[derive(Debug)]
@@ -259,6 +266,10 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 	pub fn args(&self) -> &Vec<String> {
 		&self.params.kernel_args
+	}
+
+	pub fn get_params(&self) -> &Params {
+		&self.params
 	}
 
 	/// Initialize the page tables for the guest

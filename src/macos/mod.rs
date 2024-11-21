@@ -15,6 +15,7 @@ pub use crate::macos::aarch64::vcpu::{XhyveCpu, XhyveVm};
 #[cfg(target_arch = "x86_64")]
 pub use crate::macos::x86_64::vcpu::{XhyveCpu, XhyveVm};
 use crate::{
+	stats::VmStats,
 	vcpu::VirtualCPU,
 	vm::{UhyveVm, VirtualizationBackend, VmResult},
 };
@@ -33,6 +34,7 @@ impl UhyveVm<XhyveVm> {
 		// value.
 		let (exit_tx, exit_rx) = mpsc::channel();
 
+		let enable_stats = self.get_params().stats;
 		let this = Arc::new(self);
 
 		(0..this.num_cpus()).for_each(|cpu_id| {
@@ -57,14 +59,14 @@ impl UhyveVm<XhyveVm> {
 
 				let mut cpu = parent_vm
 					.virt_backend
-					.new_cpu(cpu_id, parent_vm.clone())
+					.new_cpu(cpu_id, parent_vm.clone(), enable_stats)
 					.unwrap();
 
 				// jump into the VM and execute code of the guest
 				let result = cpu.run();
 				match result {
-					Ok(Some(exit_code)) => exit_tx.send(exit_code).unwrap(),
-					Ok(None) => {}
+					Ok((Some(exit_code), stats)) => exit_tx.send((exit_code, stats)).unwrap(),
+					Ok((None, _stats)) => {}
 					Err(err) => error!("CPU {} crashed with {:?}", cpu_id, err),
 				}
 			});
@@ -75,9 +77,17 @@ impl UhyveVm<XhyveVm> {
 		// ignore the remaining running threads. A better design would be to force
 		// the VCPUs externally to stop, so that the other threads don't block and
 		// can be terminated correctly.
+		// Also we only have stats for the exiting CPU.
+		let (code, stats) = exit_rx.recv().unwrap();
+		let stats = if enable_stats {
+			Some(VmStats::new(&[stats.unwrap()]))
+		} else {
+			None
+		};
 		VmResult {
-			code: exit_rx.recv().unwrap(),
+			code,
 			output: None,
+			stats,
 		}
 	}
 }

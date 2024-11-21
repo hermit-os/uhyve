@@ -38,7 +38,7 @@ pub const UHYVE_INTERFACE_VERSION: u32 = 1;
 /// e.g., `HypercallPorts::FileWrite as u16`.
 #[non_exhaustive]
 #[repr(u16)]
-#[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
+#[derive(Debug, Eq, PartialEq, TryFromPrimitive, Clone, Copy, Hash)]
 pub enum HypercallAddress {
 	/// Port address = `0x400`
 	FileWrite = 0x400,

@@ -44,6 +44,10 @@ struct Args {
 	#[clap(short, long, value_name = "FILE")]
 	output: Option<String>,
 
+	/// Display statistics after the execution
+	#[clap(long)]
+	stats: bool,
+
 	#[clap(flatten, next_help_heading = "Memory OPTIONS")]
 	memory_args: MemoryArgs,
 
@@ -247,6 +251,7 @@ impl From<Args> for Params {
 			kernel: _,
 			kernel_args,
 			output,
+			stats,
 		} = args;
 		Self {
 			memory_size,
@@ -268,6 +273,7 @@ impl From<Args> for Params {
 			} else {
 				Output::StdIo
 			},
+			stats,
 		}
 	}
 }
@@ -280,6 +286,7 @@ fn run_uhyve() -> i32 {
 
 	let mut app = Args::command();
 	let args = Args::parse();
+	let stats = args.stats;
 	let kernel = args.kernel.clone();
 	let affinity = args.cpu_args.clone().get_affinity(&mut app);
 	let params = Params::from(args);
@@ -287,7 +294,14 @@ fn run_uhyve() -> i32 {
 	let vm = UhyveVm::new(kernel, params)
 		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?");
 
-	vm.run(affinity).code
+	let res = vm.run(affinity);
+	if stats {
+		if let Some(stats) = res.stats {
+			println!("Run statistics:");
+			println!("{stats}");
+		}
+	}
+	res.code
 }
 
 fn main() {

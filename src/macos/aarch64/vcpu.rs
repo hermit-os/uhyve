@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use log::debug;
-use uhyve_interface::{GuestPhysAddr, Hypercall};
+use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress};
 use xhypervisor::{
 	self, create_vm, map_mem, MemPerm, Register, SystemRegister, VirtualCpuExitReason,
 };
@@ -18,6 +18,7 @@ use crate::{
 	hypercall::{self, copy_argv, copy_env},
 	mem::MmapMemory,
 	params::Params,
+	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::{UhyveVm, VirtualizationBackend},
 	HypervisorResult,
@@ -28,11 +29,21 @@ impl VirtualizationBackend for XhyveVm {
 	type VCPU = XhyveCpu;
 	const NAME: &str = "XhyveVm";
 
-	fn new_cpu(&self, id: u32, parent_vm: Arc<UhyveVm<XhyveVm>>) -> HypervisorResult<XhyveCpu> {
+	fn new_cpu(
+		&self,
+		id: u32,
+		parent_vm: Arc<UhyveVm<XhyveVm>>,
+		enable_stats: bool,
+	) -> HypervisorResult<XhyveCpu> {
 		let mut vcpu = XhyveCpu {
 			id,
 			parent_vm: parent_vm.clone(),
 			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
+			stats: if enable_stats {
+				Some(CpuStats::new(id as usize))
+			} else {
+				None
+			},
 		};
 		vcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
 
@@ -53,6 +64,7 @@ pub struct XhyveCpu {
 	id: u32,
 	vcpu: xhypervisor::VirtualCpu,
 	parent_vm: Arc<UhyveVm<XhyveVm>>,
+	stats: Option<CpuStats>,
 }
 
 impl XhyveCpu {
@@ -185,6 +197,11 @@ impl VirtualCPU for XhyveCpu {
 						if let Some(hypercall) = unsafe {
 							hypercall::address_to_hypercall(&self.parent_vm.mem, addr, data_addr)
 						} {
+							if let Some(s) = self.stats.as_mut() {
+								s.increment_val(VmExit::Hypercall(HypercallAddress::from(
+									&hypercall,
+								)))
+							}
 							match hypercall {
 								Hypercall::SerialWriteByte(_char) => {
 									let x8 = (self.vcpu.read_register(Register::X8)? & 0xFF) as u8;
@@ -261,14 +278,21 @@ impl VirtualCPU for XhyveCpu {
 		}
 	}
 
-	fn run(&mut self) -> HypervisorResult<Option<i32>> {
-		match self.r#continue()? {
+	fn run(&mut self) -> HypervisorResult<(Option<i32>, Option<CpuStats>)> {
+		if let Some(stats) = self.stats.as_mut() {
+			stats.start_time_measurement();
+		}
+		let res = match self.r#continue()? {
 			VcpuStopReason::Debug(_) => {
 				unreachable!("reached debug exit without running in debugging mode")
 			}
-			VcpuStopReason::Exit(code) => Ok(Some(code)),
-			VcpuStopReason::Kick => Ok(None),
+			VcpuStopReason::Exit(code) => Some(code),
+			VcpuStopReason::Kick => None,
+		};
+		if let Some(stats) = self.stats.as_mut() {
+			stats.stop_time_measurement();
 		}
+		Ok((res, self.stats.take()))
 	}
 
 	fn print_registers(&self) {

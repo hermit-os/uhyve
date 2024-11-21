@@ -37,6 +37,9 @@ pub struct Params {
 
 	/// Kernel output handling
 	pub output: Output,
+
+	/// Collect run statistics
+	pub stats: bool,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -54,6 +57,7 @@ impl Default for Params {
 			gdb_port: Default::default(),
 			kernel_args: Default::default(),
 			output: Default::default(),
+			stats: false,
 		}
 	}
 }

@@ -28,6 +28,7 @@ use crate::{
 		gdb::{GdbUhyve, UhyveGdbEventLoop},
 		x86_64::kvm_cpu::KvmVm,
 	},
+	stats::{CpuStats, VmStats},
 	vcpu::VirtualCPU,
 	vm::{Output, UhyveVm, VirtualizationBackend, VmResult},
 };
@@ -98,7 +99,7 @@ impl UhyveVm<KvmVm> {
 
 				let mut cpu = parent_vm
 					.virt_backend
-					.new_cpu(cpu_id, parent_vm.clone())
+					.new_cpu(cpu_id, parent_vm.clone(), this.get_params().stats)
 					.unwrap();
 
 				thread::spawn(move || {
@@ -115,17 +116,17 @@ impl UhyveVm<KvmVm> {
 
 					// jump into the VM and execute code of the guest
 					match cpu.run() {
-						Ok(code) => {
+						Ok((code, stats)) => {
 							if code.is_some() {
 								// Let the main thread continue with kicking the other vCPUs
 								barrier.wait();
 							}
-							code
+							(code, stats)
 						}
 						Err(err) => {
 							error!("CPU {} crashed with {:?}", cpu_id, err);
 							barrier.wait();
-							Some(err.errno())
+							(Some(err.errno()), None)
 						}
 					}
 				})
@@ -139,22 +140,31 @@ impl UhyveVm<KvmVm> {
 			KickSignal::pthread_kill(thread.as_pthread_t()).unwrap();
 		}
 
-		let code = threads
+		let cpu_results = threads
 			.into_iter()
-			.filter_map(|thread| thread.join().unwrap())
+			.map(|thread| thread.join().unwrap())
 			.collect::<Vec<_>>();
-		let code = match code.len() {
+		let code = match cpu_results.iter().filter_map(|(ret, _stats)| *ret).count() {
 			0 => panic!("No return code from any CPU? Maybe all have been kicked?"),
-			1 => code[0],
-			_ => panic!("more than one thread finished with an exit code (codes: {code:?})"),
+			1 => cpu_results[0].0.unwrap(),
+			_ => panic!("more than one thread finished with an exit code (codes: {cpu_results:?})"),
 		};
+
+		let stats: Vec<CpuStats> = cpu_results
+			.iter()
+			.filter_map(|(_ret, stats)| stats.clone())
+			.collect();
 		let output = if let Output::Buffer(b) = &this.output {
 			Some(b.lock().unwrap().clone())
 		} else {
 			None
 		};
 
-		VmResult { code, output }
+		VmResult {
+			code,
+			output,
+			stats: Some(VmStats::new(&stats)),
+		}
 	}
 
 	fn run_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
@@ -173,7 +183,11 @@ impl UhyveVm<KvmVm> {
 		}
 
 		let this = Arc::new(self);
-		let cpu = this.virt_backend.new_cpu(cpu_id, this.clone()).unwrap();
+		let cpu = this
+			.virt_backend
+			// TODO: enable stats for gdb sessions as well
+			.new_cpu(cpu_id, this.clone(), false)
+			.unwrap();
 
 		let connection = wait_for_gdb_connection(this.gdb_port.unwrap()).unwrap();
 		let debugger = GdbStub::new(connection);
@@ -201,7 +215,11 @@ impl UhyveVm<KvmVm> {
 			None
 		};
 
-		VmResult { code, output }
+		VmResult {
+			code,
+			output,
+			stats: None,
+		}
 	}
 }
 

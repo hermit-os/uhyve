@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
-use uhyve_interface::{GuestPhysAddr, Hypercall};
+use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress};
 use vmm_sys_util::eventfd::EventFd;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
@@ -12,6 +12,7 @@ use crate::{
 	linux::KVM,
 	mem::MmapMemory,
 	params::Params,
+	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	virtio::*,
 	vm::{UhyveVm, VirtualizationBackend},
@@ -36,13 +37,23 @@ impl VirtualizationBackend for KvmVm {
 	type VCPU = KvmCpu;
 	const NAME: &str = "KvmVm";
 
-	fn new_cpu(&self, id: u32, parent_vm: Arc<UhyveVm<KvmVm>>) -> HypervisorResult<KvmCpu> {
+	fn new_cpu(
+		&self,
+		id: u32,
+		parent_vm: Arc<UhyveVm<KvmVm>>,
+		enable_stats: bool,
+	) -> HypervisorResult<KvmCpu> {
 		let vcpu = self.vm_fd.create_vcpu(id as u64)?;
 		let mut kvcpu = KvmCpu {
 			id,
 			vcpu,
 			parent_vm: parent_vm.clone(),
 			pci_addr: None,
+			stats: if enable_stats {
+				Some(CpuStats::new(id as usize))
+			} else {
+				None
+			},
 		};
 		kvcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
 
@@ -139,6 +150,7 @@ pub struct KvmCpu {
 	vcpu: VcpuFd,
 	parent_vm: Arc<UhyveVm<KvmVm>>,
 	pci_addr: Option<u32>,
+	stats: Option<CpuStats>,
 }
 
 impl KvmCpu {
@@ -352,56 +364,70 @@ impl VirtualCPU for KvmCpu {
 					VcpuExit::Shutdown => {
 						return Ok(VcpuStopReason::Exit(0));
 					}
-					VcpuExit::IoIn(port, addr) => match port {
-						PCI_CONFIG_DATA_PORT => {
-							if let Some(pci_addr) = self.pci_addr {
-								if pci_addr & 0x1ff800 == 0 {
-									let virtio_device =
-										self.parent_vm.virtio_device.lock().unwrap();
-									virtio_device.handle_read(pci_addr & 0x3ff, addr);
+					VcpuExit::IoIn(port, addr) => {
+						if let Some(s) = self.stats.as_mut() {
+							s.increment_val(VmExit::PCIRead)
+						}
+
+						match port {
+							PCI_CONFIG_DATA_PORT => {
+								if let Some(pci_addr) = self.pci_addr {
+									if pci_addr & 0x1ff800 == 0 {
+										let virtio_device =
+											self.parent_vm.virtio_device.lock().unwrap();
+										virtio_device.handle_read(pci_addr & 0x3ff, addr);
+									} else {
+										unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
+									}
 								} else {
 									unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
 								}
-							} else {
-								unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
+							}
+							PCI_CONFIG_ADDRESS_PORT => {}
+							VIRTIO_PCI_STATUS => {
+								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
+								virtio_device.read_status(addr);
+							}
+							VIRTIO_PCI_HOST_FEATURES => {
+								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
+								virtio_device.read_host_features(addr);
+							}
+							VIRTIO_PCI_GUEST_FEATURES => {
+								let mut virtio_device =
+									self.parent_vm.virtio_device.lock().unwrap();
+								virtio_device.read_requested_features(addr);
+							}
+							VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
+								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
+								virtio_device
+									.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_OFF);
+							}
+							VIRTIO_PCI_ISR => {
+								let mut virtio_device =
+									self.parent_vm.virtio_device.lock().unwrap();
+								virtio_device.reset_interrupt()
+							}
+							VIRTIO_PCI_LINK_STATUS_MSIX_OFF => {
+								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
+								virtio_device.read_link_status(addr);
+							}
+							port => {
+								warn!("guest read from unknown I/O port {port:#x}");
 							}
 						}
-						PCI_CONFIG_ADDRESS_PORT => {}
-						VIRTIO_PCI_STATUS => {
-							let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
-							virtio_device.read_status(addr);
-						}
-						VIRTIO_PCI_HOST_FEATURES => {
-							let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
-							virtio_device.read_host_features(addr);
-						}
-						VIRTIO_PCI_GUEST_FEATURES => {
-							let mut virtio_device = self.parent_vm.virtio_device.lock().unwrap();
-							virtio_device.read_requested_features(addr);
-						}
-						VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
-							let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
-							virtio_device
-								.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_OFF);
-						}
-						VIRTIO_PCI_ISR => {
-							let mut virtio_device = self.parent_vm.virtio_device.lock().unwrap();
-							virtio_device.reset_interrupt()
-						}
-						VIRTIO_PCI_LINK_STATUS_MSIX_OFF => {
-							let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
-							virtio_device.read_link_status(addr);
-						}
-						port => {
-							warn!("guest read from unknown I/O port {port:#x}");
-						}
-					},
+					}
 					VcpuExit::IoOut(port, addr) => {
 						let data_addr =
 							GuestPhysAddr::new(unsafe { (*(addr.as_ptr() as *const u32)) as u64 });
 						if let Some(hypercall) = unsafe {
 							hypercall::address_to_hypercall(&self.parent_vm.mem, port, data_addr)
 						} {
+							if let Some(s) = self.stats.as_mut() {
+								s.increment_val(VmExit::Hypercall(HypercallAddress::from(
+									&hypercall,
+								)))
+							}
+
 							match hypercall {
 								Hypercall::Cmdsize(syssize) => syssize
 									.update(self.parent_vm.kernel_path(), self.parent_vm.args()),
@@ -450,6 +476,9 @@ impl VirtualCPU for KvmCpu {
 								_ => panic!("Got unknown hypercall {:?}", hypercall),
 							};
 						} else {
+							if let Some(s) = self.stats.as_mut() {
+								s.increment_val(VmExit::PCIWrite)
+							}
 							match port {
 								//TODO:
 								PCI_CONFIG_DATA_PORT => {
@@ -496,6 +525,9 @@ impl VirtualCPU for KvmCpu {
 						}
 					}
 					VcpuExit::Debug(debug) => {
+						if let Some(s) = self.stats.as_mut() {
+							s.increment_val(VmExit::Debug)
+						}
 						info!("Caught Debug Interrupt!");
 						return Ok(VcpuStopReason::Debug(debug));
 					}
@@ -515,14 +547,21 @@ impl VirtualCPU for KvmCpu {
 		}
 	}
 
-	fn run(&mut self) -> HypervisorResult<Option<i32>> {
-		match self.r#continue()? {
+	fn run(&mut self) -> HypervisorResult<(Option<i32>, Option<CpuStats>)> {
+		if let Some(stats) = self.stats.as_mut() {
+			stats.start_time_measurement();
+		}
+		let res = match self.r#continue()? {
 			VcpuStopReason::Debug(_) => {
 				unreachable!("reached debug exit without running in debugging mode")
 			}
-			VcpuStopReason::Exit(code) => Ok(Some(code)),
-			VcpuStopReason::Kick => Ok(None),
+			VcpuStopReason::Exit(code) => Some(code),
+			VcpuStopReason::Kick => None,
+		};
+		if let Some(stats) = self.stats.as_mut() {
+			stats.stop_time_measurement();
 		}
+		Ok((res, self.stats.take()))
 	}
 
 	fn print_registers(&self) {
