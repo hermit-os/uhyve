@@ -13,8 +13,8 @@ use uhyvelib::{
 fn serial_buffer_test() {
 	let bin_path = build_hermit_bin("serial");
 	let res = run_simple_vm(bin_path);
-	assert_eq!(res.code, 0);
 	println!("Kernel output: {:?}", res);
+	assert_eq!(res.code, 0);
 	assert!(res
 		.output
 		.as_ref()
