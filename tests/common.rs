@@ -54,6 +54,7 @@ pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 			.try_into()
 			.unwrap(),
 		output: Output::Buffer,
+		stats: true,
 		..Default::default()
 	};
 	UhyveVm::new(kernel_path, params).unwrap().run(None)
