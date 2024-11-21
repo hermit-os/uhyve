@@ -7,7 +7,7 @@ use std::{
 
 use burst::x86::{disassemble_64, InstructionOperation, OperandType};
 use log::{debug, trace};
-use uhyve_interface::{GuestPhysAddr, Hypercall};
+use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress};
 use x86_64::{
 	registers::control::{Cr0Flags, Cr4Flags},
 	structures::gdt::SegmentSelector,
@@ -35,6 +35,7 @@ use crate::{
 	macos::x86_64::ioapic::IoApic,
 	mem::MmapMemory,
 	params::Params,
+	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::{UhyveVm, VirtualizationBackend},
 	HypervisorResult,
@@ -160,12 +161,22 @@ impl VirtualizationBackend for XhyveVm {
 	type VCPU = XhyveCpu;
 	const NAME: &str = "XhyveVm";
 
-	fn new_cpu(&self, id: u32, parent_vm: Arc<UhyveVm<XhyveVm>>) -> HypervisorResult<XhyveCpu> {
+	fn new_cpu(
+		&self,
+		id: u32,
+		parent_vm: Arc<UhyveVm<XhyveVm>>,
+		enable_stats: bool,
+	) -> HypervisorResult<XhyveCpu> {
 		let mut vcpu = XhyveCpu {
 			id,
 			parent_vm: parent_vm.clone(),
 			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
 			apic_base: APIC_DEFAULT_BASE,
+			stats: if enable_stats {
+				Some(CpuStats::new(id as usize))
+			} else {
+				None
+			},
 		};
 		vcpu.init(parent_vm.get_entry_point(), parent_vm.stack_address(), id)?;
 
@@ -187,6 +198,7 @@ pub struct XhyveCpu {
 	vcpu: xhypervisor::VirtualCpu,
 	parent_vm: Arc<UhyveVm<XhyveVm>>,
 	apic_base: u64,
+	stats: Option<CpuStats>,
 }
 
 impl XhyveCpu {
@@ -695,6 +707,10 @@ impl VirtualCPU for XhyveCpu {
 						valid && trap_or_breakpoint,
 						"Received exception or non-maskable interrupt {irq_vec}!"
 					);
+
+					if let Some(s) = self.stats.as_mut() {
+						s.increment_val(VmExit::Debug)
+					}
 					debug!("Handle breakpoint exception");
 					return Ok(VcpuStopReason::Debug(()));
 				}
@@ -737,6 +753,9 @@ impl VirtualCPU for XhyveCpu {
 					if let Some(hypercall) = unsafe {
 						hypercall::address_to_hypercall(&self.parent_vm.mem, port, data_addr)
 					} {
+						if let Some(s) = self.stats.as_mut() {
+							s.increment_val(VmExit::Hypercall(HypercallAddress::from(&hypercall)))
+						}
 						match hypercall {
 							Hypercall::Cmdsize(syssize) => {
 								syssize.update(self.parent_vm.kernel_path(), self.parent_vm.args())
@@ -800,14 +819,21 @@ impl VirtualCPU for XhyveCpu {
 		}
 	}
 
-	fn run(&mut self) -> HypervisorResult<Option<i32>> {
-		match self.r#continue()? {
+	fn run(&mut self) -> HypervisorResult<(Option<i32>, Option<CpuStats>)> {
+		if let Some(stats) = self.stats.as_mut() {
+			stats.start_time_measurement();
+		}
+		let res = match self.r#continue()? {
 			VcpuStopReason::Debug(_) => {
 				unreachable!("reached debug exit without running in debugging mode")
 			}
-			VcpuStopReason::Exit(code) => Ok(Some(code)),
-			VcpuStopReason::Kick => Ok(None),
+			VcpuStopReason::Exit(code) => Some(code),
+			VcpuStopReason::Kick => None,
+		};
+		if let Some(stats) = self.stats.as_mut() {
+			stats.stop_time_measurement();
 		}
+		Ok((res, self.stats.take()))
 	}
 
 	fn print_registers(&self) {

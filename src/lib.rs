@@ -24,6 +24,7 @@ mod hypercall;
 pub mod mem;
 pub mod paging;
 pub mod params;
+pub mod stats;
 mod vcpu;
 pub mod virtio;
 pub mod virtqueue;
