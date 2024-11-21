@@ -151,11 +151,15 @@ impl FromStr for Output {
 #[derive(Error, Debug)]
 pub enum InvalidGuestMemorySizeError {
 	#[error(
-		"Not enough guest memory. Must be at least {min} (is {0})",
-		min = GuestMemorySize::minimum()
+		"Not enough guest memory. Must be at least {min:#} (is {cur:#.3})",
+		min = GuestMemorySize::minimum().get_adjusted_unit(Unit::MiB),
+		cur = .0.get_adjusted_unit(Unit::MiB),
 	)]
 	MemoryTooSmall(Byte),
-	#[error("Invalid amount of guest memory. Must be a multiple of 2 MiB (is {0})")]
+	#[error(
+		"Invalid amount of guest memory. Must be a multiple of 2 MiB (is {cur:#.3})",
+		cur = .0.get_adjusted_unit(Unit::MiB),
+	)]
 	NotAHugepage(Byte),
 }
 
