@@ -30,6 +30,11 @@ fn serial_file_output_test() {
 	env_logger::try_init().ok();
 	let bin_path = build_hermit_bin("serial");
 	let output_path: PathBuf = "testserialout.txt".into();
+	if output_path.exists() {
+		println!("Removing existing file {}", output_path.display());
+		remove_file(&output_path)
+			.unwrap_or_else(|_| panic!("Can't remove {}", output_path.display()));
+	}
 
 	println!("Launching kernel {}", bin_path.display());
 	let params = Params {
