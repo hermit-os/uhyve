@@ -15,6 +15,7 @@ use hermit_entry::{
 };
 use log::{error, warn};
 use sysinfo::System;
+use tempfile::TempDir;
 use thiserror::Error;
 
 #[cfg(target_arch = "x86_64")]
@@ -151,10 +152,11 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	#[allow(dead_code)] // gdb is not supported on macos
 	pub(super) gdb_port: Option<u16>,
-	pub(crate) mount: Option<UhyveFileMap>,
+	pub(crate) mount: Mutex<UhyveFileMap>,
 	pub(crate) virt_backend: VirtBackend,
 	params: Params,
 	pub output: Output,
+	pub(crate) tempdir: TempDir,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
@@ -184,7 +186,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			"gdbstub is only supported with one CPU"
 		);
 
-		let mount = params.mount.as_deref().and_then(UhyveFileMap::new);
+		let tempdir = create_temp_dir();
+		let mount = Mutex::new(UhyveFileMap::new(&params.mount));
 
 		let output = match params.output {
 			params::Output::None => Output::None,
@@ -223,6 +226,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			virt_backend,
 			params,
 			output,
+			tempdir,
 		};
 
 		vm.init_guest_mem();
@@ -275,6 +279,10 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 	pub fn get_params(&self) -> &Params {
 		&self.params
+	}
+
+	pub fn get_tempdir(&self) -> &TempDir {
+		&self.tempdir
 	}
 
 	/// Initialize the page tables for the guest
@@ -381,6 +389,7 @@ impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 			.field("virtio_device", &self.virtio_device)
 			.field("params", &self.params)
 			.field("mount", &self.mount)
+			.field("tempdir", &self.tempdir)
 			.finish()
 	}
 }

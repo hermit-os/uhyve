@@ -4,10 +4,11 @@ use std::{
 	os::unix::ffi::OsStrExt,
 };
 
+use tempfile::TempDir;
 use uhyve_interface::{parameters::*, GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC};
 
 use crate::{
-	consts::BOOT_PML4,
+	consts::{ALLOWED_OPEN_FLAGS, BOOT_PML4, O_CREAT, O_DIRECTORY, O_EXCL},
 	isolation::UhyveFileMap,
 	mem::{MemoryError, MmapMemory},
 	virt_to_phys,
@@ -86,42 +87,60 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams) {
 }
 
 /// Handles an open syscall by opening a file on the host.
-pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &Option<UhyveFileMap>) {
-	// TODO: We could keep track of the file descriptors internally, in case the kernel doesn't close them.
+pub fn open(
+	mem: &MmapMemory,
+	sysopen: &mut OpenParams,
+	file_map: &mut UhyveFileMap,
+	temp_dir_base: &TempDir,
+) {
+	// TODO: Keep track of file descriptors internally, just in case the kernel doesn't close them.
 	let requested_path_ptr = mem.host_address(sysopen.name).unwrap() as *const i8;
+	let guest_path = unsafe { CStr::from_ptr(requested_path_ptr) }.to_str();
+	let mut flags = sysopen.flags & ALLOWED_OPEN_FLAGS;
 
-	// If the file map doesn't exist, full host filesystem access will be provided.
-	if let Some(file_map) = file_map {
+	if let Ok(guest_path) = guest_path {
 		// Rust deals in UTF-8. C doesn't provide such a guarantee.
 		// In that case, converting a CStr to str will return a Utf8Error.
 		//
 		// See: https://nrc.github.io/big-book-ffi/reference/strings.html
-		let guest_path = unsafe { CStr::from_ptr(requested_path_ptr) }.to_str();
+		let host_path_option = file_map.get_host_path(guest_path);
+		if let Some(host_path) = host_path_option {
+			// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
+			// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
+			let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
 
-		if let Ok(guest_path) = guest_path {
-			let host_path_option = file_map.get_host_path(guest_path);
-			if let Some(host_path) = host_path_option {
-				// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
-				// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
-				let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
-
-				sysopen.ret = unsafe {
-					libc::open(
-						host_path_c_string.as_c_str().as_ptr(),
-						sysopen.flags,
-						sysopen.mode,
-					)
-				};
-			} else {
-				error!("The kernel requested to open() a non-whitelisted path. Rejecting...");
-				sysopen.ret = -1;
-			}
+			sysopen.ret = unsafe {
+				libc::open(
+					host_path_c_string.as_c_str().as_ptr(),
+					sysopen.flags,
+					sysopen.mode,
+				)
+			};
 		} else {
-			error!("The kernel requested to open() a path that is not valid UTF-8. Rejecting...");
-			sysopen.ret = -1;
+			info!("Attempting to open a temp file for {:#?}...", guest_path);
+
+			// See: https://lwn.net/Articles/926782/
+			// See: https://github.com/hermit-os/kernel/commit/71bc629
+			if (flags & (O_DIRECTORY | O_CREAT)) == (O_DIRECTORY | O_CREAT) {
+				error!("An open() call used O_DIRECTORY and O_CREAT at the same time. Aborting...");
+				sysopen.ret = -1
+			}
+
+			// Existing files that already exist should be in the file map, not here.
+			// If a supposed attacker can predict where we open a file and its filename,
+			// this contigency, together with O_CREAT, will cause the write to fail.
+			flags |= O_EXCL;
+
+			let host_path = temp_dir_base.path().join(guest_path);
+			let host_path_c_string =
+				file_map.insert_temporary_file(guest_path, host_path.into_os_string());
+
+			let new_host_path = host_path_c_string.as_c_str().as_ptr();
+			sysopen.ret = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
 		}
 	} else {
-		sysopen.ret = unsafe { libc::open(requested_path_ptr, sysopen.flags, sysopen.mode) };
+		error!("The kernel requested to open() a path that is not valid UTF-8. Rejecting...");
+		sysopen.ret = -1;
 	}
 }
 
