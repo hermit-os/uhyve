@@ -1,5 +1,5 @@
 use std::{
-	ffi::OsStr,
+	ffi::{CStr, CString, OsStr},
 	io::{self, Error, ErrorKind},
 	os::unix::ffi::OsStrExt,
 };
@@ -8,6 +8,7 @@ use uhyve_interface::{parameters::*, GuestPhysAddr, Hypercall, HypercallAddress,
 
 use crate::{
 	consts::BOOT_PML4,
+	isolation::UhyveFileMap,
 	mem::{MemoryError, MmapMemory},
 	virt_to_phys,
 	vm::{UhyveVm, VirtualizationBackend},
@@ -85,13 +86,42 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams) {
 }
 
 /// Handles an open syscall by opening a file on the host.
-pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams) {
-	unsafe {
-		sysopen.ret = libc::open(
-			mem.host_address(sysopen.name).unwrap() as *const i8,
-			sysopen.flags,
-			sysopen.mode,
-		);
+pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &Option<UhyveFileMap>) {
+	// TODO: We could keep track of the file descriptors internally, in case the kernel doesn't close them.
+	let requested_path_ptr = mem.host_address(sysopen.name).unwrap() as *const i8;
+
+	// If the file_map doesn't exist, full host filesystem access will be provided.
+	if let Some(file_map) = file_map {
+		// Rust deals in UTF-8. C doesn't provide such a guarantee.
+		// In that case, converting a CStr to str will return a Utf8Error.
+		//
+		// See: https://nrc.github.io/big-book-ffi/reference/strings.html
+		let guest_path = unsafe { CStr::from_ptr(requested_path_ptr) }.to_str();
+
+		if let Ok(guest_path) = guest_path {
+			let host_path_option = file_map.get_host_path(guest_path);
+			if let Some(host_path) = host_path_option {
+				// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
+				// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
+				let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
+
+				sysopen.ret = unsafe {
+					libc::open(
+						host_path_c_string.as_c_str().as_ptr(),
+						sysopen.flags,
+						sysopen.mode,
+					)
+				};
+			} else {
+				error!("The kernel requested to open() a non-whitelisted path. Rejecting...");
+				sysopen.ret = -1;
+			}
+		} else {
+			error!("The kernel requested to open() a path that is not valid UTF-8. Rejecting...");
+			sysopen.ret = -1;
+		}
+	} else {
+		sysopen.ret = unsafe { libc::open(requested_path_ptr, sysopen.flags, sysopen.mode) };
 	}
 }
 

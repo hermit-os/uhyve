@@ -25,6 +25,7 @@ use crate::{
 	arch::{self, FrequencyDetectionFailed},
 	consts::*,
 	fdt::Fdt,
+	isolation::*,
 	mem::MmapMemory,
 	os::HypervisorError,
 	params::{self, Params},
@@ -152,6 +153,7 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(super) gdb_port: Option<u16>,
 	pub(crate) virt_backend: VirtBackend,
 	params: Params,
+	pub(crate) file_map: Option<UhyveFileMap>,
 	pub output: Output,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
@@ -181,6 +183,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			params.gdb_port.is_none() || cpu_count == 1,
 			"gdbstub is only supported with one CPU"
 		);
+
+		let file_map = params.file_map.as_deref().and_then(UhyveFileMap::new);
 
 		let output = match params.output {
 			params::Output::None => Output::None,
@@ -215,6 +219,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			boot_info: ptr::null(),
 			virtio_device,
 			gdb_port: params.gdb_port,
+			file_map,
 			virt_backend,
 			params,
 			output,
