@@ -448,7 +448,8 @@ impl VirtualCPU for KvmCpu {
 								Hypercall::FileOpen(sysopen) => hypercall::open(
 									&self.parent_vm.mem,
 									sysopen,
-									&self.parent_vm.mount,
+									&mut self.parent_vm.mount.lock().unwrap(),
+									&self.parent_vm.tempdir,
 								),
 								Hypercall::FileRead(sysread) => {
 									hypercall::read(&self.parent_vm.mem, sysread)
