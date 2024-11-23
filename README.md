@@ -5,13 +5,7 @@
 [![crates.io](https://img.shields.io/crates/v/uhyve.svg)](https://crates.io/crates/uhyve)
 [![Zulip Badge](https://img.shields.io/badge/chat-hermit-57A37C?logo=zulip)](https://hermit.zulipchat.com/)
 
-## Introduction
-
 Uhyve is a small hypervisor specialized for the [Hermit kernel](https://github.com/hermitcore/kernel).
-
-> [!WARNING]
-> For the time being, Uhyve provides the unikernel full host file system access with the permissions of the user running Uhyve.
-> Thus, it should not be used for applications which require isolation from the host system.
 
 ## Installation
 
