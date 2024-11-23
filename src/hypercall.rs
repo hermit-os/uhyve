@@ -90,7 +90,7 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &Option<UhyveF
 	// TODO: We could keep track of the file descriptors internally, in case the kernel doesn't close them.
 	let requested_path_ptr = mem.host_address(sysopen.name).unwrap() as *const i8;
 
-	// If the file_map doesn't exist, full host filesystem access will be provided.
+	// If the file map doesn't exist, full host filesystem access will be provided.
 	if let Some(file_map) = file_map {
 		// Rust deals in UTF-8. C doesn't provide such a guarantee.
 		// In that case, converting a CStr to str will return a Utf8Error.
