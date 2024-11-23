@@ -44,6 +44,7 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 
 /// Small wrapper around [`Uhyve::run`] with default parameters for a small and
 /// simple Uhyve vm
+#[allow(dead_code)]
 pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 	env_logger::try_init().ok();
 	println!("Launching kernel {}", kernel_path.display());
@@ -61,7 +62,7 @@ pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 	UhyveVm::new(kernel_path, params).unwrap().run(None)
 }
 
-/// Removes a file if it already exists on the host OS.
+#[warn(dead_code)]
 pub fn remove_file_if_exists(path: &PathBuf) {
 	if path.exists() {
 		println!("Removing existing directory {}", path.display());

@@ -7,10 +7,7 @@ use std::{
 
 use byte_unit::{Byte, Unit};
 use common::{build_hermit_bin, remove_file_if_exists};
-use uhyvelib::{
-	params::Params,
-	vm::{UhyveVm, VmResult},
-};
+use uhyvelib::{params::Params, vm::UhyveVm};
 
 /// Verifies successful file creation on the host OS and its contents.
 pub fn verify_file_equals(testfile: &PathBuf, contents: &str) {
@@ -27,7 +24,7 @@ fn new_file_test() {
 			.unwrap()
 			.try_into()
 			.unwrap(),
-		file_map: Some(vec!["foo.txt:foo.txt".to_string()]),
+		mount: Some(vec!["foo.txt:foo.txt".to_string()]),
 		..Default::default()
 	};
 
@@ -54,7 +51,7 @@ fn uhyvefilemap_test() {
 			.unwrap()
 			.try_into()
 			.unwrap(),
-		file_map: Some(vec!["foo.txt:wrong.txt".to_string()]),
+		mount: Some(vec!["foo.txt:wrong.txt".to_string()]),
 		..Default::default()
 	};
 
@@ -64,7 +61,7 @@ fn uhyvefilemap_test() {
 	assert_eq!(res.code, -1);
 	assert!(!testfile.exists());
 
-	params.file_map = Some(vec!["foo.txt:foo.txt".to_string()]);
+	params.mount = Some(vec!["foo.txt:foo.txt".to_string()]);
 	vm = UhyveVm::new(bin_path, params).unwrap();
 	res = vm.run(None);
 	assert_eq!(res.code, 0);

@@ -151,9 +151,9 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	#[allow(dead_code)] // gdb is not supported on macos
 	pub(super) gdb_port: Option<u16>,
+	pub(crate) mount: Option<UhyveFileMap>,
 	pub(crate) virt_backend: VirtBackend,
 	params: Params,
-	pub(crate) file_map: Option<UhyveFileMap>,
 	pub output: Output,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
@@ -184,7 +184,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			"gdbstub is only supported with one CPU"
 		);
 
-		let file_map = params.file_map.as_deref().and_then(UhyveFileMap::new);
+		let mount = params.mount.as_deref().and_then(UhyveFileMap::new);
 
 		let output = match params.output {
 			params::Output::None => Output::None,
@@ -219,7 +219,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			boot_info: ptr::null(),
 			virtio_device,
 			gdb_port: params.gdb_port,
-			file_map,
+			mount,
 			virt_backend,
 			params,
 			output,
@@ -380,6 +380,7 @@ impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 			.field("boot_info", &self.boot_info)
 			.field("virtio_device", &self.virtio_device)
 			.field("params", &self.params)
+			.field("mount", &self.mount)
 			.finish()
 	}
 }

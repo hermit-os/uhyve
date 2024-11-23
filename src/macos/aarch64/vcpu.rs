@@ -239,7 +239,7 @@ impl VirtualCPU for XhyveCpu {
 								Hypercall::FileOpen(sysopen) => hypercall::open(
 									&self.parent_vm.mem,
 									sysopen,
-									&self.parent_vm.file_map,
+									&self.parent_vm.mount,
 								),
 								Hypercall::FileRead(sysread) => {
 									hypercall::read(&self.parent_vm.mem, sysread)
