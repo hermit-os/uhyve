@@ -786,9 +786,11 @@ impl VirtualCPU for XhyveCpu {
 							Hypercall::FileWrite(syswrite) => {
 								hypercall::write(&self.parent_vm, syswrite).unwrap()
 							}
-							Hypercall::FileUnlink(sysunlink) => {
-								hypercall::unlink(&self.parent_vm.mem, sysunlink)
-							}
+							Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
+								&self.parent_vm.mem,
+								sysunlink,
+								&mut self.parent_vm.mount.lock().unwrap(),
+							),
 
 							Hypercall::SerialWriteByte(buf) => {
 								self.parent_vm

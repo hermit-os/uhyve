@@ -458,9 +458,11 @@ impl VirtualCPU for KvmCpu {
 									hypercall::write(&self.parent_vm, syswrite)
 										.map_err(|_e| HypervisorError::new(libc::EFAULT))?
 								}
-								Hypercall::FileUnlink(sysunlink) => {
-									hypercall::unlink(&self.parent_vm.mem, sysunlink)
-								}
+								Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
+									&self.parent_vm.mem,
+									sysunlink,
+									&mut self.parent_vm.mount.lock().unwrap(),
+								),
 								Hypercall::SerialWriteByte(buf) => self
 									.parent_vm
 									.serial_output(&[buf])
