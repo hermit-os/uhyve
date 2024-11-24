@@ -79,10 +79,21 @@ pub unsafe fn address_to_hypercall(
 }
 
 /// unlink deletes a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
-/// TODO: UNSAFE AS *%@#. It has to be checked that the VM is allowed to unlink that file!
-pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams) {
-	unsafe {
-		sysunlink.ret = libc::unlink(mem.host_address(sysunlink.name).unwrap() as *const i8);
+pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut UhyveFileMap) {
+	let requested_path = mem.host_address(sysunlink.name).unwrap() as *const i8;
+	if let Ok(guest_path) = unsafe { CStr::from_ptr(requested_path) }.to_str() {
+		if let Some(host_path) = file_map.get_host_path(guest_path) {
+			// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
+			// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
+			let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
+			sysunlink.ret = unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) };
+		} else {
+			error!("The kernel requested to unlink() an unknown path ({guest_path}): Rejecting...");
+			sysunlink.ret = -1;
+		}
+	} else {
+		error!("The kernel requested to open() a path that is not valid UTF-8. Rejecting...");
+		sysunlink.ret = -1;
 	}
 }
 
