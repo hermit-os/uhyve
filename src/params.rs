@@ -36,7 +36,7 @@ pub struct Params {
 	pub kernel_args: Vec<String>,
 
 	/// Paths that should be mounted on-device
-	pub mount: Option<Vec<String>>,
+	pub mount: Vec<String>,
 
 	/// Kernel output handling
 	pub output: Output,

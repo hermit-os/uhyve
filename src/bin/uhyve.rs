@@ -67,7 +67,7 @@ struct Args {
 	///
 	/// Example: --mount host_dir:guest_dir --mount file.txt:guest_file.txt
 	#[clap(long)]
-	mount: Option<Vec<String>>,
+	mount: Vec<String>,
 
 	/// The kernel to execute
 	#[clap(value_parser)]
