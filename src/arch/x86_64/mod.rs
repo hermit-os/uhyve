@@ -178,7 +178,10 @@ pub fn initialize_pagetables(mem: &mut [u8]) {
 		BOOT_PML4.into(),
 		PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 	);
-	pdpte[0].set_addr(BOOT_PDE.into(), PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
+	pdpte[0].set_addr(
+		BOOT_PDE.into(),
+		PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+	);
 
 	for i in 0..512 {
 		let addr = PhysAddr::new(i as u64 * Page::<Size2MiB>::SIZE);
