@@ -15,14 +15,7 @@ use num_enum::TryFromPrimitive;
 pub mod elf;
 pub mod parameters;
 
-#[cfg(target_arch = "aarch64")]
-pub use ::aarch64::paging::PhysAddr as GuestPhysAddr;
-#[cfg(target_arch = "aarch64")]
-pub use ::aarch64::paging::VirtAddr as GuestVirtAddr;
-#[cfg(target_arch = "x86_64")]
-pub use ::x86_64::addr::PhysAddr as GuestPhysAddr;
-#[cfg(target_arch = "x86_64")]
-pub use ::x86_64::addr::VirtAddr as GuestVirtAddr;
+pub use memory_addresses::{PhysAddr as GuestPhysAddr, VirtAddr as GuestVirtAddr};
 
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!("Using uhyve-interface on a non-64-bit system is not (yet?) supported");

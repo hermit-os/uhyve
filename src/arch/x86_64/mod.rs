@@ -171,14 +171,14 @@ pub fn initialize_pagetables(mem: &mut [u8]) {
 	gdt_entry[BOOT_GDT_DATA] = create_gdt_entry(0xC093, 0, 0xFFFFF);
 
 	pml4[0].set_addr(
-		BOOT_PDPTE,
+		BOOT_PDPTE.into(),
 		PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 	);
 	pml4[511].set_addr(
-		BOOT_PML4,
+		BOOT_PML4.into(),
 		PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 	);
-	pdpte[0].set_addr(BOOT_PDE, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
+	pdpte[0].set_addr(BOOT_PDE.into(), PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
 
 	for i in 0..512 {
 		let addr = PhysAddr::new(i as u64 * Page::<Size2MiB>::SIZE);
@@ -235,19 +235,20 @@ pub fn virt_to_phys(
 		match entry.frame() {
 			Ok(frame) => {
 				page_table = unsafe {
-					(mem.host_address(frame.start_address()).unwrap() as *mut PageTable).as_mut()
+					(mem.host_address(frame.start_address().into()).unwrap() as *mut PageTable)
+						.as_mut()
 				}
 				.unwrap();
 				page_bits -= PAGE_MAP_BITS;
 			}
 			Err(FrameError::FrameNotPresent) => return Err(PagetableError::InvalidAddress),
 			Err(FrameError::HugeFrame) => {
-				return Ok(entry.addr() + (addr.as_u64() & !((!0_u64) << page_bits)));
+				return Ok((entry.addr() + (addr.as_u64() & !((!0_u64) << page_bits))).into());
 			}
 		}
 	}
 
-	Ok(entry.addr() + (addr.as_u64() & !((!0u64) << PAGE_BITS)))
+	Ok((entry.addr() + (addr.as_u64() & !((!0u64) << PAGE_BITS))).into())
 }
 
 pub fn init_guest_mem(mem: &mut [u8]) {
