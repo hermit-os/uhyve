@@ -144,3 +144,17 @@ pub struct SerialWriteBufferParams {
 	pub buf: GuestPhysAddr,
 	pub len: usize,
 }
+
+// File operations supported by Hermit and Uhyve
+pub const O_RDONLY: i32 = 0o0000;
+pub const O_WRONLY: i32 = 0o0001;
+pub const O_RDWR: i32 = 0o0002;
+pub const O_CREAT: i32 = 0o0100;
+pub const O_EXCL: i32 = 0o0200;
+pub const O_TRUNC: i32 = 0o1000;
+pub const O_APPEND: i32 = 0o2000;
+pub const O_DIRECT: i32 = 0o40000;
+pub const O_DIRECTORY: i32 = 0o200000;
+
+pub const ALLOWED_OPEN_FLAGS: i32 =
+	O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC | O_APPEND | O_DIRECT | O_DIRECTORY;

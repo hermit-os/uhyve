@@ -4,11 +4,12 @@ use std::{
 	os::unix::ffi::OsStrExt,
 };
 
+use libc::{EINVAL, EIO, ENOENT};
 use tempfile::TempDir;
 use uhyve_interface::{parameters::*, GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC};
 
 use crate::{
-	consts::{ALLOWED_OPEN_FLAGS, BOOT_PML4, O_CREAT, O_DIRECTORY, O_EXCL},
+	consts::BOOT_PML4,
 	isolation::UhyveFileMap,
 	mem::{MemoryError, MmapMemory},
 	virt_to_phys,
@@ -89,11 +90,11 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 			sysunlink.ret = unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) };
 		} else {
 			error!("The kernel requested to unlink() an unknown path ({guest_path}): Rejecting...");
-			sysunlink.ret = -1;
+			sysunlink.ret = -ENOENT;
 		}
 	} else {
 		error!("The kernel requested to open() a path that is not valid UTF-8. Rejecting...");
-		sysunlink.ret = -1;
+		sysunlink.ret = -EIO;
 	}
 }
 
@@ -134,7 +135,7 @@ pub fn open(
 			// See: https://github.com/hermit-os/kernel/commit/71bc629
 			if (flags & (O_DIRECTORY | O_CREAT)) == (O_DIRECTORY | O_CREAT) {
 				error!("An open() call used O_DIRECTORY and O_CREAT at the same time. Aborting...");
-				sysopen.ret = -1
+				sysopen.ret = -EINVAL
 			}
 
 			// Existing files that already exist should be in the file map, not here.
@@ -151,7 +152,7 @@ pub fn open(
 		}
 	} else {
 		error!("The kernel requested to open() a path that is not valid UTF-8. Rejecting...");
-		sysopen.ret = -1;
+		sysopen.ret = -EINVAL;
 	}
 }
 
