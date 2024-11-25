@@ -89,7 +89,7 @@ impl PageTableEntry {
 	/// Return the stored physical address.
 	pub fn address(&self) -> GuestPhysAddr {
 		// For other granules than 4KiB or hugepages we should check the DESCRIPTOR_TYPE bit and modify the address translation accordingly.
-		GuestPhysAddr(
+		GuestPhysAddr::new(
 			self.physical_address_and_flags.as_u64() & !(PAGE_SIZE as u64 - 1) & !(u64::MAX << 48),
 		)
 	}
@@ -108,7 +108,7 @@ impl From<u64> for PageTableEntry {
 /// The upper bits must always be 0 or 1 and indicate whether TBBR0 or TBBR1 contains the
 /// base address. So always enforce 0 here.
 fn is_valid_address(virtual_address: GuestVirtAddr) -> bool {
-	virtual_address < GuestVirtAddr(0x1_0000_0000_0000)
+	virtual_address < GuestVirtAddr::new(0x1_0000_0000_0000)
 }
 
 /// Converts a virtual address in the guest to a physical address in the guest
