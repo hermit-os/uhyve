@@ -1,7 +1,10 @@
 [package]
 name = "uhyve-test-kernels"
 version = "0.1.0"
-authors = ["Jonathan Klimt <jonathan.klimt@eonerc.rwth-aachen.de>"]
+authors = [
+  "Jonathan Klimt <jonathan.klimt@eonerc.rwth-aachen.de>",
+  'Panagiotis "Ivory" Vasilopoulos <git@n0toose.net>',
+]
 edition = "2021"
 publish = false
 
