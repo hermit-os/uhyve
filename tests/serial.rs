@@ -37,7 +37,7 @@ fn serial_file_output_test() {
 			.try_into()
 			.unwrap(),
 		output: Output::File(output_path.clone()),
-		mount: Some(vec!["testserialout.txt:testserialout.txt".to_string()]),
+		mount: vec!["testserialout.txt:testserialout.txt".to_string()],
 		..Default::default()
 	};
 	let vm = UhyveVm::new(bin_path, params).unwrap();

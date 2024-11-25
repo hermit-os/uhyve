@@ -36,25 +36,19 @@ impl UhyveFileMap {
 	/// Creates a UhyveFileMap.
 	///
 	/// * `mappings` - A list of host->guest path mappings with the format "./host_path.txt:guest.txt"
-	pub fn new(mappings: &Option<Vec<String>>) -> UhyveFileMap {
-		if let Some(mappings) = mappings {
-			UhyveFileMap {
-				files: mappings
-					.iter()
-					.map(String::as_str)
-					.map(Self::split_guest_and_host_path)
-					.map(|(guest_path, host_path)| {
-						(
-							guest_path,
-							fs::canonicalize(&host_path).map_or(host_path, PathBuf::into_os_string),
-						)
-					})
-					.collect(),
-			}
-		} else {
-			UhyveFileMap {
-				files: Default::default(),
-			}
+	pub fn new(mappings: &[String]) -> UhyveFileMap {
+		UhyveFileMap {
+			files: mappings
+				.iter()
+				.map(String::as_str)
+				.map(Self::split_guest_and_host_path)
+				.map(|(guest_path, host_path)| {
+					(
+						guest_path,
+						fs::canonicalize(&host_path).map_or(host_path, PathBuf::into_os_string),
+					)
+				})
+				.collect(),
 		}
 	}
 
@@ -150,14 +144,14 @@ mod tests {
 			path_prefix.clone() + "/this_folder_exists/file_in_folder.txt",
 		];
 
-		let map_parameters = Some(vec![
+		let map_parameters = [
 			map_results[0].clone() + ":readme_file.md",
 			map_results[1].clone() + ":guest_folder",
 			map_results[2].clone() + ":guest_symlink",
 			map_results[3].clone() + ":guest_dangling_symlink",
 			map_results[4].clone() + ":guest_file",
 			path_prefix.clone() + "/this_symlink_leads_to_a_file" + ":guest_file_symlink",
-		]);
+		];
 
 		let mut map = UhyveFileMap::new(&map_parameters);
 

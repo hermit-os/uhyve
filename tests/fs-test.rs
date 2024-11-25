@@ -45,7 +45,7 @@ fn uhyvefilemap_test() {
 			.unwrap()
 			.try_into()
 			.unwrap(),
-		mount: Some(vec!["foo.txt:wrong.txt".to_string()]),
+		mount: vec!["foo.txt:wrong.txt".to_string()],
 		..Default::default()
 	};
 
@@ -55,7 +55,7 @@ fn uhyvefilemap_test() {
 	assert_eq!(res.code, 0);
 	assert!(!output_path.exists());
 
-	params.mount = Some(vec!["foo.txt:foo.txt".to_string()]);
+	params.mount = vec!["foo.txt:foo.txt".to_string()];
 	vm = UhyveVm::new(bin_path, params).unwrap();
 	res = vm.run(None);
 	assert_eq!(res.code, 0);
