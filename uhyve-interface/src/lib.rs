@@ -127,7 +127,7 @@ pub enum Hypercall<'a> {
 impl<'a> Hypercall<'a> {
 	// TODO: Remove this in the next major version
 	/// Get a hypercall's port address.
-	pub fn port(self) -> u16 {
+	pub fn port(&self) -> u16 {
 		HypercallAddress::from(self) as u16
 	}
 }
