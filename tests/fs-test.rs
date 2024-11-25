@@ -24,13 +24,10 @@ fn new_file_test() {
 		..Default::default()
 	};
 
-	let bin_path = build_hermit_bin("create_file");
+	let bin_path = build_hermit_bin("open_close_file");
 	let vm = UhyveVm::new(bin_path, params).unwrap();
-	let mut output_path = vm.get_tempdir().path().to_path_buf();
-	output_path.push("foo.txt");
 	let res = vm.run(None);
 	assert_eq!(res.code, 0);
-	verify_file_equals(&output_path, "Hello, world!");
 }
 
 #[test]
