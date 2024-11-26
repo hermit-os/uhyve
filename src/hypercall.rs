@@ -4,7 +4,6 @@ use std::{
 	os::unix::ffi::OsStrExt,
 };
 
-use libc::{EINVAL, EIO, ENOENT};
 use tempfile::TempDir;
 use uhyve_interface::{parameters::*, GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC};
 
