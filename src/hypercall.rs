@@ -129,7 +129,7 @@ pub fn open(
 				)
 			};
 		} else {
-			info!("Attempting to open a temp file for {:#?}...", guest_path);
+			debug!("Attempting to open a temp file for {:#?}...", guest_path);
 
 			// See: https://lwn.net/Articles/926782/
 			// See: https://github.com/hermit-os/kernel/commit/71bc629
