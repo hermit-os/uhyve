@@ -32,7 +32,7 @@ pub fn detect_freq_from_cpuid(
 
 	let has_invariant_tsc = cpuid
 		.get_advanced_power_mgmt_info()
-		.map_or(false, |apm_info| apm_info.has_invariant_tsc());
+		.is_some_and(|apm_info| apm_info.has_invariant_tsc());
 	if !has_invariant_tsc {
 		warn!("TSC frequency varies with speed-stepping")
 	}
@@ -269,11 +269,11 @@ mod tests {
 		let cpuid = raw_cpuid::CpuId::new();
 		let has_tsc = cpuid
 			.get_feature_info()
-			.map_or(false, |finfo| finfo.has_tsc());
+			.is_some_and(|finfo| finfo.has_tsc());
 
 		let has_invariant_tsc = cpuid
 			.get_advanced_power_mgmt_info()
-			.map_or(false, |apm_info| apm_info.has_invariant_tsc());
+			.is_some_and(|apm_info| apm_info.has_invariant_tsc());
 
 		let tsc_frequency_hz = cpuid.get_tsc_info().map(|tinfo| {
 			if tinfo.tsc_frequency().is_some() {

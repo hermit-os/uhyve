@@ -78,7 +78,7 @@ pub struct AvailIter<'a> {
 	queue_size: u16,
 }
 
-impl<'a> Iterator for AvailIter<'a> {
+impl Iterator for AvailIter<'_> {
 	type Item = u16;
 
 	fn next(&mut self) -> Option<Self::Item> {
