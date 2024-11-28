@@ -124,7 +124,7 @@ pub enum Hypercall<'a> {
 	/// Write a buffer to the terminal.
 	SerialWriteBuffer(&'a SerialWriteBufferParams),
 }
-impl<'a> Hypercall<'a> {
+impl Hypercall<'_> {
 	// TODO: Remove this in the next major version
 	/// Get a hypercall's port address.
 	pub fn port(&self) -> u16 {
