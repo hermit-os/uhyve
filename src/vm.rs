@@ -152,7 +152,7 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
 	#[allow(dead_code)] // gdb is not supported on macos
 	pub(super) gdb_port: Option<u16>,
-	pub(crate) mount: Mutex<UhyveFileMap>,
+	pub(crate) file_mapping: Mutex<UhyveFileMap>,
 	pub(crate) virt_backend: VirtBackend,
 	params: Params,
 	pub output: Output,
@@ -187,7 +187,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		);
 
 		let tempdir = create_temp_dir();
-		let mount = Mutex::new(UhyveFileMap::new(&params.mount));
+		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping));
 
 		let output = match params.output {
 			params::Output::None => Output::None,
@@ -222,7 +222,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			boot_info: ptr::null(),
 			virtio_device,
 			gdb_port: params.gdb_port,
-			mount,
+			file_mapping,
 			virt_backend,
 			params,
 			output,
@@ -388,7 +388,7 @@ impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 			.field("boot_info", &self.boot_info)
 			.field("virtio_device", &self.virtio_device)
 			.field("params", &self.params)
-			.field("mount", &self.mount)
+			.field("file_mapping", &self.file_mapping)
 			.field("tempdir", &self.tempdir)
 			.finish()
 	}
