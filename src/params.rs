@@ -35,8 +35,8 @@ pub struct Params {
 	/// Arguments to forward to the kernel
 	pub kernel_args: Vec<String>,
 
-	/// Paths that should be mounted on-device
-	pub mount: Vec<String>,
+	/// Mapped paths between the guest and host OS
+	pub file_mapping: Vec<String>,
 
 	/// Kernel output handling
 	pub output: Output,
@@ -58,7 +58,7 @@ impl Default for Params {
 			pit: false,
 			cpu_count: Default::default(),
 			gdb_port: Default::default(),
-			mount: Default::default(),
+			file_mapping: Default::default(),
 			kernel_args: Default::default(),
 			output: Default::default(),
 			stats: false,

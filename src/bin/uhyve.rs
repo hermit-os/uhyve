@@ -63,11 +63,11 @@ struct Args {
 
 	/// Paths that the kernel should be able to view, read or write.
 	///
-	/// Desired mount paths must be explicitly defined after a colon.
+	/// Desired paths must be explicitly defined after a colon.
 	///
-	/// Example: --mount host_dir:guest_dir --mount file.txt:guest_file.txt
+	/// Example: --file-mapping host_dir:guest_dir --file-mapping file.txt:guest_file.txt
 	#[clap(long)]
-	mount: Vec<String>,
+	file_mapping: Vec<String>,
 
 	/// The kernel to execute
 	#[clap(value_parser)]
@@ -256,7 +256,7 @@ impl From<Args> for Params {
 				},
 			#[cfg(target_os = "linux")]
 			gdb_port,
-			mount,
+			file_mapping,
 			kernel: _,
 			kernel_args,
 			output,
@@ -271,7 +271,7 @@ impl From<Args> for Params {
 			cpu_count,
 			#[cfg(target_os = "linux")]
 			pit,
-			mount,
+			file_mapping,
 			#[cfg(target_os = "linux")]
 			gdb_port,
 			#[cfg(target_os = "macos")]

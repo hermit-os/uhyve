@@ -777,7 +777,7 @@ impl VirtualCPU for XhyveCpu {
 							Hypercall::FileOpen(sysopen) => hypercall::open(
 								&self.parent_vm.mem,
 								sysopen,
-								&mut self.parent_vm.mount.lock().unwrap(),
+								&mut self.parent_vm.file_mapping.lock().unwrap(),
 								&self.parent_vm.tempdir,
 							),
 							Hypercall::FileRead(sysread) => {
@@ -789,7 +789,7 @@ impl VirtualCPU for XhyveCpu {
 							Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
 								&self.parent_vm.mem,
 								sysunlink,
-								&mut self.parent_vm.mount.lock().unwrap(),
+								&mut self.parent_vm.file_mapping.lock().unwrap(),
 							),
 
 							Hypercall::SerialWriteByte(buf) => {
