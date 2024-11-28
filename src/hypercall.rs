@@ -259,7 +259,7 @@ pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &
 
 	// Copy the application arguments into the vm memory
 	for (counter, argument) in argv.iter().enumerate() {
-		let len = argument.as_bytes().len();
+		let len = argument.len();
 		let arg_dest = unsafe {
 			mem.slice_at_mut(arg_addrs[counter], len + 1)
 				.expect("Systemcall parameters for Cmdval are invalid")
