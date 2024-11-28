@@ -1,8 +1,7 @@
 use std::{
 	collections::HashMap,
 	ffi::{CString, OsString},
-	fs,
-	fs::Permissions,
+	fs::{canonicalize, Permissions},
 	os::unix::{ffi::OsStrExt, fs::PermissionsExt},
 	path::PathBuf,
 };
@@ -45,7 +44,7 @@ impl UhyveFileMap {
 				.map(|(guest_path, host_path)| {
 					(
 						guest_path,
-						fs::canonicalize(&host_path).map_or(host_path, PathBuf::into_os_string),
+						canonicalize(&host_path).map_or(host_path, PathBuf::into_os_string),
 					)
 				})
 				.collect(),
@@ -96,7 +95,7 @@ impl UhyveFileMap {
 						host_path.push(guest_path_remainder);
 
 						// Handles symbolic links.
-						return fs::canonicalize(&host_path)
+						return canonicalize(&host_path)
 							.map_or(host_path.into_os_string(), PathBuf::into_os_string)
 							.into();
 					}

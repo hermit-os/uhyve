@@ -106,16 +106,9 @@ pub fn open(
 ) {
 	// TODO: Keep track of file descriptors internally, just in case the kernel doesn't close them.
 	let requested_path_ptr = mem.host_address(sysopen.name).unwrap() as *const i8;
-	let guest_path = unsafe { CStr::from_ptr(requested_path_ptr) }.to_str();
 	let mut flags = sysopen.flags & ALLOWED_OPEN_FLAGS;
-
-	if let Ok(guest_path) = guest_path {
-		// Rust deals in UTF-8. C doesn't provide such a guarantee.
-		// In that case, converting a CStr to str will return a Utf8Error.
-		//
-		// See: https://nrc.github.io/big-book-ffi/reference/strings.html
-		let host_path_option = file_map.get_host_path(guest_path);
-		if let Some(host_path) = host_path_option {
+	if let Ok(guest_path) = unsafe { CStr::from_ptr(requested_path_ptr) }.to_str() {
+		if let Some(host_path) = file_map.get_host_path(guest_path) {
 			// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 			// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 			let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
