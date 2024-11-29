@@ -6,6 +6,8 @@ use std::{
 	path::PathBuf,
 };
 
+use crate::isolation::split_guest_and_host_path;
+
 /// Wrapper around a `HashMap` to map guest paths to arbitrary host paths.
 #[derive(Debug, Clone)]
 pub struct UhyveFileMap {
@@ -21,7 +23,7 @@ impl UhyveFileMap {
 			files: mappings
 				.iter()
 				.map(String::as_str)
-				.map(Self::split_guest_and_host_path)
+				.map(split_guest_and_host_path)
 				.map(|(guest_path, host_path)| {
 					(
 						guest_path,
@@ -30,18 +32,6 @@ impl UhyveFileMap {
 				})
 				.collect(),
 		}
-	}
-
-	/// Separates a string of the format "./host_dir/host_path.txt:guest_path.txt"
-	/// into a guest_path (String) and host_path (OsString) respectively.
-	///
-	/// * `mapping` - A mapping of the format `./host_path.txt:guest.txt`.
-	fn split_guest_and_host_path(mapping: &str) -> (String, OsString) {
-		let mut mappingiter = mapping.split(":");
-		let host_path = OsString::from(mappingiter.next().unwrap());
-		let guest_path = mappingiter.next().unwrap().to_owned();
-
-		(guest_path, host_path)
 	}
 
 	/// Returns the host_path on the host filesystem given a requested guest_path, if it exists.
@@ -103,43 +93,6 @@ impl UhyveFileMap {
 #[cfg(test)]
 mod tests {
 	use super::*;
-
-	#[test]
-	fn test_split_guest_and_host_path() {
-		let host_guest_strings = vec![
-			"./host_string.txt:guest_string.txt",
-			"/home/user/host_string.txt:guest_string.md.txt",
-			":guest_string.conf",
-			":",
-			"exists.txt:also_exists.txt:should_not_exist.txt",
-		];
-
-		// Mind the inverted order.
-		let results = vec![
-			(
-				String::from("guest_string.txt"),
-				OsString::from("./host_string.txt"),
-			),
-			(
-				String::from("guest_string.md.txt"),
-				OsString::from("/home/user/host_string.txt"),
-			),
-			(String::from("guest_string.conf"), OsString::from("")),
-			(String::from(""), OsString::from("")),
-			(
-				String::from("also_exists.txt"),
-				OsString::from("exists.txt"),
-			),
-		];
-
-		for (i, host_and_guest_string) in host_guest_strings
-			.into_iter()
-			.map(UhyveFileMap::split_guest_and_host_path)
-			.enumerate()
-		{
-			assert_eq!(host_and_guest_string, results[i]);
-		}
-	}
 
 	#[test]
 	fn test_uhyvefilemap() {
