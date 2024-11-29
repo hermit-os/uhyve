@@ -311,6 +311,7 @@ fn run_uhyve() -> i32 {
 			println!("{stats}");
 		}
 	}
+
 	res.code
 }
 
