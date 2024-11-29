@@ -1,6 +1,8 @@
 #![warn(rust_2018_idioms)]
 
-use std::{iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process, str::FromStr};
+use std::{
+	iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process, str::FromStr, thread,
+};
 
 use clap::{error::ErrorKind, Command, CommandFactory, Parser};
 use core_affinity::CoreId;
@@ -311,6 +313,7 @@ fn run_uhyve() -> i32 {
 			println!("{stats}");
 		}
 	}
+
 	res.code
 }
 

@@ -106,7 +106,7 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 			// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 			// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 			let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
-
+			error!("{:#?}", host_path_c_string);
 			sysopen.ret = unsafe {
 				libc::open(
 					host_path_c_string.as_c_str().as_ptr(),
@@ -116,6 +116,7 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 			};
 		} else {
 			debug!("Attempting to open a temp file for {:#?}...", guest_path);
+			error!("{:#?}", guest_path);
 
 			// See: https://lwn.net/Articles/926782/
 			// See: https://github.com/hermit-os/kernel/commit/71bc629
