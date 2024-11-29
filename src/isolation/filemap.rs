@@ -1,29 +1,10 @@
 use std::{
 	collections::HashMap,
 	ffi::{CString, OsString},
-	fs::{canonicalize, Permissions},
-	os::unix::{ffi::OsStrExt, fs::PermissionsExt},
+	fs::canonicalize,
+	os::unix::ffi::OsStrExt,
 	path::PathBuf,
 };
-
-use tempfile::{Builder, TempDir};
-use uuid::Uuid;
-
-/// Creates a temporary directory.
-pub fn create_temp_dir() -> TempDir {
-	let dir = Builder::new()
-		.permissions(Permissions::from_mode(0o700))
-		.prefix("uhyve-")
-		.suffix(&Uuid::new_v4().to_string())
-		.tempdir()
-		.ok()
-		.unwrap_or_else(|| panic!("The temporary directory could not be created."));
-
-	let dir_permissions = dir.path().metadata().unwrap().permissions();
-	assert!(!dir_permissions.readonly());
-
-	dir
-}
 
 /// Wrapper around a `HashMap` to map guest paths to arbitrary host paths.
 #[derive(Debug, Clone)]
