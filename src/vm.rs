@@ -26,7 +26,7 @@ use crate::{
 	arch::{self, FrequencyDetectionFailed},
 	consts::*,
 	fdt::Fdt,
-	isolation::*,
+	isolation::{filemap::UhyveFileMap, tempdir::create_temp_dir},
 	mem::MmapMemory,
 	os::HypervisorError,
 	params::{self, Params},
