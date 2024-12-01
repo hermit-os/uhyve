@@ -463,6 +463,11 @@ impl VirtualCPU for KvmCpu {
 									sysunlink,
 									&mut self.parent_vm.file_mapping.lock().unwrap(),
 								),
+								Hypercall::ChangeDir(syschdir) => hypercall::chdir(
+									&self.parent_vm.mem,
+									syschdir,
+									&mut self.parent_vm.file_mapping.lock().unwrap(),
+								),
 								Hypercall::SerialWriteByte(buf) => self
 									.parent_vm
 									.serial_output(&[buf])

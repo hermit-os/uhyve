@@ -75,6 +75,16 @@ pub struct UnlinkParams {
 	pub ret: i32,
 }
 
+/// Parameters for a [`FileUnlink`](crate::Hypercall::Chdir) hypercall.
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ChdirParams {
+	/// Address of the directory that should be used..
+	pub name: GuestPhysAddr,
+	/// On success, `0` is returned.  On error, `-1` is returned.
+	pub ret: i32,
+}
+
 /// Parameters for a [`FileWrite`](crate::Hypercall::FileWrite) hypercall.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
