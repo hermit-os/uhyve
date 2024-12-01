@@ -10,14 +10,17 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct UhyveFileMap {
 	files: HashMap<String, OsString>,
+	pub guest_cwd: PathBuf,
 }
 
 impl UhyveFileMap {
 	/// Creates a UhyveFileMap.
 	///
 	/// * `mappings` - A list of host->guest path mappings with the format "./host_path.txt:guest.txt"
-	pub fn new(mappings: &[String]) -> UhyveFileMap {
+	/// * `guest_cwd_path` - "Current working directory". Will be prepended to relative guest paths.
+	pub fn new(mappings: &[String], guest_cwd_path: &str) -> UhyveFileMap {
 		UhyveFileMap {
+			// TODO: Move this functionality someplace else, add support for guest_cwd.
 			files: mappings
 				.iter()
 				.map(String::as_str)
@@ -29,6 +32,7 @@ impl UhyveFileMap {
 					)
 				})
 				.collect(),
+			guest_cwd: PathBuf::from(guest_cwd_path),
 		}
 	}
 
@@ -48,7 +52,15 @@ impl UhyveFileMap {
 	///
 	/// * `guest_path` - The guest path that is to be looked up in the map.
 	pub fn get_host_path(&mut self, guest_path: &str) -> Option<OsString> {
-		let host_path = self.files.get(guest_path).map(OsString::from);
+		let requested_guest_pathbuf = PathBuf::from(guest_path);
+		let host_path: Option<OsString> = if requested_guest_pathbuf.is_absolute() {
+			self.files.get(guest_path).map(OsString::from)
+		} else {
+			let mut absolute_guest_path = self.guest_cwd.clone();
+			absolute_guest_path.push(guest_path);
+			self.files.get(guest_path).map(OsString::from)
+		};
+
 		if host_path.is_some() {
 			host_path
 		} else {
@@ -58,7 +70,6 @@ impl UhyveFileMap {
 				return None;
 			}
 
-			let requested_guest_pathbuf = PathBuf::from(guest_path);
 			if let Some(parent_of_guest_path) = requested_guest_pathbuf.parent() {
 				debug!("The file is in a child directory, searching for a parent directory...");
 				for searched_parent_guest in parent_of_guest_path.ancestors() {
@@ -87,6 +98,11 @@ impl UhyveFileMap {
 		}
 	}
 
+	fn canonicalize_guest_path(&self, guest_path: &str) -> String {
+		let guest_pathbuf = PathBuf::from(guest_path);
+		guest_pathbuf.to_str().unwrap().to_owned()
+	}
+
 	/// Inserts an opened temporary file into the file map. Returns a CString so that
 	/// the file can be directly used by [crate::hypercall::open].
 	///
@@ -95,8 +111,21 @@ impl UhyveFileMap {
 	pub fn insert_temporary_file(&mut self, guest_path: &str, host_path: OsString) -> CString {
 		// TODO: Do we need to canonicalize the host_path?
 		let ret = CString::new(host_path.as_bytes()).unwrap();
-		self.files.insert(String::from(guest_path), host_path);
+		self.files
+			.insert(self.canonicalize_guest_path(guest_path), host_path);
 		ret
+	}
+
+	// TODO: Do not retroactively change relative paths in file map.
+	// TODO: Introduce situations where this will fail.
+	pub fn chdir(&mut self, guest_cwd: &str) -> i32 {
+		if !(guest_cwd.starts_with("/tmp") || guest_cwd.starts_with("/proc")) {
+			self.guest_cwd.clear();
+			self.guest_cwd.push(guest_cwd);
+			return 0;
+		}
+
+		-1
 	}
 }
 
@@ -169,10 +198,14 @@ mod tests {
 			path_prefix.clone() + "/this_symlink_leads_to_a_file" + ":guest_file_symlink",
 		];
 
-		let mut map = UhyveFileMap::new(&map_parameters);
+		let mut map = UhyveFileMap::new(&map_parameters, "/root");
 
 		assert_eq!(
 			map.get_host_path("readme_file.md").unwrap(),
+			OsString::from(&map_results[0])
+		);
+		assert_eq!(
+			map.get_host_path("/root/readme_file.md").unwrap(),
 			OsString::from(&map_results[0])
 		);
 		assert_eq!(
@@ -221,7 +254,7 @@ mod tests {
 			host_path_map.to_str().unwrap(),
 			guest_path_map.to_str().unwrap()
 		)];
-		let mut map = UhyveFileMap::new(&uhyvefilemap_params);
+		let mut map = UhyveFileMap::new(&uhyvefilemap_params, "/root");
 
 		let mut found_host_path = map.get_host_path(target_guest_path.clone().to_str().unwrap());
 
@@ -252,7 +285,7 @@ mod tests {
 			guest_path_map.to_str().unwrap()
 		)];
 
-		map = UhyveFileMap::new(&uhyvefilemap_params);
+		map = UhyveFileMap::new(&uhyvefilemap_params, "/root");
 
 		target_guest_path = PathBuf::from("this_symlink_leads_to_a_file");
 		target_host_path = fixture_path.clone();
@@ -265,7 +298,7 @@ mod tests {
 
 		// Tests directory traversal with no maps
 		let empty_array: [String; 0] = [];
-		map = UhyveFileMap::new(&empty_array);
+		map = UhyveFileMap::new(&empty_array, "/root");
 		found_host_path = map.get_host_path(target_guest_path.to_str().unwrap());
 		assert!(found_host_path.is_none());
 	}

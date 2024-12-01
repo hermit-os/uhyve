@@ -60,6 +60,8 @@ pub enum HypercallAddress {
 	Cmdval = 0x780,
 	/// Port address = `0x800`
 	Uart = 0x800,
+	/// Port address = `0x820`
+	ChangeDir = 0x820,
 	/// Port address = `0x840`
 	FileUnlink = 0x840,
 	/// Port address = `0x880`
@@ -69,6 +71,7 @@ pub enum HypercallAddress {
 impl From<Hypercall<'_>> for HypercallAddress {
 	fn from(value: Hypercall) -> Self {
 		match value {
+			Hypercall::ChangeDir(_) => Self::ChangeDir,
 			Hypercall::Cmdsize(_) => Self::Cmdsize,
 			Hypercall::Cmdval(_) => Self::Cmdval,
 			Hypercall::Exit(_) => Self::Exit,
@@ -86,6 +89,7 @@ impl From<Hypercall<'_>> for HypercallAddress {
 impl From<&Hypercall<'_>> for HypercallAddress {
 	fn from(value: &Hypercall) -> Self {
 		match value {
+			Hypercall::ChangeDir(_) => Self::ChangeDir,
 			Hypercall::Cmdsize(_) => Self::Cmdsize,
 			Hypercall::Cmdval(_) => Self::Cmdval,
 			Hypercall::Exit(_) => Self::Exit,
@@ -105,6 +109,9 @@ impl From<&Hypercall<'_>> for HypercallAddress {
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum Hypercall<'a> {
+	// Change the guest's "current working directory". Used for converting relative paths
+	// to absolute paths, so that they can be matched with a file mapping.
+	ChangeDir(&'a mut ChdirParams),
 	/// Get the size of the argument and environment strings. Used to allocate memory for
 	/// [`Hypercall::Cmdval`].
 	Cmdsize(&'a mut CmdsizeParams),

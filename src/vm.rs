@@ -187,7 +187,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		);
 
 		let tempdir = create_temp_dir();
-		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping));
+		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping, "/root"));
 
 		let output = match params.output {
 			params::Output::None => Output::None,
