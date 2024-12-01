@@ -3,7 +3,7 @@ use std::{
 	ffi::{CString, OsString},
 	fs::{canonicalize, Permissions},
 	os::unix::{ffi::OsStrExt, fs::PermissionsExt},
-	path::PathBuf,
+	path::{absolute, PathBuf},
 };
 
 use tempfile::{Builder, TempDir};
@@ -44,7 +44,11 @@ impl UhyveFileMap {
 				.map(|(guest_path, host_path)| {
 					(
 						guest_path,
-						canonicalize(&host_path).map_or(host_path, PathBuf::into_os_string),
+						canonicalize(&host_path).map_or(host_path, |host_path| {
+							absolute(host_path)
+								.expect("Path is empty or unable to get current directory.")
+								.into()
+						}),
 					)
 				})
 				.collect(),
