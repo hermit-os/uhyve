@@ -22,11 +22,13 @@ use thiserror::Error;
 use crate::arch::x86_64::{
 	detect_freq_from_cpuid, detect_freq_from_cpuid_hypervisor_info, get_cpu_frequency_from_os,
 };
+#[cfg(feature = "landlock")]
+use crate::isolation::landlock::UhyveLandlockWrapper;
 use crate::{
 	arch::{self, FrequencyDetectionFailed},
 	consts::*,
 	fdt::Fdt,
-	isolation::*,
+	isolation::{filemap::UhyveFileMap, tempdir::create_temp_dir},
 	mem::MmapMemory,
 	os::HypervisorError,
 	params::{self, Params},
@@ -156,6 +158,8 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(crate) virt_backend: VirtBackend,
 	params: Params,
 	pub output: Output,
+	#[cfg(feature = "landlock")]
+	pub(crate) landlock: UhyveLandlockWrapper,
 	pub(crate) tempdir: TempDir,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
@@ -187,7 +191,14 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		);
 
 		let tempdir = create_temp_dir();
+
 		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping));
+		#[cfg(feature = "landlock")]
+		let landlock = UhyveLandlockWrapper::new(
+			&params.file_mapping,
+			kernel_path.to_str().unwrap(),
+			tempdir.path().to_str().unwrap(),
+		);
 
 		let output = match params.output {
 			params::Output::None => Output::None,
@@ -226,6 +237,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			virt_backend,
 			params,
 			output,
+			#[cfg(feature = "landlock")]
+			landlock,
 			tempdir,
 		};
 
@@ -296,6 +309,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	}
 
 	pub fn load_kernel(&mut self) -> LoadKernelResult<()> {
+		#[cfg(feature = "landlock")]
+		self.landlock.enforce_isolation();
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 

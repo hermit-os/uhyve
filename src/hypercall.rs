@@ -9,7 +9,7 @@ use uhyve_interface::{parameters::*, GuestPhysAddr, Hypercall, HypercallAddress,
 
 use crate::{
 	consts::BOOT_PML4,
-	isolation::UhyveFileMap,
+	isolation::filemap::UhyveFileMap,
 	mem::{MemoryError, MmapMemory},
 	virt_to_phys,
 	vm::{UhyveVm, VirtualizationBackend},
