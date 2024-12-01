@@ -5,7 +5,7 @@
 [![crates.io](https://img.shields.io/crates/v/uhyve.svg)](https://crates.io/crates/uhyve)
 [![Zulip Badge](https://img.shields.io/badge/chat-hermit-57A37C?logo=zulip)](https://hermit.zulipchat.com/)
 
-Uhyve is a small hypervisor specialized for the [Hermit kernel](https://github.com/hermitcore/kernel).
+Uhyve is a small hypervisor specialized for the [Hermit kernel](https://github.com/hermit-os/kernel).
 
 ## Installation
 
@@ -65,7 +65,7 @@ Starting with Big Sur, all processes using the Hypervisor API must have the [com
 To build from source, simply checkout the code and use `cargo build`:
 
 ```sh
-git clone https://github.com/hermitcore/uhyve.git
+git clone https://github.com/hermit-os/uhyve.git
 cd uhyve
 cargo build --release
 ```
@@ -171,7 +171,7 @@ In principle, every gdb-capable IDE should be able to debug Hermit applications.
 
 #### Visual Studio Code / VSCodium
 
-The repository [hermit-rs](https://github.com/hermitcore/hermit-rs) provides [example configuration files](https://github.com/hermitcore/hermit-rs/tree/master/.vscode) to debug a Hermit application with [Visual Studio Code](https://code.visualstudio.com/), [VSCodium](https://vscodium.com/) or derivatives of [Eclipse Theia](https://theia-ide.org/).
+The repository [hermit-rs](https://github.com/hermit-os/hermit-rs) provides [example configuration files](https://github.com/hermit-os/hermit-rs/tree/master/.vscode) to debug a Hermit application with [Visual Studio Code](https://code.visualstudio.com/), [VSCodium](https://vscodium.com/) or derivatives of [Eclipse Theia](https://theia-ide.org/).
 
 ![Debugging Hermit apps](img/vs_code.png)
 
