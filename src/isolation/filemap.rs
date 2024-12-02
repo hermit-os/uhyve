@@ -6,10 +6,15 @@ use std::{
 	path::{absolute, PathBuf},
 };
 
+use tempfile::TempDir;
+
+use crate::isolation::tempdir::create_temp_dir;
+
 /// Wrapper around a `HashMap` to map guest paths to arbitrary host paths.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct UhyveFileMap {
 	files: HashMap<String, OsString>,
+	tempdir: TempDir,
 }
 
 impl UhyveFileMap {
@@ -33,6 +38,7 @@ impl UhyveFileMap {
 					)
 				})
 				.collect(),
+			tempdir: create_temp_dir(),
 		}
 	}
 
@@ -95,9 +101,9 @@ impl UhyveFileMap {
 	/// the file can be directly used by [crate::hypercall::open].
 	///
 	/// * `guest_path` - The requested guest path.
-	/// * `host_path` - The corresponding host path. Here, this is a temporary file.
-	pub fn insert_temporary_file(&mut self, guest_path: &str, host_path: OsString) -> CString {
+	pub fn create_temporary_file(&mut self, guest_path: &str) -> CString {
 		// TODO: Do we need to canonicalize the host_path?
+		let host_path = self.tempdir.path().join(guest_path).into_os_string();
 		let ret = CString::new(host_path.as_bytes()).unwrap();
 		self.files.insert(String::from(guest_path), host_path);
 		ret

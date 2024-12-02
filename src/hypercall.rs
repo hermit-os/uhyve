@@ -4,7 +4,6 @@ use std::{
 	os::unix::ffi::OsStrExt,
 };
 
-use tempfile::TempDir;
 use uhyve_interface::{parameters::*, GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC};
 
 use crate::{
@@ -98,12 +97,7 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 }
 
 /// Handles an open syscall by opening a file on the host.
-pub fn open(
-	mem: &MmapMemory,
-	sysopen: &mut OpenParams,
-	file_map: &mut UhyveFileMap,
-	temp_dir_base: &TempDir,
-) {
+pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
 	// TODO: Keep track of file descriptors internally, just in case the kernel doesn't close them.
 	let requested_path_ptr = mem.host_address(sysopen.name).unwrap() as *const i8;
 	let mut flags = sysopen.flags & ALLOWED_OPEN_FLAGS;
@@ -135,10 +129,7 @@ pub fn open(
 			// this contigency, together with O_CREAT, will cause the write to fail.
 			flags |= O_EXCL;
 
-			let host_path = temp_dir_base.path().join(guest_path);
-			let host_path_c_string =
-				file_map.insert_temporary_file(guest_path, host_path.into_os_string());
-
+			let host_path_c_string = file_map.create_temporary_file(guest_path);
 			let new_host_path = host_path_c_string.as_c_str().as_ptr();
 			sysopen.ret = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
 		}

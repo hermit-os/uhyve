@@ -449,7 +449,6 @@ impl VirtualCPU for KvmCpu {
 									&self.parent_vm.mem,
 									sysopen,
 									&mut self.parent_vm.file_mapping.lock().unwrap(),
-									&self.parent_vm.tempdir,
 								),
 								Hypercall::FileRead(sysread) => {
 									hypercall::read(&self.parent_vm.mem, sysread)

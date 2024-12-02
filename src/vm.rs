@@ -15,7 +15,6 @@ use hermit_entry::{
 };
 use log::{error, warn};
 use sysinfo::System;
-use tempfile::TempDir;
 use thiserror::Error;
 
 #[cfg(target_arch = "x86_64")]
@@ -26,7 +25,7 @@ use crate::{
 	arch::{self, FrequencyDetectionFailed},
 	consts::*,
 	fdt::Fdt,
-	isolation::{filemap::UhyveFileMap, tempdir::create_temp_dir},
+	isolation::filemap::UhyveFileMap,
 	mem::MmapMemory,
 	os::HypervisorError,
 	params::{self, Params},
@@ -156,7 +155,6 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(crate) virt_backend: VirtBackend,
 	params: Params,
 	pub output: Output,
-	pub(crate) tempdir: TempDir,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
@@ -186,7 +184,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			"gdbstub is only supported with one CPU"
 		);
 
-		let tempdir = create_temp_dir();
 		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping));
 
 		let output = match params.output {
@@ -226,7 +223,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			virt_backend,
 			params,
 			output,
-			tempdir,
 		};
 
 		vm.init_guest_mem();
@@ -279,10 +275,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 	pub fn get_params(&self) -> &Params {
 		&self.params
-	}
-
-	pub fn get_tempdir(&self) -> &TempDir {
-		&self.tempdir
 	}
 
 	/// Initialize the page tables for the guest
@@ -389,7 +381,6 @@ impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 			.field("virtio_device", &self.virtio_device)
 			.field("params", &self.params)
 			.field("file_mapping", &self.file_mapping)
-			.field("tempdir", &self.tempdir)
 			.finish()
 	}
 }
