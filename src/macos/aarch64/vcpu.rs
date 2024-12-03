@@ -45,7 +45,12 @@ impl VirtualizationBackend for XhyveVm {
 				None
 			},
 		};
-		vcpu.init(parent_vm.entry_point(), parent_vm.stack_address(), id)?;
+		vcpu.init(
+			parent_vm.entry_point(),
+			parent_vm.stack_address(),
+			parent_vm.guest_address(),
+			id,
+		)?;
 
 		Ok(vcpu)
 	}
@@ -72,6 +77,7 @@ impl XhyveCpu {
 		&mut self,
 		entry_point: GuestPhysAddr,
 		stack_address: GuestPhysAddr,
+		guest_address: GuestPhysAddr,
 		cpu_id: u32,
 	) -> HypervisorResult<()> {
 		debug!("Initialize VirtualCPU");
@@ -84,7 +90,7 @@ impl XhyveCpu {
 		self.vcpu
 			.write_system_register(SystemRegister::SP_EL1, stack_address.as_u64())?;
 		self.vcpu
-			.write_register(Register::X0, BOOT_INFO_ADDR.as_u64())?;
+			.write_register(Register::X0, (guest_address + BOOT_INFO_OFFSET).as_u64())?;
 		self.vcpu.write_register(Register::X1, cpu_id.into())?;
 
 		/*
@@ -135,8 +141,10 @@ impl XhyveCpu {
 		// Load TTBRx
 		self.vcpu
 			.write_system_register(SystemRegister::TTBR1_EL1, 0)?;
-		self.vcpu
-			.write_system_register(SystemRegister::TTBR0_EL1, BOOT_PGT.as_u64())?;
+		self.vcpu.write_system_register(
+			SystemRegister::TTBR0_EL1,
+			(guest_address + PGT_OFFSET).as_u64(),
+		)?;
 
 		/*
 		* Prepare system control register (SCTRL)

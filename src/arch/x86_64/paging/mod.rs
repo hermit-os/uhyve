@@ -1,3 +1,4 @@
+use uhyve_interface::GuestPhysAddr;
 use x86_64::{
 	structures::paging::{Page, PageTable, PageTableFlags, Size2MiB},
 	PhysAddr,
@@ -14,15 +15,14 @@ pub fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {
 		| (limit & 0x0000ffffu64)
 }
 
-pub const MIN_PHYSMEM_SIZE: usize = BOOT_PDE.as_u64() as usize + 0x1000;
-
 /// Creates the pagetables and the GDT in the guest memory space.
 ///
 /// The memory slice must be larger than [`MIN_PHYSMEM_SIZE`].
 /// Also, the memory `mem` needs to be zeroed for [`PAGE_SIZE`] bytes at the
 /// offsets [`BOOT_PML4`] and [`BOOT_PDPTE`], otherwise the integrity of the
 /// pagetables and thus the integrity of the guest's memory is not ensured
-pub fn initialize_pagetables(mem: &mut [u8]) {
+/// `mem` and `GuestPhysAddr` must be 2MiB page aligned.
+pub fn initialize_pagetables(mem: &mut [u8], guest_address: GuestPhysAddr) {
 	assert!(mem.len() >= MIN_PHYSMEM_SIZE);
 	let mem_addr = std::ptr::addr_of_mut!(mem[0]);
 
@@ -32,23 +32,23 @@ pub fn initialize_pagetables(mem: &mut [u8]) {
 	// these and it is asserted to be large enough.
 	unsafe {
 		gdt_entry = mem_addr
-			.add(BOOT_GDT.as_u64() as usize)
+			.add(GDT_OFFSET as usize)
 			.cast::<[u64; 3]>()
 			.as_mut()
 			.unwrap();
 
 		pml4 = mem_addr
-			.add(BOOT_PML4.as_u64() as usize)
+			.add(PML4_OFFSET as usize)
 			.cast::<PageTable>()
 			.as_mut()
 			.unwrap();
 		pdpte = mem_addr
-			.add(BOOT_PDPTE.as_u64() as usize)
+			.add(PDPTE_OFFSET as usize)
 			.cast::<PageTable>()
 			.as_mut()
 			.unwrap();
 		pde = mem_addr
-			.add(BOOT_PDE.as_u64() as usize)
+			.add(PDE_OFFSET as usize)
 			.cast::<PageTable>()
 			.as_mut()
 			.unwrap();
@@ -68,15 +68,15 @@ pub fn initialize_pagetables(mem: &mut [u8]) {
 	gdt_entry[BOOT_GDT_DATA] = create_gdt_entry(0xC093, 0, 0xFFFFF);
 
 	pml4[0].set_addr(
-		BOOT_PDPTE.into(),
+		(guest_address + PDPTE_OFFSET).into(),
 		PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 	);
 	pml4[511].set_addr(
-		BOOT_PML4.into(),
+		(guest_address + PML4_OFFSET).into(),
 		PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 	);
 	pdpte[0].set_addr(
-		BOOT_PDE.into(),
+		(guest_address + PDE_OFFSET).into(),
 		PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 	);
 
@@ -114,7 +114,7 @@ fn pretty_print_pagetable(pt: &PageTable) {
 mod tests {
 	use super::*;
 	use crate::{
-		consts::{BOOT_PDE, BOOT_PDPTE, BOOT_PML4},
+		consts::{GDT_OFFSET, PDE_OFFSET, PDPTE_OFFSET, PML4_OFFSET},
 		mem::HugePageAlignedMem,
 	};
 
@@ -124,33 +124,42 @@ mod tests {
 			.filter(None, log::LevelFilter::Debug)
 			.is_test(true)
 			.try_init();
+		let guest_address = GuestPhysAddr::new(0x20000);
 
 		let aligned_mem = HugePageAlignedMem::<MIN_PHYSMEM_SIZE>::new();
-		initialize_pagetables((aligned_mem.mem).try_into().unwrap());
+		// This will return a pagetable setup that we will check.
+		initialize_pagetables((aligned_mem.mem).try_into().unwrap(), guest_address);
 
-		// Test pagetable setup
-		let addr_pdpte = u64::from_le_bytes(
-			aligned_mem.mem[(BOOT_PML4.as_u64() as usize)..(BOOT_PML4.as_u64() as usize + 8)]
+		// Check PDPTE address
+		let addr_pdpte = GuestPhysAddr::new(u64::from_le_bytes(
+			aligned_mem.mem[(PML4_OFFSET as usize)..(PML4_OFFSET as usize + 8)]
 				.try_into()
 				.unwrap(),
-		);
+		));
 		assert_eq!(
-			addr_pdpte,
-			BOOT_PDPTE.as_u64() | (PageTableFlags::PRESENT | PageTableFlags::WRITABLE).bits()
-		);
-		let addr_pde = u64::from_le_bytes(
-			aligned_mem.mem[(BOOT_PDPTE.as_u64() as usize)..(BOOT_PDPTE.as_u64() as usize + 8)]
-				.try_into()
-				.unwrap(),
-		);
-		assert_eq!(
-			addr_pde,
-			BOOT_PDE.as_u64() | (PageTableFlags::PRESENT | PageTableFlags::WRITABLE).bits()
+			addr_pdpte - guest_address,
+			PDPTE_OFFSET | (PageTableFlags::PRESENT | PageTableFlags::WRITABLE).bits()
 		);
 
+		// Check PDE
+		let addr_pde = GuestPhysAddr::new(u64::from_le_bytes(
+			aligned_mem.mem[(PDPTE_OFFSET as usize)..(PDPTE_OFFSET as usize + 8)]
+				.try_into()
+				.unwrap(),
+		));
+		assert_eq!(
+			addr_pde - guest_address,
+			PDE_OFFSET | (PageTableFlags::PRESENT | PageTableFlags::WRITABLE).bits()
+		);
+
+		// Check PDE's pagetable bits
 		for i in (0..4096).step_by(8) {
-			let addr = BOOT_PDE.as_u64() as usize + i;
-			let entry = u64::from_le_bytes(aligned_mem.mem[addr..(addr + 8)].try_into().unwrap());
+			let pde_addr = (PDE_OFFSET) as usize + i;
+			let entry = u64::from_le_bytes(
+				aligned_mem.mem[pde_addr..(pde_addr + 8)]
+					.try_into()
+					.unwrap(),
+			);
 			assert!(
 				PageTableFlags::from_bits_truncate(entry)
 					.difference(
@@ -159,14 +168,14 @@ mod tests {
 							| PageTableFlags::HUGE_PAGE
 					)
 					.is_empty(),
-				"Pagetable bits at {addr:#x} are incorrect"
+				"Pagetable bits at {pde_addr:#x} are incorrect"
 			)
 		}
 
 		// Test GDT
 		let gdt_results = [0x0, 0xAF9B000000FFFF, 0xCF93000000FFFF];
 		for (i, res) in gdt_results.iter().enumerate() {
-			let gdt_addr = BOOT_GDT.as_u64() as usize + i * 8;
+			let gdt_addr = GDT_OFFSET as usize + i * 8;
 			let gdt_entry =
 				u64::from_le_bytes(aligned_mem.mem[gdt_addr..gdt_addr + 8].try_into().unwrap());
 			assert_eq!(*res, gdt_entry);
