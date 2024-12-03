@@ -1,11 +1,11 @@
 <img width="200" align="right" src="img/uhyve.svg" />
 
-# Uhyve - A minimal hypervisor for Hermit
+# Uhyve
 
 [![crates.io](https://img.shields.io/crates/v/uhyve.svg)](https://crates.io/crates/uhyve)
 [![Zulip Badge](https://img.shields.io/badge/chat-hermit-57A37C?logo=zulip)](https://hermit.zulipchat.com/)
 
-Uhyve is a small hypervisor specialized for the [Hermit kernel](https://github.com/hermit-os/kernel).
+Uhyve is a minimal, special-purpose hypervisor for the [Hermit kernel](https://github.com/hermit-os/kernel).
 
 ## Installation
 
