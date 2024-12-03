@@ -1,6 +1,8 @@
 #![warn(rust_2018_idioms)]
 
-use std::{iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process, str::FromStr};
+use std::{
+	iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process, str::FromStr, thread,
+};
 
 use clap::{error::ErrorKind, Command, CommandFactory, Parser};
 use core_affinity::CoreId;
@@ -301,17 +303,20 @@ fn run_uhyve() -> i32 {
 	let affinity = args.cpu_args.clone().get_affinity(&mut app);
 	let params = Params::from(args);
 
-	let vm = UhyveVm::new(kernel, params)
-		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?");
-
-	let res = vm.run(affinity);
-	if stats {
-		if let Some(stats) = res.stats {
-			println!("Run statistics:");
-			println!("{stats}");
+	let vm_handle = thread::spawn(move || {
+		let vm = UhyveVm::new(kernel, params)
+			.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?");
+		let res = vm.run(affinity);
+		if stats {
+			if let Some(stats) = res.stats {
+				println!("Run statistics:");
+				println!("{stats}");
+			}
 		}
-	}
-	res.code
+		res.code
+	});
+
+	vm_handle.join().unwrap()
 }
 
 fn main() {
