@@ -158,6 +158,7 @@ impl Default for Output {
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	/// The starting position of the image in physical memory
 	kernel_address: GuestPhysAddr,
+	/// The first instruction after boot
 	entry_point: GuestPhysAddr,
 	stack_address: GuestPhysAddr,
 	/// The location of the whole guest in the physical address space
