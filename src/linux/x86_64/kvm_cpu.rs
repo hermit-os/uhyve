@@ -547,7 +547,7 @@ impl VirtualCPU for KvmCpu {
 						if let Some(s) = self.stats.as_mut() {
 							s.increment_val(VmExit::Debug)
 						}
-						info!("Caught Debug Interrupt!");
+						trace!("Caught Debug Interrupt!");
 						return Ok(VcpuStopReason::Debug(debug));
 					}
 					VcpuExit::InternalError => {
