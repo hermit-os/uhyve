@@ -104,30 +104,14 @@ fn detect_cpu_freq() -> u32 {
 	mhz
 }
 
-/// Generates a random guest address for Uhyve's virtualized memory, provided that the feature is enabled.
-/// For this purpose, ThreadRng is used. Currently, this feature only works on Linux (x86_64).
-///
+/// Generates a random guest address for Uhyve's virtualized memory.
 /// This function gets invoked when a new UhyveVM gets created, provided that the object file is relocatable.
-fn generate_address(object_mem_size: usize, _params_mem_size: usize) -> u64 {
-	#[cfg(feature = "aslr")]
-	#[cfg(not(all(target_arch = "x86_64", target_os = "linux")))]
-	compile_error!("ASLR is only supported on Linux (x86_64)");
+fn generate_address(object_mem_size: usize, _params_mem_size: usize) -> GuestPhysAddr {
+	let mut rng = rand::thread_rng();
+	let start_address_upper_bound: u64 =
+		0x0000_0000_CFF0_0000 - object_mem_size as u64 - KERNEL_OFFSET as u64;
 
-	#[cfg(feature = "aslr")]
-	{
-		// TODO: Investigate soundness.
-		// TODO: Implement more secure alternatives.
-		let mut rng = rand::thread_rng();
-		let start_address_upper_bound: u64 =
-			0x000F_FFFF_FFFF_0000 - object_mem_size as u64 - KERNEL_OFFSET as u64;
-
-		return rng.gen_range(0x100000..start_address_upper_bound) & 0x000F_FFFF_FFFF_0000;
-	}
-
-	#[cfg(not(feature = "aslr"))]
-	{
-		arch::RAM_START.as_u64() as u64
-	}
+	GuestPhysAddr::new(rng.gen_range(0x0..start_address_upper_bound) & !(0x20_0000 - 1))
 }
 
 #[cfg(target_os = "linux")]
@@ -200,15 +184,9 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		let object =
 			KernelObject::parse(&elf).map_err(|_err| HypervisorError::new(libc::ENOENT))?;
 
-		// If the feature turns out to be explicitly disabled, even with a relocatable binary,
-		// generate_address will return arch::RAM_START. At this stage, we still need
-		// to store the u64 somewhere, as this is what MmapMemory needs.
 		let offset = object.start_addr().unwrap_or_else(|| {
-			let _generated_address = generate_address(object.mem_size(), memory_size);
-			// This sets the generated address and initializes the singleton GUEST_ADDRESS that
-			// we use for the virt_to_phys functions
-			guest_address = GuestPhysAddr::new(0x99000);
-			0x99000 + KERNEL_OFFSET
+			guest_address = generate_address(object.mem_size(), memory_size);
+			(guest_address + KERNEL_OFFSET).as_u64()
 		});
 
 		dbg!(GuestPhysAddr::new(offset));
@@ -363,7 +341,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		let kernel_end_address = self.kernel_address + object.mem_size();
 
 		if kernel_end_address.as_u64()
-			> self.mem.memory_size as u64 - self.mem.guest_address.as_u64()
+			> self.mem.memory_size as u64 + self.mem.guest_address.as_u64()
 		{
 			return Err(LoadKernelError::InsufficientMemory);
 		}
@@ -413,7 +391,11 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 				serial_port_base: SerialPortBase::new(
 					(uhyve_interface::HypercallAddress::Uart as u16).into(),
 				),
-				device_tree: Some(FDT_OFFSET.try_into().unwrap()),
+				device_tree: Some(
+					(self.mem.guest_address.as_u64() + FDT_OFFSET)
+						.try_into()
+						.unwrap(),
+				),
 			},
 			load_info,
 			platform_info: PlatformInfo::Uhyve {
