@@ -273,7 +273,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			}
 		};
 
-		let mut vm = Self {
+		Ok(Self {
 			kernel_address: GuestPhysAddr::new(offset),
 			entry_point: GuestPhysAddr::zero(),
 			stack_address: GuestPhysAddr::zero(),
@@ -287,11 +287,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			virt_backend,
 			params,
 			output,
-		};
-
-		vm.init_guest_mem();
-
-		Ok(vm)
+		})
 	}
 
 	pub fn serial_output(&self, buf: &[u8]) -> io::Result<()> {
@@ -346,13 +342,16 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	}
 
 	/// Initialize the page tables for the guest
-	fn init_guest_mem(&mut self) {
+	/// `memory_size` is the length of the memory from the start of the physical
+	/// memory till the end of the kernel in bytes.
+	fn init_guest_mem(&mut self, memory_size: u64) {
 		debug!("Initialize guest memory");
 		crate::arch::init_guest_mem(
 			unsafe { self.mem.as_slice_mut() } // slice only lives during this fn call
 				.try_into()
 				.expect("Guest memory is not large enough for pagetables"),
 			self.mem.guest_address,
+			memory_size,
 		);
 	}
 
@@ -368,6 +367,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		{
 			return Err(LoadKernelError::InsufficientMemory);
 		}
+
+		self.init_guest_mem(kernel_end_address.as_u64() - self.mem.guest_address.as_u64());
 
 		let LoadedKernel {
 			load_info,
