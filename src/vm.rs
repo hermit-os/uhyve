@@ -5,7 +5,7 @@ use std::{
 	num::NonZeroU32,
 	path::PathBuf,
 	ptr, str,
-	sync::{Arc, Mutex, OnceLock},
+	sync::{Arc, Mutex},
 	time::SystemTime,
 };
 
@@ -35,8 +35,6 @@ use crate::{
 };
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
-
-pub static GUEST_ADDRESS: OnceLock<GuestPhysAddr> = OnceLock::new();
 
 #[derive(Error, Debug)]
 pub enum LoadKernelError {
@@ -192,7 +190,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		dbg!(GuestPhysAddr::new(offset));
 		dbg!(guest_address);
-		let _ = *GUEST_ADDRESS.get_or_init(|| guest_address);
 
 		#[cfg(target_os = "linux")]
 		#[cfg(target_arch = "x86_64")]

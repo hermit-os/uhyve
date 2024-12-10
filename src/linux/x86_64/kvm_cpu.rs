@@ -85,7 +85,7 @@ impl VirtualizationBackend for KvmVm {
 				slot: 1,
 				flags: mem.flags,
 				memory_size: (mem.memory_size - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
-				guest_phys_addr: (*crate::vm::GUEST_ADDRESS.get().unwrap()).as_u64()
+				guest_phys_addr: mem.guest_address.as_u64()
 					+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
 				userspace_addr: (mem.host_address as usize
 					+ KVM_32BIT_GAP_START
@@ -340,6 +340,10 @@ impl KvmCpu {
 		&mut self.vcpu
 	}
 
+	pub fn get_root_pagetable(&self) -> GuestPhysAddr {
+		GuestPhysAddr::new(self.vcpu.get_sregs().unwrap().cr3)
+	}
+
 	fn init(
 		&mut self,
 		entry_point: GuestPhysAddr,
@@ -462,13 +466,17 @@ impl VirtualCPU for KvmCpu {
 									sysopen,
 									&mut self.parent_vm.file_mapping.lock().unwrap(),
 								),
-								Hypercall::FileRead(sysread) => {
-									hypercall::read(&self.parent_vm.mem, sysread)
-								}
-								Hypercall::FileWrite(syswrite) => {
-									hypercall::write(&self.parent_vm, syswrite)
-										.map_err(|_e| HypervisorError::new(libc::EFAULT))?
-								}
+								Hypercall::FileRead(sysread) => hypercall::read(
+									&self.parent_vm.mem,
+									sysread,
+									self.get_root_pagetable(),
+								),
+								Hypercall::FileWrite(syswrite) => hypercall::write(
+									&self.parent_vm,
+									syswrite,
+									self.get_root_pagetable(),
+								)
+								.map_err(|_e| HypervisorError::new(libc::EFAULT))?,
 								Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
 									&self.parent_vm.mem,
 									sysunlink,
