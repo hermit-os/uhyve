@@ -137,7 +137,7 @@ impl SingleThreadBase for GdbUhyve {
 				data.len(),
 			)
 		}
-		.unwrap();
+		.map_err(|_e| TargetError::NonFatal)?;
 		data.copy_from_slice(src);
 		Ok(data.len())
 	}
