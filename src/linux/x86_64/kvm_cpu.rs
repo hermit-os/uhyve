@@ -482,7 +482,7 @@ impl VirtualCPU for KvmCpu {
 									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 									let buf = unsafe {
 										self.parent_vm.mem.slice_at(sysserialwrite.buf, sysserialwrite.len)
-			.expect("Systemcall parameters for SerialWriteBuffer are invalid")
+			.unwrap_or_else(|e|panic!("Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"))
 									};
 
 									self.parent_vm
