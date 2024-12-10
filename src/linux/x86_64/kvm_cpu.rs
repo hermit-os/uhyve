@@ -483,8 +483,15 @@ impl VirtualCPU for KvmCpu {
 								Hypercall::SerialWriteBuffer(sysserialwrite) => {
 									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 									let buf = unsafe {
-										self.peripherals.mem.slice_at(sysserialwrite.buf, sysserialwrite.len)
-			.expect("Systemcall parameters for SerialWriteBuffer are invalid")
+										self
+											.peripherals
+											.mem
+											.slice_at(sysserialwrite.buf, sysserialwrite.len)
+											.unwrap_or_else(|e| {
+												panic!(
+													"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
+												)
+											})
 									};
 
 									self.peripherals
