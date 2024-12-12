@@ -112,19 +112,17 @@ uhyve /path/to/the/unikernel/binary
 
 ### Configuration
 
-Uhyve can be configured using environment variables.
-The following variables are supported:
+Uhyve can be configured using command line arguments and environment variables.
+This example launches a virtual machine with 4 GiB of memory and 4 cores:
 
-- `HERMIT_CPUS`: specifies the number of cores the virtual machine may use.
-- `HERMIT_MEM`: defines the memory size of the virtual machine. The suffixes *M* and *G* can be used to specify a value in megabytes or gigabytes, respectively.
-- `HERMIT_GDB_PORT=port` activate a gdb server for the application running inside Uhyve. _See below_
+```bash
+uhyve -m 4GiB -c 4 path/to/unikernel
+```
 
-By default, the loader initializes a system with one core and 512 MiB RAM.
+For more options, the default values, and the corresponding environment variables run:
 
-**Example:** the following command starts the demo application in a virtual machine, which has 4 cores and 8GiB memory:
-
-```sh
-HERMIT_CPUS=4 HERMIT_MEM=8G uhyve /path/to/the/unikernel/binary
+```bash
+uhyve --help
 ```
 
 ### Known issues
