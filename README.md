@@ -95,9 +95,8 @@ For further information, please consult [Apple's Documentation](https://develope
 
 ## Usage
 
-### Running Hermit apps within Uhyve
-
 Assuming that you have **installed** Uhyve, run the hypervisor to start the unikernel:
+
 ```sh
 uhyve /path/to/the/unikernel/binary
 ```
@@ -125,6 +124,15 @@ For more options, the default values, and the corresponding environment variable
 uhyve --help
 ```
 
+### Contributing
+
+If you are interested in contributing to Uhyve, make sure to check out the [Uhyve wiki][uhyve-wiki]!
+
+Our wiki contains instructions on working with Uhyve's source code, including setting up a suitable
+development environment, as well as profiling, testing and debugging Uhyve.
+
+[uhyve-wiki]: https://github.com/hermit-os/uhyve/wiki
+
 ### Known issues
 
  * Uhyve isn't able to pass more than 128 environment variables to the unikernel.
@@ -139,37 +147,4 @@ Licensed under either of
 at your option.
 
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
-
----
-
-## Contributing
-
-### Testing Hermit apps using `cargo run`
-
-As mentioned above, the Uhyve repository ships some binaries that can be used for testing purposes.
-
-```sh
-cargo run -- data/x86_64/rusty_demo
-cargo run -- data/x86_64/hello_world
-cargo run -- data/x86_64/hello_c
-```
-
-### Debugging Hermit apps
-
-Basic support of (single-core) applications is already integrated into Uhyve.
-
-By specifying variable `HERMIT_GDB_PORT=port`, Uhyve is working as gdbserver and is waiting on port `port` for a connection to a gdb.
-For instance, with the following command Uhyve is waiting on port `6677` for a connection.
-
-```bash
-HERMIT_GDB_PORT=6677 uhyve /path_to_the_unikernel/hello_world
-```
-
-In principle, every gdb-capable IDE should be able to debug Hermit applications. (Eclipse, VSCode, ...)
-
-#### Visual Studio Code / VSCodium
-
-The repository [hermit-rs](https://github.com/hermit-os/hermit-rs) provides [example configuration files](https://github.com/hermit-os/hermit-rs/tree/master/.vscode) to debug a Hermit application with [Visual Studio Code](https://code.visualstudio.com/), [VSCodium](https://vscodium.com/) or derivatives of [Eclipse Theia](https://theia-ide.org/).
-
-![Debugging Hermit apps](img/vs_code.png)
 
