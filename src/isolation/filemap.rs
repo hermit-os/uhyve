@@ -2,10 +2,12 @@ use std::{
 	collections::HashMap,
 	ffi::{CString, OsString},
 	fs::canonicalize,
+	io::ErrorKind,
 	os::unix::ffi::OsStrExt,
 	path::{absolute, PathBuf},
 };
 
+use clean_path::clean;
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -28,16 +30,7 @@ impl UhyveFileMap {
 				.iter()
 				.map(String::as_str)
 				.map(Self::split_guest_and_host_path)
-				.map(|(guest_path, host_path)| {
-					(
-						guest_path,
-						canonicalize(&host_path).map_or(host_path, |host_path| {
-							absolute(host_path)
-								.expect("Path is empty or unable to get current directory.")
-								.into()
-						}),
-					)
-				})
+				.map(Result::unwrap)
 				.collect(),
 			tempdir: create_temp_dir(),
 		}
@@ -47,12 +40,19 @@ impl UhyveFileMap {
 	/// into a guest_path (String) and host_path (OsString) respectively.
 	///
 	/// * `mapping` - A mapping of the format `./host_path.txt:guest.txt`.
-	fn split_guest_and_host_path(mapping: &str) -> (String, OsString) {
-		let mut mappingiter = mapping.split(":");
-		let host_path = OsString::from(mappingiter.next().unwrap());
-		let guest_path = mappingiter.next().unwrap().to_owned();
+	fn split_guest_and_host_path(mapping: &str) -> Result<(String, OsString), ErrorKind> {
+		let mut mappingiter: std::str::Split<'_, &str> = mapping.split(":");
+		let host_str = mappingiter.next().ok_or(ErrorKind::InvalidInput)?;
+		let guest_str = mappingiter.next().ok_or(ErrorKind::InvalidInput)?;
 
-		(guest_path, host_path)
+		// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
+		// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
+		let host_path = canonicalize(host_str)
+			.map_or_else(|_| clean(absolute(host_str).unwrap()), clean)
+			.into();
+		let guest_path: String = clean(guest_str).display().to_string();
+
+		Ok((guest_path, host_path))
 	}
 
 	/// Returns the host_path on the host filesystem given a requested guest_path, if it exists.
@@ -69,7 +69,9 @@ impl UhyveFileMap {
 				return None;
 			}
 
-			let requested_guest_pathbuf = PathBuf::from(guest_path);
+			let requested_guest_pathbuf = clean(PathBuf::from(guest_path));
+			// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
+			// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
 			if let Some(parent_of_guest_path) = requested_guest_pathbuf.parent() {
 				debug!("The file is in a child directory, searching for a parent directory...");
 				for searched_parent_guest in parent_of_guest_path.ancestors() {
@@ -120,30 +122,32 @@ mod tests {
 
 	#[test]
 	fn test_split_guest_and_host_path() {
-		let host_guest_strings = vec![
+		let host_guest_strings = [
 			"./host_string.txt:guest_string.txt",
 			"/home/user/host_string.txt:guest_string.md.txt",
-			":guest_string.conf",
-			":",
-			"exists.txt:also_exists.txt:should_not_exist.txt",
+			"host_string.txt:this_does_exist.txt:should_not_exist.txt",
+			"host_string.txt:test/..//guest_string.txt",
 		];
 
+		// We will use `host_string.txt` for all tests checking canonicalization.
+		let mut fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+		fixture_path.push("host_string.txt");
+
 		// Mind the inverted order.
-		let results = vec![
+		let results = [
 			(
 				String::from("guest_string.txt"),
-				OsString::from("./host_string.txt"),
+				fixture_path.clone().into(),
 			),
 			(
 				String::from("guest_string.md.txt"),
 				OsString::from("/home/user/host_string.txt"),
 			),
-			(String::from("guest_string.conf"), OsString::from("")),
-			(String::from(""), OsString::from("")),
 			(
-				String::from("also_exists.txt"),
-				OsString::from("exists.txt"),
+				String::from("this_does_exist.txt"),
+				fixture_path.clone().into(),
 			),
+			(String::from("guest_string.txt"), fixture_path.into()),
 		];
 
 		for (i, host_and_guest_string) in host_guest_strings
@@ -151,7 +155,10 @@ mod tests {
 			.map(UhyveFileMap::split_guest_and_host_path)
 			.enumerate()
 		{
-			assert_eq!(host_and_guest_string, results[i]);
+			assert_eq!(
+				host_and_guest_string.expect("Result is an error!"),
+				results[i]
+			);
 		}
 	}
 
@@ -259,7 +266,7 @@ mod tests {
 		// Tests directory traversal leading to valid symbolic link with an
 		// empty guest_path_map.
 		host_path_map = fixture_path.clone();
-		guest_path_map = PathBuf::from("");
+		guest_path_map = PathBuf::from("/root");
 		uhyvefilemap_params = [format!(
 			"{}:{}",
 			host_path_map.to_str().unwrap(),
@@ -268,7 +275,7 @@ mod tests {
 
 		map = UhyveFileMap::new(&uhyvefilemap_params);
 
-		target_guest_path = PathBuf::from("this_symlink_leads_to_a_file");
+		target_guest_path = PathBuf::from("/root/this_symlink_leads_to_a_file");
 		target_host_path = fixture_path.clone();
 		target_host_path.push("this_folder_exists/file_in_folder.txt");
 		found_host_path = map.get_host_path(target_guest_path.to_str().unwrap());
