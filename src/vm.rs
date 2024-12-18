@@ -22,10 +22,8 @@ use uhyve_interface::GuestPhysAddr;
 use crate::arch::x86_64::{
 	detect_freq_from_cpuid, detect_freq_from_cpuid_hypervisor_info, get_cpu_frequency_from_os,
 };
-
 #[cfg(feature = "landlock")]
 use crate::isolation::landlock::UhyveLandlockWrapper;
-
 use crate::{
 	arch::{self, FrequencyDetectionFailed},
 	consts::*,

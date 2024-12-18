@@ -1,6 +1,4 @@
-use std::vec::Vec;
-
-use std::{ffi::OsString, path::PathBuf};
+use std::{ffi::OsString, path::PathBuf, vec::Vec};
 
 use landlock::{
 	Access, AccessFs, PathBeneath, PathFd, PathFdError, RestrictionStatus, Ruleset, RulesetAttr,
@@ -44,7 +42,7 @@ impl UhyveLandlockWrapper {
 				.map(String::as_str)
 				.map(split_guest_and_host_path)
 				.map(Result::unwrap)
-				.map(|(guest_path, host_path)| { (guest_path, host_path).1 })
+				.map(|(guest_path, host_path)| (guest_path, host_path).1)
 				.map(Self::get_parent_directory)
 				.collect();
 
@@ -71,7 +69,6 @@ impl UhyveLandlockWrapper {
 		}
 	}
 
-
 	/// If the file does not exist, we add the parent directory instead. This might have practical
 	/// security implications, however, combined with the other security measures implemented into
 	/// Uhyve, this should be fine.
@@ -93,7 +90,6 @@ impl UhyveLandlockWrapper {
 			iterations
 		);
 	}
-
 
 	/// Initializes Landlock by providing R/W-access to user-defined and
 	/// Uhyve-defined paths.
