@@ -60,7 +60,7 @@ virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
 rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }
 shell-words = "1"
-sysinfo = { version = "0.33.0", default-features = false, features = ["system"] }
+sysinfo = { version = "0.33.1", default-features = false, features = ["system"] }
 vm-fdt = "0.3"
 tempfile = "3.15.0"
 uuid = { version = "1.11.0", features = ["fast-rng", "v4"]}
