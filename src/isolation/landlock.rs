@@ -1,15 +1,20 @@
+#[cfg(feature = "landlock")]
 use std::{ffi::OsString, path::PathBuf, vec::Vec};
 
+#[cfg(feature = "landlock")]
 use landlock::{
 	Access, AccessFs, PathBeneath, PathFd, PathFdError, RestrictionStatus, Ruleset, RulesetAttr,
 	RulesetCreatedAttr, RulesetError, ABI,
 };
+#[cfg(feature = "landlock")]
 use thiserror::Error;
 
+#[cfg(feature = "landlock")]
 use crate::isolation::split_guest_and_host_path;
 
 /// Contains types of errors that may occur during Landlock's initialization.
 #[derive(Debug, Error)]
+#[cfg(feature = "landlock")]
 pub enum LandlockRestrictError {
 	#[error(transparent)]
 	Ruleset(#[from] RulesetError),
@@ -18,17 +23,19 @@ pub enum LandlockRestrictError {
 }
 
 /// Interface for Landlock crate.
+#[cfg(feature = "landlock")]
 #[derive(Clone, Debug)]
 pub struct UhyveLandlockWrapper {
-	whitelisted_paths: Vec<String>,
-	uhyve_paths: Vec<String>,
+	rw_paths: Vec<String>,
+	ro_paths: Vec<String>,
 }
 
+#[cfg(feature = "landlock")]
 impl UhyveLandlockWrapper {
 	pub fn new(
 		mappings: &[String],
-		tempdir: &String,
-		uhyve_paths: &[String],
+		uhyve_rw_paths: &mut Vec<String>,
+		uhyve_ro_paths: &Vec<String>,
 	) -> UhyveLandlockWrapper {
 		#[cfg(not(target_os = "linux"))]
 		#[cfg(feature = "landlock")]
@@ -41,7 +48,7 @@ impl UhyveLandlockWrapper {
 		#[cfg(target_os = "linux")]
 		#[cfg(feature = "landlock")]
 		{
-			let mut whitelisted_paths: Vec<String> = mappings
+			let mut rw_paths: Vec<String> = mappings
 				.iter()
 				.map(String::as_str)
 				.map(split_guest_and_host_path)
@@ -49,11 +56,11 @@ impl UhyveLandlockWrapper {
 				.map(|(guest_path, host_path)| (guest_path, host_path).1)
 				.map(Self::get_parent_directory)
 				.collect();
-			whitelisted_paths.push(tempdir.to_owned());
+			rw_paths.append(uhyve_rw_paths);
 
 			UhyveLandlockWrapper {
-				whitelisted_paths,
-				uhyve_paths: uhyve_paths.to_vec(),
+				rw_paths,
+				ro_paths: uhyve_ro_paths.to_vec(),
 			}
 		}
 	}
@@ -110,7 +117,7 @@ impl UhyveLandlockWrapper {
 			.handle_access(access_all)?
 			.create()?
 			.add_rules(
-				self.whitelisted_paths
+				self.rw_paths
 					.as_slice()
 					.iter()
 					.map::<Result<_, LandlockRestrictError>, _>(|p| {
@@ -118,7 +125,7 @@ impl UhyveLandlockWrapper {
 					}),
 			)?
 			.add_rules(
-				self.uhyve_paths
+				self.ro_paths
 					.as_slice()
 					.iter()
 					.map::<Result<_, LandlockRestrictError>, _>(|p| {

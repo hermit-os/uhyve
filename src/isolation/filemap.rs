@@ -49,7 +49,6 @@ impl UhyveFileMap {
 			}
 
 			let requested_guest_pathbuf = PathBuf::from(guest_path);
-			error!("requested_guest_pathbuf: {:#?}", requested_guest_pathbuf);
 			if let Some(parent_of_guest_path) = requested_guest_pathbuf.parent() {
 				debug!("The file is in a child directory, searching for a parent directory...");
 				for searched_parent_guest in parent_of_guest_path.ancestors() {

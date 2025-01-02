@@ -25,7 +25,7 @@ fn new_file_test() {
 
 	// Tests successful directory traversal starting from file in child
 	// directory of a mapped directory.
-	let guest_path = PathBuf::from("guest_directory");
+	let guest_path = PathBuf::from("/root/");
 	let mut host_path = fixture_path.clone();
 	host_path.push("this_folder_exists");
 
@@ -39,16 +39,13 @@ fn new_file_test() {
 	)]
 	.to_vec();
 
-	error!("{:#?}", uhyvefilemap_params);
-
 	let params = Params {
 		cpu_count: 1.try_into().unwrap(),
 		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
 			.unwrap()
 			.try_into()
 			.unwrap(),
-		file_mapping: uhyvefilemap_params,
-		output: Output::File(PathBuf::from("test.txt")),
+		file_mapping: uhyvefilemap_params.clone(),
 		..Default::default()
 	};
 
@@ -74,12 +71,12 @@ fn uhyvefilemap_test() {
 			.unwrap()
 			.try_into()
 			.unwrap(),
-		file_mapping: vec!["./foo.txt:dir/wrong.txt".to_string()],
+		file_mapping: vec!["./foo.txt:/root/dir/wrong.txt".to_string()],
 		..Default::default()
 	};
 
 	// The file should not exist on the host OS.
-	params.file_mapping = vec!["./foo.txt:guest_directory/foo.txt".to_string()];
+	params.file_mapping = vec!["./foo.txt:/root/foo.txt".to_string()];
 	//let mut res: uhyvelib::vm::VmResult = vm.run(None);
 	//assert_eq!(res.code, 0);
 	//assert!(!output_path.exists());

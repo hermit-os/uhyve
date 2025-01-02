@@ -199,13 +199,15 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		//
 		// It is not necessary to whitelist e.g. /dev/kvm, as isolation should be enforced
 		// after KVM is initialized and before the kernel is loaded.
-		let mut uhyve_paths = [
+		let mut uhyve_ro_paths = [
 			kernel_path.to_str().unwrap().to_owned(),
 			String::from("/sys/devices/system"),
 			String::from("/proc/cpuinfo"),
 			String::from("/proc/stat"),
 		]
 		.to_vec();
+
+		let mut uhyve_rw_paths: Vec<String> = [].to_vec();
 
 		let output = match params.output {
 			params::Output::None => Output::None,
@@ -228,20 +230,23 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 						e
 					})?;
 				#[cfg(feature = "landlock")]
-				uhyve_paths.push(path.to_str().unwrap().to_owned());
+				uhyve_rw_paths.push(path.to_str().unwrap().to_owned());
 				Output::File(Arc::new(Mutex::new(f)))
 			}
 		};
 
 		#[cfg(feature = "landlock")]
-		let tempdir = file_mapping
-			.lock()
-			.unwrap()
-			.get_temp_dir()
-			.unwrap()
-			.to_owned();
+		uhyve_rw_paths.push(
+			file_mapping
+				.lock()
+				.unwrap()
+				.get_temp_dir()
+				.unwrap()
+				.to_owned(),
+		);
 		#[cfg(feature = "landlock")]
-		let landlock = UhyveLandlockWrapper::new(&params.file_mapping, &tempdir, &uhyve_paths);
+		let landlock =
+			UhyveLandlockWrapper::new(&params.file_mapping, &mut uhyve_rw_paths, &uhyve_ro_paths);
 
 		let mut vm = Self {
 			kernel_address: GuestPhysAddr::zero(),
