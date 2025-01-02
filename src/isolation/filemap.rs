@@ -63,8 +63,6 @@ impl UhyveFileMap {
 						let guest_path_remainder = requested_guest_pathbuf
 							.strip_prefix(searched_parent_guest)
 							.unwrap();
-
-						error!("guest_path_remainder: {:#?}", guest_path_remainder);
 						host_path.push(guest_path_remainder);
 
 						// Handles symbolic links.
@@ -81,7 +79,7 @@ impl UhyveFileMap {
 
 	/// Returns the path to the temporary directory.
 	pub fn get_temp_dir(&self) -> Option<&str> {
-		return self.tempdir.path().to_str();
+		self.tempdir.path().to_str()
 	}
 
 	/// Inserts an opened temporary file into the file map. Returns a CString so that
@@ -93,7 +91,7 @@ impl UhyveFileMap {
 		let host_path = self
 			.tempdir
 			.path()
-			.join(&Uuid::new_v4().to_string())
+			.join(Uuid::new_v4().to_string())
 			.into_os_string();
 		let ret = CString::new(host_path.as_bytes()).unwrap();
 		self.files.insert(String::from(guest_path), host_path);
