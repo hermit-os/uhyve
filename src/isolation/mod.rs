@@ -2,12 +2,7 @@ pub mod filemap;
 pub mod landlock;
 pub mod tempdir;
 
-use std::{
-	ffi::OsString,
-	fs::canonicalize,
-	io::ErrorKind,
-	path::{absolute, PathBuf},
-};
+use std::{ffi::OsString, fs::canonicalize, io::ErrorKind, path::absolute};
 
 use clean_path::clean;
 

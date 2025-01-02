@@ -199,7 +199,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		//
 		// It is not necessary to whitelist e.g. /dev/kvm, as isolation should be enforced
 		// after KVM is initialized and before the kernel is loaded.
-		let mut uhyve_ro_paths = [
+		let uhyve_ro_paths = [
 			kernel_path.to_str().unwrap().to_owned(),
 			String::from("/sys/devices/system"),
 			String::from("/proc/cpuinfo"),
@@ -368,6 +368,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			.unwrap()
 			.kernel_args(&self.args()[..sep])
 			.app_args(self.args().get(sep + 1..).unwrap_or_default())
+			.envs(env::vars())
 			.finish()
 			.unwrap();
 

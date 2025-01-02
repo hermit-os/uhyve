@@ -35,7 +35,7 @@ impl UhyveLandlockWrapper {
 	pub fn new(
 		mappings: &[String],
 		uhyve_rw_paths: &mut Vec<String>,
-		uhyve_ro_paths: &Vec<String>,
+		uhyve_ro_paths: &[String],
 	) -> UhyveLandlockWrapper {
 		#[cfg(not(target_os = "linux"))]
 		#[cfg(feature = "landlock")]
