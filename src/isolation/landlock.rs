@@ -25,7 +25,11 @@ pub struct UhyveLandlockWrapper {
 }
 
 impl UhyveLandlockWrapper {
-	pub fn new(mappings: &[String], uhyve_paths: &[String]) -> UhyveLandlockWrapper {
+	pub fn new(
+		mappings: &[String],
+		tempdir: &String,
+		uhyve_paths: &[String],
+	) -> UhyveLandlockWrapper {
 		#[cfg(not(target_os = "linux"))]
 		#[cfg(feature = "landlock")]
 		compile_error!("Landlock is only available on Linux.");
@@ -37,7 +41,7 @@ impl UhyveLandlockWrapper {
 		#[cfg(target_os = "linux")]
 		#[cfg(feature = "landlock")]
 		{
-			let whitelisted_paths = mappings
+			let mut whitelisted_paths: Vec<String> = mappings
 				.iter()
 				.map(String::as_str)
 				.map(split_guest_and_host_path)
@@ -45,6 +49,7 @@ impl UhyveLandlockWrapper {
 				.map(|(guest_path, host_path)| (guest_path, host_path).1)
 				.map(Self::get_parent_directory)
 				.collect();
+			whitelisted_paths.push(tempdir.to_owned());
 
 			UhyveLandlockWrapper {
 				whitelisted_paths,

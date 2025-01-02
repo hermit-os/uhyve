@@ -201,12 +201,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		// after KVM is initialized and before the kernel is loaded.
 		let mut uhyve_paths = [
 			kernel_path.to_str().unwrap().to_owned(),
-			file_mapping
-				.lock()
-				.unwrap()
-				.get_temp_dir()
-				.unwrap()
-				.to_owned(),
 			String::from("/sys/devices/system"),
 			String::from("/proc/cpuinfo"),
 			String::from("/proc/stat"),
@@ -240,7 +234,14 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		};
 
 		#[cfg(feature = "landlock")]
-		let landlock = UhyveLandlockWrapper::new(&params.file_mapping, &uhyve_paths);
+		let tempdir = file_mapping
+			.lock()
+			.unwrap()
+			.get_temp_dir()
+			.unwrap()
+			.to_owned();
+		#[cfg(feature = "landlock")]
+		let landlock = UhyveLandlockWrapper::new(&params.file_mapping, &tempdir, &uhyve_paths);
 
 		let mut vm = Self {
 			kernel_address: GuestPhysAddr::zero(),
