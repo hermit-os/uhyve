@@ -4,11 +4,7 @@ use std::{fs::read_to_string, path::PathBuf};
 
 use byte_unit::{Byte, Unit};
 use common::{build_hermit_bin, remove_file_if_exists};
-use log::error;
-use uhyvelib::{
-	params::{Output, Params},
-	vm::UhyveVm,
-};
+use uhyvelib::{params::Params, vm::UhyveVm};
 
 /// Verifies successful file creation on the host OS and its contents.
 pub fn verify_file_equals(testfile: &PathBuf, contents: &str) {
