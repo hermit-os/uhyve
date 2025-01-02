@@ -207,7 +207,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		]
 		.to_vec();
 
-		let mut uhyve_rw_paths: Vec<String> = [].to_vec();
+		let uhyve_rw_paths: Vec<String> = [].to_vec();
 
 		let output = match params.output {
 			params::Output::None => Output::None,

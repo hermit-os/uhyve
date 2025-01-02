@@ -35,9 +35,13 @@ name = "benchmarks"
 path = "benches/benchmarks.rs"
 harness = false
 
-[features]
+[target.'cfg(target_os = "linux")'.features]
 default = ["landlock"]
 landlock = ["dep:landlock"]
+instrument = ["rftrace", "rftrace-frontend"]
+
+[target.'cfg(not(target_os = "linux"))'.features]
+default = []
 instrument = ["rftrace", "rftrace-frontend"]
 
 [dependencies]
