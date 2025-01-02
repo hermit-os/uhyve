@@ -27,6 +27,8 @@ fn split_guest_and_host_path(mapping: &str) -> Result<(String, OsString), ErrorK
 
 #[test]
 fn test_split_guest_and_host_path() {
+	use std::path::PathBuf;
+
 	let host_guest_strings = [
 		"./host_string.txt:guest_string.txt",
 		"/home/user/host_string.txt:guest_string.md.txt",
