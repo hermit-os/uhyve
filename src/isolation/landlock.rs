@@ -1,20 +1,14 @@
-#[cfg(feature = "landlock")]
 use std::{ffi::OsString, path::PathBuf, vec::Vec};
 
-#[cfg(feature = "landlock")]
 use landlock::{
 	Access, AccessFs, PathBeneath, PathFd, PathFdError, RestrictionStatus, Ruleset, RulesetAttr,
 	RulesetCreatedAttr, RulesetError, ABI,
 };
-#[cfg(feature = "landlock")]
-use thiserror::Error;
 
-#[cfg(feature = "landlock")]
 use crate::isolation::split_guest_and_host_path;
 
 /// Contains types of errors that may occur during Landlock's initialization.
 #[derive(Debug, Error)]
-#[cfg(feature = "landlock")]
 pub enum LandlockRestrictError {
 	#[error(transparent)]
 	Ruleset(#[from] RulesetError),
@@ -23,14 +17,12 @@ pub enum LandlockRestrictError {
 }
 
 /// Interface for Landlock crate.
-#[cfg(feature = "landlock")]
 #[derive(Clone, Debug)]
 pub struct UhyveLandlockWrapper {
 	rw_paths: Vec<String>,
 	ro_paths: Vec<String>,
 }
 
-#[cfg(feature = "landlock")]
 impl UhyveLandlockWrapper {
 	pub fn new(
 		mappings: &[String],
@@ -38,30 +30,25 @@ impl UhyveLandlockWrapper {
 		uhyve_ro_paths: &[String],
 	) -> UhyveLandlockWrapper {
 		#[cfg(not(target_os = "linux"))]
-		#[cfg(feature = "landlock")]
 		compile_error!("Landlock is only available on Linux.");
 
 		// TODO: Check whether host OS (Linux, of course) actually supports Landlock.
 		// TODO: Introduce parameter that lets the user manually disable Landlock.
 		// TODO: Reduce code repetition (wrt. `crate::isolation::filemap`).
 		// TODO: What to do with files that don't exist yet?
-		#[cfg(target_os = "linux")]
-		#[cfg(feature = "landlock")]
-		{
-			let mut rw_paths: Vec<String> = mappings
-				.iter()
-				.map(String::as_str)
-				.map(split_guest_and_host_path)
-				.map(Result::unwrap)
-				.map(|(guest_path, host_path)| (guest_path, host_path).1)
-				.map(Self::get_parent_directory)
-				.collect();
-			rw_paths.append(uhyve_rw_paths);
+		let mut rw_paths: Vec<String> = mappings
+			.iter()
+			.map(String::as_str)
+			.map(split_guest_and_host_path)
+			.map(Result::unwrap)
+			.map(|(guest_path, host_path)| (guest_path, host_path).1)
+			.map(Self::get_parent_directory)
+			.collect();
+		rw_paths.append(uhyve_rw_paths);
 
-			UhyveLandlockWrapper {
-				rw_paths,
-				ro_paths: uhyve_ro_paths.to_vec(),
-			}
+		UhyveLandlockWrapper {
+			rw_paths,
+			ro_paths: uhyve_ro_paths.to_vec(),
 		}
 	}
 
@@ -69,15 +56,11 @@ impl UhyveLandlockWrapper {
 	/// This is currently only used for Landlock. It can be extended for other isolation
 	/// layers, as well as operating system-specific implementations.
 	pub fn enforce_isolation(&self) {
-		#[cfg(feature = "landlock")]
 		{
-			#[cfg(target_os = "linux")]
-			{
-				let _status = match Self::enforce_landlock(self) {
-					Ok(status) => status,
-					Err(error) => panic!("Unable to initialize Landlock: {error:?}"),
-				};
-			}
+			let _status = match Self::enforce_landlock(self) {
+				Ok(status) => status,
+				Err(error) => panic!("Unable to initialize Landlock: {error:?}"),
+			};
 		}
 	}
 

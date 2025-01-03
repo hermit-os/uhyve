@@ -1,4 +1,5 @@
 pub mod filemap;
+#[cfg(feature = "landlock")]
 pub mod landlock;
 pub mod tempdir;
 
