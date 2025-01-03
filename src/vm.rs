@@ -191,7 +191,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping));
 
-		#[cfg(target_os = "linux")]
 		// This segment adds certain paths necessary for Uhyve to function before we
 		// enforce Landlock, such as the kernel path and a couple of paths useful for sysinfo.
 		//
@@ -199,6 +198,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		//
 		// It is not necessary to whitelist e.g. /dev/kvm, as isolation should be enforced
 		// after KVM is initialized and before the kernel is loaded.
+		#[cfg(target_os = "linux")]
 		let uhyve_ro_paths = [
 			kernel_path.to_str().unwrap().to_owned(),
 			String::from("/sys/devices/system"),
