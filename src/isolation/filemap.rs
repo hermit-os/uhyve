@@ -207,7 +207,7 @@ mod tests {
 		// Tests directory traversal leading to valid symbolic link with an
 		// empty guest_path_map.
 		host_path_map = fixture_path.clone();
-		guest_path_map = PathBuf::from("");
+		guest_path_map = PathBuf::from("/root/");
 		uhyvefilemap_params = [format!(
 			"{}:{}",
 			host_path_map.to_str().unwrap(),
@@ -216,10 +216,11 @@ mod tests {
 
 		map = UhyveFileMap::new(&uhyvefilemap_params);
 
-		target_guest_path = PathBuf::from("this_symlink_leads_to_a_file");
+		target_guest_path = PathBuf::from("/root/this_symlink_leads_to_a_file");
 		target_host_path = fixture_path.clone();
 		target_host_path.push("this_folder_exists/file_in_folder.txt");
 		found_host_path = map.get_host_path(target_guest_path.to_str().unwrap());
+		println!("test");
 		assert_eq!(
 			found_host_path.unwrap(),
 			target_host_path.as_os_str().to_str().unwrap()
