@@ -4,6 +4,7 @@ use landlock::{
 	Access, AccessFs, PathBeneath, PathFd, PathFdError, RestrictionStatus, Ruleset, RulesetAttr,
 	RulesetCreatedAttr, RulesetError, ABI,
 };
+use thiserror::Error;
 
 use crate::isolation::split_guest_and_host_path;
 

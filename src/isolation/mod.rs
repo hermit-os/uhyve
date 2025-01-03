@@ -1,5 +1,5 @@
 pub mod filemap;
-#[cfg(feature = "landlock")]
+#[cfg(target_os = "linux")]
 pub mod landlock;
 pub mod tempdir;
 

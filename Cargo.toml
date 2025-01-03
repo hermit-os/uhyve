@@ -35,12 +35,7 @@ name = "benchmarks"
 path = "benches/benchmarks.rs"
 harness = false
 
-[target.'cfg(target_os = "linux")'.features]
-default = ["landlock"]
-landlock = ["dep:landlock"]
-instrument = ["rftrace", "rftrace-frontend"]
-
-[target.'cfg(not(target_os = "linux"))'.features]
+[features]
 default = []
 instrument = ["rftrace", "rftrace-frontend"]
 
@@ -69,13 +64,13 @@ sysinfo = { version = "0.32.0", default-features = false, features = ["system"] 
 vm-fdt = "0.3"
 tempfile = "3.14.0"
 uuid = { version = "1.11.0", features = ["fast-rng", "v4"]}
-landlock = { version = "0.4.1", optional = true }
 clean-path = "0.2.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.10"
 kvm-ioctls = "0.19"
 vmm-sys-util = "0.12"
+landlock = "0.4.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 burst = "0.0"

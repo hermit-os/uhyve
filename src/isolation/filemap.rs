@@ -77,6 +77,7 @@ impl UhyveFileMap {
 	}
 
 	/// Returns the path to the temporary directory.
+	#[cfg(target_os = "linux")]
 	pub fn get_temp_dir(&self) -> Option<&str> {
 		self.tempdir.path().to_str()
 	}
