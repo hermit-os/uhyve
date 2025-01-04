@@ -48,6 +48,14 @@ struct Args {
 	#[clap(long)]
 	stats: bool,
 
+	/// Paths that the kernel should be able to view, read or write.
+	///
+	/// Desired paths must be explicitly defined after a colon.
+	///
+	/// Example: --file-mapping host_dir:guest_dir --file-mapping file.txt:guest_file.txt
+	#[clap(long)]
+	file_mapping: Vec<String>,
+
 	#[clap(flatten, next_help_heading = "Memory OPTIONS")]
 	memory_args: MemoryArgs,
 
@@ -60,14 +68,6 @@ struct Args {
 	#[clap(short = 's', long, env = "HERMIT_GDB_PORT")]
 	#[cfg(target_os = "linux")]
 	gdb_port: Option<u16>,
-
-	/// Paths that the kernel should be able to view, read or write.
-	///
-	/// Desired paths must be explicitly defined after a colon.
-	///
-	/// Example: --file-mapping host_dir:guest_dir --file-mapping file.txt:guest_file.txt
-	#[clap(long)]
-	file_mapping: Vec<String>,
 
 	/// The kernel to execute
 	#[clap(value_parser)]
