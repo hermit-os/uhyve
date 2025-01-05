@@ -297,11 +297,11 @@ fn run_uhyve() -> i32 {
 	let mut app = Args::command();
 	let args = Args::parse();
 	let stats = args.stats;
-	let kernel = args.kernel.clone();
+	let kernel_path = args.kernel.clone();
 	let affinity = args.cpu_args.clone().get_affinity(&mut app);
 	let params = Params::from(args);
 
-	let vm = UhyveVm::new(kernel, params)
+	let vm = UhyveVm::new(kernel_path, params)
 		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated?");
 
 	let res = vm.run(affinity);
