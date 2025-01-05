@@ -102,6 +102,13 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 	let requested_path_ptr = mem.host_address(sysopen.name).unwrap() as *const i8;
 	let mut flags = sysopen.flags & ALLOWED_OPEN_FLAGS;
 	if let Ok(guest_path) = unsafe { CStr::from_ptr(requested_path_ptr) }.to_str() {
+		// See: https://lwn.net/Articles/926782/
+		// See: https://github.com/hermit-os/kernel/commit/71bc629
+		if (flags & (O_DIRECTORY | O_CREAT)) == (O_DIRECTORY | O_CREAT) {
+			error!("An open() call used O_DIRECTORY and O_CREAT at the same time. Aborting...");
+			sysopen.ret = -EINVAL
+		}
+
 		if let Some(host_path) = file_map.get_host_path(guest_path) {
 			// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 			// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
@@ -111,14 +118,6 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 				unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode) };
 		} else {
 			debug!("Attempting to open a temp file for {:#?}...", guest_path);
-
-			// See: https://lwn.net/Articles/926782/
-			// See: https://github.com/hermit-os/kernel/commit/71bc629
-			if (flags & (O_DIRECTORY | O_CREAT)) == (O_DIRECTORY | O_CREAT) {
-				error!("An open() call used O_DIRECTORY and O_CREAT at the same time. Aborting...");
-				sysopen.ret = -EINVAL
-			}
-
 			// Existing files that already exist should be in the file map, not here.
 			// If a supposed attacker can predict where we open a file and its filename,
 			// this contigency, together with O_CREAT, will cause the write to fail.
