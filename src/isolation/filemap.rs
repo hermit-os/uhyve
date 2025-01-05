@@ -7,6 +7,7 @@ use std::{
 };
 
 use tempfile::TempDir;
+use uuid::Uuid;
 
 use crate::isolation::tempdir::create_temp_dir;
 
@@ -102,8 +103,11 @@ impl UhyveFileMap {
 	///
 	/// * `guest_path` - The requested guest path.
 	pub fn create_temporary_file(&mut self, guest_path: &str) -> CString {
-		// TODO: Do we need to canonicalize the host_path?
-		let host_path = self.tempdir.path().join(guest_path).into_os_string();
+		let host_path = self
+			.tempdir
+			.path()
+			.join(Uuid::new_v4().to_string())
+			.into_os_string();
 		let ret = CString::new(host_path.as_bytes()).unwrap();
 		self.files.insert(String::from(guest_path), host_path);
 		ret
