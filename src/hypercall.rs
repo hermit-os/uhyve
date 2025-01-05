@@ -107,13 +107,8 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 			// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 			let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
 
-			sysopen.ret = unsafe {
-				libc::open(
-					host_path_c_string.as_c_str().as_ptr(),
-					sysopen.flags,
-					sysopen.mode,
-				)
-			};
+			sysopen.ret =
+				unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode) };
 		} else {
 			debug!("Attempting to open a temp file for {:#?}...", guest_path);
 
