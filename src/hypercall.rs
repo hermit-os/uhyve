@@ -92,7 +92,7 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 		}
 	} else {
 		error!("The kernel requested to open() a path that is not valid UTF-8. Rejecting...");
-		sysunlink.ret = -EIO;
+		sysunlink.ret = -EINVAL;
 	}
 }
 

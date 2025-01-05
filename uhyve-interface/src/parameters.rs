@@ -160,5 +160,4 @@ pub const ALLOWED_OPEN_FLAGS: i32 =
 	O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC | O_APPEND | O_DIRECT | O_DIRECTORY;
 
 pub const ENOENT: i32 = 2;
-pub const EIO: i32 = 5;
 pub const EINVAL: i32 = 22;
