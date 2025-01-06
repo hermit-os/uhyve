@@ -185,7 +185,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			"gdbstub is only supported with one CPU"
 		);
 
-		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping));
+		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping, &params.tempdir));
 
 		let output = match params.output {
 			params::Output::None => Output::None,

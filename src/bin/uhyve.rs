@@ -56,6 +56,16 @@ struct Args {
 	#[clap(long)]
 	file_mapping: Vec<String>,
 
+	/// The path that should be used for temporary directories storing unmapped files.
+	///
+	/// This is useful for manually created tmpfs filesystems and for selecting
+	/// directories not managed by a temporary file cleaner, which can remove open files
+	/// manually. In most cases, mapping the guest path /root/ instead should be sufficient.
+	///
+	/// Defaults to /tmp.
+	#[clap(long)]
+	tempdir: Option<String>,
+
 	#[clap(flatten, next_help_heading = "Memory OPTIONS")]
 	memory_args: MemoryArgs,
 
@@ -257,6 +267,7 @@ impl From<Args> for Params {
 			#[cfg(target_os = "linux")]
 			gdb_port,
 			file_mapping,
+			tempdir,
 			kernel: _,
 			kernel_args,
 			output,
@@ -277,6 +288,7 @@ impl From<Args> for Params {
 			#[cfg(target_os = "macos")]
 			gdb_port: None,
 			kernel_args,
+			tempdir,
 			// TODO
 			output: if let Some(outp) = output {
 				Output::from_str(&outp).unwrap()

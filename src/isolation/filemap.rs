@@ -24,7 +24,8 @@ impl UhyveFileMap {
 	/// Creates a UhyveFileMap.
 	///
 	/// * `mappings` - A list of host->guest path mappings with the format "./host_path.txt:guest.txt"
-	pub fn new(mappings: &[String]) -> UhyveFileMap {
+	/// * `tempdir` - Path to create temporary directory on
+	pub fn new(mappings: &[String], tempdir: &Option<String>) -> UhyveFileMap {
 		UhyveFileMap {
 			files: mappings
 				.iter()
@@ -32,7 +33,7 @@ impl UhyveFileMap {
 				.map(Self::split_guest_and_host_path)
 				.map(Result::unwrap)
 				.collect(),
-			tempdir: create_temp_dir(),
+			tempdir: create_temp_dir(tempdir),
 		}
 	}
 
@@ -193,7 +194,7 @@ mod tests {
 			path_prefix.clone() + "/this_symlink_leads_to_a_file" + ":guest_file_symlink",
 		];
 
-		let mut map = UhyveFileMap::new(&map_parameters);
+		let mut map = UhyveFileMap::new(&map_parameters, &None);
 
 		assert_eq!(
 			map.get_host_path("readme_file.md").unwrap(),
@@ -245,7 +246,7 @@ mod tests {
 			host_path_map.to_str().unwrap(),
 			guest_path_map.to_str().unwrap()
 		)];
-		let mut map = UhyveFileMap::new(&uhyvefilemap_params);
+		let mut map = UhyveFileMap::new(&uhyvefilemap_params, &None);
 
 		let mut found_host_path = map.get_host_path(target_guest_path.clone().to_str().unwrap());
 
@@ -276,7 +277,7 @@ mod tests {
 			guest_path_map.to_str().unwrap()
 		)];
 
-		map = UhyveFileMap::new(&uhyvefilemap_params);
+		map = UhyveFileMap::new(&uhyvefilemap_params, &None);
 
 		target_guest_path = PathBuf::from("/root/this_symlink_leads_to_a_file");
 		target_host_path = fixture_path.clone();
@@ -289,7 +290,7 @@ mod tests {
 
 		// Tests directory traversal with no maps
 		let empty_array: [String; 0] = [];
-		map = UhyveFileMap::new(&empty_array);
+		map = UhyveFileMap::new(&empty_array, &None);
 		found_host_path = map.get_host_path(target_guest_path.to_str().unwrap());
 		assert!(found_host_path.is_none());
 	}
