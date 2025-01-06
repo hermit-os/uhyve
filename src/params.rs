@@ -38,6 +38,9 @@ pub struct Params {
 	/// Mapped paths between the guest and host OS
 	pub file_mapping: Vec<String>,
 
+	/// Path to create temporary directory on
+	pub tempdir: Option<String>,
+
 	/// Kernel output handling
 	pub output: Output,
 
@@ -59,6 +62,7 @@ impl Default for Params {
 			cpu_count: Default::default(),
 			gdb_port: Default::default(),
 			file_mapping: Default::default(),
+			tempdir: Default::default(),
 			kernel_args: Default::default(),
 			output: Default::default(),
 			stats: false,
