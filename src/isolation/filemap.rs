@@ -3,10 +3,11 @@ use std::{
 	ffi::{CString, OsString},
 	fs::canonicalize,
 	io::ErrorKind,
-	os::unix::ffi::OsStrExt,
+	os::{fd::RawFd, unix::ffi::OsStrExt},
 	path::{absolute, PathBuf},
 };
 
+use bimap::BiHashMap;
 use clean_path::clean;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -18,6 +19,7 @@ use crate::isolation::tempdir::create_temp_dir;
 pub struct UhyveFileMap {
 	files: HashMap<String, OsString>,
 	tempdir: TempDir,
+	fdmap: BiHashMap<RawFd, String>,
 }
 
 impl UhyveFileMap {
@@ -33,6 +35,7 @@ impl UhyveFileMap {
 				.map(Result::unwrap)
 				.collect(),
 			tempdir: create_temp_dir(),
+			fdmap: BiHashMap::new(),
 		}
 	}
 
@@ -66,6 +69,7 @@ impl UhyveFileMap {
 			.files
 			.get(&requested_guest_pathbuf.display().to_string())
 			.map(OsString::from);
+		debug!("get_host_path (host_path): {:#?}", host_path);
 		if host_path.is_some() {
 			host_path
 		} else {
@@ -113,9 +117,52 @@ impl UhyveFileMap {
 			.path()
 			.join(Uuid::new_v4().to_string())
 			.into_os_string();
+		debug!("create_temporary_file (host_path): {:#?}", host_path);
 		let ret = CString::new(host_path.as_bytes()).unwrap();
 		self.files.insert(String::from(guest_path), host_path);
 		ret
+	}
+
+	pub fn get_fd_presence(&mut self, fd: RawFd) -> bool {
+		debug!("get_fd_presence: {:#?}", &self.fdmap);
+		if (fd >= 0 && self.fdmap.contains_left(&fd)) || (0..=2).contains(&fd) {
+			return true;
+		}
+		false
+	}
+
+	/// Inserts a bidirectional file descriptor-path association.
+	///
+	/// * `fd` - The opened guest path's file descriptor.
+	/// * `guest_path` - The guest path.
+	pub fn insert_fd_path(&mut self, fd: RawFd, guest_path: &str) {
+		debug!("insert_fd_path: {:#?}", &self.fdmap);
+		if fd > 2 {
+			self.fdmap.insert(fd, guest_path.into());
+		}
+	}
+
+	/// Removes an fd from UhyveFileMap. This is only used by [crate::hypercall::close],
+	/// under the expectation that a new temporary file will be created if the guest
+	/// attempts to open a file of the same path again.
+	///
+	/// * `fd` - The file descriptor of the file being removed.
+	pub fn remove_fd(&mut self, fd: RawFd) {
+		debug!("remove_fd: {:#?}", &self.fdmap);
+		if fd > 2 {
+			self.fdmap.remove_by_left(&fd);
+		}
+	}
+
+	/// Removes an entry from UhyveFileMap. This is only used by [crate::hypercall::unlink],
+	/// under the expectation that a new temporary file will be created if the guest
+	/// attempts to open a file of the same path again.
+	///
+	/// * `guest_path` - The path of the file being removed.
+	pub fn remove_guest_path(&mut self, guest_path: &str) {
+		debug!("remove_guest_path: {:#?}", guest_path);
+		self.files.remove(guest_path);
+		self.fdmap.remove_by_right(guest_path);
 	}
 }
 
