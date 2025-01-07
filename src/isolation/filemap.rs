@@ -58,7 +58,13 @@ impl UhyveFileMap {
 	///
 	/// * `guest_path` - The guest path that is to be looked up in the map.
 	pub fn get_host_path(&mut self, guest_path: &str) -> Option<OsString> {
-		let host_path = self.files.get(guest_path).map(OsString::from);
+		// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
+		// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
+		let requested_guest_pathbuf = clean(guest_path);
+		let host_path = self
+			.files
+			.get(&requested_guest_pathbuf.display().to_string())
+			.map(OsString::from);
 		if host_path.is_some() {
 			host_path
 		} else {
@@ -68,9 +74,6 @@ impl UhyveFileMap {
 				return None;
 			}
 
-			let requested_guest_pathbuf = clean(PathBuf::from(guest_path));
-			// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
-			// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
 			if let Some(parent_of_guest_path) = requested_guest_pathbuf.parent() {
 				debug!("The file is in a child directory, searching for a parent directory...");
 				for searched_parent_guest in parent_of_guest_path.ancestors() {
