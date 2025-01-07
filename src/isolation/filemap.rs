@@ -1,11 +1,12 @@
 use std::{
-	collections::HashMap,
+	collections::{HashMap, HashSet},
 	ffi::{CString, OsString},
 	fs::canonicalize,
-	os::unix::ffi::OsStrExt,
+	os::{fd::RawFd, unix::ffi::OsStrExt},
 	path::PathBuf,
 };
 
+use bimap::BiHashMap;
 use clean_path::clean;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -17,6 +18,8 @@ use crate::isolation::{split_guest_and_host_path, tempdir::create_temp_dir};
 pub struct UhyveFileMap {
 	files: HashMap<String, OsString>,
 	tempdir: TempDir,
+	fdmap: BiHashMap<RawFd, String>,
+	unlinkedfd: HashSet<RawFd>,
 }
 
 impl UhyveFileMap {
@@ -33,6 +36,8 @@ impl UhyveFileMap {
 				.map(Result::unwrap)
 				.collect(),
 			tempdir: create_temp_dir(tempdir),
+			fdmap: BiHashMap::new(),
+			unlinkedfd: HashSet::new(),
 		}
 	}
 
@@ -47,6 +52,7 @@ impl UhyveFileMap {
 			.files
 			.get(&requested_guest_pathbuf.display().to_string())
 			.map(OsString::from);
+		debug!("get_host_path (host_path): {:#?}", host_path);
 		if host_path.is_some() {
 			host_path
 		} else {
@@ -105,12 +111,75 @@ impl UhyveFileMap {
 			.path()
 			.join(Uuid::new_v4().to_string())
 			.into_os_string();
+		debug!("create_temporary_file (host_path): {:#?}", host_path);
 		let ret = CString::new(host_path.as_bytes()).unwrap();
 		self.files.insert(String::from(guest_path), host_path);
 		ret
 	}
 
-	/// Removes an association between a guest path and a host path.
+	/// Checks whether the fd is mapped to a guest path or belongs
+	/// to an unlinked file.
+	///
+	/// * `fd` - The opened guest path's file descriptor.
+	pub fn is_fd_closable(&mut self, fd: RawFd) -> bool {
+		debug!("is_fd_closable: {:#?}", &self.fdmap);
+		self.is_fd_present(fd) || self.unlinkedfd.contains(&fd)
+	}
+
+	/// Checks whether the fd is mapped to a guest path.
+	///
+	/// * `fd` - The opened guest path's file descriptor.
+	pub fn is_fd_present(&mut self, fd: RawFd) -> bool {
+		debug!("is_fd_present: {:#?}", &self.fdmap);
+		if (fd >= 0 && self.fdmap.contains_left(&fd)) || (0..=2).contains(&fd) {
+			return true;
+		}
+		false
+	}
+
+	/// Inserts a bidirectional file descriptor-path association.
+	///
+	/// * `fd` - The opened guest path's file descriptor.
+	/// * `guest_path` - The guest path.
+	pub fn insert_fd_path(&mut self, fd: RawFd, guest_path: &str) {
+		if fd > 2 {
+			self.fdmap.insert(fd, guest_path.into());
+		}
+		debug!("insert_fd_path: {:#?}", &self.fdmap);
+	}
+
+	/// Removes an fd from UhyveFileMap. This is only used by [crate::hypercall::close],
+	/// under the expectation that a new temporary file will be created if the guest
+	/// attempts to open a file of the same path again.
+	///
+	/// * `fd` - The file descriptor of the file being removed.
+	pub fn close_fd(&mut self, fd: RawFd) {
+		debug!("close_fd: {:#?}", &self.fdmap);
+		// The file descriptor in fdclosed is supposedly still alive.
+		// It is safe to assume that the host OS will not assign the
+		// same file descriptor to another opened file, until _after_
+		// the file has been closed.
+		if let Some(&fd) = self.unlinkedfd.get(&fd) {
+			self.unlinkedfd.remove(&fd);
+		} else {
+			self.remove_fd(fd);
+		}
+	}
+
+	/// Removes an fd from UhyveFileMap. This is only used by [crate::hypercall::close],
+	/// under the expectation that a new temporary file will be created if the guest
+	/// attempts to open a file of the same path again.
+	///
+	/// * `fd` - The file descriptor of the file being removed.
+	pub fn remove_fd(&mut self, fd: RawFd) {
+		debug!("remove_fd: {:#?}", &self.fdmap);
+		if fd > 2 {
+			self.fdmap.remove_by_left(&fd);
+		}
+	}
+
+	/// Removes an entry (and its corresponding file descriptor) from UhyveFileMap.
+	///
 	/// Exclusively used by [crate::hypercall::unlink] for the event that
 	/// a file, which is mapped, is removed together with its corresponding
 	/// inode object. The intention is for Uhyve to create a new temporary
@@ -118,10 +187,13 @@ impl UhyveFileMap {
 	/// its corresponding host path has been unlinked. Otherwise, this would
 	/// prompt security mechanisms like Landlock to kill Uhyve.
 	///
-	/// * `guest_path` - The requested guest path.
-	pub fn remove_path(&mut self, guest_path: &str) {
-		// Returns None if the guest path is not mapped, i.e. a temporary file
-		// is unlinked or a parent directory has been mapped instead.
+	/// * `guest_path` - The path of the file being removed.
+	pub fn unlink_guest_path(&mut self, guest_path: &str) {
+		debug!("unlink_guest_path: {:#?}", &guest_path);
+		if let Some(fd) = self.fdmap.get_by_right(guest_path) {
+			self.unlinkedfd.insert(*fd);
+			self.fdmap.remove_by_right(guest_path);
+		}
 		self.files.remove(guest_path);
 	}
 }

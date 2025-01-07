@@ -1,7 +1,7 @@
 use std::{
 	ffi::{CStr, CString, OsStr},
 	io::{self, Error, ErrorKind},
-	os::unix::ffi::OsStrExt,
+	os::{fd::IntoRawFd, unix::ffi::OsStrExt},
 };
 
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*};
@@ -87,7 +87,7 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 			let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
 			sysunlink.ret = unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) };
 			if sysunlink.ret >= 0 {
-				file_map.remove_path(guest_path);
+				file_map.unlink_guest_path(guest_path);
 			}
 		} else {
 			error!("The kernel requested to unlink() an unknown path ({guest_path}): Rejecting...");
@@ -101,7 +101,6 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 
 /// Handles an open syscall by opening a file on the host.
 pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
-	// TODO: Keep track of file descriptors internally, just in case the kernel doesn't close them.
 	let requested_path_ptr = mem.host_address(sysopen.name).unwrap() as *const i8;
 	let mut flags = sysopen.flags & ALLOWED_OPEN_FLAGS;
 	if let Ok(guest_path) = unsafe { CStr::from_ptr(requested_path_ptr) }.to_str() {
@@ -120,6 +119,10 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 
 			sysopen.ret =
 				unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode) };
+
+			if sysopen.ret >= 0 {
+				file_map.insert_fd_path(sysopen.ret, guest_path);
+			}
 		} else {
 			debug!("{guest_path:#?} not found in file map.");
 			if (flags & O_CREAT) == O_CREAT {
@@ -132,6 +135,9 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 				let host_path_c_string = file_map.create_temporary_file(guest_path);
 				let new_host_path = host_path_c_string.as_c_str().as_ptr();
 				sysopen.ret = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
+				if sysopen.ret >= 0 {
+					file_map.insert_fd_path(sysopen.ret.into_raw_fd(), guest_path);
+				}
 			} else {
 				debug!("Returning -ENOENT for {guest_path:#?}");
 				sysopen.ret = -ENOENT;
@@ -144,26 +150,44 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 }
 
 /// Handles an close syscall by closing the file on the host.
-pub fn close(sysclose: &mut CloseParams) {
-	unsafe {
-		sysclose.ret = libc::close(sysclose.fd);
+pub fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
+	if file_map.is_fd_closable(sysclose.fd.into_raw_fd()) {
+		if sysclose.fd > 2 {
+			unsafe { sysclose.ret = libc::close(sysclose.fd) }
+			file_map.close_fd(sysclose.fd);
+		} else {
+			// Ignore closes of stdin, stdout and stderr that would
+			// otherwise affect Uhyve
+			sysclose.ret = 0
+		}
+	} else {
+		sysclose.ret = -EBADF
 	}
 }
 
-/// Handles an read syscall on the host.
-pub fn read(mem: &MmapMemory, sysread: &mut ReadParams, root_pt: GuestPhysAddr) {
-	unsafe {
-		let bytes_read = libc::read(
-			sysread.fd,
-			mem.host_address(virt_to_phys(sysread.buf, mem, root_pt).unwrap())
-				.unwrap() as *mut libc::c_void,
-			sysread.len,
-		);
-		if bytes_read >= 0 {
-			sysread.ret = bytes_read;
-		} else {
-			sysread.ret = -1;
+/// Handles a read syscall on the host.
+pub fn read(
+	mem: &MmapMemory,
+	sysread: &mut ReadParams,
+	root_pt: GuestPhysAddr,
+	file_map: &mut UhyveFileMap,
+) {
+	if file_map.is_fd_present(sysread.fd.into_raw_fd()) {
+		unsafe {
+			let bytes_read = libc::read(
+				sysread.fd,
+				mem.host_address(virt_to_phys(sysread.buf, mem, root_pt).unwrap())
+					.unwrap() as *mut libc::c_void,
+				sysread.len,
+			);
+			if bytes_read >= 0 {
+				sysread.ret = bytes_read;
+			} else {
+				sysread.ret = -1
+			}
 		}
+	} else {
+		sysread.ret = -EBADF as isize;
 	}
 }
 
@@ -172,6 +196,7 @@ pub fn write(
 	peripherals: &VmPeripherals,
 	syswrite: &WriteParams,
 	root_pt: GuestPhysAddr,
+	file_map: &mut UhyveFileMap,
 ) -> io::Result<()> {
 	let mut bytes_written: usize = 0;
 	while bytes_written != syswrite.len {
@@ -182,8 +207,7 @@ pub fn write(
 		)
 		.unwrap();
 
-		if syswrite.fd == 1 {
-			// fd 0 is stdout
+		if syswrite.fd == 1 || syswrite.fd == 2 {
 			let bytes = unsafe {
 				peripherals
 					.mem
@@ -196,6 +220,11 @@ pub fn write(
 					})?
 			};
 			return peripherals.serial.output(bytes);
+		} else if !file_map.is_fd_present(syswrite.fd.into_raw_fd()) {
+			// We don't write anything if the file descriptor is not available,
+			// but this is OK for now, as we have no means of returning an error codee
+			// and writes are not necessarily guaranteed to write anything.
+			return Ok(());
 		}
 
 		unsafe {
@@ -226,10 +255,16 @@ pub fn write(
 }
 
 /// Handles an write syscall on the host.
-pub fn lseek(syslseek: &mut LseekParams) {
-	unsafe {
-		syslseek.offset =
-			libc::lseek(syslseek.fd, syslseek.offset as i64, syslseek.whence) as isize;
+pub fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
+	if file_map.is_fd_present(syslseek.fd.into_raw_fd()) {
+		unsafe {
+			syslseek.offset =
+				libc::lseek(syslseek.fd, syslseek.offset as i64, syslseek.whence) as isize;
+		}
+	} else {
+		// TODO: Return -EBADF to the ret field, as soon as it is implemented for LseekParams
+		warn!("lseek attempted to use an unknown file descriptor");
+		syslseek.offset = -1
 	}
 }
 
