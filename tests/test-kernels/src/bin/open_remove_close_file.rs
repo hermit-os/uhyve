@@ -1,0 +1,17 @@
+use std::{
+	fs::{File, remove_file},
+	io::prelude::*,
+};
+
+#[cfg(target_os = "hermit")]
+use hermit as _;
+
+fn main() {
+	println!("Hello from open_remove_close_file!");
+
+	{
+		let mut file = File::create("/root/foo.txt").unwrap();
+		file.write_all(b"Hello, world!").unwrap();
+		remove_file("/root/foo.txt").unwrap();
+	}
+}
