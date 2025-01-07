@@ -75,7 +75,7 @@ fn create_mapped_parent_nonpresent_file() {
 	check_result(&res);
 }
 
-/// This is expected to fail.
+/// This checks whether UhyveFileMap's temporary directory functionality works.
 #[test]
 #[serial]
 fn create_write_unmapped_nonpresent_file() {
@@ -106,6 +106,7 @@ fn create_write_unmapped_nonpresent_file() {
 	assert!(!host_path.exists());
 }
 
+/// This checks whether it is possible to create and use a new file on the host.
 #[test]
 #[serial]
 fn create_write_mapped_nonpresent_file() {
@@ -235,6 +236,102 @@ fn create_and_remove_unmapped_file_test() {
 	};
 
 	let bin_path: PathBuf = build_hermit_bin("open_close_remove_file");
+	let res = run_vm_in_thread(bin_path, params);
+	check_result(&res);
+}
+
+/// Tests whether the file descriptor sandbox works correctly, by unlinking an open
+/// file on the host before the file descriptor of that said file is closed.
+#[test]
+#[serial]
+fn test_fd_open_remove_close() {
+	env_logger::try_init().ok();
+
+	let params = Params {
+		cpu_count: 2.try_into().unwrap(),
+		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
+			.unwrap()
+			.try_into()
+			.unwrap(),
+		#[cfg(target_os = "linux")]
+		file_isolation: strict_sandbox(),
+		..Default::default()
+	};
+
+	let bin_path: PathBuf = build_hermit_bin("open_remove_close_file");
+	let res = run_vm_in_thread(bin_path, params);
+	check_result(&res);
+}
+
+/// Tests whether the file descriptor sandbox works correctly, by unlinking an open
+/// file on the host before the file descriptor of that said file is closed.
+#[test]
+#[serial]
+fn test_fd_open_remove_close_remove() {
+	env_logger::try_init().ok();
+
+	let params = Params {
+		cpu_count: 2.try_into().unwrap(),
+		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
+			.unwrap()
+			.try_into()
+			.unwrap(),
+		#[cfg(target_os = "linux")]
+		file_isolation: strict_sandbox(),
+		..Default::default()
+	};
+
+	let bin_path: PathBuf = build_hermit_bin("open_remove_close_remove_file");
+	let res = run_vm_in_thread(bin_path, params);
+	assert_ne!(res.code, 0);
+}
+
+/// Tests whether the file descriptor sandbox works correctly, by unlinking an open
+/// file on the host before the file descriptor of that said file is closed.
+#[test]
+#[serial]
+fn test_fd_open_remove_remove_close_file() {
+	env_logger::try_init().ok();
+
+	let params = Params {
+		cpu_count: 2.try_into().unwrap(),
+		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
+			.unwrap()
+			.try_into()
+			.unwrap(),
+		#[cfg(target_os = "linux")]
+		file_isolation: strict_sandbox(),
+		..Default::default()
+	};
+
+	let bin_path: PathBuf = build_hermit_bin("open_remove_remove_close_file");
+	let res = run_vm_in_thread(bin_path, params);
+	assert_ne!(res.code, 0);
+}
+
+/// Tests file descriptor sandbox, particularly whether...
+/// - the guest can make a File out of fd 1 (stdout) and write to it.
+/// - the guest can make a File out of fd 2 (stderr) and write to it.
+/// - the guest can make a File out of an arbitrary fd and write to it.
+///   (It shouldn't be able to do so!)
+/// - the guest can write to a leaked, yet valid file descriptor.
+#[test]
+#[serial]
+fn test_fd_write_to_fd() {
+	env_logger::try_init().ok();
+
+	let params = Params {
+		cpu_count: 2.try_into().unwrap(),
+		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
+			.unwrap()
+			.try_into()
+			.unwrap(),
+		#[cfg(target_os = "linux")]
+		file_isolation: strict_sandbox(),
+		..Default::default()
+	};
+
+	let bin_path: PathBuf = build_hermit_bin("write_to_fd");
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 }

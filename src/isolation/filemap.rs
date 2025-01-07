@@ -10,13 +10,16 @@ use clean_path::clean;
 use tempfile::TempDir;
 use uuid::Uuid;
 
-use crate::isolation::{split_guest_and_host_path, tempdir::create_temp_dir};
+use crate::isolation::{
+	fd::UhyveFileDescriptorLayer, split_guest_and_host_path, tempdir::create_temp_dir,
+};
 
-/// Wrapper around a `HashMap` to map guest paths to arbitrary host paths.
+/// Wrapper around a `HashMap` to map guest paths to arbitrary host paths and track file descriptors.
 #[derive(Debug)]
 pub struct UhyveFileMap {
 	files: HashMap<String, OsString>,
 	tempdir: TempDir,
+	pub fdmap: UhyveFileDescriptorLayer,
 }
 
 impl UhyveFileMap {
@@ -33,6 +36,7 @@ impl UhyveFileMap {
 				.map(Result::unwrap)
 				.collect(),
 			tempdir: create_temp_dir(tempdir),
+			fdmap: UhyveFileDescriptorLayer::default(),
 		}
 	}
 
@@ -47,6 +51,7 @@ impl UhyveFileMap {
 			.files
 			.get(&requested_guest_pathbuf.display().to_string())
 			.map(OsString::from);
+		trace!("get_host_path (host_path): {host_path:#?}");
 		if host_path.is_some() {
 			host_path
 		} else {
@@ -105,24 +110,10 @@ impl UhyveFileMap {
 			.path()
 			.join(Uuid::new_v4().to_string())
 			.into_os_string();
+		trace!("create_temporary_file (host_path): {host_path:#?}");
 		let ret = CString::new(host_path.as_bytes()).unwrap();
 		self.files.insert(String::from(guest_path), host_path);
 		ret
-	}
-
-	/// Removes an association between a guest path and a host path.
-	/// Exclusively used by [crate::hypercall::unlink] for the event that
-	/// a file, which is mapped, is removed together with its corresponding
-	/// inode object. The intention is for Uhyve to create a new temporary
-	/// file, should the guest OS request to access the same guest path after
-	/// its corresponding host path has been unlinked. Otherwise, this would
-	/// prompt security mechanisms like Landlock to kill Uhyve.
-	///
-	/// * `guest_path` - The requested guest path.
-	pub fn remove_path(&mut self, guest_path: &str) {
-		// Returns None if the guest path is not mapped, i.e. a temporary file
-		// is unlinked or a parent directory has been mapped instead.
-		self.files.remove(guest_path);
 	}
 }
 
