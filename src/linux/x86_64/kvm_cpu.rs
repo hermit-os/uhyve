@@ -55,7 +55,12 @@ impl VirtualizationBackend for KvmVm {
 				None
 			},
 		};
-		kvcpu.init(parent_vm.entry_point(), parent_vm.stack_address(), id)?;
+		kvcpu.init(
+			parent_vm.entry_point(),
+			parent_vm.stack_address(),
+			parent_vm.guest_address(),
+			id,
+		)?;
 
 		Ok(kvcpu)
 	}
@@ -262,6 +267,7 @@ impl KvmCpu {
 		&self,
 		entry_point: GuestPhysAddr,
 		stack_address: GuestPhysAddr,
+		guest_address: GuestPhysAddr,
 		cpu_id: u32,
 	) -> Result<(), kvm_ioctls::Error> {
 		//debug!("Setup long mode");
@@ -274,7 +280,7 @@ impl KvmCpu {
 			| Cr0Flags::PAGING;
 		sregs.cr0 = cr0.bits();
 
-		sregs.cr3 = BOOT_PML4.as_u64();
+		sregs.cr3 = (guest_address + PML4_OFFSET).as_u64();
 
 		let cr4 = Cr4Flags::PHYSICAL_ADDRESS_EXTENSION;
 		sregs.cr4 = cr4.bits();
@@ -305,7 +311,7 @@ impl KvmCpu {
 		sregs.ss = seg;
 		//sregs.fs = seg;
 		//sregs.gs = seg;
-		sregs.gdt.base = BOOT_GDT.as_u64();
+		sregs.gdt.base = (guest_address + GDT_OFFSET).as_u64();
 		sregs.gdt.limit = ((std::mem::size_of::<u64>() * BOOT_GDT_MAX) - 1) as u16;
 
 		self.vcpu.set_sregs(&sregs)?;
@@ -313,7 +319,7 @@ impl KvmCpu {
 		let mut regs = self.vcpu.get_regs()?;
 		regs.rflags = 2;
 		regs.rip = entry_point.as_u64();
-		regs.rdi = BOOT_INFO_ADDR.as_u64();
+		regs.rdi = (guest_address + BOOT_INFO_OFFSET).as_u64();
 		regs.rsi = cpu_id.into();
 		regs.rsp = stack_address.as_u64();
 
@@ -334,13 +340,18 @@ impl KvmCpu {
 		&mut self.vcpu
 	}
 
+	pub fn get_root_pagetable(&self) -> GuestPhysAddr {
+		GuestPhysAddr::new(self.vcpu.get_sregs().unwrap().cr3)
+	}
+
 	fn init(
 		&mut self,
 		entry_point: GuestPhysAddr,
 		stack_address: GuestPhysAddr,
+		guest_address: GuestPhysAddr,
 		cpu_id: u32,
 	) -> HypervisorResult<()> {
-		self.setup_long_mode(entry_point, stack_address, cpu_id)?;
+		self.setup_long_mode(entry_point, stack_address, guest_address, cpu_id)?;
 		self.setup_cpuid()?;
 
 		// be sure that the multiprocessor is runable
@@ -455,13 +466,17 @@ impl VirtualCPU for KvmCpu {
 									sysopen,
 									&mut self.parent_vm.file_mapping.lock().unwrap(),
 								),
-								Hypercall::FileRead(sysread) => {
-									hypercall::read(&self.parent_vm.mem, sysread)
-								}
-								Hypercall::FileWrite(syswrite) => {
-									hypercall::write(&self.parent_vm, syswrite)
-										.map_err(|_e| HypervisorError::new(libc::EFAULT))?
-								}
+								Hypercall::FileRead(sysread) => hypercall::read(
+									&self.parent_vm.mem,
+									sysread,
+									self.get_root_pagetable(),
+								),
+								Hypercall::FileWrite(syswrite) => hypercall::write(
+									&self.parent_vm,
+									syswrite,
+									self.get_root_pagetable(),
+								)
+								.map_err(|_e| HypervisorError::new(libc::EFAULT))?,
 								Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
 									&self.parent_vm.mem,
 									sysunlink,
@@ -475,7 +490,7 @@ impl VirtualCPU for KvmCpu {
 									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 									let buf = unsafe {
 										self.parent_vm.mem.slice_at(sysserialwrite.buf, sysserialwrite.len)
-			.expect("Systemcall parameters for SerialWriteBuffer are invalid")
+			.unwrap_or_else(|e|panic!("Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"))
 									};
 
 									self.parent_vm
@@ -533,11 +548,24 @@ impl VirtualCPU for KvmCpu {
 							}
 						}
 					}
+					VcpuExit::MmioRead(addr, _targ) => {
+						match addr {
+							0x9_F000..0xA_0000 | 0xF_0000..0x10_0000 => {} // Search for MP floating table
+							_ => {
+								self.print_registers();
+								panic!("mmio read to {addr:#x}");
+							}
+						}
+					}
+					VcpuExit::MmioWrite(addr, _targ) => {
+						self.print_registers();
+						panic!("undefined mmio write to {addr:#x}");
+					}
 					VcpuExit::Debug(debug) => {
 						if let Some(s) = self.stats.as_mut() {
 							s.increment_val(VmExit::Debug)
 						}
-						info!("Caught Debug Interrupt!");
+						trace!("Caught Debug Interrupt!");
 						return Ok(VcpuStopReason::Debug(debug));
 					}
 					VcpuExit::InternalError => {

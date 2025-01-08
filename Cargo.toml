@@ -36,7 +36,8 @@ path = "benches/benchmarks.rs"
 harness = false
 
 [features]
-default = []
+default = ["aslr"]
+aslr = ["dep:rand"]
 instrument = ["rftrace", "rftrace-frontend"]
 
 [dependencies]
@@ -59,11 +60,13 @@ uhyve-interface = { version = "0.1.1", path = "uhyve-interface", features = ["st
 virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
 rftrace = { version = "0.1", optional = true }
 rftrace-frontend = { version = "0.1", optional = true }
+rand = { version = "0.8.5", optional = true }
 shell-words = "1"
 sysinfo = { version = "0.33.0", default-features = false, features = ["system"] }
 vm-fdt = "0.3"
 tempfile = "3.14.0"
 uuid = { version = "1.11.0", features = ["fast-rng", "v4"]}
+align-address = "0.3.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.10"

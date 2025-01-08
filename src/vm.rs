@@ -46,6 +46,8 @@ pub enum LoadKernelError {
 	InsufficientMemory,
 }
 
+use rand::Rng;
+
 pub type LoadKernelResult<T> = Result<T, LoadKernelError>;
 
 pub fn detect_freq_from_sysinfo() -> std::result::Result<u32, FrequencyDetectionFailed> {
@@ -100,6 +102,16 @@ fn detect_cpu_freq() -> u32 {
 	mhz
 }
 
+/// Generates a random guest address for Uhyve's virtualized memory.
+/// This function gets invoked when a new UhyveVM gets created, provided that the object file is relocatable.
+fn generate_address(object_mem_size: usize, _params_mem_size: usize) -> GuestPhysAddr {
+	let mut rng = rand::thread_rng();
+	let start_address_upper_bound: u64 =
+		0x0000_0000_CFF0_0000 - object_mem_size as u64 - KERNEL_OFFSET as u64;
+
+	GuestPhysAddr::new(rng.gen_range(0x0..start_address_upper_bound) & !(0x20_0000 - 1))
+}
+
 #[cfg(target_os = "linux")]
 pub type DefaultBackend = crate::linux::x86_64::kvm_cpu::KvmVm;
 #[cfg(target_os = "macos")]
@@ -144,8 +156,11 @@ impl Default for Output {
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	/// The starting position of the image in physical memory
 	kernel_address: GuestPhysAddr,
+	/// The first instruction after boot
 	entry_point: GuestPhysAddr,
 	stack_address: GuestPhysAddr,
+	/// The location of the whole guest in the physical address space
+	guest_address: GuestPhysAddr,
 	pub mem: Arc<MmapMemory>,
 	path: PathBuf,
 	boot_info: *const RawBootInfo,
@@ -159,12 +174,35 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
+		let mut guest_address = arch::RAM_START;
 		let memory_size = params.memory_size.get();
 
+		// Reads ELF file, returns libc:ENOENT if the file is not found.
+		// TODO: Restore map_err(LoadKernelError::ParseKernelError) or use a separate struct
+		let elf = fs::read(&kernel_path)?;
+		let object =
+			KernelObject::parse(&elf).map_err(|_err| HypervisorError::new(libc::ENOENT))?;
+
+		let offset = object.start_addr().unwrap_or_else(|| {
+			guest_address = generate_address(object.mem_size(), memory_size);
+			(guest_address + KERNEL_OFFSET).as_u64()
+		});
+
+		dbg!(GuestPhysAddr::new(offset));
+		dbg!(guest_address);
+
 		#[cfg(target_os = "linux")]
-		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, params.thp, params.ksm);
+		#[cfg(target_arch = "x86_64")]
+		let mem = MmapMemory::new(0, memory_size, guest_address, params.thp, params.ksm);
+
+		// TODO: guest_address is only taken into account on Linux platforms.
+		// TODO: Before changing this, fix init_guest_mem in `src/arch/aarch64/mod.rs`
+		#[cfg(target_os = "linux")]
+		#[cfg(not(target_arch = "x86_64"))]
+		let mem = MmapMemory::new(0, memory_size, guest_address, params.thp, params.ksm);
+
 		#[cfg(not(target_os = "linux"))]
-		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, false, false);
+		let mem = MmapMemory::new(0, memory_size, guest_address, false, false);
 
 		// create virtio interface
 		// TODO: Remove allow once fixed:
@@ -211,10 +249,11 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			}
 		};
 
-		let mut vm = Self {
-			kernel_address: GuestPhysAddr::zero(),
+		Ok(Self {
+			kernel_address: GuestPhysAddr::new(offset),
 			entry_point: GuestPhysAddr::zero(),
 			stack_address: GuestPhysAddr::zero(),
+			guest_address,
 			mem: mem.into(),
 			path: kernel_path,
 			boot_info: ptr::null(),
@@ -224,11 +263,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			virt_backend,
 			params,
 			output,
-		};
-
-		vm.init_guest_mem();
-
-		Ok(vm)
+		})
 	}
 
 	pub fn serial_output(&self, buf: &[u8]) -> io::Result<()> {
@@ -261,6 +296,10 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		self.stack_address
 	}
 
+	pub fn guest_address(&self) -> GuestPhysAddr {
+		self.guest_address
+	}
+
 	/// Returns the number of cores for the vm.
 	pub fn num_cpus(&self) -> u32 {
 		self.params.cpu_count.get()
@@ -279,28 +318,33 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	}
 
 	/// Initialize the page tables for the guest
-	fn init_guest_mem(&mut self) {
+	/// `memory_size` is the length of the memory from the start of the physical
+	/// memory till the end of the kernel in bytes.
+	fn init_guest_mem(&mut self, memory_size: u64) {
 		debug!("Initialize guest memory");
 		crate::arch::init_guest_mem(
 			unsafe { self.mem.as_slice_mut() } // slice only lives during this fn call
 				.try_into()
 				.expect("Guest memory is not large enough for pagetables"),
+			self.mem.guest_address,
+			memory_size,
 		);
 	}
 
 	pub fn load_kernel(&mut self) -> LoadKernelResult<()> {
+		// TODO: Remove the duplicate load in load_kernel.
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
-		// TODO: should be a random start address, if we have a relocatable executable
-		self.kernel_address = GuestPhysAddr::new(object.start_addr().unwrap_or(0x400000));
 		let kernel_end_address = self.kernel_address + object.mem_size();
 
 		if kernel_end_address.as_u64()
-			> self.mem.memory_size as u64 - self.mem.guest_address.as_u64()
+			> self.mem.memory_size as u64 + self.mem.guest_address.as_u64()
 		{
 			return Err(LoadKernelError::InsufficientMemory);
 		}
+
+		self.init_guest_mem(kernel_end_address.as_u64() - self.mem.guest_address.as_u64());
 
 		let LoadedKernel {
 			load_info,
@@ -308,7 +352,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		} = object.load_kernel(
 			// Safety: Slice only lives during this fn call, so no aliasing happens
 			&mut unsafe { self.mem.as_slice_uninit_mut() }
-				[self.kernel_address.as_u64() as usize..kernel_end_address.as_u64() as usize],
+				[KERNEL_OFFSET as usize..object.mem_size() + KERNEL_OFFSET as usize],
 			self.kernel_address.as_u64(),
 		);
 		self.entry_point = GuestPhysAddr::new(entry_point);
@@ -332,9 +376,9 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			.unwrap();
 
 		debug!("fdt.len() = {}", fdt.len());
-		assert!(fdt.len() < (BOOT_INFO_ADDR - FDT_ADDR) as usize);
+		assert!(fdt.len() < (BOOT_INFO_OFFSET - FDT_OFFSET) as usize);
 		unsafe {
-			let fdt_ptr = self.mem.host_address.add(FDT_ADDR.as_u64() as usize);
+			let fdt_ptr = self.mem.host_address.add(FDT_OFFSET as usize);
 			fdt_ptr.copy_from_nonoverlapping(fdt.as_ptr(), fdt.len());
 		}
 
@@ -345,7 +389,11 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 				serial_port_base: SerialPortBase::new(
 					(uhyve_interface::HypercallAddress::Uart as u16).into(),
 				),
-				device_tree: Some(FDT_ADDR.as_u64().try_into().unwrap()),
+				device_tree: Some(
+					(self.mem.guest_address.as_u64() + FDT_OFFSET)
+						.try_into()
+						.unwrap(),
+				),
 			},
 			load_info,
 			platform_info: PlatformInfo::Uhyve {
@@ -357,19 +405,16 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		};
 		unsafe {
 			let raw_boot_info_ptr =
-				self.mem.host_address.add(BOOT_INFO_ADDR.as_u64() as usize) as *mut RawBootInfo;
+				self.mem.host_address.add(BOOT_INFO_OFFSET as usize) as *mut RawBootInfo;
 			*raw_boot_info_ptr = RawBootInfo::from(boot_info);
 			self.boot_info = raw_boot_info_ptr;
 		}
 
-		self.stack_address = GuestPhysAddr::new(
-			self.kernel_address
-				.as_u64()
-				.checked_sub(KERNEL_STACK_SIZE)
-				.expect(
-				"there should be enough space for the boot stack before the kernel start address",
-			),
+		assert!(
+			self.kernel_address.as_u64() > KERNEL_STACK_SIZE,
+			"there should be enough space for the boot stack before the kernel start address",
 		);
+		self.stack_address = self.kernel_address - KERNEL_STACK_SIZE;
 
 		Ok(())
 	}
@@ -380,6 +425,7 @@ impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 		f.debug_struct(&format!("UhyveVm<{}>", VirtIf::NAME))
 			.field("entry_point", &self.entry_point)
 			.field("stack_address", &self.stack_address)
+			.field("guest_address", &self.guest_address)
 			.field("mem", &self.mem)
 			.field("path", &self.path)
 			.field("boot_info", &self.boot_info)

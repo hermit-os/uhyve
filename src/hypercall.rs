@@ -7,7 +7,6 @@ use std::{
 use uhyve_interface::{parameters::*, GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC};
 
 use crate::{
-	consts::BOOT_PML4,
 	isolation::filemap::UhyveFileMap,
 	mem::{MemoryError, MmapMemory},
 	virt_to_phys,
@@ -147,11 +146,11 @@ pub fn close(sysclose: &mut CloseParams) {
 }
 
 /// Handles an read syscall on the host.
-pub fn read(mem: &MmapMemory, sysread: &mut ReadParams) {
+pub fn read(mem: &MmapMemory, sysread: &mut ReadParams, root_pt: GuestPhysAddr) {
 	unsafe {
 		let bytes_read = libc::read(
 			sysread.fd,
-			mem.host_address(virt_to_phys(sysread.buf, mem, BOOT_PML4).unwrap())
+			mem.host_address(virt_to_phys(sysread.buf, mem, root_pt).unwrap())
 				.unwrap() as *mut libc::c_void,
 			sysread.len,
 		);
@@ -167,15 +166,12 @@ pub fn read(mem: &MmapMemory, sysread: &mut ReadParams) {
 pub fn write<B: VirtualizationBackend>(
 	parent_vm: &UhyveVm<B>,
 	syswrite: &WriteParams,
+	root_pt: GuestPhysAddr,
 ) -> io::Result<()> {
 	let mut bytes_written: usize = 0;
 	while bytes_written != syswrite.len {
-		let guest_phys_addr = virt_to_phys(
-			syswrite.buf + bytes_written as u64,
-			&parent_vm.mem,
-			BOOT_PML4,
-		)
-		.unwrap();
+		let guest_phys_addr =
+			virt_to_phys(syswrite.buf + bytes_written as u64, &parent_vm.mem, root_pt).unwrap();
 
 		if syswrite.fd == 1 {
 			// fd 0 is stdout
