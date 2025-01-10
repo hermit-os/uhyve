@@ -87,7 +87,7 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 			let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
 			sysunlink.ret = unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) };
 			if sysunlink.ret >= 0 {
-				file_map.remove_guest_path(guest_path);
+				file_map.unlink_guest_path(guest_path);
 			}
 		} else {
 			error!("The kernel requested to unlink() an unknown path ({guest_path}): Rejecting...");
@@ -144,10 +144,10 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 
 /// Handles an close syscall by closing the file on the host.
 pub fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
-	if file_map.get_fd_presence(sysclose.fd.into_raw_fd()) {
+	if file_map.is_fd_closable(sysclose.fd.into_raw_fd()) {
 		if sysclose.ret > 2 {
 			unsafe { sysclose.ret = libc::close(sysclose.fd) }
-			file_map.remove_fd(sysclose.fd);
+			file_map.close_fd(sysclose.fd);
 		} else {
 			// Ignore closes of stdin, stdout and stderr that would
 			// otherwise affect Uhyve
@@ -160,7 +160,7 @@ pub fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
 
 /// Handles an read syscall on the host.
 pub fn read(mem: &MmapMemory, sysread: &mut ReadParams, file_map: &mut UhyveFileMap) {
-	if file_map.get_fd_presence(sysread.fd.into_raw_fd()) {
+	if file_map.is_fd_present(sysread.fd.into_raw_fd()) {
 		unsafe {
 			let bytes_read = libc::read(
 				sysread.fd,
@@ -207,7 +207,7 @@ pub fn write<B: VirtualizationBackend>(
 					})?
 			};
 			return parent_vm.serial_output(bytes);
-		} else if !file_map.get_fd_presence(syswrite.fd.into_raw_fd()) {
+		} else if !file_map.is_fd_present(syswrite.fd.into_raw_fd()) {
 			// We don't write anything if the file descriptor is not available,
 			// but this is OK for now, as we have no means of returning an error codee
 			// and writes are not necessarily guaranteed to write anything.
@@ -243,7 +243,7 @@ pub fn write<B: VirtualizationBackend>(
 
 /// Handles an write syscall on the host.
 pub fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
-	if file_map.get_fd_presence(syslseek.fd.into_raw_fd()) {
+	if file_map.is_fd_present(syslseek.fd.into_raw_fd()) {
 		unsafe {
 			syslseek.offset =
 				libc::lseek(syslseek.fd, syslseek.offset as i64, syslseek.whence) as isize;

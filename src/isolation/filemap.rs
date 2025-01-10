@@ -1,5 +1,5 @@
 use std::{
-	collections::HashMap,
+	collections::{HashMap, HashSet},
 	ffi::{CString, OsString},
 	fs::canonicalize,
 	io::ErrorKind,
@@ -20,6 +20,7 @@ pub struct UhyveFileMap {
 	files: HashMap<String, OsString>,
 	tempdir: TempDir,
 	fdmap: BiHashMap<RawFd, String>,
+	unlinkedfd: HashSet<RawFd>,
 }
 
 impl UhyveFileMap {
@@ -36,6 +37,7 @@ impl UhyveFileMap {
 				.collect(),
 			tempdir: create_temp_dir(),
 			fdmap: BiHashMap::new(),
+			unlinkedfd: HashSet::new(),
 		}
 	}
 
@@ -123,8 +125,20 @@ impl UhyveFileMap {
 		ret
 	}
 
-	pub fn get_fd_presence(&mut self, fd: RawFd) -> bool {
-		debug!("get_fd_presence: {:#?}", &self.fdmap);
+	/// Checks whether the fd is mapped to a guest path or belongs
+	/// to an unlinked file.
+	///
+	/// * `fd` - The opened guest path's file descriptor.
+	pub fn is_fd_closable(&mut self, fd: RawFd) -> bool {
+		debug!("is_fd_closable: {:#?}", &self.fdmap);
+		self.is_fd_present(fd) || self.unlinkedfd.contains(&fd)
+	}
+
+	/// Checks whether the fd is mapped to a guest path.
+	///
+	/// * `fd` - The opened guest path's file descriptor.
+	pub fn is_fd_present(&mut self, fd: RawFd) -> bool {
+		debug!("is_fd_present: {:#?}", &self.fdmap);
 		if (fd >= 0 && self.fdmap.contains_left(&fd)) || (0..=2).contains(&fd) {
 			return true;
 		}
@@ -136,9 +150,27 @@ impl UhyveFileMap {
 	/// * `fd` - The opened guest path's file descriptor.
 	/// * `guest_path` - The guest path.
 	pub fn insert_fd_path(&mut self, fd: RawFd, guest_path: &str) {
-		debug!("insert_fd_path: {:#?}", &self.fdmap);
 		if fd > 2 {
 			self.fdmap.insert(fd, guest_path.into());
+		}
+		debug!("insert_fd_path: {:#?}", &self.fdmap);
+	}
+
+	/// Removes an fd from UhyveFileMap. This is only used by [crate::hypercall::close],
+	/// under the expectation that a new temporary file will be created if the guest
+	/// attempts to open a file of the same path again.
+	///
+	/// * `fd` - The file descriptor of the file being removed.
+	pub fn close_fd(&mut self, fd: RawFd) {
+		debug!("close_fd: {:#?}", &self.fdmap);
+		// The file descriptor in fdclosed is supposedly still alive.
+		// It is safe to assume that the host OS will not assign the
+		// same file descriptor to another opened file, until _after_
+		// the file has been closed.
+		if let Some(&fd) = self.unlinkedfd.get(&fd) {
+			self.unlinkedfd.remove(&fd);
+		} else {
+			self.remove_fd(fd);
 		}
 	}
 
@@ -159,10 +191,13 @@ impl UhyveFileMap {
 	/// attempts to open a file of the same path again.
 	///
 	/// * `guest_path` - The path of the file being removed.
-	pub fn remove_guest_path(&mut self, guest_path: &str) {
-		debug!("remove_guest_path: {:#?}", guest_path);
+	pub fn unlink_guest_path(&mut self, guest_path: &str) {
+		debug!("unlink_guest_path: {:#?}", &guest_path);
+		if let Some(fd) = self.fdmap.get_by_right(guest_path) {
+			self.unlinkedfd.insert(*fd);
+			self.fdmap.remove_by_right(guest_path);
+		}
 		self.files.remove(guest_path);
-		self.fdmap.remove_by_right(guest_path);
 	}
 }
 
