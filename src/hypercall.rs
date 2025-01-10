@@ -194,8 +194,7 @@ pub fn write<B: VirtualizationBackend>(
 		)
 		.unwrap();
 
-		if syswrite.fd == 1 {
-			// fd 0 is stdout
+		if syswrite.fd == 1 || syswrite.fd == 2 {
 			let bytes = unsafe {
 				parent_vm
 					.mem
