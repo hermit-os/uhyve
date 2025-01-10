@@ -779,19 +779,30 @@ impl VirtualCPU for XhyveCpu {
 							Hypercall::Exit(sysexit) => {
 								return Ok(VcpuStopReason::Exit(sysexit.arg));
 							}
-							Hypercall::FileClose(sysclose) => hypercall::close(sysclose),
-							Hypercall::FileLseek(syslseek) => hypercall::lseek(syslseek),
+							Hypercall::FileClose(sysclose) => hypercall::close(
+								sysclose,
+								&mut self.parent_vm.file_mapping.lock().unwrap(),
+							),
+							Hypercall::FileLseek(syslseek) => hypercall::lseek(
+								syslseek,
+								&mut self.parent_vm.file_mapping.lock().unwrap(),
+							),
 							Hypercall::FileOpen(sysopen) => hypercall::open(
 								&self.parent_vm.mem,
 								sysopen,
 								&mut self.parent_vm.file_mapping.lock().unwrap(),
 							),
-							Hypercall::FileRead(sysread) => {
-								hypercall::read(&self.parent_vm.mem, sysread)
-							}
-							Hypercall::FileWrite(syswrite) => {
-								hypercall::write(&self.parent_vm, syswrite).unwrap()
-							}
+							Hypercall::FileRead(sysread) => hypercall::read(
+								&self.parent_vm.mem,
+								sysread,
+								&mut self.parent_vm.file_mapping.lock().unwrap(),
+							),
+							Hypercall::FileWrite(syswrite) => hypercall::write(
+								&self.parent_vm,
+								syswrite,
+								&mut self.parent_vm.file_mapping.lock().unwrap(),
+							)
+							.unwrap(),
 							Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
 								&self.parent_vm.mem,
 								sysunlink,
