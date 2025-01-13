@@ -145,7 +145,7 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 /// Handles an close syscall by closing the file on the host.
 pub fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
 	if file_map.is_fd_closable(sysclose.fd.into_raw_fd()) {
-		if sysclose.ret > 2 {
+		if sysclose.fd > 2 {
 			unsafe { sysclose.ret = libc::close(sysclose.fd) }
 			file_map.close_fd(sysclose.fd);
 		} else {
