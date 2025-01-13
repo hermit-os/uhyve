@@ -86,6 +86,9 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 			// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 			let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
 			sysunlink.ret = unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) };
+			if sysunlink.ret >= 0 {
+				file_map.remove_path(guest_path);
+			}
 		} else {
 			error!("The kernel requested to unlink() an unknown path ({guest_path}): Rejecting...");
 			sysunlink.ret = -ENOENT;
