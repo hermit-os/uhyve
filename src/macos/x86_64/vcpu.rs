@@ -800,7 +800,8 @@ impl VirtualCPU for XhyveCpu {
 
 							Hypercall::SerialWriteByte(buf) => {
 								self.parent_vm
-									.serial_output(&[buf])
+									.serial
+									.output(&[buf])
 									.unwrap_or_else(|e| error!("{e:?}"));
 							}
 							Hypercall::SerialWriteBuffer(sysserialwrite) => {
@@ -811,7 +812,8 @@ impl VirtualCPU for XhyveCpu {
 								};
 
 								self.parent_vm
-									.serial_output(buf)
+									.serial
+									.output(buf)
 									.unwrap_or_else(|e| error!("{e:?}"))
 							}
 

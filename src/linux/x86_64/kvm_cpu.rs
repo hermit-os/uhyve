@@ -469,7 +469,8 @@ impl VirtualCPU for KvmCpu {
 								),
 								Hypercall::SerialWriteByte(buf) => self
 									.parent_vm
-									.serial_output(&[buf])
+									.serial
+									.output(&[buf])
 									.unwrap_or_else(|e| error!("{e:?}")),
 								Hypercall::SerialWriteBuffer(sysserialwrite) => {
 									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
@@ -479,7 +480,8 @@ impl VirtualCPU for KvmCpu {
 									};
 
 									self.parent_vm
-										.serial_output(buf)
+										.serial
+										.output(buf)
 										.unwrap_or_else(|e| error!("{e:?}"))
 								}
 								_ => panic!("Got unknown hypercall {:?}", hypercall),
