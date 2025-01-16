@@ -191,7 +191,7 @@ pub fn write<B: VirtualizationBackend>(
 						)
 					})?
 			};
-			return parent_vm.serial_output(bytes);
+			return parent_vm.serial.output(bytes);
 		}
 
 		unsafe {

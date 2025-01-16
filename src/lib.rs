@@ -25,6 +25,7 @@ mod isolation;
 pub mod mem;
 pub mod paging;
 pub mod params;
+mod serial;
 pub mod stats;
 mod vcpu;
 pub mod virtio;

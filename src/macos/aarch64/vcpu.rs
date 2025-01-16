@@ -212,7 +212,8 @@ impl VirtualCPU for XhyveCpu {
 								Hypercall::SerialWriteByte(_char) => {
 									let x8 = (self.vcpu.read_register(Register::X8)? & 0xFF) as u8;
 									self.parent_vm
-										.serial_output(&[x8])
+										.serial
+										.output(&[x8])
 										.unwrap_or_else(|e| error!("{e:?}"));
 								}
 								Hypercall::SerialWriteBuffer(sysserialwrite) => {
@@ -223,7 +224,8 @@ impl VirtualCPU for XhyveCpu {
 									};
 
 									self.parent_vm
-										.serial_output(buf)
+										.serial
+										.output(buf)
 										.unwrap_or_else(|e| error!("{e:?}"))
 								}
 								Hypercall::Exit(sysexit) => {

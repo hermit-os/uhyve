@@ -28,9 +28,10 @@ use crate::{
 		gdb::{GdbUhyve, UhyveGdbEventLoop},
 		x86_64::kvm_cpu::KvmVm,
 	},
+	serial::Destination,
 	stats::{CpuStats, VmStats},
 	vcpu::VirtualCPU,
-	vm::{Output, UhyveVm, VirtualizationBackend, VmResult},
+	vm::{UhyveVm, VirtualizationBackend, VmResult},
 };
 
 static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
@@ -154,7 +155,7 @@ impl UhyveVm<KvmVm> {
 			.iter()
 			.filter_map(|(_ret, stats)| stats.clone())
 			.collect();
-		let output = if let Output::Buffer(b) = &this.output {
+		let output = if let Destination::Buffer(b) = &this.serial.destination {
 			Some(b.lock().unwrap().clone())
 		} else {
 			None
@@ -209,7 +210,7 @@ impl UhyveVm<KvmVm> {
 			}
 		};
 
-		let output = if let Output::Buffer(b) = &this.output {
+		let output = if let Destination::Buffer(b) = &this.serial.destination {
 			Some(b.lock().unwrap().clone())
 		} else {
 			None
