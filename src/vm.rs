@@ -14,6 +14,7 @@ use hermit_entry::{
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
 use log::{error, warn};
+#[cfg(not(target_arch = "x86_64"))]
 use sysinfo::System;
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
@@ -48,6 +49,7 @@ pub enum LoadKernelError {
 
 pub type LoadKernelResult<T> = Result<T, LoadKernelError>;
 
+#[cfg(not(target_arch = "x86_64"))]
 pub fn detect_freq_from_sysinfo() -> std::result::Result<u32, FrequencyDetectionFailed> {
 	debug!("Trying to detect CPU frequency using sysinfo");
 
@@ -70,32 +72,34 @@ pub fn detect_freq_from_sysinfo() -> std::result::Result<u32, FrequencyDetection
 	}
 }
 
-// TODO: move to architecture specific section
+// This is intended to detect a nominal frequency, or, if unavailable,
+// any available value representing a frequency to the VM. Currently,
+// this affects how TSC ticks are counted, and could be generally improved.
+//
+// TODO: Move to architecture specific section.
 fn detect_cpu_freq() -> u32 {
-	#[cfg(target_arch = "aarch64")]
+	#[cfg(not(target_arch = "x86_64"))]
 	let mhz: u32 = detect_freq_from_sysinfo().unwrap_or_else(|_| {
 		debug!("Failed to detect using sysinfo");
 		0
 	});
 	#[cfg(target_arch = "x86_64")]
 	let mhz = {
-		let mhz: u32 = detect_freq_from_sysinfo().unwrap_or_else(|_| {
-			debug!("Failed to detect using sysinfo");
-			let cpuid = raw_cpuid::CpuId::new();
-			detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
-				debug!("Failed to detect from cpuid");
-				detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
-					debug!("Failed to detect from hypervisor_info");
-					get_cpu_frequency_from_os().unwrap_or(0)
-				})
+		let cpuid = raw_cpuid::CpuId::new();
+		let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
+			debug!("Failed to detect from cpuid");
+			detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
+				debug!("Failed to detect from hypervisor_info");
+				get_cpu_frequency_from_os().unwrap_or(0)
 			})
 		});
-		debug!("detected a cpu frequency of {} Mhz", mhz);
 
 		mhz
 	};
+
+	debug!("Detected a CPU frequency of {} Mhz", mhz);
 	if mhz == 0 {
-		warn!("Unable to determine processor frequency");
+		warn!("Unable to determine processor frequency, passing 0...");
 	}
 	mhz
 }
