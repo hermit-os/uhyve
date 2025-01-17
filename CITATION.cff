@@ -10,6 +10,13 @@ authors:
 - family-names: "Kröning"
   given-names: "Martin"
   orcid: "https://orcid.org/0009-0005-0622-4229"
+- family-names: "Vasilopoulos"
+  given-names: "Panagiotis"
+- family-names: "Breitbart"
+  given-names: "Jens"
+- family-names: "Schwender"
+  given-names: "Jonathan"
+- name: "The Hermit Project Contributors"
 
 title: "Uhyve - A specialized hypervisor for Hermit"
 version: 0.4.0
