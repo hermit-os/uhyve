@@ -1,9 +1,12 @@
 use std::{
 	collections::{HashMap, HashSet},
 	ffi::{CString, OsString},
-	fs::canonicalize,
+	fs::{canonicalize, File},
 	io::ErrorKind,
-	os::{fd::RawFd, unix::ffi::OsStrExt},
+	os::{
+		fd::{FromRawFd, RawFd},
+		unix::ffi::OsStrExt,
+	},
 	path::{absolute, PathBuf},
 };
 
@@ -125,6 +128,16 @@ impl UhyveFileMap {
 		ret
 	}
 
+	// Drops all file descriptors present in fdmap and unlinkedfd.
+	pub fn drop_all_fds(&self) {
+		for (fd, _) in &self.fdmap {
+			unsafe { File::from_raw_fd(*fd) };
+		}
+		for fd in self.unlinkedfd.iter() {
+			unsafe { File::from_raw_fd(*fd) };
+		}
+	}
+
 	/// Checks whether the fd is mapped to a guest path or belongs
 	/// to an unlinked file.
 	///
@@ -198,6 +211,12 @@ impl UhyveFileMap {
 			self.fdmap.remove_by_right(guest_path);
 		}
 		self.files.remove(guest_path);
+	}
+}
+
+impl Drop for UhyveFileMap {
+	fn drop(&mut self) {
+		self.drop_all_fds();
 	}
 }
 
