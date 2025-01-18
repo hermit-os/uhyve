@@ -110,6 +110,7 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 		}
 
 		if let Some(host_path) = file_map.get_host_path(guest_path) {
+			debug!("{:#?} found in file map.", guest_path);
 			// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 			// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 			let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
@@ -117,15 +118,21 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 			sysopen.ret =
 				unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode) };
 		} else {
-			debug!("Attempting to open a temp file for {:#?}...", guest_path);
-			// Existing files that already exist should be in the file map, not here.
-			// If a supposed attacker can predict where we open a file and its filename,
-			// this contigency, together with O_CREAT, will cause the write to fail.
-			flags |= O_EXCL;
+			debug!("{:#?} not found in file map.", guest_path);
+			if (flags & O_CREAT) == O_CREAT {
+				debug!("Attempting to open a temp file for {:#?}...", guest_path);
+				// Existing files that already exist should be in the file map, not here.
+				// If a supposed attacker can predict where we open a file and its filename,
+				// this contigency, together with O_CREAT, will cause the write to fail.
+				flags |= O_EXCL;
 
-			let host_path_c_string = file_map.create_temporary_file(guest_path);
-			let new_host_path = host_path_c_string.as_c_str().as_ptr();
-			sysopen.ret = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
+				let host_path_c_string = file_map.create_temporary_file(guest_path);
+				let new_host_path = host_path_c_string.as_c_str().as_ptr();
+				sysopen.ret = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
+			} else {
+				debug!("Returning -ENOENT for {:#?}", guest_path);
+				sysopen.ret = -ENOENT;
+			}
 		}
 	} else {
 		error!("The kernel requested to open() a path that is not valid UTF-8. Rejecting...");
