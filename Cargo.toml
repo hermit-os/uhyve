@@ -67,8 +67,8 @@ uuid = { version = "1.11.1", features = ["fast-rng", "v4"]}
 clean-path = "0.2.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-kvm-bindings = "0.10"
-kvm-ioctls = "0.19"
+kvm-bindings = "0.11"
+kvm-ioctls = "0.20"
 vmm-sys-util = "0.12"
 
 [target.'cfg(target_os = "macos")'.dependencies]
