@@ -54,9 +54,13 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 		if let Entry::Vacant(entry) = self.sw_breakpoints.entry(sw_breakpoint) {
 			// Safety: mem is not altered during the lifetime of `instructions`
 			let instructions = unsafe {
-				self.vm.mem.slice_at_mut(
-					virt_to_phys(GuestVirtAddr::new(addr), &self.vm.mem, BOOT_PML4)
-						.map_err(|_err| ())?,
+				self.vm.peripherals.mem.slice_at_mut(
+					virt_to_phys(
+						GuestVirtAddr::new(addr),
+						&self.vm.peripherals.mem,
+						BOOT_PML4,
+					)
+					.map_err(|_err| ())?,
 					kind,
 				)
 			}
@@ -75,9 +79,13 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 		if let Entry::Occupied(entry) = self.sw_breakpoints.entry(sw_breakpoint) {
 			// Safety: mem is not altered during the lifetime of `instructions`
 			let instructions = unsafe {
-				self.vm.mem.slice_at_mut(
-					virt_to_phys(GuestVirtAddr::new(addr), &self.vm.mem, BOOT_PML4)
-						.map_err(|_err| ())?,
+				self.vm.peripherals.mem.slice_at_mut(
+					virt_to_phys(
+						GuestVirtAddr::new(addr),
+						&self.vm.peripherals.mem,
+						BOOT_PML4,
+					)
+					.map_err(|_err| ())?,
 					kind,
 				)
 			}

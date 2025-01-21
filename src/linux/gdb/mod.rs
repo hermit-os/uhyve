@@ -2,13 +2,7 @@ mod breakpoints;
 mod regs;
 mod section_offsets;
 
-use std::{
-	io::Read,
-	net::TcpStream,
-	sync::{Arc, Once},
-	thread,
-	time::Duration,
-};
+use std::{io::Read, net::TcpStream, sync::Once, thread, time::Duration};
 
 use gdbstub::{
 	common::Signal,
@@ -30,27 +24,22 @@ use self::breakpoints::SwBreakpoints;
 use crate::{
 	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
 	consts::BOOT_PML4,
-	linux::{
-		x86_64::kvm_cpu::{KvmCpu, KvmVm},
-		KickSignal,
-	},
+	linux::{x86_64::kvm_cpu::KvmVm, KickSignal},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::UhyveVm,
 	HypervisorError, HypervisorResult,
 };
 
 pub struct GdbUhyve {
-	vm: Arc<UhyveVm<KvmVm>>,
-	vcpu: KvmCpu,
+	pub(crate) vm: UhyveVm<KvmVm>,
 	hw_breakpoints: HwBreakpoints,
 	sw_breakpoints: SwBreakpoints,
 }
 
 impl GdbUhyve {
-	pub fn new(vm: Arc<UhyveVm<KvmVm>>, vcpu: KvmCpu) -> Self {
+	pub fn new(vm: UhyveVm<KvmVm>) -> Self {
 		Self {
 			vm,
-			vcpu,
 			hw_breakpoints: HwBreakpoints::new(),
 			sw_breakpoints: SwBreakpoints::new(),
 		}
@@ -98,14 +87,15 @@ impl GdbUhyve {
 			pad: 0,
 			arch: kvm_guest_debug_arch { debugreg },
 		};
-		self.vcpu
+
+		self.vm.vcpus[0]
 			.get_vcpu()
 			.set_guest_debug(&debug_struct)
 			.map_err(HypervisorError::from)
 	}
 
 	pub fn run(&mut self) -> HypervisorResult<SingleThreadStopReason<u64>> {
-		let stop_reason = match self.vcpu.r#continue()? {
+		let stop_reason = match self.vm.vcpus[0].r#continue()? {
 			VcpuStopReason::Debug(debug) => match debug.exception {
 				DB_VECTOR => {
 					let dr6 = Dr6Flags::from_bits_truncate(debug.dr6);
@@ -123,12 +113,12 @@ impl GdbUhyve {
 
 impl SingleThreadBase for GdbUhyve {
 	fn read_registers(&mut self, regs: &mut X86_64CoreRegs) -> TargetResult<(), Self> {
-		regs::read(self.vcpu.get_vcpu(), regs)
+		regs::read(self.vm.vcpus[0].get_vcpu(), regs)
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))
 	}
 
 	fn write_registers(&mut self, regs: &X86_64CoreRegs) -> TargetResult<(), Self> {
-		regs::write(regs, self.vcpu.get_vcpu())
+		regs::write(regs, self.vm.vcpus[0].get_vcpu())
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))
 	}
 
@@ -136,8 +126,8 @@ impl SingleThreadBase for GdbUhyve {
 		let guest_addr = GuestVirtAddr::try_new(start_addr).map_err(|_e| TargetError::NonFatal)?;
 		// Safety: mem is copied to data before mem can be modified.
 		let src = unsafe {
-			self.vm.mem.slice_at(
-				virt_to_phys(guest_addr, &self.vm.mem, BOOT_PML4).map_err(|_err| ())?,
+			self.vm.peripherals.mem.slice_at(
+				virt_to_phys(guest_addr, &self.vm.peripherals.mem, BOOT_PML4).map_err(|_err| ())?,
 				data.len(),
 			)
 		}
@@ -149,9 +139,13 @@ impl SingleThreadBase for GdbUhyve {
 	fn write_addrs(&mut self, start_addr: u64, data: &[u8]) -> TargetResult<(), Self> {
 		// Safety: self.vm.mem is not altered during the lifetime of mem.
 		let mem = unsafe {
-			self.vm.mem.slice_at_mut(
-				virt_to_phys(GuestVirtAddr::new(start_addr), &self.vm.mem, BOOT_PML4)
-					.map_err(|_err| ())?,
+			self.vm.peripherals.mem.slice_at_mut(
+				virt_to_phys(
+					GuestVirtAddr::new(start_addr),
+					&self.vm.peripherals.mem,
+					BOOT_PML4,
+				)
+				.map_err(|_err| ())?,
 				data.len(),
 			)
 		}

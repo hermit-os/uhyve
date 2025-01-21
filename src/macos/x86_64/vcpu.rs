@@ -33,11 +33,12 @@ use crate::{
 	hypercall,
 	hypercall::{copy_argv, copy_env},
 	macos::x86_64::ioapic::IoApic,
-	mem::MmapMemory,
 	params::Params,
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
-	vm::{internal::VirtualizationBackendInternal, UhyveVm, VirtualizationBackend},
+	vm::{
+		internal::VirtualizationBackendInternal, KernelInfo, VirtualizationBackend, VmPeripherals,
+	},
 	HypervisorResult,
 };
 
@@ -156,7 +157,9 @@ static CAP_EXIT: LazyLock<u64> = LazyLock::new(|| {
 	cap2ctrl(cap, 0)
 });
 
-pub struct XhyveVm {}
+pub struct XhyveVm {
+	peripherals: Arc<VmPeripherals>,
+}
 impl VirtualizationBackendInternal for XhyveVm {
 	type VCPU = XhyveCpu;
 	const NAME: &str = "XhyveVm";
@@ -164,12 +167,13 @@ impl VirtualizationBackendInternal for XhyveVm {
 	fn new_cpu(
 		&self,
 		id: u32,
-		parent_vm: Arc<UhyveVm<XhyveVm>>,
+		kernel_info: Arc<KernelInfo>,
 		enable_stats: bool,
 	) -> HypervisorResult<XhyveCpu> {
 		let mut vcpu = XhyveCpu {
 			id,
-			parent_vm: parent_vm.clone(),
+			peripherals: self.peripherals.clone(),
+			kernel_info: kernel_info.clone(),
 			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
 			apic_base: APIC_DEFAULT_BASE,
 			stats: if enable_stats {
@@ -178,18 +182,22 @@ impl VirtualizationBackendInternal for XhyveVm {
 				None
 			},
 		};
-		vcpu.init(parent_vm.entry_point(), parent_vm.stack_address(), id)?;
+		vcpu.init(kernel_info.entry_point, kernel_info.stack_address, id)?;
 
 		Ok(vcpu)
 	}
 
-	fn new(mem: &MmapMemory, _params: &Params) -> HypervisorResult<Self> {
+	fn new(peripherals: Arc<VmPeripherals>, _params: &Params) -> HypervisorResult<Self> {
 		debug!("Create VM...");
 		create_vm()?;
 
 		debug!("Map guest memory...");
-		map_mem(unsafe { mem.as_slice_mut() }, 0, MemPerm::ExecAndWrite)?;
-		Ok(Self {})
+		map_mem(
+			unsafe { peripherals.mem.as_slice_mut() },
+			0,
+			MemPerm::ExecAndWrite,
+		)?;
+		Ok(Self { peripherals })
 	}
 }
 
@@ -200,7 +208,9 @@ impl VirtualizationBackend for XhyveVm {
 pub struct XhyveCpu {
 	id: u32,
 	vcpu: xhypervisor::VirtualCpu,
-	parent_vm: Arc<UhyveVm<XhyveVm>>,
+	peripherals: Arc<VmPeripherals>,
+	// TODO: Remove once the getenv/getargs hypercalls are removed
+	kernel_info: Arc<KernelInfo>,
 	apic_base: u64,
 	stats: Option<CpuStats>,
 }
@@ -537,7 +547,7 @@ impl XhyveCpu {
 		let write = (qualification & (1 << 1)) != 0;
 		let code = unsafe {
 			std::slice::from_raw_parts(
-				self.parent_vm
+				self.peripherals
 					.mem
 					.host_address(GuestPhysAddr::new(rip))
 					.unwrap(),
@@ -681,7 +691,6 @@ impl XhyveCpu {
 }
 
 impl VirtualCPU for XhyveCpu {
-	type VirtIf = XhyveVm;
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
 			/*if self.extint_pending == true {
@@ -762,23 +771,24 @@ impl VirtualCPU for XhyveCpu {
 					let data_addr =
 						GuestPhysAddr::new(self.vcpu.read_register(&Register::RAX)? & 0xFFFFFFFF);
 					if let Some(hypercall) = unsafe {
-						hypercall::address_to_hypercall(&self.parent_vm.mem, port, data_addr)
+						hypercall::address_to_hypercall(&self.peripherals.mem, port, data_addr)
 					} {
 						if let Some(s) = self.stats.as_mut() {
 							s.increment_val(VmExit::Hypercall(HypercallAddress::from(&hypercall)))
 						}
 						match hypercall {
-							Hypercall::Cmdsize(syssize) => {
-								syssize.update(self.parent_vm.kernel_path(), self.parent_vm.args())
-							}
+							Hypercall::Cmdsize(syssize) => syssize.update(
+								&self.kernel_info.path,
+								&self.kernel_info.params.kernel_args,
+							),
 							Hypercall::Cmdval(syscmdval) => {
 								copy_argv(
-									self.parent_vm.kernel_path().as_os_str(),
-									self.parent_vm.args(),
+									self.kernel_info.path.as_os_str(),
+									&self.kernel_info.params.kernel_args,
 									syscmdval,
-									&self.parent_vm.mem,
+									&self.peripherals.mem,
 								);
-								copy_env(syscmdval, &self.parent_vm.mem);
+								copy_env(syscmdval, &self.peripherals.mem);
 							}
 							Hypercall::Exit(sysexit) => {
 								return Ok(VcpuStopReason::Exit(sysexit.arg));
@@ -786,24 +796,24 @@ impl VirtualCPU for XhyveCpu {
 							Hypercall::FileClose(sysclose) => hypercall::close(sysclose),
 							Hypercall::FileLseek(syslseek) => hypercall::lseek(syslseek),
 							Hypercall::FileOpen(sysopen) => hypercall::open(
-								&self.parent_vm.mem,
+								&self.peripherals.mem,
 								sysopen,
-								&mut self.parent_vm.file_mapping.lock().unwrap(),
+								&mut self.peripherals.file_mapping.lock().unwrap(),
 							),
 							Hypercall::FileRead(sysread) => {
-								hypercall::read(&self.parent_vm.mem, sysread)
+								hypercall::read(&self.peripherals.mem, sysread)
 							}
 							Hypercall::FileWrite(syswrite) => {
-								hypercall::write(&self.parent_vm, syswrite).unwrap()
+								hypercall::write(&self.peripherals, syswrite).unwrap()
 							}
 							Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
-								&self.parent_vm.mem,
+								&self.peripherals.mem,
 								sysunlink,
-								&mut self.parent_vm.file_mapping.lock().unwrap(),
+								&mut self.peripherals.file_mapping.lock().unwrap(),
 							),
 
 							Hypercall::SerialWriteByte(buf) => {
-								self.parent_vm
+								self.peripherals
 									.serial
 									.output(&[buf])
 									.unwrap_or_else(|e| error!("{e:?}"));
@@ -811,11 +821,11 @@ impl VirtualCPU for XhyveCpu {
 							Hypercall::SerialWriteBuffer(sysserialwrite) => {
 								// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 								let buf = unsafe {
-									self.parent_vm.mem.slice_at(sysserialwrite.buf, sysserialwrite.len)
+									self.peripherals.mem.slice_at(sysserialwrite.buf, sysserialwrite.len)
            .expect("Systemcall parameters for SerialWriteBuffer are invalid")
 								};
 
-								self.parent_vm
+								self.peripherals
 									.serial
 									.output(buf)
 									.unwrap_or_else(|e| error!("{e:?}"))
