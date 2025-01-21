@@ -4,21 +4,54 @@ pub mod aarch64;
 pub mod x86_64;
 
 use std::{
-	sync::{mpsc, Arc},
+	os::unix::prelude::JoinHandleExt,
+	sync::{Arc, Barrier},
 	thread,
 };
 
 use core_affinity::CoreId;
+use nix::sys::{
+	pthread::{pthread_kill, Pthread},
+	signal::{signal, SigHandler, Signal, SIGUSR1},
+};
 
 #[cfg(target_arch = "aarch64")]
 pub use crate::macos::aarch64::vcpu::{XhyveCpu, XhyveVm};
 #[cfg(target_arch = "x86_64")]
 pub use crate::macos::x86_64::vcpu::{XhyveCpu, XhyveVm};
 use crate::{
-	stats::VmStats,
+	serial::Destination,
+	stats::{CpuStats, VmStats},
 	vcpu::VirtualCPU,
-	vm::{internal::VirtualizationBackendInternal, UhyveVm, VmResult},
+	vm::{UhyveVm, VmResult},
 };
+
+/// The signal for kicking vCPUs out of KVM_RUN.
+///
+/// It is used to stop a vCPU from another thread.
+struct KickSignal;
+
+impl KickSignal {
+	fn get() -> Signal {
+		SIGUSR1
+	}
+
+	fn register_handler() -> nix::Result<()> {
+		extern "C" fn handle_signal(_signal: libc::c_int) {}
+		// SAFETY: We don't use the `signal`'s return value.
+		unsafe {
+			signal(Self::get(), SigHandler::Handler(handle_signal))?;
+		}
+		Ok(())
+	}
+
+	/// Sends the kick signal to a thread.
+	///
+	/// [`KickSignal::register_handler`] should be called prior to this to avoid crashing the program with the default handler.
+	fn pthread_kill(pthread: Pthread) -> nix::Result<()> {
+		pthread_kill(pthread, Self::get())
+	}
+}
 
 pub type DebugExitInfo = ();
 
@@ -26,67 +59,84 @@ impl UhyveVm<XhyveVm> {
 	/// Runs the VM.
 	///
 	/// Blocks until the VM has finished execution.
-	pub fn run(mut self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
-		self.load_kernel().expect("Unabled to load the kernel");
+	pub fn run(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
+		KickSignal::register_handler().unwrap();
 
-		// For communication of the exit code from one vcpu to this thread as return
-		// value.
-		let (exit_tx, exit_rx) = mpsc::channel();
+		let barrier = Arc::new(Barrier::new(2));
 
-		let enable_stats = self.get_params().stats;
-		let this = Arc::new(self);
+		debug!("Starting vCPUs");
+		let threads = self
+			.vcpus
+			.into_iter()
+			.enumerate()
+			.map(|(cpu_id, mut cpu)| {
+				let barrier = barrier.clone();
+				let local_cpu_affinity = cpu_affinity
+					.as_ref()
+					.and_then(|core_ids| core_ids.get(cpu_id as usize).copied());
 
-		(0..this.num_cpus()).for_each(|cpu_id| {
-			let parent_vm = this.clone();
-			let exit_tx = exit_tx.clone();
-
-			let local_cpu_affinity = match &cpu_affinity {
-				Some(vec) => vec.get(cpu_id as usize).cloned(),
-				None => None,
-			};
-
-			// create thread for each CPU
-			thread::spawn(move || {
-				debug!("Create thread for CPU {}", cpu_id);
-				match local_cpu_affinity {
-					Some(core_id) => {
-						debug!("Trying to pin thread {} to CPU {}", cpu_id, core_id.id);
-						core_affinity::set_for_current(core_id); // This does not return an error if it fails :(
+				// create thread for each CPU
+				thread::spawn(move || {
+					debug!("Create thread for CPU {}", cpu_id);
+					match local_cpu_affinity {
+						Some(core_id) => {
+							debug!("Trying to pin thread {} to CPU {}", cpu_id, core_id.id);
+							core_affinity::set_for_current(core_id); // This does not return an error if it fails :(
+						}
+						None => debug!("No affinity specified, not binding thread"),
 					}
-					None => debug!("No affinity specified, not binding thread"),
-				}
 
-				let mut cpu = parent_vm
-					.virt_backend
-					.new_cpu(cpu_id, parent_vm.clone(), enable_stats)
-					.unwrap();
+					// jump into the VM and execute code of the guest
+					match cpu.run() {
+						Ok((code, stats)) => {
+							if code.is_some() {
+								// Let the main thread continue with kicking the other vCPUs
+								barrier.wait();
+							}
+							(code, stats)
+						}
+						Err(err) => {
+							error!("CPU {} crashed with {:?}", cpu_id, err);
+							barrier.wait();
+							(Some(-1), None)
+						}
+					}
+				})
+			})
+			.collect::<Vec<_>>();
+		debug!("Waiting for first CPU to finish");
 
-				// jump into the VM and execute code of the guest
-				let result = cpu.run();
-				match result {
-					Ok((Some(exit_code), stats)) => exit_tx.send((exit_code, stats)).unwrap(),
-					Ok((None, _stats)) => {}
-					Err(err) => error!("CPU {} crashed with {:?}", cpu_id, err),
-				}
-			});
-		});
+		// Wait for one vCPU to return with an exit code.
+		barrier.wait();
 
-		// This is a semi-bad design. We don't wait for the other cpu's threads to
-		// finish, but as soon as one cpu sends an exit code, we return it and
-		// ignore the remaining running threads. A better design would be to force
-		// the VCPUs externally to stop, so that the other threads don't block and
-		// can be terminated correctly.
-		// Also we only have stats for the exiting CPU.
-		let (code, stats) = exit_rx.recv().unwrap();
-		let stats = if enable_stats {
-			Some(VmStats::new(&[stats.unwrap()]))
+		for thread in &threads {
+			KickSignal::pthread_kill(thread.as_pthread_t()).unwrap();
+		}
+
+		let cpu_results = threads
+			.into_iter()
+			.map(|thread| thread.join().unwrap())
+			.collect::<Vec<_>>();
+		let code = match cpu_results.iter().filter_map(|(ret, _stats)| *ret).count() {
+			0 => panic!("No return code from any CPU? Maybe all have been kicked?"),
+			1 => cpu_results[0].0.unwrap(),
+			_ => panic!("more than one thread finished with an exit code (codes: {cpu_results:?})"),
+		};
+
+		let stats: Vec<CpuStats> = cpu_results
+			.iter()
+			.filter_map(|(_ret, stats)| stats.clone())
+			.collect();
+		let output = if let Destination::Buffer(b) = &self.peripherals.serial.destination {
+			Some(String::from_utf8_lossy(&b.lock().unwrap()).into_owned())
 		} else {
 			None
 		};
+
 		VmResult {
 			code,
-			output: None,
-			stats,
+			output,
+			stats: Some(VmStats::new(&stats)),
 		}
 	}
 }

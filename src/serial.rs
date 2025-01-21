@@ -8,7 +8,7 @@ use std::{
 use crate::{params, HypervisorResult};
 
 /// The destination of the kernels serial output.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Destination {
 	/// Same IO as the Uhyve process.
 	StdIo,
@@ -26,6 +26,7 @@ impl Default for Destination {
 }
 
 /// Handles serial output functionality.
+#[derive(Debug, Clone)]
 pub(crate) struct UhyveSerial {
 	pub(crate) destination: Destination,
 }

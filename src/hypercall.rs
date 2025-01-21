@@ -11,7 +11,7 @@ use crate::{
 	isolation::filemap::UhyveFileMap,
 	mem::{MemoryError, MmapMemory},
 	virt_to_phys,
-	vm::{UhyveVm, VirtualizationBackend},
+	vm::VmPeripherals,
 };
 
 /// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
@@ -165,15 +165,12 @@ pub fn read(mem: &MmapMemory, sysread: &mut ReadParams) {
 }
 
 /// Handles an write syscall on the host.
-pub fn write<B: VirtualizationBackend>(
-	parent_vm: &UhyveVm<B>,
-	syswrite: &WriteParams,
-) -> io::Result<()> {
+pub fn write(peripherals: &VmPeripherals, syswrite: &WriteParams) -> io::Result<()> {
 	let mut bytes_written: usize = 0;
 	while bytes_written != syswrite.len {
 		let guest_phys_addr = virt_to_phys(
 			syswrite.buf + bytes_written as u64,
-			&parent_vm.mem,
+			&peripherals.mem,
 			BOOT_PML4,
 		)
 		.unwrap();
@@ -181,7 +178,7 @@ pub fn write<B: VirtualizationBackend>(
 		if syswrite.fd == 1 {
 			// fd 0 is stdout
 			let bytes = unsafe {
-				parent_vm
+				peripherals
 					.mem
 					.slice_at(guest_phys_addr, syswrite.len)
 					.map_err(|e| {
@@ -191,13 +188,13 @@ pub fn write<B: VirtualizationBackend>(
 						)
 					})?
 			};
-			return parent_vm.serial.output(bytes);
+			return peripherals.serial.output(bytes);
 		}
 
 		unsafe {
 			let step = libc::write(
 				syswrite.fd,
-				parent_vm
+				peripherals
 					.mem
 					.host_address(guest_phys_addr)
 					.map_err(|e| match e {

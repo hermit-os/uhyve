@@ -1,14 +1,14 @@
 use std::{
 	env, fmt, fs, io,
+	mem::MaybeUninit,
 	num::NonZeroU32,
 	path::PathBuf,
-	ptr,
 	sync::{Arc, Mutex},
 	time::SystemTime,
 };
 
 use hermit_entry::{
-	boot_info::{BootInfo, HardwareInfo, PlatformInfo, RawBootInfo, SerialPortBase},
+	boot_info::{BootInfo, HardwareInfo, LoadInfo, PlatformInfo, RawBootInfo, SerialPortBase},
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
 use internal::VirtualizationBackendInternal;
@@ -109,9 +109,8 @@ pub(crate) mod internal {
 	use std::sync::Arc;
 
 	use crate::{
-		mem::MmapMemory,
 		vcpu::VirtualCPU,
-		vm::{Params, UhyveVm, VirtualizationBackend},
+		vm::{KernelInfo, Params, VmPeripherals},
 		HypervisorResult,
 	};
 
@@ -124,13 +123,11 @@ pub(crate) mod internal {
 		fn new_cpu(
 			&self,
 			id: u32,
-			parent_vm: Arc<UhyveVm<Self>>,
+			kernel_info: Arc<KernelInfo>,
 			enable_stats: bool,
-		) -> HypervisorResult<Self::VCPU>
-		where
-			Self: VirtualizationBackend;
+		) -> HypervisorResult<Self::VCPU>;
 
-		fn new(memory: &MmapMemory, params: &Params) -> HypervisorResult<Self>;
+		fn new(peripherals: Arc<VmPeripherals>, params: &Params) -> HypervisorResult<Self>;
 	}
 }
 
@@ -145,21 +142,35 @@ pub struct VmResult {
 	pub stats: Option<VmStats>,
 }
 
-pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
-	/// The starting position of the image in physical memory
-	kernel_address: GuestPhysAddr,
-	entry_point: GuestPhysAddr,
-	stack_address: GuestPhysAddr,
-	pub mem: Arc<MmapMemory>,
-	path: PathBuf,
-	boot_info: *const RawBootInfo,
-	pub virtio_device: Arc<Mutex<VirtioNetPciDevice>>,
-	#[allow(dead_code)] // gdb is not supported on macos
-	pub(super) gdb_port: Option<u16>,
-	pub(crate) file_mapping: Mutex<UhyveFileMap>,
-	pub(crate) virt_backend: VirtBackend::BACKEND,
-	params: Params,
+/// mutable devices that a vCPU interacts with
+pub(crate) struct VmPeripherals {
+	pub file_mapping: Mutex<UhyveFileMap>,
+	pub mem: MmapMemory,
 	pub(crate) serial: UhyveSerial,
+	pub virtio_device: Mutex<VirtioNetPciDevice>,
+}
+
+// TODO: Investigate soundness
+// https://github.com/hermitcore/uhyve/issues/229
+unsafe impl Send for VmPeripherals {}
+unsafe impl Sync for VmPeripherals {}
+
+/// static information that does not change during execution
+#[derive(Debug)]
+pub(crate) struct KernelInfo {
+	pub entry_point: GuestPhysAddr,
+	/// The starting position of the image in physical memory
+	#[cfg_attr(target_os = "macos", allow(dead_code))] // currently only needed in gdb
+	pub kernel_address: GuestPhysAddr,
+	pub params: Params,
+	pub path: PathBuf,
+	pub stack_address: GuestPhysAddr,
+}
+
+pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
+	pub(crate) vcpus: Vec<<VirtBackend::BACKEND as VirtualizationBackendInternal>::VCPU>,
+	pub(crate) peripherals: Arc<VmPeripherals>,
+	pub(crate) kernel_info: Arc<KernelInfo>,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
@@ -170,169 +181,17 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		#[cfg(not(target_os = "linux"))]
 		let mem = MmapMemory::new(0, memory_size, arch::RAM_START, false, false);
 
-		// create virtio interface
-		// TODO: Remove allow once fixed:
-		// https://github.com/rust-lang/rust-clippy/issues/11382
-		#[allow(clippy::arc_with_non_send_sync)]
-		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new()));
-
-		let virt_backend = VirtBackend::BACKEND::new(&mem, &params)?;
-
-		let cpu_count = params.cpu_count.get();
-
-		assert!(
-			params.gdb_port.is_none() || cfg!(target_os = "linux"),
-			"gdb is only supported on linux (yet)"
-		);
-		assert!(
-			params.gdb_port.is_none() || cpu_count == 1,
-			"gdbstub is only supported with one CPU"
-		);
-
-		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping, &params.tempdir));
-
-		let serial = UhyveSerial::from_params(&params.output)?;
-
-		let mut vm = Self {
-			kernel_address: GuestPhysAddr::zero(),
-			entry_point: GuestPhysAddr::zero(),
-			stack_address: GuestPhysAddr::zero(),
-			mem: mem.into(),
-			path: kernel_path,
-			boot_info: ptr::null(),
-			virtio_device,
-			gdb_port: params.gdb_port,
-			file_mapping,
-			virt_backend,
-			params,
-			serial,
-		};
-
-		vm.init_guest_mem();
-
-		Ok(vm)
-	}
-
-	/// Returns the section offsets relative to their base addresses
-	pub fn kernel_start_addr(&self) -> GuestPhysAddr {
-		self.kernel_address
-	}
-
-	pub fn entry_point(&self) -> GuestPhysAddr {
-		self.entry_point
-	}
-
-	pub fn stack_address(&self) -> GuestPhysAddr {
-		self.stack_address
-	}
-
-	/// Returns the number of cores for the vm.
-	pub fn num_cpus(&self) -> u32 {
-		self.params.cpu_count.get()
-	}
-
-	pub fn kernel_path(&self) -> &PathBuf {
-		&self.path
-	}
-
-	pub fn args(&self) -> &Vec<String> {
-		&self.params.kernel_args
-	}
-
-	pub fn get_params(&self) -> &Params {
-		&self.params
-	}
-
-	/// Initialize the page tables for the guest
-	fn init_guest_mem(&mut self) {
-		debug!("Initialize guest memory");
-		crate::arch::init_guest_mem(
-			unsafe { self.mem.as_slice_mut() } // slice only lives during this fn call
-				.try_into()
-				.expect("Guest memory is not large enough for pagetables"),
-		);
-	}
-
-	pub fn load_kernel(&mut self) -> LoadKernelResult<()> {
-		let elf = fs::read(self.kernel_path())?;
-		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
-
-		// TODO: should be a random start address, if we have a relocatable executable
-		self.kernel_address = GuestPhysAddr::new(object.start_addr().unwrap_or(0x400000));
-		let kernel_end_address = self.kernel_address + object.mem_size();
-
-		if kernel_end_address.as_u64()
-			> self.mem.memory_size as u64 - self.mem.guest_address.as_u64()
-		{
-			return Err(LoadKernelError::InsufficientMemory);
-		}
-
-		let LoadedKernel {
-			load_info,
-			entry_point,
-		} = object.load_kernel(
-			// Safety: Slice only lives during this fn call, so no aliasing happens
-			&mut unsafe { self.mem.as_slice_uninit_mut() }
-				[self.kernel_address.as_u64() as usize..kernel_end_address.as_u64() as usize],
-			self.kernel_address.as_u64(),
-		);
-		self.entry_point = GuestPhysAddr::new(entry_point);
-
-		let tsc_khz = detect_cpu_freq() * 1000;
-
-		let sep = self
-			.args()
-			.iter()
-			.enumerate()
-			.find(|(_i, arg)| *arg == "--")
-			.map(|(i, _arg)| i)
-			.unwrap_or_else(|| self.args().len());
-
-		let fdt = Fdt::new()
-			.unwrap()
-			.tsc_khz(tsc_khz)
-			.unwrap()
-			.memory(self.mem.guest_address..self.mem.guest_address + self.mem.memory_size as u64)
-			.unwrap()
-			.kernel_args(&self.args()[..sep])
-			.app_args(self.args().get(sep + 1..).unwrap_or_default())
-			.envs(env::vars())
-			.finish()
-			.unwrap();
-
-		debug!("fdt.len() = {}", fdt.len());
-		assert!(fdt.len() < (BOOT_INFO_ADDR - FDT_ADDR) as usize);
-		unsafe {
-			let fdt_ptr = self.mem.host_address.add(FDT_ADDR.as_u64() as usize);
-			fdt_ptr.copy_from_nonoverlapping(fdt.as_ptr(), fdt.len());
-		}
-
-		let boot_info = BootInfo {
-			hardware_info: HardwareInfo {
-				phys_addr_range: self.mem.guest_address.as_u64()
-					..self.mem.guest_address.as_u64() + self.mem.memory_size as u64,
-				serial_port_base: SerialPortBase::new(
-					(uhyve_interface::HypercallAddress::Uart as u16).into(),
-				),
-				device_tree: Some(FDT_ADDR.as_u64().try_into().unwrap()),
+		let (
+			LoadedKernel {
+				load_info,
+				entry_point,
 			},
-			load_info,
-			platform_info: PlatformInfo::Uhyve {
-				has_pci: cfg!(target_os = "linux"),
-				num_cpus: u64::from(self.num_cpus()).try_into().unwrap(),
-				cpu_freq: NonZeroU32::new(tsc_khz),
-				boot_time: SystemTime::now().into(),
-			},
-		};
-		unsafe {
-			let raw_boot_info_ptr =
-				self.mem.host_address.add(BOOT_INFO_ADDR.as_u64() as usize) as *mut RawBootInfo;
-			*raw_boot_info_ptr = RawBootInfo::from(boot_info);
-			self.boot_info = raw_boot_info_ptr;
-		}
+			kernel_address,
+		) = load_kernel_to_mem(&kernel_path, unsafe { mem.as_slice_uninit_mut() })
+			.expect("Unable to load Kernel {kernel_path}");
 
-		self.stack_address = GuestPhysAddr::new(
-			self.kernel_address
+		let stack_address = GuestPhysAddr::new(
+			kernel_address
 				.as_u64()
 				.checked_sub(KERNEL_STACK_SIZE)
 				.expect(
@@ -340,30 +199,179 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			),
 		);
 
-		Ok(())
+		let kernel_info = Arc::new(KernelInfo {
+			entry_point: entry_point.into(),
+			kernel_address,
+			path: kernel_path,
+			params,
+			stack_address,
+		});
+
+		// create virtio interface
+		// TODO: Remove allow once fixed:
+		// https://github.com/rust-lang/rust-clippy/issues/11382
+		#[allow(clippy::arc_with_non_send_sync)]
+		let virtio_device = Mutex::new(VirtioNetPciDevice::new());
+
+		let file_mapping = Mutex::new(UhyveFileMap::new(
+			&kernel_info.params.file_mapping,
+			&kernel_info.params.tempdir,
+		));
+
+		let serial = UhyveSerial::from_params(&kernel_info.params.output)?;
+
+		let peripherals = Arc::new(VmPeripherals {
+			mem,
+			virtio_device,
+			file_mapping,
+			serial,
+		});
+
+		let virt_backend = VirtBackend::BACKEND::new(peripherals.clone(), &kernel_info.params)?;
+
+		let cpu_count = kernel_info.params.cpu_count.get();
+
+		assert!(
+			kernel_info.params.gdb_port.is_none() || cfg!(target_os = "linux"),
+			"gdb is only supported on linux (yet)"
+		);
+		assert!(
+			kernel_info.params.gdb_port.is_none() || cpu_count == 1,
+			"gdbstub is only supported with one CPU"
+		);
+
+		let mut vcpus = Vec::with_capacity(cpu_count as usize);
+		for cpu_id in 0..cpu_count {
+			vcpus.push(
+				virt_backend
+					.new_cpu(cpu_id, kernel_info.clone(), kernel_info.params.stats)
+					.unwrap(),
+			)
+		}
+
+		// TODO: Get frequency
+
+		write_fdt_into_mem(&peripherals.mem, &kernel_info.params);
+		write_boot_info_to_mem(&peripherals.mem, load_info, cpu_count as u64);
+		init_guest_mem(
+			unsafe { peripherals.mem.as_slice_mut() }, // slice only lives during this fn call
+		);
+		debug!("VM initialization complete");
+
+		Ok(Self {
+			peripherals,
+			kernel_info,
+			vcpus,
+		})
 	}
 }
 
 impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		f.debug_struct(&format!("UhyveVm<{}>", VirtIf::BACKEND::NAME))
-			.field("entry_point", &self.entry_point)
-			.field("stack_address", &self.stack_address)
-			.field("mem", &self.mem)
-			.field("path", &self.path)
-			.field("boot_info", &self.boot_info)
-			.field("virtio_device", &self.virtio_device)
-			.field("params", &self.params)
-			.field("file_mapping", &self.file_mapping)
+			.field("entry_point", &self.kernel_info.entry_point)
+			.field("stack_address", &self.kernel_info.stack_address)
+			.field("mem", &self.peripherals.mem)
+			.field("path", &self.kernel_info.path)
+			.field("virtio_device", &self.peripherals.virtio_device)
+			.field("params", &self.kernel_info.params)
+			.field("file_mapping", &self.peripherals.file_mapping)
 			.finish()
 	}
 }
 
-// TODO: Investigate soundness
-// https://github.com/hermitcore/uhyve/issues/229
-#[allow(clippy::non_send_fields_in_send_ty)]
-unsafe impl<VirtIf: VirtualizationBackend> Send for UhyveVm<VirtIf> {}
-unsafe impl<VirtIf: VirtualizationBackend> Sync for UhyveVm<VirtIf> {}
+/// Initialize the page tables for the guest
+fn init_guest_mem(mem: &mut [u8]) {
+	debug!("Initialize guest memory");
+	crate::arch::init_guest_mem(
+		mem.try_into()
+			.expect("Guest memory is not large enough for pagetables"),
+	);
+}
+
+fn write_fdt_into_mem(mem: &MmapMemory, params: &Params) {
+	debug!("Writing FDT in memory");
+	let tsc_khz = detect_cpu_freq() * 1000;
+
+	let sep = params
+		.kernel_args
+		.iter()
+		.enumerate()
+		.find(|(_i, arg)| *arg == "--")
+		.map(|(i, _arg)| i)
+		.unwrap_or_else(|| params.kernel_args.len());
+
+	let fdt = Fdt::new()
+		.unwrap()
+		.tsc_khz(tsc_khz)
+		.unwrap()
+		.memory(mem.guest_address..mem.guest_address + mem.memory_size as u64)
+		.unwrap()
+		.kernel_args(&params.kernel_args[..sep])
+		.app_args(params.kernel_args.get(sep + 1..).unwrap_or_default())
+		.envs(env::vars())
+		.finish()
+		.unwrap();
+
+	debug!("fdt.len() = {}", fdt.len());
+	assert!(fdt.len() < (BOOT_INFO_ADDR - FDT_ADDR) as usize);
+	unsafe {
+		let fdt_ptr = mem.host_address.add(FDT_ADDR.as_u64() as usize);
+		fdt_ptr.copy_from_nonoverlapping(fdt.as_ptr(), fdt.len());
+	}
+}
+
+fn write_boot_info_to_mem(mem: &MmapMemory, load_info: LoadInfo, num_cpus: u64) {
+	debug!("Writing BootInfo to memory");
+	let boot_info = BootInfo {
+		hardware_info: HardwareInfo {
+			phys_addr_range: mem.guest_address.as_u64()
+				..mem.guest_address.as_u64() + mem.memory_size as u64,
+			serial_port_base: SerialPortBase::new(
+				(uhyve_interface::HypercallAddress::Uart as u16).into(),
+			),
+			device_tree: Some(FDT_ADDR.as_u64().try_into().unwrap()),
+		},
+		load_info,
+		platform_info: PlatformInfo::Uhyve {
+			has_pci: cfg!(target_os = "linux"),
+			num_cpus: num_cpus.try_into().unwrap(),
+			cpu_freq: NonZeroU32::new(detect_cpu_freq() * 1000),
+			boot_time: SystemTime::now().into(),
+		},
+	};
+	unsafe {
+		let raw_boot_info_ptr =
+			mem.host_address.add(BOOT_INFO_ADDR.as_u64() as usize) as *mut RawBootInfo;
+		*raw_boot_info_ptr = RawBootInfo::from(boot_info);
+	}
+}
+
+/// loads the kernel image into `mem`. `offset` is the start address of `mem`.
+fn load_kernel_to_mem(
+	kernel_path: &PathBuf,
+	mem: &mut [MaybeUninit<u8>],
+) -> LoadKernelResult<(LoadedKernel, GuestPhysAddr)> {
+	let elf = fs::read(kernel_path)?;
+	let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
+
+	// TODO: should be a random start address, if we have a relocatable executable
+	let kernel_address = GuestPhysAddr::new(object.start_addr().unwrap_or(0x400000));
+	let kernel_end_address = kernel_address + object.mem_size();
+
+	if kernel_end_address.as_u64() > mem.len() as u64 - arch::RAM_START.as_u64() {
+		return Err(LoadKernelError::InsufficientMemory);
+	}
+
+	Ok((
+		object.load_kernel(
+			// Safety: Slice only lives during this fn call, so no aliasing happens
+			&mut mem[kernel_address.as_u64() as usize..kernel_end_address.as_u64() as usize],
+			kernel_address.as_u64(),
+		),
+		kernel_address,
+	))
+}
 
 #[cfg(test)]
 mod tests {

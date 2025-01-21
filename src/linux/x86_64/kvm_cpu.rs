@@ -10,12 +10,13 @@ use crate::{
 	consts::*,
 	hypercall,
 	linux::KVM,
-	mem::MmapMemory,
 	params::Params,
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	virtio::*,
-	vm::{internal::VirtualizationBackendInternal, UhyveVm, VirtualizationBackend},
+	vm::{
+		internal::VirtualizationBackendInternal, KernelInfo, VirtualizationBackend, VmPeripherals,
+	},
 	HypervisorResult,
 };
 
@@ -32,6 +33,7 @@ const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
 
 pub struct KvmVm {
 	vm_fd: VmFd,
+	peripherals: Arc<VmPeripherals>,
 }
 impl VirtualizationBackendInternal for KvmVm {
 	type VCPU = KvmCpu;
@@ -40,14 +42,15 @@ impl VirtualizationBackendInternal for KvmVm {
 	fn new_cpu(
 		&self,
 		id: u32,
-		parent_vm: Arc<UhyveVm<KvmVm>>,
+		kernel_info: Arc<KernelInfo>,
 		enable_stats: bool,
 	) -> HypervisorResult<KvmCpu> {
 		let vcpu = self.vm_fd.create_vcpu(id as u64)?;
 		let mut kvcpu = KvmCpu {
 			id,
 			vcpu,
-			parent_vm: parent_vm.clone(),
+			peripherals: self.peripherals.clone(),
+			kernel_info,
 			pci_addr: None,
 			stats: if enable_stats {
 				Some(CpuStats::new(id as usize))
@@ -55,34 +58,36 @@ impl VirtualizationBackendInternal for KvmVm {
 				None
 			},
 		};
-		kvcpu.init(parent_vm.entry_point(), parent_vm.stack_address(), id)?;
+		kvcpu.init(id)?;
 
 		Ok(kvcpu)
 	}
 
-	fn new(mem: &MmapMemory, params: &Params) -> HypervisorResult<Self> {
+	fn new(peripherals: Arc<VmPeripherals>, params: &Params) -> HypervisorResult<Self> {
 		let vm = KVM.create_vm().unwrap();
 
-		let sz = std::cmp::min(mem.memory_size, KVM_32BIT_GAP_START);
+		let sz = std::cmp::min(peripherals.mem.memory_size, KVM_32BIT_GAP_START);
 
 		let kvm_mem = kvm_userspace_memory_region {
 			slot: 0,
-			flags: mem.flags,
+			flags: peripherals.mem.flags,
 			memory_size: sz as u64,
-			guest_phys_addr: mem.guest_address.as_u64(),
-			userspace_addr: mem.host_address as u64,
+			guest_phys_addr: peripherals.mem.guest_address.as_u64(),
+			userspace_addr: peripherals.mem.host_address as u64,
 		};
 
 		unsafe { vm.set_user_memory_region(kvm_mem) }?;
 
-		if mem.memory_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
+		if peripherals.mem.memory_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
 			let kvm_mem = kvm_userspace_memory_region {
 				slot: 1,
-				flags: mem.flags,
-				memory_size: (mem.memory_size - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
-				guest_phys_addr: mem.guest_address.as_u64()
+				flags: peripherals.mem.flags,
+				memory_size: (peripherals.mem.memory_size
+					- KVM_32BIT_GAP_START
+					- KVM_32BIT_GAP_SIZE) as u64,
+				guest_phys_addr: peripherals.mem.guest_address.as_u64()
 					+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
-				userspace_addr: (mem.host_address as usize
+				userspace_addr: (peripherals.mem.host_address as usize
 					+ KVM_32BIT_GAP_START
 					+ KVM_32BIT_GAP_SIZE) as u64,
 			};
@@ -141,7 +146,10 @@ impl VirtualizationBackendInternal for KvmVm {
 		let evtfd = EventFd::new(0).unwrap();
 		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET)?;
 
-		Ok(Self { vm_fd: vm })
+		Ok(Self {
+			vm_fd: vm,
+			peripherals,
+		})
 	}
 }
 
@@ -152,7 +160,9 @@ impl VirtualizationBackend for KvmVm {
 pub struct KvmCpu {
 	id: u32,
 	vcpu: VcpuFd,
-	parent_vm: Arc<UhyveVm<KvmVm>>,
+	peripherals: Arc<VmPeripherals>,
+	// TODO: Remove once the getenv/getargs hypercalls are removed
+	kernel_info: Arc<KernelInfo>,
 	pci_addr: Option<u32>,
 	stats: Option<CpuStats>,
 }
@@ -338,13 +348,12 @@ impl KvmCpu {
 		&mut self.vcpu
 	}
 
-	fn init(
-		&mut self,
-		entry_point: GuestPhysAddr,
-		stack_address: GuestPhysAddr,
-		cpu_id: u32,
-	) -> HypervisorResult<()> {
-		self.setup_long_mode(entry_point, stack_address, cpu_id)?;
+	fn init(&mut self, cpu_id: u32) -> HypervisorResult<()> {
+		self.setup_long_mode(
+			self.kernel_info.entry_point,
+			self.kernel_info.stack_address,
+			cpu_id,
+		)?;
 		self.setup_cpuid()?;
 
 		// be sure that the multiprocessor is runable
@@ -383,7 +392,7 @@ impl VirtualCPU for KvmCpu {
 								if let Some(pci_addr) = self.pci_addr {
 									if pci_addr & 0x1ff800 == 0 {
 										let virtio_device =
-											self.parent_vm.virtio_device.lock().unwrap();
+											self.peripherals.virtio_device.lock().unwrap();
 										virtio_device.handle_read(pci_addr & 0x3ff, addr);
 									} else {
 										unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
@@ -394,30 +403,30 @@ impl VirtualCPU for KvmCpu {
 							}
 							PCI_CONFIG_ADDRESS_PORT => {}
 							VIRTIO_PCI_STATUS => {
-								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
+								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
 								virtio_device.read_status(addr);
 							}
 							VIRTIO_PCI_HOST_FEATURES => {
-								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
+								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
 								virtio_device.read_host_features(addr);
 							}
 							VIRTIO_PCI_GUEST_FEATURES => {
 								let mut virtio_device =
-									self.parent_vm.virtio_device.lock().unwrap();
+									self.peripherals.virtio_device.lock().unwrap();
 								virtio_device.read_requested_features(addr);
 							}
 							VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
-								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
+								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
 								virtio_device
 									.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_OFF);
 							}
 							VIRTIO_PCI_ISR => {
 								let mut virtio_device =
-									self.parent_vm.virtio_device.lock().unwrap();
+									self.peripherals.virtio_device.lock().unwrap();
 								virtio_device.reset_interrupt()
 							}
 							VIRTIO_PCI_LINK_STATUS_MSIX_OFF => {
-								let virtio_device = self.parent_vm.virtio_device.lock().unwrap();
+								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
 								virtio_device.read_link_status(addr);
 							}
 							port => {
@@ -429,7 +438,7 @@ impl VirtualCPU for KvmCpu {
 						let data_addr =
 							GuestPhysAddr::new(unsafe { (*(addr.as_ptr() as *const u32)) as u64 });
 						if let Some(hypercall) = unsafe {
-							hypercall::address_to_hypercall(&self.parent_vm.mem, port, data_addr)
+							hypercall::address_to_hypercall(&self.peripherals.mem, port, data_addr)
 						} {
 							if let Some(s) = self.stats.as_mut() {
 								s.increment_val(VmExit::Hypercall(HypercallAddress::from(
@@ -438,16 +447,18 @@ impl VirtualCPU for KvmCpu {
 							}
 
 							match hypercall {
-								Hypercall::Cmdsize(syssize) => syssize
-									.update(self.parent_vm.kernel_path(), self.parent_vm.args()),
+								Hypercall::Cmdsize(syssize) => syssize.update(
+									&self.kernel_info.path,
+									&self.kernel_info.params.kernel_args,
+								),
 								Hypercall::Cmdval(syscmdval) => {
 									hypercall::copy_argv(
-										self.parent_vm.kernel_path().as_os_str(),
-										self.parent_vm.args(),
+										self.kernel_info.path.as_os_str(),
+										&self.kernel_info.params.kernel_args,
 										syscmdval,
-										&self.parent_vm.mem,
+										&self.peripherals.mem,
 									);
-									hypercall::copy_env(syscmdval, &self.parent_vm.mem);
+									hypercall::copy_env(syscmdval, &self.peripherals.mem);
 								}
 								Hypercall::Exit(sysexit) => {
 									return Ok(VcpuStopReason::Exit(sysexit.arg));
@@ -455,34 +466,34 @@ impl VirtualCPU for KvmCpu {
 								Hypercall::FileClose(sysclose) => hypercall::close(sysclose),
 								Hypercall::FileLseek(syslseek) => hypercall::lseek(syslseek),
 								Hypercall::FileOpen(sysopen) => hypercall::open(
-									&self.parent_vm.mem,
+									&self.peripherals.mem,
 									sysopen,
-									&mut self.parent_vm.file_mapping.lock().unwrap(),
+									&mut self.peripherals.file_mapping.lock().unwrap(),
 								),
 								Hypercall::FileRead(sysread) => {
-									hypercall::read(&self.parent_vm.mem, sysread)
+									hypercall::read(&self.peripherals.mem, sysread)
 								}
 								Hypercall::FileWrite(syswrite) => {
-									hypercall::write(&self.parent_vm, syswrite)?
+									hypercall::write(&self.peripherals, syswrite)?
 								}
 								Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
-									&self.parent_vm.mem,
+									&self.peripherals.mem,
 									sysunlink,
-									&mut self.parent_vm.file_mapping.lock().unwrap(),
+									&mut self.peripherals.file_mapping.lock().unwrap(),
 								),
 								Hypercall::SerialWriteByte(buf) => self
-									.parent_vm
+									.peripherals
 									.serial
 									.output(&[buf])
 									.unwrap_or_else(|e| error!("{e:?}")),
 								Hypercall::SerialWriteBuffer(sysserialwrite) => {
 									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 									let buf = unsafe {
-										self.parent_vm.mem.slice_at(sysserialwrite.buf, sysserialwrite.len)
+										self.peripherals.mem.slice_at(sysserialwrite.buf, sysserialwrite.len)
 			.expect("Systemcall parameters for SerialWriteBuffer are invalid")
 									};
 
-									self.parent_vm
+									self.peripherals
 										.serial
 										.output(buf)
 										.unwrap_or_else(|e| error!("{e:?}"))
@@ -499,7 +510,7 @@ impl VirtualCPU for KvmCpu {
 									if let Some(pci_addr) = self.pci_addr {
 										if pci_addr & 0x1ff800 == 0 {
 											let mut virtio_device =
-												self.parent_vm.virtio_device.lock().unwrap();
+												self.peripherals.virtio_device.lock().unwrap();
 											virtio_device.handle_write(pci_addr & 0x3ff, addr);
 										}
 									}
@@ -509,28 +520,28 @@ impl VirtualCPU for KvmCpu {
 								}
 								VIRTIO_PCI_STATUS => {
 									let mut virtio_device =
-										self.parent_vm.virtio_device.lock().unwrap();
+										self.peripherals.virtio_device.lock().unwrap();
 									virtio_device.write_status(addr);
 								}
 								VIRTIO_PCI_GUEST_FEATURES => {
 									let mut virtio_device =
-										self.parent_vm.virtio_device.lock().unwrap();
+										self.peripherals.virtio_device.lock().unwrap();
 									virtio_device.write_requested_features(addr);
 								}
 								VIRTIO_PCI_QUEUE_NOTIFY => {
 									let mut virtio_device =
-										self.parent_vm.virtio_device.lock().unwrap();
-									virtio_device.handle_notify_output(addr, &self.parent_vm.mem);
+										self.peripherals.virtio_device.lock().unwrap();
+									virtio_device.handle_notify_output(addr, &self.peripherals.mem);
 								}
 								VIRTIO_PCI_QUEUE_SEL => {
 									let mut virtio_device =
-										self.parent_vm.virtio_device.lock().unwrap();
+										self.peripherals.virtio_device.lock().unwrap();
 									virtio_device.write_selected_queue(addr);
 								}
 								VIRTIO_PCI_QUEUE_PFN => {
 									let mut virtio_device =
-										self.parent_vm.virtio_device.lock().unwrap();
-									virtio_device.write_pfn(addr, &self.parent_vm.mem);
+										self.peripherals.virtio_device.lock().unwrap();
+									virtio_device.write_pfn(addr, &self.peripherals.mem);
 								}
 								port => {
 									warn!("guest wrote to unknown I/O port {port:#x}");

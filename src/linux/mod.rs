@@ -30,7 +30,7 @@ use crate::{
 	serial::Destination,
 	stats::{CpuStats, VmStats},
 	vcpu::VirtualCPU,
-	vm::{internal::VirtualizationBackendInternal, UhyveVm, VmResult},
+	vm::{UhyveVm, VmResult},
 };
 
 static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
@@ -72,12 +72,10 @@ impl UhyveVm<KvmVm> {
 	/// Runs the VM.
 	///
 	/// Blocks until the VM has finished execution.
-	pub fn run(mut self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
+	pub fn run(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
 		KickSignal::register_handler().unwrap();
 
-		self.load_kernel().expect("Unabled to load the kernel");
-
-		if self.gdb_port.is_none() {
+		if self.kernel_info.params.gdb_port.is_none() {
 			self.run_no_gdb(cpu_affinity)
 		} else {
 			self.run_gdb(cpu_affinity)
@@ -88,19 +86,16 @@ impl UhyveVm<KvmVm> {
 		// After spinning up all vCPU threads, the main thread waits for any vCPU to end execution.
 		let barrier = Arc::new(Barrier::new(2));
 
-		let this = Arc::new(self);
-		let threads = (0..this.num_cpus())
-			.map(|cpu_id| {
-				let parent_vm = this.clone();
+		debug!("Starting vCPUs");
+		let threads = self
+			.vcpus
+			.into_iter()
+			.enumerate()
+			.map(|(cpu_id, mut cpu)| {
 				let barrier = barrier.clone();
 				let local_cpu_affinity = cpu_affinity
 					.as_ref()
-					.and_then(|core_ids| core_ids.get(cpu_id as usize).copied());
-
-				let mut cpu = parent_vm
-					.virt_backend
-					.new_cpu(cpu_id, parent_vm.clone(), this.get_params().stats)
-					.unwrap();
+					.and_then(|core_ids| core_ids.get(cpu_id).copied());
 
 				thread::spawn(move || {
 					debug!("Create thread for CPU {}", cpu_id);
@@ -132,6 +127,7 @@ impl UhyveVm<KvmVm> {
 				})
 			})
 			.collect::<Vec<_>>();
+		debug!("Waiting for first CPU to finish");
 
 		// Wait for one vCPU to return with an exit code.
 		barrier.wait();
@@ -159,7 +155,7 @@ impl UhyveVm<KvmVm> {
 			.iter()
 			.filter_map(|(_ret, stats)| stats.clone())
 			.collect();
-		let output = if let Destination::Buffer(b) = &this.serial.destination {
+		let output = if let Destination::Buffer(b) = &self.peripherals.serial.destination {
 			Some(String::from_utf8_lossy(&b.lock().unwrap()).into_owned())
 		} else {
 			None
@@ -187,16 +183,10 @@ impl UhyveVm<KvmVm> {
 			None => debug!("No affinity specified, not binding thread"),
 		}
 
-		let this = Arc::new(self);
-		let cpu = this
-			.virt_backend
-			// TODO: enable stats for gdb sessions as well
-			.new_cpu(cpu_id, this.clone(), false)
-			.unwrap();
-
-		let connection = wait_for_gdb_connection(this.gdb_port.unwrap()).unwrap();
+		let connection =
+			wait_for_gdb_connection(self.kernel_info.params.gdb_port.unwrap()).unwrap();
 		let debugger = GdbStub::new(connection);
-		let mut debuggable_vcpu = GdbUhyve::new(this.clone(), cpu);
+		let mut debuggable_vcpu = GdbUhyve::new(self);
 
 		let code = match debugger
 			.run_blocking::<UhyveGdbEventLoop>(&mut debuggable_vcpu)
@@ -214,11 +204,12 @@ impl UhyveVm<KvmVm> {
 			}
 		};
 
-		let output = if let Destination::Buffer(b) = &this.serial.destination {
-			Some(String::from_utf8_lossy(&b.lock().unwrap()).into_owned())
-		} else {
-			None
-		};
+		let output =
+			if let Destination::Buffer(b) = &debuggable_vcpu.vm.peripherals.serial.destination {
+				Some(String::from_utf8_lossy(&b.lock().unwrap()).into_owned())
+			} else {
+				None
+			};
 
 		VmResult {
 			code,
