@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{num::NonZeroU32, sync::Arc};
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
@@ -643,5 +643,9 @@ impl VirtualCPU for KvmCpu {
 		println!("-----");
 		println!("apic_base: {:#18x}", sregs.apic_base);
 		println!("interrupt_bitmap: {:x?}", sregs.interrupt_bitmap);
+	}
+
+	fn get_cpu_frequency(&self) -> Option<NonZeroU32> {
+		self.vcpu.get_tsc_khz().map(|f| f.try_into().unwrap()).ok()
 	}
 }

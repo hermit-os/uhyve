@@ -15,17 +15,12 @@ use hermit_entry::{
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
 use internal::VirtualizationBackendInternal;
-use log::{error, warn};
-use sysinfo::System;
+use log::error;
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
 
-#[cfg(target_arch = "x86_64")]
-use crate::arch::x86_64::{
-	detect_freq_from_cpuid, detect_freq_from_cpuid_hypervisor_info, get_cpu_frequency_from_os,
-};
 use crate::{
-	arch::{self, FrequencyDetectionFailed},
+	arch,
 	consts::*,
 	fdt::Fdt,
 	isolation::filemap::UhyveFileMap,
@@ -52,58 +47,6 @@ pub enum LoadKernelError {
 }
 
 pub type LoadKernelResult<T> = Result<T, LoadKernelError>;
-
-pub fn detect_freq_from_sysinfo() -> std::result::Result<u32, FrequencyDetectionFailed> {
-	debug!("Trying to detect CPU frequency using sysinfo");
-
-	let mut system = System::new();
-	system.refresh_cpu_frequency();
-
-	let frequency = system.cpus().first().unwrap().frequency();
-	println!("frequencies: {frequency:?}");
-
-	if !system.cpus().iter().all(|cpu| cpu.frequency() == frequency) {
-		// Even if the CPU frequencies are not all equal, the
-		// frequency of the "first" CPU is treated as "authoritative".
-		eprintln!("CPU frequencies are not all equal");
-	}
-
-	if frequency > 0 {
-		Ok(frequency.try_into().unwrap())
-	} else {
-		Err(FrequencyDetectionFailed)
-	}
-}
-
-// TODO: move to architecture specific section
-fn detect_cpu_freq() -> u32 {
-	#[cfg(target_arch = "aarch64")]
-	let mhz: u32 = detect_freq_from_sysinfo().unwrap_or_else(|_| {
-		debug!("Failed to detect using sysinfo");
-		0
-	});
-	#[cfg(target_arch = "x86_64")]
-	let mhz = {
-		let mhz: u32 = detect_freq_from_sysinfo().unwrap_or_else(|_| {
-			debug!("Failed to detect using sysinfo");
-			let cpuid = raw_cpuid::CpuId::new();
-			detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
-				debug!("Failed to detect from cpuid");
-				detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
-					debug!("Failed to detect from hypervisor_info");
-					get_cpu_frequency_from_os().unwrap_or(0)
-				})
-			})
-		});
-		debug!("detected a cpu frequency of {} Mhz", mhz);
-
-		mhz
-	};
-	if mhz == 0 {
-		warn!("Unable to determine processor frequency");
-	}
-	mhz
-}
 
 #[cfg(target_os = "linux")]
 pub type DefaultBackend = crate::linux::x86_64::kvm_cpu::KvmVm;
@@ -254,10 +197,11 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			)
 		}
 
-		// TODO: Get frequency
+		let freq = vcpus[0].get_cpu_frequency();
 
-		write_fdt_into_mem(&peripherals.mem, &kernel_info.params);
-		write_boot_info_to_mem(&peripherals.mem, load_info, cpu_count as u64);
+		write_fdt_into_mem(&peripherals.mem, &kernel_info.params, freq);
+		write_boot_info_to_mem(&peripherals.mem, load_info, cpu_count as u64, freq);
+
 		init_guest_mem(
 			unsafe { peripherals.mem.as_slice_mut() }, // slice only lives during this fn call
 		);
@@ -388,9 +332,8 @@ fn init_guest_mem(mem: &mut [u8]) {
 	);
 }
 
-fn write_fdt_into_mem(mem: &MmapMemory, params: &Params) {
+fn write_fdt_into_mem(mem: &MmapMemory, params: &Params, cpu_freq: Option<NonZeroU32>) {
 	debug!("Writing FDT in memory");
-	let tsc_khz = detect_cpu_freq() * 1000;
 
 	let sep = params
 		.kernel_args
@@ -400,17 +343,17 @@ fn write_fdt_into_mem(mem: &MmapMemory, params: &Params) {
 		.map(|(i, _arg)| i)
 		.unwrap_or_else(|| params.kernel_args.len());
 
-	let fdt = Fdt::new()
-		.unwrap()
-		.tsc_khz(tsc_khz)
+	let mut fdt = Fdt::new()
 		.unwrap()
 		.memory(mem.guest_address..mem.guest_address + mem.memory_size as u64)
 		.unwrap()
 		.kernel_args(&params.kernel_args[..sep])
 		.app_args(params.kernel_args.get(sep + 1..).unwrap_or_default())
-		.envs(env::vars())
-		.finish()
-		.unwrap();
+		.envs(env::vars());
+	if let Some(tsc_khz) = cpu_freq {
+		fdt = fdt.tsc_khz(tsc_khz.into()).unwrap();
+	}
+	let fdt = fdt.finish().unwrap();
 
 	debug!("fdt.len() = {}", fdt.len());
 	assert!(fdt.len() < (BOOT_INFO_ADDR - FDT_ADDR) as usize);
@@ -420,7 +363,12 @@ fn write_fdt_into_mem(mem: &MmapMemory, params: &Params) {
 	}
 }
 
-fn write_boot_info_to_mem(mem: &MmapMemory, load_info: LoadInfo, num_cpus: u64) {
+fn write_boot_info_to_mem(
+	mem: &MmapMemory,
+	load_info: LoadInfo,
+	num_cpus: u64,
+	cpu_freq: Option<NonZeroU32>,
+) {
 	debug!("Writing BootInfo to memory");
 	let boot_info = BootInfo {
 		hardware_info: HardwareInfo {
@@ -435,7 +383,7 @@ fn write_boot_info_to_mem(mem: &MmapMemory, load_info: LoadInfo, num_cpus: u64) 
 		platform_info: PlatformInfo::Uhyve {
 			has_pci: cfg!(target_os = "linux"),
 			num_cpus: num_cpus.try_into().unwrap(),
-			cpu_freq: NonZeroU32::new(detect_cpu_freq() * 1000),
+			cpu_freq,
 			boot_time: SystemTime::now().into(),
 		},
 	};
@@ -470,26 +418,4 @@ fn load_kernel_to_mem(
 		),
 		kernel_address,
 	))
-}
-
-#[cfg(test)]
-mod tests {
-	#[test]
-	// derived from test_get_cpu_frequency_from_os() in src/arch/x86_64/mod.rs
-	fn test_detect_freq_from_sysinfo() {
-		let freq_res = crate::vm::detect_freq_from_sysinfo();
-
-		#[cfg(target_os = "macos")]
-		// The CI always returns 0 as freq and thus a None in the MacOS CI
-		if option_env!("CI").is_some() {
-			return;
-		}
-
-		assert!(freq_res.is_ok());
-		let freq = freq_res.unwrap();
-		// The unit of the value for the first core must be in MHz.
-		// We presume that more than 10 GHz is incorrect.
-		assert!(freq > 0);
-		assert!(freq < 10000);
-	}
 }

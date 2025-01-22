@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use crate::stats::CpuStats;
 /// The trait and fns that a virtual cpu requires
 use crate::{os::DebugExitInfo, HypervisorResult};
@@ -26,4 +28,7 @@ pub trait VirtualCPU: Sized + Send {
 	/// Prints the VCPU's registers to stdout.
 	#[allow(dead_code)]
 	fn print_registers(&self);
+
+	/// Queries the CPUs base frequency in kHz
+	fn get_cpu_frequency(&self) -> Option<NonZeroU32>;
 }

@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 #![allow(clippy::identity_op)]
 
-use std::sync::Arc;
+use std::{num::NonZeroU32, sync::Arc};
 
 use log::debug;
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress};
@@ -390,6 +390,11 @@ impl VirtualCPU for XhyveCpu {
 			 x24   : {x24:016x}  x25   : {x25:016x}  x26   : {x26:016x}\n\
 			 x27   : {x27:016x}  x28   : {x28:016x}  x29   : {x29:016x}\n",
 		);
+	}
+
+	fn get_cpu_frequency(&self) -> Option<NonZeroU32> {
+		warn!("CPU base frequency detection not implemented!");
+		None
 	}
 }
 
