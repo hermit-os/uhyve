@@ -1,6 +1,6 @@
+use crate::stats::CpuStats;
 /// The trait and fns that a virtual cpu requires
 use crate::{os::DebugExitInfo, HypervisorResult};
-use crate::{stats::CpuStats, vm::VirtualizationBackend};
 
 /// Reasons for vCPU exits.
 #[allow(dead_code)]
@@ -16,9 +16,7 @@ pub enum VcpuStopReason {
 }
 
 /// Functionality a virtual CPU backend must provide to be used by uhyve
-pub trait VirtualCPU: Sized {
-	type VirtIf: VirtualizationBackend;
-
+pub trait VirtualCPU: Sized + Send {
 	/// Continues execution.
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason>;
 

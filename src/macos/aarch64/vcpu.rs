@@ -199,7 +199,6 @@ impl XhyveCpu {
 }
 
 impl VirtualCPU for XhyveCpu {
-	type VirtIf = XhyveVm;
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
 			self.vcpu.run()?;
