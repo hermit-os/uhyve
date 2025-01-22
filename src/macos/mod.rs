@@ -20,7 +20,6 @@ use crate::{
 	vm::{UhyveVm, VirtualizationBackend, VmResult},
 };
 
-pub type HypervisorError = xhypervisor::Error;
 pub type DebugExitInfo = ();
 
 impl UhyveVm<XhyveVm> {

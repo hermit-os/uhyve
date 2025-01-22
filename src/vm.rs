@@ -26,11 +26,11 @@ use crate::{
 	fdt::Fdt,
 	isolation::filemap::UhyveFileMap,
 	mem::MmapMemory,
-	os::HypervisorError,
 	params::Params,
 	serial::UhyveSerial,
 	stats::VmStats,
 	virtio::*,
+	HypervisorError,
 };
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
