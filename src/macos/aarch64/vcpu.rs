@@ -272,19 +272,19 @@ impl VirtualCPU for XhyveCpu {
 								_ => {
 									error!("Unable to handle exception {:?}", exception);
 									self.print_registers();
-									return Err(xhypervisor::Error::Error);
+									return Err(xhypervisor::Error::Error.into());
 								}
 							}
 						}
 					} else {
 						error!("Unsupported exception class: 0x{:x}", ec);
 						self.print_registers();
-						return Err(xhypervisor::Error::Error);
+						return Err(xhypervisor::Error::Error.into());
 					}
 				}
 				_ => {
 					error!("Unknown exit reason: {:?}", reason);
-					return Err(xhypervisor::Error::Error);
+					return Err(xhypervisor::Error::Error.into());
 				}
 			}
 		}

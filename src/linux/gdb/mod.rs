@@ -27,7 +27,6 @@ use uhyve_interface::GuestVirtAddr;
 use x86_64::registers::debug::Dr6Flags;
 
 use self::breakpoints::SwBreakpoints;
-use super::HypervisorError;
 use crate::{
 	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
 	consts::BOOT_PML4,
@@ -37,6 +36,7 @@ use crate::{
 	},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::UhyveVm,
+	HypervisorError, HypervisorResult,
 };
 
 pub struct GdbUhyve {
@@ -87,7 +87,7 @@ impl Target for GdbUhyve {
 }
 
 impl GdbUhyve {
-	fn apply_guest_debug(&mut self, step: bool) -> Result<(), kvm_ioctls::Error> {
+	fn apply_guest_debug(&mut self, step: bool) -> HypervisorResult<()> {
 		let debugreg = self.hw_breakpoints.registers();
 		let mut control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_SW_BP | KVM_GUESTDBG_USE_HW_BP;
 		if step {
@@ -98,10 +98,13 @@ impl GdbUhyve {
 			pad: 0,
 			arch: kvm_guest_debug_arch { debugreg },
 		};
-		self.vcpu.get_vcpu().set_guest_debug(&debug_struct)
+		self.vcpu
+			.get_vcpu()
+			.set_guest_debug(&debug_struct)
+			.map_err(HypervisorError::from)
 	}
 
-	pub fn run(&mut self) -> Result<SingleThreadStopReason<u64>, kvm_ioctls::Error> {
+	pub fn run(&mut self) -> HypervisorResult<SingleThreadStopReason<u64>> {
 		let stop_reason = match self.vcpu.r#continue()? {
 			VcpuStopReason::Debug(debug) => match debug.exception {
 				DB_VECTOR => {
@@ -170,7 +173,7 @@ impl target::ext::base::singlethread::SingleThreadResume for GdbUhyve {
 	fn resume(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
 		if signal.is_some() {
 			// cannot resume with signal
-			return Err(kvm_ioctls::Error::new(EINVAL));
+			return Err(kvm_ioctls::Error::new(EINVAL).into());
 		}
 
 		self.apply_guest_debug(false)
@@ -188,7 +191,7 @@ impl target::ext::base::singlethread::SingleThreadSingleStep for GdbUhyve {
 	fn step(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
 		if signal.is_some() {
 			// cannot step with signal
-			return Err(kvm_ioctls::Error::new(EINVAL));
+			return Err(kvm_ioctls::Error::new(EINVAL).into());
 		}
 
 		self.apply_guest_debug(true)

@@ -46,10 +46,6 @@ impl UhyveSerial {
 						.open(path)
 						.map_err(|e| {
 							error!("Cant create kernel output file: {e}");
-							// TODO: proper error handling
-							#[cfg(target_os = "macos")]
-							panic!();
-							#[cfg(not(target_os = "macos"))]
 							e
 						})?;
 					Destination::File(Arc::new(Mutex::new(f)))

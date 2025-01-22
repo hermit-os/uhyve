@@ -3,7 +3,6 @@ pub mod x86_64;
 
 pub mod gdb;
 
-pub type HypervisorError = kvm_ioctls::Error;
 pub type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
 
 use std::{
@@ -122,12 +121,12 @@ impl UhyveVm<KvmVm> {
 								// Let the main thread continue with kicking the other vCPUs
 								barrier.wait();
 							}
-							(code, stats)
+							(Ok(code), stats)
 						}
 						Err(err) => {
 							error!("CPU {} crashed with {:?}", cpu_id, err);
 							barrier.wait();
-							(Some(err.errno()), None)
+							(Err(err), None)
 						}
 					}
 				})
@@ -145,9 +144,14 @@ impl UhyveVm<KvmVm> {
 			.into_iter()
 			.map(|thread| thread.join().unwrap())
 			.collect::<Vec<_>>();
-		let code = match cpu_results.iter().filter_map(|(ret, _stats)| *ret).count() {
+		let code = match cpu_results
+			.iter()
+			.filter_map(|(ret, _stats)| ret.as_ref().ok())
+			.filter_map(|ret| *ret)
+			.count()
+		{
 			0 => panic!("No return code from any CPU? Maybe all have been kicked?"),
-			1 => cpu_results[0].0.unwrap(),
+			1 => cpu_results[0].0.as_ref().unwrap().unwrap(),
 			_ => panic!("more than one thread finished with an exit code (codes: {cpu_results:?})"),
 		};
 
