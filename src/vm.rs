@@ -2,11 +2,14 @@ use std::{
 	env, fmt, fs, io,
 	mem::MaybeUninit,
 	num::NonZeroU32,
+	os::unix::prelude::JoinHandleExt,
 	path::PathBuf,
-	sync::{Arc, Mutex},
+	sync::{Arc, Barrier, Mutex},
+	thread,
 	time::SystemTime,
 };
 
+use core_affinity::CoreId;
 use hermit_entry::{
 	boot_info::{BootInfo, HardwareInfo, LoadInfo, PlatformInfo, RawBootInfo, SerialPortBase},
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
@@ -27,9 +30,11 @@ use crate::{
 	fdt::Fdt,
 	isolation::filemap::UhyveFileMap,
 	mem::MmapMemory,
+	os::KickSignal,
 	params::Params,
-	serial::UhyveSerial,
-	stats::VmStats,
+	serial::{Destination, UhyveSerial},
+	stats::{CpuStats, VmStats},
+	vcpu::VirtualCPU,
 	virtio::*,
 	HypervisorError,
 };
@@ -263,6 +268,100 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			kernel_info,
 			vcpus,
 		})
+	}
+
+	pub fn run_no_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
+		KickSignal::register_handler().unwrap();
+
+		// After spinning up all vCPU threads, the main thread waits for any vCPU to end execution.
+		let barrier = Arc::new(Barrier::new(2));
+
+		debug!("Starting vCPUs");
+		let threads = self
+			.vcpus
+			.into_iter()
+			.enumerate()
+			.map(|(cpu_id, mut cpu)| {
+				let barrier = barrier.clone();
+				let local_cpu_affinity = cpu_affinity
+					.as_ref()
+					.and_then(|core_ids| core_ids.get(cpu_id).copied());
+
+				thread::spawn(move || {
+					debug!("Create thread for CPU {}", cpu_id);
+					match local_cpu_affinity {
+						Some(core_id) => {
+							debug!("Trying to pin thread {} to CPU {}", cpu_id, core_id.id);
+							core_affinity::set_for_current(core_id); // This does not return an error if it fails :(
+						}
+						None => debug!("No affinity specified, not binding thread"),
+					}
+
+					thread::sleep(std::time::Duration::from_millis(cpu_id as u64 * 50));
+
+					// jump into the VM and execute code of the guest
+					match cpu.run() {
+						Ok((code, stats)) => {
+							if code.is_some() {
+								// Let the main thread continue with kicking the other vCPUs
+								barrier.wait();
+							}
+							(Ok(code), stats)
+						}
+						Err(err) => {
+							error!("CPU {} crashed with {:?}", cpu_id, err);
+							barrier.wait();
+							(Err(err), None)
+						}
+					}
+				})
+			})
+			.collect::<Vec<_>>();
+		debug!("Waiting for first CPU to finish");
+
+		// Wait for one vCPU to return with an exit code.
+		barrier.wait();
+
+		for thread in &threads {
+			KickSignal::pthread_kill(thread.as_pthread_t()).unwrap();
+		}
+
+		let cpu_results = threads
+			.into_iter()
+			.map(|thread| thread.join().unwrap())
+			.collect::<Vec<_>>();
+		let code = match cpu_results
+			.iter()
+			.filter_map(|(ret, _stats)| ret.as_ref().ok())
+			.filter_map(|ret| *ret)
+			.count()
+		{
+			0 => panic!(
+				"No return code from any CPU? Maybe all have been kick
+d?"
+			),
+			1 => cpu_results[0].0.as_ref().unwrap().unwrap(),
+			_ => panic!(
+				"more than one thread finished with an exit code (code
+: {cpu_results:?})"
+			),
+		};
+
+		let stats: Vec<CpuStats> = cpu_results
+			.iter()
+			.filter_map(|(_ret, stats)| stats.clone())
+			.collect();
+		let output = if let Destination::Buffer(b) = &self.peripherals.serial.destination {
+			Some(String::from_utf8_lossy(&b.lock().unwrap()).into_owned())
+		} else {
+			None
+		};
+
+		VmResult {
+			code,
+			output,
+			stats: Some(VmStats::new(&stats)),
+		}
 	}
 }
 

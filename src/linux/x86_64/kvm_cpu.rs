@@ -369,8 +369,6 @@ impl KvmCpu {
 }
 
 impl VirtualCPU for KvmCpu {
-	type VirtIf = KvmVm;
-
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
 			match self.vcpu.run() {
