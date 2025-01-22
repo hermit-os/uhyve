@@ -2,6 +2,7 @@
 
 use std::{
 	arch::x86_64::__cpuid_count,
+	num::NonZeroU32,
 	sync::{Arc, LazyLock, Mutex},
 };
 
@@ -1019,6 +1020,11 @@ impl VirtualCPU for XhyveCpu {
 			"VMCS link pointer   {:016x}",
 			self.vcpu.read_vmcs(VMCS_GUEST_LINK_POINTER).unwrap()
 		);
+	}
+
+	fn get_cpu_frequency(&self) -> Option<NonZeroU32> {
+		warn!("CPU base frequency detection not implemented!");
+		None
 	}
 }
 
