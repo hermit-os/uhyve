@@ -1,13 +1,14 @@
-pub mod paging;
-pub mod registers;
+mod paging;
+pub(crate) mod registers;
 
+use paging::initialize_pagetables;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 use x86_64::structures::paging::{
 	page_table::{FrameError, PageTableEntry},
 	PageTable, PageTableIndex,
 };
 
-use crate::{arch::paging::initialize_pagetables, mem::MmapMemory, paging::PagetableError};
+use crate::{mem::MmapMemory, paging::PagetableError};
 
 pub const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x00);
 
@@ -62,10 +63,7 @@ mod tests {
 	use x86_64::structures::paging::PageTableFlags;
 
 	use super::*;
-	use crate::{
-		arch::paging::MIN_PHYSMEM_SIZE,
-		consts::{BOOT_PDE, BOOT_PDPTE, BOOT_PML4},
-	};
+	use crate::consts::{BOOT_PDE, BOOT_PDPTE, BOOT_PML4};
 
 	#[test]
 	fn test_virt_to_phys() {
@@ -76,7 +74,7 @@ mod tests {
 
 		let mem = MmapMemory::new(
 			0,
-			align_up!(MIN_PHYSMEM_SIZE * 2, 0x20_0000),
+			align_up!(paging::MIN_PHYSMEM_SIZE * 2, 0x20_0000),
 			GuestPhysAddr::zero(),
 			true,
 			true,

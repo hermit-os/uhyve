@@ -46,7 +46,7 @@ pub enum LoadKernelError {
 	InsufficientMemory,
 }
 
-pub type LoadKernelResult<T> = Result<T, LoadKernelError>;
+type LoadKernelResult<T> = Result<T, LoadKernelError>;
 
 #[cfg(target_os = "linux")]
 pub type DefaultBackend = crate::linux::x86_64::kvm_cpu::KvmVm;

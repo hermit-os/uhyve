@@ -30,7 +30,7 @@ use crate::{
 	HypervisorError, HypervisorResult,
 };
 
-pub struct GdbUhyve {
+pub(crate) struct GdbUhyve {
 	pub(crate) vm: UhyveVm<KvmVm>,
 	hw_breakpoints: HwBreakpoints,
 	sw_breakpoints: SwBreakpoints,
@@ -192,7 +192,7 @@ impl target::ext::base::singlethread::SingleThreadSingleStep for GdbUhyve {
 	}
 }
 
-pub enum UhyveGdbEventLoop {}
+pub(crate) enum UhyveGdbEventLoop {}
 
 impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 	type Target = GdbUhyve;
