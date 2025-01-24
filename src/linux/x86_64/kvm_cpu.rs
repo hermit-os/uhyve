@@ -340,12 +340,8 @@ impl KvmCpu {
 		println!("{name}       {seg:?}");
 	}
 
-	pub fn get_vcpu(&self) -> &VcpuFd {
+	pub(crate) fn get_vcpu(&self) -> &VcpuFd {
 		&self.vcpu
-	}
-
-	pub fn get_vcpu_mut(&mut self) -> &mut VcpuFd {
-		&mut self.vcpu
 	}
 
 	fn init(&mut self, cpu_id: u32) -> HypervisorResult<()> {

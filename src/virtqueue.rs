@@ -1,3 +1,4 @@
+#![cfg_attr(target_os = "macos", allow(dead_code))] // no virtio implementation for macos
 use std::{marker::PhantomData, mem, mem::size_of};
 
 use crate::consts::PAGE_SIZE;
@@ -68,6 +69,7 @@ pub struct Virtqueue {
 	pub available_ring: VringAvailable,
 	pub used_ring: VringUsed,
 	pub last_seen_available: u16,
+	#[allow(dead_code)]
 	pub last_seen_used: u16,
 	pub queue_size: u16,
 }

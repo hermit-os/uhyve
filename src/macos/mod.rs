@@ -42,7 +42,7 @@ impl KickSignal {
 	}
 }
 
-pub type DebugExitInfo = ();
+pub(crate) type DebugExitInfo = ();
 
 impl UhyveVm<XhyveVm> {
 	/// Runs the VM.

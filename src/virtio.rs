@@ -1,3 +1,4 @@
+#![cfg_attr(target_os = "macos", allow(dead_code))] // no virtio implementation for macos
 use std::{fmt, mem::size_of, ptr::copy_nonoverlapping, sync::Mutex, vec::Vec};
 
 use log::info;
@@ -81,7 +82,6 @@ macro_rules! write_u16 {
 	};
 }
 
-#[macro_export]
 macro_rules! read_u32 {
 	($registers:expr, $address:expr) => {
 		($registers[$address] as u32)

@@ -17,21 +17,21 @@ mod fdt;
 #[cfg(target_os = "linux")]
 pub mod linux;
 #[cfg(target_os = "linux")]
-pub use linux as os;
+use linux as os;
 #[cfg(target_os = "macos")]
 pub mod macos;
 #[cfg(target_os = "macos")]
-pub use macos as os;
+use macos as os;
 mod hypercall;
 mod isolation;
 pub mod mem;
-pub mod paging;
+pub(crate) mod paging;
 pub mod params;
 mod serial;
 pub mod stats;
 mod vcpu;
-pub mod virtio;
-pub mod virtqueue;
+mod virtio;
+mod virtqueue;
 pub mod vm;
 
 pub use arch::*;
