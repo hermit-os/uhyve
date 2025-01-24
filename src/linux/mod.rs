@@ -30,7 +30,7 @@ use crate::{
 	serial::Destination,
 	stats::{CpuStats, VmStats},
 	vcpu::VirtualCPU,
-	vm::{UhyveVm, VirtualizationBackend, VmResult},
+	vm::{internal::VirtualizationBackendInternal, UhyveVm, VmResult},
 };
 
 static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());

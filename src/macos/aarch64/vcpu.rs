@@ -20,12 +20,12 @@ use crate::{
 	params::Params,
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
-	vm::{UhyveVm, VirtualizationBackend},
+	vm::{internal::VirtualizationBackendInternal, UhyveVm, VirtualizationBackend},
 	HypervisorResult,
 };
 
 pub struct XhyveVm {}
-impl VirtualizationBackend for XhyveVm {
+impl VirtualizationBackendInternal for XhyveVm {
 	type VCPU = XhyveCpu;
 	const NAME: &str = "XhyveVm";
 
@@ -58,6 +58,10 @@ impl VirtualizationBackend for XhyveVm {
 		map_mem(unsafe { mem.as_slice_mut() }, 0, MemPerm::ExecAndWrite)?;
 		Ok(Self {})
 	}
+}
+
+impl VirtualizationBackend for XhyveVm {
+	type BACKEND = Self;
 }
 
 pub struct XhyveCpu {

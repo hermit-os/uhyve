@@ -15,7 +15,7 @@ use crate::{
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	virtio::*,
-	vm::{UhyveVm, VirtualizationBackend},
+	vm::{internal::VirtualizationBackendInternal, UhyveVm, VirtualizationBackend},
 	HypervisorResult,
 };
 
@@ -33,7 +33,7 @@ const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
 pub struct KvmVm {
 	vm_fd: VmFd,
 }
-impl VirtualizationBackend for KvmVm {
+impl VirtualizationBackendInternal for KvmVm {
 	type VCPU = KvmCpu;
 	const NAME: &str = "KvmVm";
 
@@ -143,6 +143,10 @@ impl VirtualizationBackend for KvmVm {
 
 		Ok(Self { vm_fd: vm })
 	}
+}
+
+impl VirtualizationBackend for KvmVm {
+	type BACKEND = Self;
 }
 
 pub struct KvmCpu {

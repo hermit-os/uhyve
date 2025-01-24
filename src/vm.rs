@@ -2,7 +2,7 @@ use std::{
 	env, fmt, fs, io,
 	num::NonZeroU32,
 	path::PathBuf,
-	ptr, str,
+	ptr,
 	sync::{Arc, Mutex},
 	time::SystemTime,
 };
@@ -11,6 +11,7 @@ use hermit_entry::{
 	boot_info::{BootInfo, HardwareInfo, PlatformInfo, RawBootInfo, SerialPortBase},
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
+use internal::VirtualizationBackendInternal;
 use log::{error, warn};
 use sysinfo::System;
 use thiserror::Error;
@@ -104,20 +105,37 @@ pub type DefaultBackend = crate::linux::x86_64::kvm_cpu::KvmVm;
 #[cfg(target_os = "macos")]
 pub type DefaultBackend = crate::macos::XhyveVm;
 
-/// Trait marking a interface for creating (accelerated) VMs.
-pub trait VirtualizationBackend: Sized {
-	type VCPU;
-	const NAME: &str;
+pub(crate) mod internal {
+	use std::sync::Arc;
 
-	/// Create a new CPU object
-	fn new_cpu(
-		&self,
-		id: u32,
-		parent_vm: Arc<UhyveVm<Self>>,
-		enable_stats: bool,
-	) -> HypervisorResult<Self::VCPU>;
+	use crate::{
+		mem::MmapMemory,
+		vcpu::VirtualCPU,
+		vm::{Params, UhyveVm, VirtualizationBackend},
+		HypervisorResult,
+	};
 
-	fn new(memory: &MmapMemory, params: &Params) -> HypervisorResult<Self>;
+	/// Trait marking a interface for creating (accelerated) VMs.
+	pub trait VirtualizationBackendInternal: Sized {
+		type VCPU: 'static + VirtualCPU;
+		const NAME: &str;
+
+		/// Create a new CPU object
+		fn new_cpu(
+			&self,
+			id: u32,
+			parent_vm: Arc<UhyveVm<Self>>,
+			enable_stats: bool,
+		) -> HypervisorResult<Self::VCPU>
+		where
+			Self: VirtualizationBackend;
+
+		fn new(memory: &MmapMemory, params: &Params) -> HypervisorResult<Self>;
+	}
+}
+
+pub trait VirtualizationBackend {
+	type BACKEND: internal::VirtualizationBackendInternal;
 }
 
 #[derive(Debug, Clone)]
@@ -139,7 +157,7 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	#[allow(dead_code)] // gdb is not supported on macos
 	pub(super) gdb_port: Option<u16>,
 	pub(crate) file_mapping: Mutex<UhyveFileMap>,
-	pub(crate) virt_backend: VirtBackend,
+	pub(crate) virt_backend: VirtBackend::BACKEND,
 	params: Params,
 	pub(crate) serial: UhyveSerial,
 }
@@ -158,7 +176,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		#[allow(clippy::arc_with_non_send_sync)]
 		let virtio_device = Arc::new(Mutex::new(VirtioNetPciDevice::new()));
 
-		let virt_backend = VirtBackend::new(&mem, &params)?;
+		let virt_backend = VirtBackend::BACKEND::new(&mem, &params)?;
 
 		let cpu_count = params.cpu_count.get();
 
@@ -328,7 +346,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		f.debug_struct(&format!("UhyveVm<{}>", VirtIf::NAME))
+		f.debug_struct(&format!("UhyveVm<{}>", VirtIf::BACKEND::NAME))
 			.field("entry_point", &self.entry_point)
 			.field("stack_address", &self.stack_address)
 			.field("mem", &self.mem)

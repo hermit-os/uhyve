@@ -17,7 +17,7 @@ pub use crate::macos::x86_64::vcpu::{XhyveCpu, XhyveVm};
 use crate::{
 	stats::VmStats,
 	vcpu::VirtualCPU,
-	vm::{UhyveVm, VirtualizationBackend, VmResult},
+	vm::{internal::VirtualizationBackendInternal, UhyveVm, VmResult},
 };
 
 pub type DebugExitInfo = ();
