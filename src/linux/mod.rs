@@ -156,7 +156,7 @@ impl UhyveVm<KvmVm> {
 			.filter_map(|(_ret, stats)| stats.clone())
 			.collect();
 		let output = if let Destination::Buffer(b) = &this.serial.destination {
-			Some(b.lock().unwrap().clone())
+			Some(String::from_utf8_lossy(&b.lock().unwrap()).into_owned())
 		} else {
 			None
 		};
@@ -211,7 +211,7 @@ impl UhyveVm<KvmVm> {
 		};
 
 		let output = if let Destination::Buffer(b) = &this.serial.destination {
-			Some(b.lock().unwrap().clone())
+			Some(String::from_utf8_lossy(&b.lock().unwrap()).into_owned())
 		} else {
 			None
 		};
