@@ -53,6 +53,15 @@ impl Fdt {
 		self.writer.finish()
 	}
 
+	/// Adds a `/hermit,tsc` node to the FDT.
+	pub fn tsc_khz(mut self, tsc_khz: u32) -> FdtWriterResult<Self> {
+		let tsc_khz_node = self.writer.begin_node("hermit,tsc")?;
+		self.writer.property_u32("khz", tsc_khz)?;
+		self.writer.end_node(tsc_khz_node)?;
+
+		Ok(self)
+	}
+
 	/// Adds a `/memory` node to the FDT.
 	pub fn memory(mut self, memory: Range<GuestPhysAddr>) -> FdtWriterResult<Self> {
 		let node_name = format!("memory@{:x}", memory.start);
