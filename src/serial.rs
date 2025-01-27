@@ -2,7 +2,6 @@
 use std::{
 	fs::{File, OpenOptions},
 	io::{self, Write},
-	str,
 	sync::{Arc, Mutex},
 };
 
@@ -16,7 +15,7 @@ pub enum Destination {
 	/// Redirect output to a file.
 	File(Arc<Mutex<File>>),
 	/// Redirect output to a buffer.
-	Buffer(Arc<Mutex<String>>),
+	Buffer(Arc<Mutex<Vec<u8>>>),
 	/// Ignore all serial output.
 	None,
 }
@@ -37,7 +36,7 @@ impl UhyveSerial {
 				params::Output::None => Destination::None,
 				params::Output::StdIo => Destination::StdIo,
 				params::Output::Buffer => {
-					Destination::Buffer(Arc::new(Mutex::new(String::with_capacity(8096))))
+					Destination::Buffer(Arc::new(Mutex::new(Vec::with_capacity(8096))))
 				}
 				params::Output::File(ref path) => {
 					let f = OpenOptions::new()
@@ -65,12 +64,7 @@ impl UhyveSerial {
 			Destination::StdIo => io::stdout().write_all(buf),
 			Destination::None => Ok(()),
 			Destination::Buffer(b) => {
-				b.lock().unwrap().push_str(str::from_utf8(buf).map_err(|e| {
-					io::Error::new(
-						io::ErrorKind::InvalidData,
-						format!("invalid UTF-8 bytes in output: {e:?}"),
-					)
-				})?);
+				b.lock().unwrap().extend_from_slice(buf);
 				Ok(())
 			}
 			Destination::File(f) => f.lock().unwrap().write_all(buf),
