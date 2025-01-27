@@ -313,6 +313,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		);
 		self.entry_point = GuestPhysAddr::new(entry_point);
 
+		let tsc_khz = detect_cpu_freq() * 1000;
+
 		let sep = self
 			.args()
 			.iter()
@@ -322,6 +324,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			.unwrap_or_else(|| self.args().len());
 
 		let fdt = Fdt::new()
+			.unwrap()
+			.tsc_khz(tsc_khz)
 			.unwrap()
 			.memory(self.mem.guest_address..self.mem.guest_address + self.mem.memory_size as u64)
 			.unwrap()
@@ -351,7 +355,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			platform_info: PlatformInfo::Uhyve {
 				has_pci: cfg!(target_os = "linux"),
 				num_cpus: u64::from(self.num_cpus()).try_into().unwrap(),
-				cpu_freq: NonZeroU32::new(detect_cpu_freq() * 1000),
+				cpu_freq: NonZeroU32::new(tsc_khz),
 				boot_time: SystemTime::now().into(),
 			},
 		};
