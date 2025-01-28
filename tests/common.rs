@@ -6,6 +6,7 @@ use std::{
 };
 
 use byte_unit::{Byte, Unit};
+use log::info;
 use uhyvelib::{
 	params::{Output, Params},
 	vm::{UhyveVm, VmResult},
@@ -13,7 +14,8 @@ use uhyvelib::{
 
 /// Uses Cargo to build a kernel in the `tests/test-kernels` directory.
 /// Returns a path to the build binary.
-pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
+pub fn build_hermit_bin(kernel: impl AsRef<Path> + std::fmt::Display) -> PathBuf {
+	info!("Building kernel {kernel}");
 	let kernel = kernel.as_ref();
 	let kernel_src_path = Path::new("tests/test-kernels");
 	println!("Building test kernel: {}", kernel.display());
@@ -28,6 +30,7 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 		.env_clear()
 		// Retain PATH since it is used to find cargo and cc
 		.env("PATH", env::var_os("PATH").unwrap())
+		.env("HERMIT_LOG_LEVEL_FILTER", "Debug")
 		.current_dir(kernel_src_path)
 		.status()
 		.expect("failed to execute `cargo build`");
@@ -50,7 +53,7 @@ pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 	println!("Launching kernel {}", kernel_path.display());
 	let params = Params {
 		cpu_count: 2.try_into().unwrap(),
-		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
+		memory_size: Byte::from_u64_with_unit(64, Unit::MiB)
 			.unwrap()
 			.try_into()
 			.unwrap(),
@@ -67,5 +70,14 @@ pub fn remove_file_if_exists(path: &PathBuf) {
 	if path.exists() {
 		println!("Removing existing directory {}", path.display());
 		remove_file(path).unwrap_or_else(|_| panic!("Can't remove {}", path.display()));
+	}
+}
+
+/// Panics if the result's status code is not 0 and prints the serial output of the kernel
+#[allow(dead_code)]
+pub fn check_result(res: &VmResult) {
+	if res.code != 0 {
+		println!("Kernel Output:\n{}", res.output.as_ref().unwrap());
+		panic!();
 	}
 }
