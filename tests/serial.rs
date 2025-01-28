@@ -30,14 +30,19 @@ fn serial_file_output_test() {
 	remove_file_if_exists(&output_path);
 
 	println!("Launching kernel {}", bin_path.display());
+	// The file mapping is a workaround, as the Landlock restriction imposed within UhyveVm
+	// is applied process-wide. This includes the test itself. Although testserialout.txt
+	// can be accessed by the UhyveVm and by the test, it cannot be removed without its
+	// parent directory being explicitly whitelisted (with read-write permission access).
+	// Our file map does exactly that.
 	let params = Params {
-		cpu_count: 2.try_into().unwrap(),
+		cpu_count: 1.try_into().unwrap(),
 		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
 			.unwrap()
 			.try_into()
 			.unwrap(),
 		output: Output::File(output_path.clone()),
-		file_mapping: vec!["testserialout.txt:testserialout.txt".to_string()],
+		file_mapping: vec!["./:/root/".to_string()],
 		..Default::default()
 	};
 	let vm = UhyveVm::new(bin_path, params).unwrap();

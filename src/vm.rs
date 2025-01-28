@@ -22,6 +22,8 @@ use uhyve_interface::GuestPhysAddr;
 use crate::arch::x86_64::{
 	detect_freq_from_cpuid, detect_freq_from_cpuid_hypervisor_info, get_cpu_frequency_from_os,
 };
+#[cfg(target_os = "linux")]
+use crate::isolation::landlock::UhyveLandlockWrapper;
 use crate::{
 	arch::{self, FrequencyDetectionFailed},
 	consts::*,
@@ -156,6 +158,8 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(crate) virt_backend: VirtBackend,
 	params: Params,
 	pub output: Output,
+	#[cfg(target_os = "linux")]
+	pub(crate) landlock: UhyveLandlockWrapper,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
@@ -187,6 +191,25 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping, &params.tempdir));
 
+		// This segment adds certain paths necessary for Uhyve to function before we
+		// enforce Landlock, such as the kernel path and a couple of paths useful for sysinfo.
+		//
+		// See: https://github.com/GuillaumeGomez/sysinfo/blob/8fd58b8/src/unix/linux/cpu.rs#L420
+		//
+		// It is not necessary to whitelist e.g. /dev/kvm, as isolation should be enforced
+		// after KVM is initialized and before the kernel is loaded.
+		#[cfg(target_os = "linux")]
+		let uhyve_ro_paths = [
+			kernel_path.to_str().unwrap().to_owned(),
+			String::from("/sys/devices/system"),
+			String::from("/proc/cpuinfo"),
+			String::from("/proc/stat"),
+		]
+		.to_vec();
+
+		#[cfg(target_os = "linux")]
+		let mut uhyve_rw_paths: Vec<String> = [].to_vec();
+
 		let output = match params.output {
 			params::Output::None => Output::None,
 			params::Output::StdIo => Output::StdIo,
@@ -207,9 +230,24 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 						#[cfg(not(target_os = "macos"))]
 						e
 					})?;
+				#[cfg(target_os = "linux")]
+				uhyve_rw_paths.push(path.to_str().unwrap().to_owned());
 				Output::File(Arc::new(Mutex::new(f)))
 			}
 		};
+
+		#[cfg(target_os = "linux")]
+		uhyve_rw_paths.push(
+			file_mapping
+				.lock()
+				.unwrap()
+				.get_temp_dir()
+				.unwrap()
+				.to_owned(),
+		);
+		#[cfg(target_os = "linux")]
+		let landlock =
+			UhyveLandlockWrapper::new(&params.file_mapping, &mut uhyve_rw_paths, &uhyve_ro_paths);
 
 		let mut vm = Self {
 			kernel_address: GuestPhysAddr::zero(),
@@ -224,6 +262,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			virt_backend,
 			params,
 			output,
+			#[cfg(target_os = "linux")]
+			landlock,
 		};
 
 		vm.init_guest_mem();
@@ -289,6 +329,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	}
 
 	pub fn load_kernel(&mut self) -> LoadKernelResult<()> {
+		#[cfg(target_os = "linux")]
+		self.landlock.apply_landlock_restrictions();
 		let elf = fs::read(self.kernel_path())?;
 		let object = KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
