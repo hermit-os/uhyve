@@ -133,7 +133,7 @@ impl Default for GuestMemorySize {
 
 impl fmt::Display for GuestMemorySize {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		self.0.fmt(f)
+		write!(f, "{}", self.0.get_adjusted_unit(Unit::MiB))
 	}
 }
 

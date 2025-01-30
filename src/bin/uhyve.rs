@@ -66,18 +66,18 @@ struct Args {
 	#[clap(long)]
 	tempdir: Option<String>,
 
-	#[clap(flatten, next_help_heading = "Memory OPTIONS")]
-	memory_args: MemoryArgs,
-
-	#[clap(flatten, next_help_heading = "Cpu OPTIONS")]
-	cpu_args: CpuArgs,
-
 	/// GDB server port
 	///
 	/// Starts a GDB server on the provided port and waits for a connection.
 	#[clap(short = 's', long, env = "HERMIT_GDB_PORT")]
 	#[cfg(target_os = "linux")]
 	gdb_port: Option<u16>,
+
+	#[clap(flatten, next_help_heading = "Memory OPTIONS")]
+	memory_args: MemoryArgs,
+
+	#[clap(flatten, next_help_heading = "Cpu OPTIONS")]
+	cpu_args: CpuArgs,
 
 	/// The kernel to execute
 	#[clap(value_parser)]
