@@ -62,7 +62,7 @@ rftrace-frontend = { version = "0.1", optional = true }
 shell-words = "1"
 sysinfo = { version = "0.33.1", default-features = false, features = ["system"] }
 vm-fdt = "0.3"
-tempfile = "3.15.0"
+tempfile = "3.16.0"
 uuid = { version = "1.12.1", features = ["fast-rng", "v4"]}
 clean-path = "0.2.1"
 
