@@ -256,7 +256,11 @@ impl VirtualCPU for XhyveCpu {
 										syscmdval,
 										&self.peripherals.mem,
 									);
-									copy_env(syscmdval, &self.peripherals.mem);
+									copy_env(
+										&self.kernel_info.params.env,
+										syscmdval,
+										&self.peripherals.mem,
+									);
 								}
 								Hypercall::FileClose(sysclose) => hypercall::close(sysclose),
 								Hypercall::FileLseek(syslseek) => hypercall::lseek(syslseek),

@@ -7,7 +7,7 @@ use core_affinity::CoreId;
 use either::Either;
 use thiserror::Error;
 use uhyvelib::{
-	params::{CpuCount, GuestMemorySize, Output, Params},
+	params::{CpuCount, EnvVars, GuestMemorySize, Output, Params},
 	vm::UhyveVm,
 };
 
@@ -72,6 +72,11 @@ struct Args {
 	#[clap(short = 's', long, env = "HERMIT_GDB_PORT")]
 	#[cfg(target_os = "linux")]
 	gdb_port: Option<u16>,
+
+	/// Environment variables of the guest as env=value paths. `-e host` passes all variables of the parent process to the kernel.
+	/// Example: --env_vars ASDF=jlk -e TERM=uhyveterm2000
+	#[clap(short = 'e', long)]
+	env_vars: Vec<String>,
 
 	#[clap(flatten, next_help_heading = "Memory OPTIONS")]
 	memory_args: MemoryArgs,
@@ -272,6 +277,7 @@ impl From<Args> for Params {
 			kernel_args,
 			output,
 			stats,
+			env_vars,
 		} = args;
 		Self {
 			memory_size,
@@ -296,6 +302,7 @@ impl From<Args> for Params {
 				Output::StdIo
 			},
 			stats,
+			env: EnvVars::from(env_vars.as_slice()),
 		}
 	}
 }

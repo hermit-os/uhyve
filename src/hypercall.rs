@@ -10,6 +10,7 @@ use crate::{
 	consts::BOOT_PML4,
 	isolation::filemap::UhyveFileMap,
 	mem::{MemoryError, MmapMemory},
+	params::EnvVars,
 	virt_to_phys,
 	vm::VmPeripherals,
 };
@@ -259,28 +260,49 @@ pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &
 }
 
 /// Copies the environment variables into the VM's memory to the destinations specified in `syscmdval`.
-pub fn copy_env(syscmdval: &CmdvalParams, mem: &MmapMemory) {
-	let env_len = std::env::vars_os().count();
+pub fn copy_env(env: &EnvVars, syscmdval: &CmdvalParams, mem: &MmapMemory) {
 	let envp = mem
 		.host_address(syscmdval.envp)
 		.expect("Systemcall parameters for Cmdval are invalid") as *const GuestPhysAddr;
+
+	let env_len = match env {
+		EnvVars::Host => std::env::vars_os().count(),
+		EnvVars::Set(map) => map.len(),
+	};
+	if env_len >= MAX_ARGC_ENVC.try_into().unwrap() {
+		warn!("Environment is larger than the maximum that can be copied to the VM. Remaining environment is ignored");
+	}
 	let env_addrs = unsafe { std::slice::from_raw_parts(envp, env_len) };
 
-	// Copy the environment variables into the vm memory
-	for (counter, (key, value)) in std::env::vars_os().enumerate() {
-		if counter >= MAX_ARGC_ENVC.try_into().unwrap() {
-			warn!("Environment is larger than the maximum that can be copied to the VM. Remaining environment is ignored");
-			break;
-		}
-
+	fn write_env_into_mem(env_dest: &mut [u8], key: &[u8], value: &[u8]) {
 		let len = key.len() + value.len() + 1;
-		let env_dest = unsafe {
-			mem.slice_at_mut(env_addrs[counter], len + 1)
-				.expect("Systemcall parameters for Cmdval are invalid")
-		};
-		env_dest[0..key.len()].copy_from_slice(key.as_bytes());
+		env_dest[0..key.len()].copy_from_slice(key);
 		env_dest[key.len()] = b'=';
-		env_dest[key.len() + 1..len].copy_from_slice(value.as_bytes());
+		env_dest[key.len() + 1..len].copy_from_slice(value);
 		env_dest[len] = 0;
 	}
+
+	// Copy the environment variables into the vm memory
+	match env {
+		EnvVars::Host => {
+			for (counter, (key, value)) in std::env::vars_os().enumerate().take(MAX_ARGC_ENVC) {
+				let len = key.len() + value.len() + 1;
+				let env_dest = unsafe {
+					mem.slice_at_mut(env_addrs[counter], len + 1)
+						.expect("Systemcall parameters for Cmdval are invalid")
+				};
+				write_env_into_mem(env_dest, key.as_bytes(), value.as_bytes());
+			}
+		}
+		EnvVars::Set(map) => {
+			for (counter, (key, value)) in map.iter().enumerate().take(MAX_ARGC_ENVC) {
+				let len = key.len() + value.len() + 1;
+				let env_dest = unsafe {
+					mem.slice_at_mut(env_addrs[counter], len + 1)
+						.expect("Systemcall parameters for Cmdval are invalid")
+				};
+				write_env_into_mem(env_dest, key.as_bytes(), value.as_bytes());
+			}
+		}
+	};
 }

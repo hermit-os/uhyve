@@ -1,4 +1,5 @@
 use std::{
+	collections::HashMap,
 	convert::Infallible,
 	fmt,
 	num::{NonZeroU32, ParseIntError, TryFromIntError},
@@ -46,6 +47,9 @@ pub struct Params {
 
 	/// Collect run statistics
 	pub stats: bool,
+
+	/// Environment variables of the kernel
+	pub env: EnvVars,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -66,6 +70,7 @@ impl Default for Params {
 			kernel_args: Default::default(),
 			output: Default::default(),
 			stats: false,
+			env: EnvVars::default(),
 		}
 	}
 }
@@ -205,5 +210,61 @@ impl FromStr for GuestMemorySize {
 		let requested = Byte::from_str(s)?;
 		let memory_size = requested.try_into()?;
 		Ok(memory_size)
+	}
+}
+
+/// Configure the kernels environment variables.
+#[derive(Debug, Clone, PartialEq)]
+pub enum EnvVars {
+	/// Pass all env vars of the host to the kernel.
+	Host,
+	/// Pass a certain set of env vars to the kernel.
+	Set(HashMap<String, String>),
+}
+impl Default for EnvVars {
+	fn default() -> Self {
+		Self::Set(HashMap::new())
+	}
+}
+impl<S: AsRef<str> + std::fmt::Debug + PartialEq<S> + From<&'static str>> From<&[S]> for EnvVars {
+	fn from(v: &[S]) -> Self {
+		debug!("v: {v:?}");
+		if v.contains(&S::from("host")) {
+			return Self::Host;
+		}
+		Self::Set(
+			v.iter()
+				.map(|s| {
+					let sep_pos = s
+						.as_ref()
+						.find('=')
+						.expect("Invalid environment variable format. Must be var=value");
+					let split = s.as_ref().split_at(sep_pos);
+					(String::from(split.0), String::from(&split.1[1..]))
+				})
+				.collect(),
+		)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_env_vars() {
+		let strings = [String::from("ASDF=asdf"), String::from("EMOJI=🤷")];
+
+		let env_vars = EnvVars::from(strings.as_slice());
+		match env_vars {
+			EnvVars::Host => panic!(),
+			EnvVars::Set(map) => {
+				assert_eq!(map.get("ASDF").unwrap(), "asdf");
+				assert_eq!(map.get("EMOJI").unwrap(), "🤷");
+			}
+		}
+
+		let env_vars = EnvVars::from(&["host", "OTHER=asdf"] as &[&str]);
+		assert_eq!(env_vars, EnvVars::Host);
 	}
 }
