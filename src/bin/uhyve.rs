@@ -5,6 +5,8 @@ use std::{iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process,
 use clap::{error::ErrorKind, Command, CommandFactory, Parser};
 use core_affinity::CoreId;
 use either::Either;
+use env_logger::Builder;
+use log::LevelFilter;
 use thiserror::Error;
 use uhyvelib::{
 	params::{CpuCount, GuestMemorySize, Output, Params},
@@ -304,7 +306,11 @@ fn run_uhyve() -> i32 {
 	#[cfg(feature = "instrument")]
 	setup_trace();
 
-	env_logger::init();
+	let mut env_builder = Builder::new();
+	env_builder.filter_level(LevelFilter::Warn);
+	env_builder.parse_env("RUST_LOG");
+	env_builder.format_timestamp(None);
+	env_builder.init();
 
 	let mut app = Args::command();
 	let args = Args::parse();
