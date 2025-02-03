@@ -140,7 +140,13 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Generate code coverage
-        run: cargo llvm-cov --lcov --output-path lcov.info
+        run: |
+          cargo llvm-cov --no-report run data/x86_64/hello_world --stats
+          cargo llvm-cov --no-report run data/x86_64/rusty_demo --stats
+          cargo llvm-cov --no-report run data/x86_64/hello_c --stats
+          cargo llvm-cov --lcov --output-path lcov.info
+
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
