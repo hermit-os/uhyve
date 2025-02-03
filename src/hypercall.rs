@@ -10,6 +10,7 @@ use crate::{
 	consts::BOOT_PML4,
 	isolation::filemap::UhyveFileMap,
 	mem::{MemoryError, MmapMemory},
+	params::EnvVars,
 	virt_to_phys,
 	vm::VmPeripherals,
 };
@@ -259,25 +260,34 @@ pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &
 }
 
 /// Copies the environment variables into the VM's memory to the destinations specified in `syscmdval`.
-pub fn copy_env(syscmdval: &CmdvalParams, mem: &MmapMemory) {
-	let env_len = std::env::vars_os().count();
+pub fn copy_env(env: &EnvVars, syscmdval: &CmdvalParams, mem: &MmapMemory) {
 	let envp = mem
 		.host_address(syscmdval.envp)
 		.expect("Systemcall parameters for Cmdval are invalid") as *const GuestPhysAddr;
-	let env_addrs = unsafe { std::slice::from_raw_parts(envp, env_len) };
+
+	let env: Vec<(String, String)> = match env {
+		EnvVars::Host => std::env::vars_os()
+			.map(|(a, b)| (a.into_string().unwrap(), b.into_string().unwrap()))
+			.collect(),
+		EnvVars::Set(map) => map
+			.iter()
+			.map(|(a, b)| (a.to_owned(), b.to_owned()))
+			.collect(),
+	};
+	if env.len() >= MAX_ARGC_ENVC.try_into().unwrap() {
+		warn!("Environment is larger than the maximum that can be copied to the VM. Remaining environment is ignored");
+	}
+	let env_addrs = unsafe { std::slice::from_raw_parts(envp, env.len()) };
 
 	// Copy the environment variables into the vm memory
-	for (counter, (key, value)) in std::env::vars_os().enumerate() {
-		if counter >= MAX_ARGC_ENVC.try_into().unwrap() {
-			warn!("Environment is larger than the maximum that can be copied to the VM. Remaining environment is ignored");
-			break;
-		}
-
+	for (counter, (key, value)) in env.iter().enumerate().take(MAX_ARGC_ENVC) {
 		let len = key.len() + value.len() + 1;
 		let env_dest = unsafe {
 			mem.slice_at_mut(env_addrs[counter], len + 1)
 				.expect("Systemcall parameters for Cmdval are invalid")
 		};
+		//write_env_into_mem(env_dest, key.as_bytes(), value.as_bytes());
+		let len = key.len() + value.len() + 1;
 		env_dest[0..key.len()].copy_from_slice(key.as_bytes());
 		env_dest[key.len()] = b'=';
 		env_dest[key.len() + 1..len].copy_from_slice(value.as_bytes());

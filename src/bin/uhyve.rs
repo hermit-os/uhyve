@@ -9,7 +9,7 @@ use env_logger::Builder;
 use log::LevelFilter;
 use thiserror::Error;
 use uhyvelib::{
-	params::{CpuCount, GuestMemorySize, Output, Params},
+	params::{CpuCount, EnvVars, GuestMemorySize, Output, Params},
 	vm::UhyveVm,
 };
 
@@ -74,6 +74,14 @@ struct Args {
 	#[clap(short = 's', long, env = "HERMIT_GDB_PORT")]
 	#[cfg(target_os = "linux")]
 	gdb_port: Option<u16>,
+
+	/// Environment variables of the guest as env=value paths
+	///
+	/// `-e host` passes all variables of the parent process to the kernel (discarding any other passed environment variables).
+	///
+	/// Example: --env_vars ASDF=jlk -e TERM=uhyveterm2000
+	#[clap(short, long)]
+	env_vars: Vec<String>,
 
 	#[clap(flatten, next_help_heading = "Memory OPTIONS")]
 	memory_args: MemoryArgs,
@@ -274,6 +282,7 @@ impl From<Args> for Params {
 			kernel_args,
 			output,
 			stats,
+			env_vars,
 		} = args;
 		Self {
 			memory_size,
@@ -298,6 +307,7 @@ impl From<Args> for Params {
 				Output::StdIo
 			},
 			stats,
+			env: EnvVars::try_from(env_vars.as_slice()).unwrap(),
 		}
 	}
 }

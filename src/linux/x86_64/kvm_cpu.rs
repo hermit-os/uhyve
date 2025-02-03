@@ -452,7 +452,11 @@ impl VirtualCPU for KvmCpu {
 										syscmdval,
 										&self.peripherals.mem,
 									);
-									hypercall::copy_env(syscmdval, &self.peripherals.mem);
+									hypercall::copy_env(
+										&self.kernel_info.params.env,
+										syscmdval,
+										&self.peripherals.mem,
+									);
 								}
 								Hypercall::Exit(sysexit) => {
 									return Ok(VcpuStopReason::Exit(sysexit.arg));

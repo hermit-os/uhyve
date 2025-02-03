@@ -26,7 +26,7 @@ use crate::{
 	isolation::filemap::UhyveFileMap,
 	mem::MmapMemory,
 	os::KickSignal,
-	params::Params,
+	params::{EnvVars, Params},
 	serial::{Destination, UhyveSerial},
 	stats::{CpuStats, VmStats},
 	vcpu::VirtualCPU,
@@ -348,8 +348,13 @@ fn write_fdt_into_mem(mem: &MmapMemory, params: &Params, cpu_freq: Option<NonZer
 		.memory(mem.guest_address..mem.guest_address + mem.memory_size as u64)
 		.unwrap()
 		.kernel_args(&params.kernel_args[..sep])
-		.app_args(params.kernel_args.get(sep + 1..).unwrap_or_default())
-		.envs(env::vars());
+		.app_args(params.kernel_args.get(sep + 1..).unwrap_or_default());
+
+	fdt = match &params.env {
+		EnvVars::Host => fdt.envs(env::vars()),
+		EnvVars::Set(map) => fdt.envs(map.iter().map(|(a, b)| (a.as_str(), b.as_str()))),
+	};
+
 	if let Some(tsc_khz) = cpu_freq {
 		fdt = fdt.tsc_khz(tsc_khz.into()).unwrap();
 	}
