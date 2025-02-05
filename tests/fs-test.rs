@@ -336,3 +336,16 @@ fn fd_write_to_fd() {
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 }
+
+#[test]
+fn lseek_test() {
+	env_logger::try_init().ok();
+
+	let test_name: &'static str = "lseek_file";
+	let guest_file_path = get_testname_derived_guest_path(test_name);
+	let params = generate_params(None, test_name, &guest_file_path);
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let res = run_vm_in_thread(bin_path, params);
+	check_result(&res);
+}
