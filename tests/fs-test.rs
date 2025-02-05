@@ -3,7 +3,7 @@ mod common;
 use std::{fs::read_to_string, path::PathBuf};
 
 use byte_unit::{Byte, Unit};
-use common::{build_hermit_bin, check_result, remove_file_if_exists};
+use common::{build_hermit_bin, check_result, remove_file_if_exists, run_simple_vm};
 use uhyvelib::{
 	params::{Output, Params},
 	vm::UhyveVm,
@@ -66,4 +66,12 @@ fn uhyvefilemap_test() {
 	res = vm.run(None);
 	check_result(&res);
 	verify_file_equals(&output_path, "Hello, world!");
+}
+
+#[test]
+fn lseek_test() {
+	env_logger::try_init().ok();
+	let bin_path = build_hermit_bin("lseek");
+	let res = run_simple_vm(bin_path);
+	check_result(&res);
 }
