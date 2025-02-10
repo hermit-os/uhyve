@@ -53,13 +53,13 @@ type LoadKernelResult<T> = Result<T, LoadKernelError>;
 /// Generates a random guest address for Uhyve's virtualized memory.
 /// This function gets invoked when a new UhyveVM gets created, provided that the object file is relocatable.
 fn generate_address(object_mem_size: usize) -> GuestPhysAddr {
-	let mut rng = rand::thread_rng();
+	let mut rng = rand::rng();
 	// TODO: Also allow mappings beyond the 32 Bit gap
 	let start_address_upper_bound: u64 =
 		0x0000_0000_CFF0_0000 - object_mem_size as u64 - KERNEL_OFFSET;
 
 	GuestPhysAddr::new(
-		rng.gen_range(0x0..start_address_upper_bound)
+		rng.random_range(0x0..start_address_upper_bound)
 			.align_down(0x20_0000),
 	)
 }

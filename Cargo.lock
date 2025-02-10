@@ -1534,7 +1534,7 @@ dependencies = [
  "mac_address",
  "memory_addresses",
  "nix",
- "rand 0.8.5",
+ "rand 0.9.0",
  "raw-cpuid 11.3.0",
  "rftrace",
  "rftrace-frontend",
