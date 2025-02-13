@@ -23,6 +23,7 @@ use crate::{
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
 const CPUID_TSC_DEADLINE: u32 = 1 << 24;
 const CPUID_ENABLE_MSR: u32 = 1 << 5;
+const MSR_IA32_APICBASE: u32 = 0x0000001b;
 const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 const PCI_CONFIG_DATA_PORT: u16 = 0xCFC;
 const PCI_CONFIG_ADDRESS_PORT: u16 = 0xCF8;
@@ -264,6 +265,8 @@ impl KvmCpu {
 		// enable fast string operations
 		msr_entries[0].index = MSR_IA32_MISC_ENABLE;
 		msr_entries[0].data = 1;
+		msr_entries[1].index = MSR_IA32_APICBASE;
+		msr_entries[1].data = 1;
 
 		let msrs = Msrs::from_entries(&msr_entries)
 			.expect("Unable to create initial values for the machine specific registers");
