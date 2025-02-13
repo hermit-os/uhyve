@@ -25,6 +25,7 @@ exclude = [
     "/.gitignore",
     "/.gitmodules",
     "/codecov.yml",
+    "/tests"
 ]
 
 [lib]
