@@ -96,3 +96,4 @@ memory_addresses = { version = "0.2.2", default-features = false, features = [
 [dev-dependencies]
 assert_fs = "1"
 criterion = "0.5"
+regex = { version = "1.11.1", default-features = false, features = ["unicode-perl"] }
