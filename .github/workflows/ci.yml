@@ -130,10 +130,6 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
         working-directory: tests/test-kernels
       - run: git diff --exit-code Cargo.lock
-    env:
-      # TODO: Remove once we have a hermit toolchain upgrade
-      # capable of sparse registries
-      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: git
 
   coverage:
     name: Coverage
