@@ -35,7 +35,7 @@ jobs:
       - name: Install gdb
         run: |
           sudo apt-get update
-          sudo apt-get install gdb
+          sudo apt-get install -y --no-install-recommends gdb
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -131,7 +131,7 @@ jobs:
       - name: Install gdb
         run: |
           sudo apt-get update
-          sudo apt-get install gdb
+          sudo apt-get install -y --no-install-recommends gdb
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-llvm-cov
