@@ -32,10 +32,11 @@ jobs:
     name: Integration Tests
     runs-on: [self-hosted]
     steps:
-      - name: Install gdb
+      - name: Install gdb, libclang
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gdb
+          # libclang is required by virtio-bindings for bindgen
+          sudo apt-get install -y --no-install-recommends gdb libclang-dev
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -48,6 +49,11 @@ jobs:
     name: Run images
     runs-on: [self-hosted]
     steps:
+      - name: Install libclang
+        run: |
+          sudo apt-get update
+          # libclang is required by virtio-bindings for bindgen
+          sudo apt-get install -y --no-install-recommends libclang-dev
       - uses: actions/checkout@v4
         with:
           lfs: true
@@ -128,10 +134,11 @@ jobs:
     name: Coverage
     runs-on: [self-hosted]
     steps:
-      - name: Install gdb
+      - name: Install gdb, libclang
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gdb
+          # libclang is required by virtio-bindings for bindgen
+          sudo apt-get install -y --no-install-recommends gdb libclang-dev
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-llvm-cov
