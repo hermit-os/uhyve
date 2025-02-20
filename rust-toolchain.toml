@@ -1,6 +1,0 @@
-[toolchain]
-components = [
-    "rustfmt",
-    "clippy",
-    "llvm-tools-preview",
-]
