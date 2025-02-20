@@ -112,6 +112,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Clippy
         run: cargo clippy --all-targets ${{ matrix.flags }} -- -D warnings
+      - run: git diff --exit-code Cargo.lock
 
   clippy-test-kernel:
     name: Clippy test-kernels
@@ -128,6 +129,7 @@ jobs:
       - name: Clippy Test Kernels
         run: cargo clippy --all-targets -- -D warnings
         working-directory: tests/test-kernels
+      - run: git diff --exit-code Cargo.lock
     env:
       # TODO: Remove once we have a hermit toolchain upgrade
       # capable of sparse registries
