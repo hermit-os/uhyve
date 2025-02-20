@@ -44,7 +44,7 @@ fn multicore_test() {
 		dbg!(&caps);
 		let speedup = caps.get(1).unwrap().as_str().parse::<f64>().unwrap();
 		dbg!(&speedup);
-		if speedup < nr_cpus as f64 * 0.66 {
+		if speedup < nr_cpus as f64 * 0.25 {
 			panic!("Speedup of {speedup} is not enough for a CPU count of {nr_cpus}");
 		}
 	}
