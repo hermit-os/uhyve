@@ -29,45 +29,45 @@ pub unsafe fn address_to_hypercall(
 	if let Ok(hypercall_port) = HypercallAddress::try_from(addr) {
 		Some(match hypercall_port {
 			HypercallAddress::FileClose => {
-				let sysclose = mem.get_ref_mut::<CloseParams>(data).unwrap();
+				let sysclose = unsafe { mem.get_ref_mut::<CloseParams>(data).unwrap() };
 				// let sysclose = unsafe { &mut *(self.host_address(data) as *mut CloseParams) };
 				Hypercall::FileClose(sysclose)
 			}
 			HypercallAddress::FileLseek => {
-				let syslseek = mem.get_ref_mut::<LseekParams>(data).unwrap();
+				let syslseek = unsafe { mem.get_ref_mut::<LseekParams>(data).unwrap() };
 				Hypercall::FileLseek(syslseek)
 			}
 			HypercallAddress::FileOpen => {
-				let sysopen = mem.get_ref_mut::<OpenParams>(data).unwrap();
+				let sysopen = unsafe { mem.get_ref_mut::<OpenParams>(data).unwrap() };
 				Hypercall::FileOpen(sysopen)
 			}
 			HypercallAddress::FileRead => {
-				let sysread = mem.get_ref_mut::<ReadParams>(data).unwrap();
+				let sysread = unsafe { mem.get_ref_mut::<ReadParams>(data).unwrap() };
 				Hypercall::FileRead(sysread)
 			}
 			HypercallAddress::FileWrite => {
-				let syswrite = mem.get_ref_mut(data).unwrap();
+				let syswrite = unsafe { mem.get_ref_mut(data).unwrap() };
 				Hypercall::FileWrite(syswrite)
 			}
 			HypercallAddress::FileUnlink => {
-				let sysunlink = mem.get_ref_mut(data).unwrap();
+				let sysunlink = unsafe { mem.get_ref_mut(data).unwrap() };
 				Hypercall::FileUnlink(sysunlink)
 			}
 			HypercallAddress::Exit => {
-				let sysexit = mem.get_ref_mut(data).unwrap();
+				let sysexit = unsafe { mem.get_ref_mut(data).unwrap() };
 				Hypercall::Exit(sysexit)
 			}
 			HypercallAddress::Cmdsize => {
-				let syssize = mem.get_ref_mut(data).unwrap();
+				let syssize = unsafe { mem.get_ref_mut(data).unwrap() };
 				Hypercall::Cmdsize(syssize)
 			}
 			HypercallAddress::Cmdval => {
-				let syscmdval = mem.get_ref_mut(data).unwrap();
+				let syscmdval = unsafe { mem.get_ref_mut(data).unwrap() };
 				Hypercall::Cmdval(syscmdval)
 			}
 			HypercallAddress::Uart => Hypercall::SerialWriteByte(data.as_u64() as u8),
 			HypercallAddress::SerialBufferWrite => {
-				let sysserialwrite = mem.get_ref_mut(data).unwrap();
+				let sysserialwrite = unsafe { mem.get_ref_mut(data).unwrap() };
 				Hypercall::SerialWriteBuffer(sysserialwrite)
 			}
 			_ => unimplemented!(),
