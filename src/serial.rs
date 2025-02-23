@@ -39,7 +39,7 @@ impl UhyveSerial {
 				params::Output::Buffer => {
 					Destination::Buffer(Arc::new(Mutex::new(Vec::with_capacity(8096))))
 				}
-				params::Output::File(ref path) => {
+				params::Output::File(path) => {
 					let f = OpenOptions::new()
 						.read(false)
 						.write(true)
