@@ -1,6 +1,6 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{HashMap, hash_map::Entry};
 
-use gdbstub::target::{self, ext::breakpoints::WatchKind, TargetResult};
+use gdbstub::target::{self, TargetResult, ext::breakpoints::WatchKind};
 use uhyve_interface::GuestVirtAddr;
 
 use super::GdbUhyve;

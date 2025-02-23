@@ -36,11 +36,12 @@ fn selective_env_test() {
 	check_result(&res);
 	println!("{:?}", res.output.as_ref().unwrap());
 	for (key, value) in env_vars.iter() {
-		assert!(res
-			.output
-			.as_ref()
-			.unwrap()
-			.contains(&format!("ENVIRONMENT: {key}: {value}")));
+		assert!(
+			res.output
+				.as_ref()
+				.unwrap()
+				.contains(&format!("ENVIRONMENT: {key}: {value}"))
+		);
 	}
 }
 
@@ -67,10 +68,11 @@ fn host_env_test() {
 
 	let common_env_vars = ["PWD", "CARGO_MANIFEST_DIR"];
 	for env in common_env_vars.iter() {
-		assert!(res
-			.output
-			.as_ref()
-			.unwrap()
-			.contains(&format!("ENVIRONMENT: {env}:")));
+		assert!(
+			res.output
+				.as_ref()
+				.unwrap()
+				.contains(&format!("ENVIRONMENT: {env}:"))
+		);
 	}
 }

@@ -4,7 +4,7 @@ use std::{
 	fs::canonicalize,
 	io::ErrorKind,
 	os::unix::ffi::OsStrExt,
-	path::{absolute, PathBuf},
+	path::{PathBuf, absolute},
 };
 
 use clean_path::clean;

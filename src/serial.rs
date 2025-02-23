@@ -5,7 +5,7 @@ use std::{
 	sync::{Arc, Mutex},
 };
 
-use crate::{params, HypervisorResult};
+use crate::{HypervisorResult, params};
 
 /// The destination of the kernels serial output.
 #[derive(Debug, Clone)]

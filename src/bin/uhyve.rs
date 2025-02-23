@@ -2,7 +2,7 @@
 
 use std::{iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process, str::FromStr};
 
-use clap::{error::ErrorKind, Command, CommandFactory, Parser};
+use clap::{Command, CommandFactory, Parser, error::ErrorKind};
 use core_affinity::CoreId;
 use either::Either;
 use env_logger::Builder;
@@ -169,9 +169,7 @@ enum ParseAffinityError {
 	#[error(transparent)]
 	Parse(#[from] ParseIntError),
 
-	#[error(
-		"Available cores: {available_cores:?}, requested affinities: {requested_affinities:?}"
-	)]
+	#[error("Available cores: {available_cores:?}, requested affinities: {requested_affinities:?}")]
 	InvalidValue {
 		available_cores: Vec<usize>,
 		requested_affinities: Vec<usize>,

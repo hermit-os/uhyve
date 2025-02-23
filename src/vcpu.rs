@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use crate::stats::CpuStats;
 /// The trait and fns that a virtual cpu requires
-use crate::{os::DebugExitInfo, HypervisorResult};
+use crate::{HypervisorResult, os::DebugExitInfo};
 
 /// Reasons for vCPU exits.
 #[allow(dead_code)]

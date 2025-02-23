@@ -7,13 +7,13 @@ use std::{io::Read, net::TcpStream, sync::Once, thread, time::Duration};
 use gdbstub::{
 	common::Signal,
 	conn::{Connection, ConnectionExt},
-	stub::{run_blocking, SingleThreadStopReason},
-	target::{self, ext::base::singlethread::SingleThreadBase, Target, TargetError, TargetResult},
+	stub::{SingleThreadStopReason, run_blocking},
+	target::{self, Target, TargetError, TargetResult, ext::base::singlethread::SingleThreadBase},
 };
 use gdbstub_arch::x86::reg::X86_64CoreRegs;
 use kvm_bindings::{
-	kvm_guest_debug, kvm_guest_debug_arch, BP_VECTOR, DB_VECTOR, KVM_GUESTDBG_ENABLE,
-	KVM_GUESTDBG_SINGLESTEP, KVM_GUESTDBG_USE_HW_BP, KVM_GUESTDBG_USE_SW_BP,
+	BP_VECTOR, DB_VECTOR, KVM_GUESTDBG_ENABLE, KVM_GUESTDBG_SINGLESTEP, KVM_GUESTDBG_USE_HW_BP,
+	KVM_GUESTDBG_USE_SW_BP, kvm_guest_debug, kvm_guest_debug_arch,
 };
 use libc::EINVAL;
 use nix::sys::pthread::pthread_self;
@@ -22,11 +22,11 @@ use x86_64::registers::debug::Dr6Flags;
 
 use self::breakpoints::SwBreakpoints;
 use crate::{
+	HypervisorError, HypervisorResult,
 	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
-	linux::{x86_64::kvm_cpu::KvmVm, KickSignal},
+	linux::{KickSignal, x86_64::kvm_cpu::KvmVm},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::UhyveVm,
-	HypervisorError, HypervisorResult,
 };
 
 pub(crate) struct GdbUhyve {
@@ -239,10 +239,11 @@ impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 
 		let event = match stop_reason {
 			SingleThreadStopReason::Signal(Signal::SIGINT) => {
-				assert!(conn
-					.peek()
-					.map_err(WaitForStopReasonError::Connection)?
-					.is_some());
+				assert!(
+					conn.peek()
+						.map_err(WaitForStopReasonError::Connection)?
+						.is_some()
+				);
 				run_blocking::Event::IncomingData(
 					ConnectionExt::read(conn).map_err(WaitForStopReasonError::Connection)?,
 				)

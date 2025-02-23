@@ -3,8 +3,8 @@ pub mod aarch64;
 
 use core_affinity::CoreId;
 use nix::sys::{
-	pthread::{pthread_kill, Pthread},
-	signal::{signal, SigHandler, Signal, SIGUSR1},
+	pthread::{Pthread, pthread_kill},
+	signal::{SIGUSR1, SigHandler, Signal, signal},
 };
 
 #[cfg(target_arch = "aarch64")]

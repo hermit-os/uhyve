@@ -4,8 +4,8 @@ pub(crate) mod registers;
 use paging::initialize_pagetables;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 use x86_64::structures::paging::{
-	page_table::{FrameError, PageTableEntry},
 	PageTable, PageTableIndex,
+	page_table::{FrameError, PageTableEntry},
 };
 
 use crate::{mem::MmapMemory, paging::PagetableError};

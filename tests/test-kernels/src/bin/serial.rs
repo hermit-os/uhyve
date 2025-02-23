@@ -1,11 +1,11 @@
 #[cfg(target_os = "hermit")]
 use hermit as _;
-use uhyve_interface::{parameters::SerialWriteBufferParams, GuestPhysAddr, HypercallAddress};
+use uhyve_interface::{GuestPhysAddr, HypercallAddress, parameters::SerialWriteBufferParams};
 #[cfg(target_arch = "x86_64")]
 use x86_64::{
+	VirtAddr,
 	instructions::port::Port,
 	structures::paging::{PageTable, RecursivePageTable},
-	VirtAddr,
 };
 
 unsafe fn get_page_table() -> RecursivePageTable<'static> {
