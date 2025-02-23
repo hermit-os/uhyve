@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use byte_unit::Byte;
-use criterion::{criterion_group, Criterion};
+use criterion::{Criterion, criterion_group};
 use uhyvelib::{
 	params::{Output, Params},
 	vm::{DefaultBackend, UhyveVm},

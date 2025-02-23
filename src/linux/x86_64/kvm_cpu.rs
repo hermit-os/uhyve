@@ -7,6 +7,7 @@ use vmm_sys_util::eventfd::EventFd;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
 use crate::{
+	HypervisorResult,
 	consts::*,
 	hypercall,
 	linux::KVM,
@@ -15,9 +16,8 @@ use crate::{
 	vcpu::{VcpuStopReason, VirtualCPU},
 	virtio::*,
 	vm::{
-		internal::VirtualizationBackendInternal, KernelInfo, VirtualizationBackend, VmPeripherals,
+		KernelInfo, VirtualizationBackend, VmPeripherals, internal::VirtualizationBackendInternal,
 	},
-	HypervisorResult,
 };
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;

@@ -16,11 +16,12 @@ fn serial_buffer_test() {
 	let res = run_simple_vm(bin_path);
 	println!("Kernel output: {:?}", res);
 	assert_eq!(res.code, 0);
-	assert!(res
-		.output
-		.as_ref()
-		.unwrap()
-		.contains("Hello from serial!\nABCD\n1234ASDF!@#$\n"));
+	assert!(
+		res.output
+			.as_ref()
+			.unwrap()
+			.contains("Hello from serial!\nABCD\n1234ASDF!@#$\n")
+	);
 }
 
 #[test]

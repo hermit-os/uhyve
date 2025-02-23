@@ -6,13 +6,14 @@ use std::{num::NonZeroU32, sync::Arc};
 use log::debug;
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress};
 use xhypervisor::{
-	self, create_vm, map_mem, MemPerm, Register, SystemRegister, VirtualCpuExitReason,
+	self, MemPerm, Register, SystemRegister, VirtualCpuExitReason, create_vm, map_mem,
 };
 
 use crate::{
+	HypervisorResult,
 	aarch64::{
-		mair, tcr_size, MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_DEVICE_GRE, MT_NORMAL, MT_NORMAL_NC,
-		PSR, TCR_FLAGS, TCR_TG1_4K, VA_BITS,
+		MT_DEVICE_GRE, MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_NORMAL, MT_NORMAL_NC, PSR, TCR_FLAGS,
+		TCR_TG1_4K, VA_BITS, mair, tcr_size,
 	},
 	consts::{BOOT_INFO_OFFSET, PGT_OFFSET},
 	hypercall::{self, copy_argv, copy_env},
@@ -20,9 +21,8 @@ use crate::{
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::{
-		internal::VirtualizationBackendInternal, KernelInfo, VirtualizationBackend, VmPeripherals,
+		KernelInfo, VirtualizationBackend, VmPeripherals, internal::VirtualizationBackendInternal,
 	},
-	HypervisorResult,
 };
 
 pub struct XhyveVm {
@@ -249,8 +249,12 @@ impl VirtualCPU for XhyveCpu {
 								Hypercall::SerialWriteBuffer(sysserialwrite) => {
 									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 									let buf = unsafe {
-										self.peripherals.mem.slice_at(sysserialwrite.buf, sysserialwrite.len)
-           .expect("Systemcall parameters for SerialWriteBuffer are invalid")
+										self.peripherals
+											.mem
+											.slice_at(sysserialwrite.buf, sysserialwrite.len)
+											.expect(
+												"Systemcall parameters for SerialWriteBuffer are invalid",
+											)
 									};
 
 									self.peripherals

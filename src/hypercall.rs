@@ -4,7 +4,7 @@ use std::{
 	os::unix::ffi::OsStrExt,
 };
 
-use uhyve_interface::{parameters::*, GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC};
+use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*};
 
 use crate::{
 	isolation::filemap::UhyveFileMap,
@@ -278,7 +278,9 @@ pub fn copy_env(env: &EnvVars, syscmdval: &CmdvalParams, mem: &MmapMemory) {
 			.collect(),
 	};
 	if env.len() >= MAX_ARGC_ENVC.try_into().unwrap() {
-		warn!("Environment is larger than the maximum that can be copied to the VM. Remaining environment is ignored");
+		warn!(
+			"Environment is larger than the maximum that can be copied to the VM. Remaining environment is ignored"
+		);
 	}
 	let env_addrs = unsafe { std::slice::from_raw_parts(envp, env.len()) };
 

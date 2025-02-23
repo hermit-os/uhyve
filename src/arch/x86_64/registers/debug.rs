@@ -2,11 +2,11 @@
 
 use gdbstub::{stub::SingleThreadStopReason, target::ext::breakpoints::WatchKind};
 use x86_64::{
+	VirtAddr,
 	registers::debug::{
 		BreakpointCondition, BreakpointSize, DebugAddressRegisterNumber, Dr6Flags, Dr7Flags,
 		Dr7Value,
 	},
-	VirtAddr,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

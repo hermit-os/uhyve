@@ -11,9 +11,9 @@ use std::{
 use align_address::Align;
 use core_affinity::CoreId;
 use hermit_entry::{
+	HermitVersion,
 	boot_info::{BootInfo, HardwareInfo, LoadInfo, PlatformInfo, RawBootInfo, SerialPortBase},
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
-	HermitVersion,
 };
 use internal::VirtualizationBackendInternal;
 use log::error;
@@ -22,7 +22,7 @@ use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
 
 use crate::{
-	arch,
+	HypervisorError, arch,
 	consts::*,
 	fdt::Fdt,
 	isolation::filemap::UhyveFileMap,
@@ -33,7 +33,6 @@ use crate::{
 	stats::{CpuStats, VmStats},
 	vcpu::VirtualCPU,
 	virtio::*,
-	HypervisorError,
 };
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
@@ -73,9 +72,9 @@ pub(crate) mod internal {
 	use std::sync::Arc;
 
 	use crate::{
+		HypervisorResult,
 		vcpu::VirtualCPU,
 		vm::{KernelInfo, Params, VmPeripherals},
-		HypervisorResult,
 	};
 
 	/// Trait marking a interface for creating (accelerated) VMs.

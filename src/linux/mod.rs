@@ -16,8 +16,8 @@ use gdbstub::stub::{DisconnectReason, GdbStub};
 use kvm_ioctls::Kvm;
 use libc::{SIGRTMAX, SIGRTMIN};
 use nix::sys::{
-	pthread::{pthread_kill, Pthread},
-	signal::{signal, SigHandler, Signal},
+	pthread::{Pthread, pthread_kill},
+	signal::{SigHandler, Signal, signal},
 };
 
 use crate::{

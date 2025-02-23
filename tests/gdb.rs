@@ -9,7 +9,7 @@ use std::{
 	thread,
 };
 
-use assert_fs::{assert::PathAssert, fixture::PathChild, TempDir};
+use assert_fs::{TempDir, assert::PathAssert, fixture::PathChild};
 use common::{build_hermit_bin, rust_gdb};
 use uhyvelib::{
 	params::{Output, Params},

@@ -7,7 +7,7 @@ use std::{
 	time::Duration,
 };
 
-use criterion::{criterion_group, Criterion};
+use criterion::{Criterion, criterion_group};
 
 // based on https://stackoverflow.com/questions/35045996/check-if-a-command-is-in-path-executable-as-process#35046243
 fn is_program_in_path(program: &str) -> bool {

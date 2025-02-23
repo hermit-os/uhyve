@@ -197,7 +197,7 @@ pub(crate) struct HugePageAlignedMem<'a, const SIZE: usize> {
 #[allow(dead_code)]
 impl<const SIZE: usize> HugePageAlignedMem<'_, SIZE> {
 	pub fn new() -> Self {
-		use std::alloc::{alloc_zeroed, Layout};
+		use std::alloc::{Layout, alloc_zeroed};
 		// TODO: Make this generic to arbitrary alignments.
 		let layout = Layout::from_size_align(SIZE, 0x20_0000).unwrap();
 		unsafe {
@@ -215,7 +215,7 @@ impl<const SIZE: usize> HugePageAlignedMem<'_, SIZE> {
 #[cfg(test)]
 impl<const SIZE: usize> Drop for HugePageAlignedMem<'_, SIZE> {
 	fn drop(&mut self) {
-		use std::alloc::{dealloc, Layout};
+		use std::alloc::{Layout, dealloc};
 		let layout = Layout::from_size_align(SIZE, 0x20_0000).unwrap();
 		unsafe {
 			dealloc(self.ptr, layout);

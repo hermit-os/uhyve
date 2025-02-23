@@ -1,10 +1,10 @@
 use uhyve_interface::GuestPhysAddr;
 use x86_64::{
-	structures::paging::{
-		mapper::PageTableFrameMapping, FrameAllocator, MappedPageTable, Mapper, Page, PageSize,
-		PageTable, PageTableFlags, PageTableIndex, PhysFrame, Size2MiB, Size4KiB,
-	},
 	VirtAddr,
+	structures::paging::{
+		FrameAllocator, MappedPageTable, Mapper, Page, PageSize, PageTable, PageTableFlags,
+		PageTableIndex, PhysFrame, Size2MiB, Size4KiB, mapper::PageTableFrameMapping,
+	},
 };
 
 use crate::{consts::*, paging::BumpAllocator};
@@ -136,8 +136,12 @@ pub fn initialize_pagetables(
 #[allow(dead_code)]
 /// Helper fn for debugging pagetables
 fn pretty_print_pagetable(pt: &PageTable) {
-	println!("Idx       Address          Idx       Address          Idx       Address          Idx       Address      ");
-	println!("--------------------------------------------------------------------------------------------------------");
+	println!(
+		"Idx       Address          Idx       Address          Idx       Address          Idx       Address      "
+	);
+	println!(
+		"--------------------------------------------------------------------------------------------------------"
+	);
 	for i in (0..512).step_by(4) {
 		println!(
 			"{:3}: {:#18x},   {:3}: {:#18x},   {:3}: {:#18x},   {:3}: {:#18x}",
@@ -151,7 +155,9 @@ fn pretty_print_pagetable(pt: &PageTable) {
 			pt[i + 3].addr()
 		);
 	}
-	println!("--------------------------------------------------------------------------------------------------------");
+	println!(
+		"--------------------------------------------------------------------------------------------------------"
+	);
 }
 
 #[cfg(test)]
@@ -216,18 +222,22 @@ mod tests {
 					addr_pdpte.addr().as_u64() - phys_addr_offset.as_u64() >= PAGETABLES_OFFSET
 				);
 				assert!(addr_pdpte.addr().as_u64() - phys_addr_offset.as_u64() <= PAGETABLES_END);
-				assert!(addr_pdpte
-					.flags()
-					.contains(PageTableFlags::PRESENT | PageTableFlags::WRITABLE));
+				assert!(
+					addr_pdpte
+						.flags()
+						.contains(PageTableFlags::PRESENT | PageTableFlags::WRITABLE)
+				);
 
 				let pdpte = unsafe { mem.get_ref(addr_pdpte.addr().into()).unwrap() };
 				pretty_print_pagetable(pdpte);
 				let addr_pde = &pdpte[idx3];
 				assert!(addr_pde.addr().as_u64() - phys_addr_offset.as_u64() >= PAGETABLES_OFFSET);
 				assert!(addr_pde.addr().as_u64() - phys_addr_offset.as_u64() <= PAGETABLES_END);
-				assert!(addr_pde
-					.flags()
-					.contains(PageTableFlags::PRESENT | PageTableFlags::WRITABLE));
+				assert!(
+					addr_pde
+						.flags()
+						.contains(PageTableFlags::PRESENT | PageTableFlags::WRITABLE)
+				);
 
 				let pde = unsafe { mem.get_ref(addr_pde.addr().into()).unwrap() };
 				pretty_print_pagetable(pde);
