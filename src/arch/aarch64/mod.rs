@@ -145,8 +145,8 @@ pub fn virt_to_phys(
 	};
 	// TODO: Depending on the virtual address length and granule (defined in TCR register by TG and TxSZ), we could reduce the number of pagetable walks. Hermit doesn't do this at the moment.
 	for level in 0..3 {
-		let table_index =
-			(addr.as_u64() >> PAGE_BITS >> ((3 - level) * PAGE_MAP_BITS) & PAGE_MAP_MASK) as usize;
+		let table_index = ((addr.as_u64() >> PAGE_BITS >> ((3 - level) * PAGE_MAP_BITS))
+			& PAGE_MAP_MASK) as usize;
 		let pte = PageTableEntry::from(pagetable[table_index]);
 		// TODO: We could stop here if we have a "Block Entry" (ARM equivalent to huge page). Currently not supported.
 
@@ -156,7 +156,7 @@ pub fn virt_to_phys(
 			)
 		};
 	}
-	let table_index = (addr.as_u64() >> PAGE_BITS & PAGE_MAP_MASK) as usize;
+	let table_index = ((addr.as_u64() >> PAGE_BITS) & PAGE_MAP_MASK) as usize;
 	let pte = PageTableEntry::from(pagetable[table_index]);
 
 	Ok(pte.address())
