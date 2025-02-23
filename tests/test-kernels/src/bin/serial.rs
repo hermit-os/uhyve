@@ -41,7 +41,7 @@ fn main() {
 			core::ptr::addr_of!(*testtext) as *const u8 as u64
 		))
 		.unwrap(),
-		len: testtext.bytes().len(),
+		len: testtext.len(),
 	};
 	let params_addr = virtual_to_physical(VirtAddr::new(
 		core::ptr::addr_of!(serial_write_params) as u64
