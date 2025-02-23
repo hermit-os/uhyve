@@ -10,7 +10,7 @@ authors = [
     "Jonathan Klimt <jonathan.klimt@eonerc.rwth-aachen.de>",
     "Jens Breitbart <jbreitbart@gmail.com>",
 ]
-edition = "2021"
+edition = "2024"
 description = "A specialized hypervisor for Hermit"
 repository = "https://github.com/hermit-os/uhyve"
 license = "MIT OR Apache-2.0"
