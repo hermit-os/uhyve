@@ -113,8 +113,8 @@ impl Virtqueue {
 	pub unsafe fn new(mem: *mut u8, queue_size: usize) -> Self {
 		#[allow(clippy::cast_ptr_alignment)]
 		let descriptor_table = mem as *mut VringDescriptor;
-		let available_ring_ptr = mem.add(get_available_ring_offset());
-		let used_ring_ptr = mem.add(get_used_ring_offset());
+		let available_ring_ptr = unsafe { mem.add(get_available_ring_offset()) };
+		let used_ring_ptr = unsafe { mem.add(get_used_ring_offset()) };
 		let available_ring = VringAvailable::new(available_ring_ptr);
 		let used_ring = VringUsed::new(used_ring_ptr);
 		Virtqueue {
@@ -128,7 +128,7 @@ impl Virtqueue {
 	}
 
 	pub unsafe fn get_descriptor(&mut self, index: u16) -> &mut VringDescriptor {
-		&mut *self.descriptor_table.offset(index as isize)
+		unsafe { &mut *self.descriptor_table.offset(index as isize) }
 	}
 
 	pub fn avail_iter(&mut self) -> AvailIter<'_> {
