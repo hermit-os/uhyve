@@ -47,7 +47,7 @@ byte-unit = { version = "5", features = ["byte"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 nix = { version = "0.29", features = ["mman", "pthread", "signal"] }
 core_affinity = "0.8"
-either = "1.13"
+either = "1.14"
 env_logger = "0.11"
 gdbstub = "0.7"
 gdbstub_arch = "0.3"
