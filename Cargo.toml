@@ -67,7 +67,7 @@ shell-words = "1"
 sysinfo = { version = "0.33.1", default-features = false, features = ["system"] }
 vm-fdt = "0.3"
 tempfile = "3.16.0"
-uuid = { version = "1.13.1", features = ["fast-rng", "v4"]}
+uuid = { version = "1.14.0", features = ["fast-rng", "v4"]}
 clean-path = "0.2.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
