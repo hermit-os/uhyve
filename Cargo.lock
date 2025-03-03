@@ -567,9 +567,9 @@ checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
 name = "gdbstub"
-version = "0.7.3"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31c683a9f13de31432e6097131d5f385898c7f0635c0f392b9d0fa165063c8ac"
+checksum = "8d3ab1793dc482490054dced2be31e868b57e1306841c67734fff5e1e5836a85"
 dependencies = [
  "bitflags 2.9.0",
  "cfg-if",
