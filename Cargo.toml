@@ -72,7 +72,7 @@ clean-path = "0.2.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.11"
-kvm-ioctls = "0.20"
+kvm-ioctls = "0.21"
 vmm-sys-util = "0.12"
 
 [target.'cfg(target_os = "macos")'.dependencies]
