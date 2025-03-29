@@ -31,4 +31,7 @@ pub trait VirtualCPU: Sized + Send {
 
 	/// Queries the CPUs base frequency in kHz
 	fn get_cpu_frequency(&self) -> Option<NonZeroU32>;
+
+	/// Initialize virtual CPU
+	fn init(&mut self) -> HypervisorResult<()>;
 }

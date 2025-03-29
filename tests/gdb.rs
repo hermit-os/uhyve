@@ -24,7 +24,7 @@ fn gdb() -> io::Result<()> {
 	let bin_path_clone = bin_path.clone();
 	let vm = thread::spawn(move || {
 		let bin_path = bin_path_clone;
-		let vm = UhyveVm::new(
+		let mut vm = UhyveVm::new(
 			bin_path,
 			Params {
 				gdb_port: Some(port),
@@ -33,6 +33,7 @@ fn gdb() -> io::Result<()> {
 			},
 		)
 		.unwrap();
+		vm.vcpu_init(0);
 		let res = vm.run(None);
 		assert_eq!(0, res.code);
 	});

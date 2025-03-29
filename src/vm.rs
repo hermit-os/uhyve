@@ -302,6 +302,14 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		})
 	}
 
+	/// Initialized processor `id` for the guest
+	pub fn vcpu_init(&mut self, id: usize) {
+		// initialize virtual processor
+		if self.vcpus[id].init().is_err() {
+			panic!("Unable to initialize vCPU");
+		}
+	}
+
 	pub fn run_no_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
 		KickSignal::register_handler().unwrap();
 
@@ -327,6 +335,11 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 							core_affinity::set_for_current(core_id); // This does not return an error if it fails :(
 						}
 						None => debug!("No affinity specified, not binding thread"),
+					}
+
+					// initialize virtual processor
+					if cpu.init().is_err() {
+						panic!("Unable to initialize vCPU");
 					}
 
 					thread::sleep(std::time::Duration::from_millis(cpu_id as u64 * 50));
