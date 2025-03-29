@@ -331,6 +331,11 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 					thread::sleep(std::time::Duration::from_millis(cpu_id as u64 * 50));
 
+					// initialize virtual processor
+					if cpu.init().is_err() {
+						panic!("Unable to initialize vCPU");
+					}
+
 					// jump into the VM and execute code of the guest
 					match cpu.run() {
 						Ok((code, stats)) => {

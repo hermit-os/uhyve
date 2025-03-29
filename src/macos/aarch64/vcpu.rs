@@ -38,25 +38,17 @@ impl VirtualizationBackendInternal for XhyveVm {
 		kernel_info: Arc<KernelInfo>,
 		enable_stats: bool,
 	) -> HypervisorResult<XhyveCpu> {
-		let mut vcpu = XhyveCpu {
+		Ok(XhyveCpu {
 			id,
 			peripherals: self.peripherals.clone(),
 			kernel_info: kernel_info.clone(),
-			vcpu: xhypervisor::VirtualCpu::new().unwrap(),
+			vcpu: None,
 			stats: if enable_stats {
 				Some(CpuStats::new(id as usize))
 			} else {
 				None
 			},
-		};
-		vcpu.init(
-			kernel_info.entry_point,
-			kernel_info.stack_address,
-			kernel_info.guest_address,
-			id,
-		)?;
-
-		Ok(vcpu)
+		})
 	}
 
 	fn new(peripherals: Arc<VmPeripherals>, _params: &Params) -> HypervisorResult<Self> {
@@ -79,7 +71,7 @@ impl VirtualizationBackend for XhyveVm {
 
 pub struct XhyveCpu {
 	id: u32,
-	vcpu: xhypervisor::VirtualCpu,
+	vcpu: Option<xhypervisor::VirtualCpu>,
 	peripherals: Arc<VmPeripherals>,
 	// TODO: Remove once the getenv/getargs hypercalls are removed
 	kernel_info: Arc<KernelInfo>,
@@ -88,25 +80,38 @@ pub struct XhyveCpu {
 unsafe impl Send for XhyveCpu {}
 
 impl XhyveCpu {
-	fn init(
-		&mut self,
-		entry_point: GuestPhysAddr,
-		stack_address: GuestPhysAddr,
-		guest_address: GuestPhysAddr,
-		cpu_id: u32,
-	) -> HypervisorResult<()> {
+	pub fn get_root_pagetable(&self) -> GuestPhysAddr {
+		GuestPhysAddr::new(
+			self.vcpu
+				.as_ref()
+				.unwrap()
+				.read_system_register(SystemRegister::TTBR0_EL1)
+				.unwrap(),
+		)
+	}
+}
+
+impl VirtualCPU for XhyveCpu {
+	fn init(&mut self) -> HypervisorResult<()> {
 		debug!("Initialize VirtualCPU");
+
+		let (entry_point, stack_address, guest_address, cpu_id) = (
+			self.kernel_info.entry_point,
+			self.kernel_info.stack_address,
+			self.kernel_info.guest_address,
+			self.id,
+		);
+
+		// Initialize CPU
+		let vcpu = xhypervisor::VirtualCpu::new()?;
 
 		/* pstate = all interrupts masked */
 		let pstate: PSR = PSR::D_BIT | PSR::A_BIT | PSR::I_BIT | PSR::F_BIT | PSR::MODE_EL1H;
-		self.vcpu.write_register(Register::CPSR, pstate.bits())?;
-		self.vcpu
-			.write_register(Register::PC, entry_point.as_u64())?;
-		self.vcpu
-			.write_system_register(SystemRegister::SP_EL1, stack_address.as_u64())?;
-		self.vcpu
-			.write_register(Register::X0, (guest_address + BOOT_INFO_OFFSET).as_u64())?;
-		self.vcpu.write_register(Register::X1, cpu_id.into())?;
+		vcpu.write_register(Register::CPSR, pstate.bits())?;
+		vcpu.write_register(Register::PC, entry_point.as_u64())?;
+		vcpu.write_system_register(SystemRegister::SP_EL1, stack_address.as_u64())?;
+		vcpu.write_register(Register::X0, (guest_address + BOOT_INFO_OFFSET).as_u64())?;
+		vcpu.write_register(Register::X1, cpu_id.into())?;
 
 		/*
 		 * Setup memory attribute type tables
@@ -126,37 +131,30 @@ impl XhyveCpu {
 			| mair(0x0c, MT_DEVICE_GRE)
 			| mair(0x44, MT_NORMAL_NC)
 			| mair(0xff, MT_NORMAL);
-		self.vcpu
-			.write_system_register(SystemRegister::MAIR_EL1, mair_el1)?;
+		vcpu.write_system_register(SystemRegister::MAIR_EL1, mair_el1)?;
 
 		/*
 		 * Setup translation control register (TCR)
 		 */
-		let aa64mmfr0_el1 = self
-			.vcpu
-			.read_system_register(SystemRegister::ID_AA64MMFR0_EL1)?;
+		let aa64mmfr0_el1 = vcpu.read_system_register(SystemRegister::ID_AA64MMFR0_EL1)?;
 		let tcr = ((aa64mmfr0_el1 & 0xF) << 32) | (tcr_size(VA_BITS) | TCR_TG1_4K | TCR_FLAGS);
 		let tcr_el1 = (tcr & 0xFFFFFFF0FFFFFFFFu64) | ((aa64mmfr0_el1 & 0xFu64) << 32);
-		self.vcpu
-			.write_system_register(SystemRegister::TCR_EL1, tcr_el1)?;
+		vcpu.write_system_register(SystemRegister::TCR_EL1, tcr_el1)?;
 
 		/*
 		 * Enable FP/ASIMD in Architectural Feature Access Control Register,
 		 */
-		let cpacr_el1 = self.vcpu.read_system_register(SystemRegister::CPACR_EL1)? | (3 << 20);
-		self.vcpu
-			.write_system_register(SystemRegister::CPACR_EL1, cpacr_el1)?;
+		let cpacr_el1 = vcpu.read_system_register(SystemRegister::CPACR_EL1)? | (3 << 20);
+		vcpu.write_system_register(SystemRegister::CPACR_EL1, cpacr_el1)?;
 
 		/*
 		 * Reset debug control register
 		 */
-		self.vcpu
-			.write_system_register(SystemRegister::MDSCR_EL1, 0)?;
+		vcpu.write_system_register(SystemRegister::MDSCR_EL1, 0)?;
 
 		// Load TTBRx
-		self.vcpu
-			.write_system_register(SystemRegister::TTBR1_EL1, 0)?;
-		self.vcpu.write_system_register(
+		vcpu.write_system_register(SystemRegister::TTBR1_EL1, 0)?;
+		vcpu.write_system_register(
 			SystemRegister::TTBR0_EL1,
 			(guest_address + PGT_OFFSET).as_u64(),
 		)?;
@@ -199,140 +197,146 @@ impl XhyveCpu {
 		 | (0 << 1)			/* A	Alignment fault checking disabled */
 		 | (1 << 0)			/* M	MMU enable */
 		;
-		self.vcpu
-			.write_system_register(SystemRegister::SCTLR_EL1, sctrl_el1)?;
+		vcpu.write_system_register(SystemRegister::SCTLR_EL1, sctrl_el1)?;
 
+		self.vcpu = Some(vcpu);
+
+		self.print_registers();
 		Ok(())
 	}
 
-	pub fn get_root_pagetable(&self) -> GuestPhysAddr {
-		GuestPhysAddr::new(
-			self.vcpu
-				.read_system_register(SystemRegister::TTBR0_EL1)
-				.unwrap(),
-		)
-	}
-}
-
-impl VirtualCPU for XhyveCpu {
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
-		loop {
-			self.vcpu.run()?;
+		if let Some(vcpu) = &mut self.vcpu {
+			loop {
+				vcpu.run()?;
 
-			let reason = self.vcpu.exit_reason();
-			match reason {
-				VirtualCpuExitReason::Exception { exception } => {
-					let ec = (exception.syndrome >> 26) & 0x3f;
+				let reason = vcpu.exit_reason();
+				match reason {
+					VirtualCpuExitReason::Exception { exception } => {
+						let ec = (exception.syndrome >> 26) & 0x3f;
 
-					// data abort from lower or current level
-					if ec == 0b100100u64 || ec == 0b100101u64 {
-						let addr: u16 = exception.physical_address.try_into().unwrap();
-						let pc = self.vcpu.read_register(Register::PC)?;
+						// data abort from lower or current level
+						if ec == 0b100100u64 || ec == 0b100101u64 {
+							let addr: u16 = exception.physical_address.try_into().unwrap();
+							let pc = vcpu.read_register(Register::PC)?;
 
-						let data_addr = GuestPhysAddr::new(self.vcpu.read_register(Register::X8)?);
-						if let Some(hypercall) = unsafe {
-							hypercall::address_to_hypercall(&self.peripherals.mem, addr, data_addr)
-						} {
-							if let Some(s) = self.stats.as_mut() {
-								s.increment_val(VmExit::Hypercall(HypercallAddress::from(
-									&hypercall,
-								)))
-							}
-							match hypercall {
-								Hypercall::SerialWriteByte(_char) => {
-									let x8 = (self.vcpu.read_register(Register::X8)? & 0xFF) as u8;
-									self.peripherals
-										.serial
-										.output(&[x8])
-										.unwrap_or_else(|e| error!("{e:?}"));
-								}
-								Hypercall::SerialWriteBuffer(sysserialwrite) => {
-									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
-									let buf = unsafe {
-										self.peripherals
-											.mem
-											.slice_at(sysserialwrite.buf, sysserialwrite.len)
-											.expect(
-												"Systemcall parameters for SerialWriteBuffer are invalid",
-											)
-									};
-
-									self.peripherals
-										.serial
-										.output(buf)
-										.unwrap_or_else(|e| error!("{e:?}"))
-								}
-								Hypercall::Exit(sysexit) => {
-									return Ok(VcpuStopReason::Exit(sysexit.arg));
-								}
-								Hypercall::Cmdsize(syssize) => syssize.update(
-									&self.kernel_info.path,
-									&self.kernel_info.params.kernel_args,
-								),
-								Hypercall::Cmdval(syscmdval) => {
-									copy_argv(
-										self.kernel_info.path.as_os_str(),
-										&self.kernel_info.params.kernel_args,
-										syscmdval,
-										&self.peripherals.mem,
-									);
-									copy_env(
-										&self.kernel_info.params.env,
-										syscmdval,
-										&self.peripherals.mem,
-									);
-								}
-								Hypercall::FileClose(sysclose) => hypercall::close(sysclose),
-								Hypercall::FileLseek(syslseek) => hypercall::lseek(syslseek),
-								Hypercall::FileOpen(sysopen) => hypercall::open(
+							let data_addr = GuestPhysAddr::new(vcpu.read_register(Register::X8)?);
+							if let Some(hypercall) = unsafe {
+								hypercall::address_to_hypercall(
 									&self.peripherals.mem,
-									sysopen,
-									&mut self.peripherals.file_mapping.lock().unwrap(),
-								),
-								Hypercall::FileRead(sysread) => hypercall::read(
-									&self.peripherals.mem,
-									sysread,
-									self.get_root_pagetable(),
-								),
-								Hypercall::FileWrite(syswrite) => hypercall::write(
-									&self.peripherals,
-									syswrite,
-									self.get_root_pagetable(),
+									addr,
+									data_addr,
 								)
-								.unwrap(),
-								Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
-									&self.peripherals.mem,
-									sysunlink,
-									&mut self.peripherals.file_mapping.lock().unwrap(),
-								),
-								_ => {
-									panic! {"Hypercall {hypercall:?} not implemented on macos-aarch64"}
+							} {
+								if let Some(s) = self.stats.as_mut() {
+									s.increment_val(VmExit::Hypercall(HypercallAddress::from(
+										&hypercall,
+									)))
+								}
+								match hypercall {
+									Hypercall::SerialWriteByte(_char) => {
+										let x8 = (vcpu.read_register(Register::X8)? & 0xFF) as u8;
+										self.peripherals
+											.serial
+											.output(&[x8])
+											.unwrap_or_else(|e| error!("{e:?}"));
+									}
+									Hypercall::SerialWriteBuffer(sysserialwrite) => {
+										// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
+										let buf = unsafe {
+											self.peripherals
+												.mem
+												.slice_at(sysserialwrite.buf, sysserialwrite.len)
+												.expect(
+													"Systemcall parameters for SerialWriteBuffer are invalid",
+												)
+										};
+
+										self.peripherals
+											.serial
+											.output(buf)
+											.unwrap_or_else(|e| error!("{e:?}"))
+									}
+									Hypercall::Exit(sysexit) => {
+										return Ok(VcpuStopReason::Exit(sysexit.arg));
+									}
+									Hypercall::Cmdsize(syssize) => syssize.update(
+										&self.kernel_info.path,
+										&self.kernel_info.params.kernel_args,
+									),
+									Hypercall::Cmdval(syscmdval) => {
+										copy_argv(
+											self.kernel_info.path.as_os_str(),
+											&self.kernel_info.params.kernel_args,
+											syscmdval,
+											&self.peripherals.mem,
+										);
+										copy_env(
+											&self.kernel_info.params.env,
+											syscmdval,
+											&self.peripherals.mem,
+										);
+									}
+									Hypercall::FileClose(sysclose) => hypercall::close(sysclose),
+									Hypercall::FileLseek(syslseek) => hypercall::lseek(syslseek),
+									Hypercall::FileOpen(sysopen) => hypercall::open(
+										&self.peripherals.mem,
+										sysopen,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
+									Hypercall::FileRead(sysread) => hypercall::read(
+										&self.peripherals.mem,
+										sysread,
+										GuestPhysAddr::new(
+											vcpu.read_system_register(SystemRegister::TTBR0_EL1)
+												.unwrap(),
+										),
+									),
+									Hypercall::FileWrite(syswrite) => hypercall::write(
+										&self.peripherals,
+										syswrite,
+										GuestPhysAddr::new(
+											vcpu.read_system_register(SystemRegister::TTBR0_EL1)
+												.unwrap(),
+										),
+									)
+									.unwrap(),
+									Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
+										&self.peripherals.mem,
+										sysunlink,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
+									_ => {
+										panic! {"Hypercall {hypercall:?} not implemented on macos-aarch64"}
+									}
+								}
+								// increase the pc to the instruction after the exception to continue execution
+								vcpu.write_register(Register::PC, pc + 4)?;
+							} else {
+								#[allow(clippy::match_single_binding)]
+								match addr {
+									_ => {
+										error!("Unable to handle exception {:?}", exception);
+										self.print_registers();
+										return Err(xhypervisor::Error::Error.into());
+									}
 								}
 							}
-							// increase the pc to the instruction after the exception to continue execution
-							self.vcpu.write_register(Register::PC, pc + 4)?;
 						} else {
-							#[allow(clippy::match_single_binding)]
-							match addr {
-								_ => {
-									error!("Unable to handle exception {:?}", exception);
-									self.print_registers();
-									return Err(xhypervisor::Error::Error.into());
-								}
-							}
+							error!("Unsupported exception class: 0x{:x}", ec);
+							self.print_registers();
+							return Err(xhypervisor::Error::Error.into());
 						}
-					} else {
-						error!("Unsupported exception class: 0x{:x}", ec);
-						self.print_registers();
+					}
+					_ => {
+						error!("Unknown exit reason: {:?}", reason);
 						return Err(xhypervisor::Error::Error.into());
 					}
 				}
-				_ => {
-					error!("Unknown exit reason: {:?}", reason);
-					return Err(xhypervisor::Error::Error.into());
-				}
 			}
 		}
+
+		panic!("vCPU isn't initialized!");
 	}
 
 	fn run(&mut self) -> HypervisorResult<(Option<i32>, Option<CpuStats>)> {
@@ -355,60 +359,56 @@ impl VirtualCPU for XhyveCpu {
 	fn print_registers(&self) {
 		println!("\nDump state of CPU {}", self.id);
 
-		let pc = self.vcpu.read_register(Register::PC).unwrap();
-		let cpsr = self.vcpu.read_register(Register::CPSR).unwrap();
-		let sp = self
-			.vcpu
-			.read_system_register(SystemRegister::SP_EL1)
-			.unwrap();
-		let sctlr = self
-			.vcpu
-			.read_system_register(SystemRegister::SCTLR_EL1)
-			.unwrap();
-		let ttbr0 = self
-			.vcpu
-			.read_system_register(SystemRegister::TTBR0_EL1)
-			.unwrap();
-		let lr = self.vcpu.read_register(Register::LR).unwrap();
-		let x0 = self.vcpu.read_register(Register::X0).unwrap();
-		let x1 = self.vcpu.read_register(Register::X1).unwrap();
-		let x2 = self.vcpu.read_register(Register::X2).unwrap();
-		let x3 = self.vcpu.read_register(Register::X3).unwrap();
-		let x4 = self.vcpu.read_register(Register::X4).unwrap();
-		let x5 = self.vcpu.read_register(Register::X5).unwrap();
-		let x6 = self.vcpu.read_register(Register::X6).unwrap();
-		let x7 = self.vcpu.read_register(Register::X7).unwrap();
-		let x8 = self.vcpu.read_register(Register::X8).unwrap();
-		let x9 = self.vcpu.read_register(Register::X9).unwrap();
-		let x10 = self.vcpu.read_register(Register::X10).unwrap();
-		let x11 = self.vcpu.read_register(Register::X11).unwrap();
-		let x12 = self.vcpu.read_register(Register::X12).unwrap();
-		let x13 = self.vcpu.read_register(Register::X13).unwrap();
-		let x14 = self.vcpu.read_register(Register::X14).unwrap();
-		let x15 = self.vcpu.read_register(Register::X15).unwrap();
-		let x16 = self.vcpu.read_register(Register::X16).unwrap();
-		let x17 = self.vcpu.read_register(Register::X17).unwrap();
-		let x18 = self.vcpu.read_register(Register::X18).unwrap();
-		let x19 = self.vcpu.read_register(Register::X19).unwrap();
-		let x20 = self.vcpu.read_register(Register::X20).unwrap();
-		let x21 = self.vcpu.read_register(Register::X21).unwrap();
-		let x22 = self.vcpu.read_register(Register::X22).unwrap();
-		let x23 = self.vcpu.read_register(Register::X23).unwrap();
-		let x24 = self.vcpu.read_register(Register::X24).unwrap();
-		let x25 = self.vcpu.read_register(Register::X25).unwrap();
-		let x26 = self.vcpu.read_register(Register::X26).unwrap();
-		let x27 = self.vcpu.read_register(Register::X27).unwrap();
-		let x28 = self.vcpu.read_register(Register::X28).unwrap();
-		let x29 = self.vcpu.read_register(Register::X29).unwrap();
+		if let Some(vcpu) = &self.vcpu {
+			let pc = vcpu.read_register(Register::PC).unwrap();
+			let cpsr = vcpu.read_register(Register::CPSR).unwrap();
+			let sp = vcpu.read_system_register(SystemRegister::SP_EL1).unwrap();
+			let sctlr = vcpu
+				.read_system_register(SystemRegister::SCTLR_EL1)
+				.unwrap();
+			let ttbr0 = vcpu
+				.read_system_register(SystemRegister::TTBR0_EL1)
+				.unwrap();
+			let lr = vcpu.read_register(Register::LR).unwrap();
+			let x0 = vcpu.read_register(Register::X0).unwrap();
+			let x1 = vcpu.read_register(Register::X1).unwrap();
+			let x2 = vcpu.read_register(Register::X2).unwrap();
+			let x3 = vcpu.read_register(Register::X3).unwrap();
+			let x4 = vcpu.read_register(Register::X4).unwrap();
+			let x5 = vcpu.read_register(Register::X5).unwrap();
+			let x6 = vcpu.read_register(Register::X6).unwrap();
+			let x7 = vcpu.read_register(Register::X7).unwrap();
+			let x8 = vcpu.read_register(Register::X8).unwrap();
+			let x9 = vcpu.read_register(Register::X9).unwrap();
+			let x10 = vcpu.read_register(Register::X10).unwrap();
+			let x11 = vcpu.read_register(Register::X11).unwrap();
+			let x12 = vcpu.read_register(Register::X12).unwrap();
+			let x13 = vcpu.read_register(Register::X13).unwrap();
+			let x14 = vcpu.read_register(Register::X14).unwrap();
+			let x15 = vcpu.read_register(Register::X15).unwrap();
+			let x16 = vcpu.read_register(Register::X16).unwrap();
+			let x17 = vcpu.read_register(Register::X17).unwrap();
+			let x18 = vcpu.read_register(Register::X18).unwrap();
+			let x19 = vcpu.read_register(Register::X19).unwrap();
+			let x20 = vcpu.read_register(Register::X20).unwrap();
+			let x21 = vcpu.read_register(Register::X21).unwrap();
+			let x22 = vcpu.read_register(Register::X22).unwrap();
+			let x23 = vcpu.read_register(Register::X23).unwrap();
+			let x24 = vcpu.read_register(Register::X24).unwrap();
+			let x25 = vcpu.read_register(Register::X25).unwrap();
+			let x26 = vcpu.read_register(Register::X26).unwrap();
+			let x27 = vcpu.read_register(Register::X27).unwrap();
+			let x28 = vcpu.read_register(Register::X28).unwrap();
+			let x29 = vcpu.read_register(Register::X29).unwrap();
 
-		println!("\nRegisters:");
-		println!("----------");
-		println!(
-			"PC    : {pc:016x}  LR    : {lr:016x}  CPSR  : {cpsr:016x}\n\
+			println!("\nRegisters:");
+			println!("----------");
+			println!(
+				"PC    : {pc:016x}  LR    : {lr:016x}  CPSR  : {cpsr:016x}\n\
 		     SP    : {sp:016x}  SCTLR : {sctlr:016x}  TTBR0 : {ttbr0:016x}",
-		);
-		print!(
-			"x0    : {x0:016x}  x1    : {x1:016x}  x2    : {x2:016x}\n\
+			);
+			print!(
+				"x0    : {x0:016x}  x1    : {x1:016x}  x2    : {x2:016x}\n\
 			 x3    : {x3:016x}  x4    : {x4:016x}  x5    : {x5:016x}\n\
 			 x6    : {x6:016x}  x7    : {x7:016x}  x8    : {x8:016x}\n\
 			 x9    : {x9:016x}  x10   : {x10:016x}  x11   : {x11:016x}\n\
@@ -418,7 +418,8 @@ impl VirtualCPU for XhyveCpu {
 			 x21   : {x21:016x}  x22   : {x22:016x}  x23   : {x23:016x}\n\
 			 x24   : {x24:016x}  x25   : {x25:016x}  x26   : {x26:016x}\n\
 			 x27   : {x27:016x}  x28   : {x28:016x}  x29   : {x29:016x}\n",
-		);
+			);
+		}
 	}
 
 	fn get_cpu_frequency(&self) -> Option<NonZeroU32> {
@@ -429,6 +430,8 @@ impl VirtualCPU for XhyveCpu {
 
 impl Drop for XhyveCpu {
 	fn drop(&mut self) {
-		self.vcpu.destroy().unwrap();
+		if let Some(vcpu) = &self.vcpu {
+			vcpu.destroy().unwrap();
+		}
 	}
 }
