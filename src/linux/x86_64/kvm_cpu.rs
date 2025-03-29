@@ -36,6 +36,7 @@ pub struct KvmVm {
 	vm_fd: VmFd,
 	peripherals: Arc<VmPeripherals>,
 }
+
 impl VirtualizationBackendInternal for KvmVm {
 	type VCPU = KvmCpu;
 	const NAME: &str = "KvmVm";
@@ -47,7 +48,7 @@ impl VirtualizationBackendInternal for KvmVm {
 		enable_stats: bool,
 	) -> HypervisorResult<KvmCpu> {
 		let vcpu = self.vm_fd.create_vcpu(id as u64)?;
-		let mut kvcpu = KvmCpu {
+		Ok(KvmCpu {
 			id,
 			vcpu,
 			peripherals: self.peripherals.clone(),
@@ -58,10 +59,7 @@ impl VirtualizationBackendInternal for KvmVm {
 			} else {
 				None
 			},
-		};
-		kvcpu.init(id)?;
-
-		Ok(kvcpu)
+		})
 	}
 
 	fn new(peripherals: Arc<VmPeripherals>, params: &Params) -> HypervisorResult<Self> {
@@ -351,13 +349,15 @@ impl KvmCpu {
 	pub fn get_root_pagetable(&self) -> GuestPhysAddr {
 		GuestPhysAddr::new(self.vcpu.get_sregs().unwrap().cr3)
 	}
+}
 
-	fn init(&mut self, cpu_id: u32) -> HypervisorResult<()> {
+impl VirtualCPU for KvmCpu {
+	fn init(&mut self) -> HypervisorResult<()> {
 		self.setup_long_mode(
 			self.kernel_info.entry_point,
 			self.kernel_info.stack_address,
 			self.kernel_info.guest_address,
-			cpu_id,
+			self.id,
 		)?;
 		self.setup_cpuid()?;
 
@@ -371,9 +371,7 @@ impl KvmCpu {
 
 		Ok(())
 	}
-}
 
-impl VirtualCPU for KvmCpu {
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
 			match self.vcpu.run() {
