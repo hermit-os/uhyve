@@ -64,7 +64,7 @@ rftrace = { version = "0.2", optional = true }
 rftrace-frontend = { version = "0.2", optional = true }
 rand = { version = "0.9", optional = true }
 shell-words = "1"
-sysinfo = { version = "0.33.1", default-features = false, features = ["system"] }
+sysinfo = { version = "0.34.1", default-features = false, features = ["system"] }
 vm-fdt = "0.3"
 tempfile = "3.19.1"
 uuid = { version = "1.16.0", features = ["fast-rng", "v4"]}
