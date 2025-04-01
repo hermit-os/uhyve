@@ -5,6 +5,14 @@ use std::{fmt::Write, ops::Range};
 use uhyve_interface::GuestPhysAddr;
 use vm_fdt::{FdtWriter, FdtWriterNode, FdtWriterResult};
 
+#[cfg(target_arch = "aarch64")]
+use crate::{
+	consts::{
+		GICD_BASE_ADDRESS, GICD_SIZE, GICR_BASE_ADDRESS, GICR_SIZE, MSI_BASE_ADDRESS, MSI_SIZE,
+	},
+	params::CpuCount,
+};
+
 /// A builder for an FDT.
 pub struct Fdt {
 	writer: FdtWriter,
@@ -58,6 +66,71 @@ impl Fdt {
 		let tsc_khz_node = self.writer.begin_node("hermit,tsc")?;
 		self.writer.property_u32("khz", tsc_khz)?;
 		self.writer.end_node(tsc_khz_node)?;
+
+		Ok(self)
+	}
+
+	#[cfg(target_arch = "aarch64")]
+	fn cpu(&mut self, id: u32) -> FdtWriterResult<()> {
+		let node_name = format!("cpu@{}", id);
+
+		let cpu_node = self.writer.begin_node(&node_name)?;
+		self.writer
+			.property_string("compatible", "arm,cortex-a72")?;
+		self.writer.property_string("device_type", "cpu")?;
+		self.writer.end_node(cpu_node)?;
+
+		Ok(())
+	}
+
+	#[cfg(target_arch = "aarch64")]
+	fn its(&mut self) -> FdtWriterResult<()> {
+		let node_name = format!("its@{:x}", MSI_BASE_ADDRESS);
+		let reg = &[MSI_BASE_ADDRESS, MSI_SIZE.try_into().unwrap()][..];
+
+		let its_node = self.writer.begin_node(&node_name)?;
+		self.writer.property_u32("#msi-cells", 0x1)?;
+		self.writer.property_array_u64("reg", reg)?;
+		self.writer
+			.property_string("compatible", "arm,gic-v3-its")?;
+		self.writer.property_string("msi-controller", "[]")?;
+		self.writer.end_node(its_node)?;
+
+		Ok(())
+	}
+
+	#[cfg(target_arch = "aarch64")]
+	pub fn cpus(mut self, cpu_count: CpuCount) -> FdtWriterResult<Self> {
+		let node_name = "cpus";
+
+		let cpus_node = self.writer.begin_node(node_name)?;
+		self.writer.property_u32("#address-cells", 0x1)?;
+		self.writer.property_u32("#size-cells", 0x0)?;
+		for i in 0..cpu_count.get() {
+			self.cpu(i)?;
+		}
+		self.writer.end_node(cpus_node)?;
+
+		Ok(self)
+	}
+
+	#[cfg(target_arch = "aarch64")]
+	pub fn gic(mut self) -> FdtWriterResult<Self> {
+		let node_name = format!("intc@{:x}", GICD_BASE_ADDRESS);
+		let reg = &[
+			GICD_BASE_ADDRESS,
+			GICD_SIZE.try_into().unwrap(),
+			GICR_BASE_ADDRESS,
+			GICR_SIZE.try_into().unwrap(),
+		][..];
+
+		let gic_node = self.writer.begin_node(&node_name)?;
+		self.writer.property_string("compatible", "arm,gic-v3")?;
+		self.writer.property_u32("#address-cells", 0x2)?;
+		self.writer.property_u32("#size-cells", 0x2)?;
+		self.writer.property_array_u64("reg", reg)?;
+		self.its()?;
+		self.writer.end_node(gic_node)?;
 
 		Ok(self)
 	}

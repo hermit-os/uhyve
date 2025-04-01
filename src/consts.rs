@@ -33,5 +33,10 @@ pub const SHAREDQUEUE_START: usize = 0x80000;
 pub const UHYVE_NET_MTU: usize = 1500;
 pub const UHYVE_QUEUE_SIZE: usize = 8;
 pub const UHYVE_IRQ_NET: u32 = 11;
-
+pub const GICD_BASE_ADDRESS: u64 = 0x800_0000;
+pub const GICD_SIZE: usize = 0x10000;
+pub const GICR_BASE_ADDRESS: u64 = 0x80A_0000;
+pub const GICR_SIZE: usize = 0xf60000;
+pub const MSI_BASE_ADDRESS: u64 = 0x808_0000;
+pub const MSI_SIZE: usize = 0x20000;
 pub const GUEST_PAGE_SIZE: u64 = 0x200000; /* 2 MB pages in guest */
