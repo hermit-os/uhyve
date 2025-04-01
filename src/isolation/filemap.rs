@@ -2,16 +2,15 @@ use std::{
 	collections::HashMap,
 	ffi::{CString, OsString},
 	fs::canonicalize,
-	io::ErrorKind,
 	os::unix::ffi::OsStrExt,
-	path::{PathBuf, absolute},
+	path::PathBuf,
 };
 
 use clean_path::clean;
 use tempfile::TempDir;
 use uuid::Uuid;
 
-use crate::isolation::tempdir::create_temp_dir;
+use crate::isolation::{split_guest_and_host_path, tempdir::create_temp_dir};
 
 /// Wrapper around a `HashMap` to map guest paths to arbitrary host paths.
 #[derive(Debug)]
@@ -30,30 +29,11 @@ impl UhyveFileMap {
 			files: mappings
 				.iter()
 				.map(String::as_str)
-				.map(Self::split_guest_and_host_path)
+				.map(split_guest_and_host_path)
 				.map(Result::unwrap)
 				.collect(),
 			tempdir: create_temp_dir(tempdir),
 		}
-	}
-
-	/// Separates a string of the format "./host_dir/host_path.txt:guest_path.txt"
-	/// into a guest_path (String) and host_path (OsString) respectively.
-	///
-	/// * `mapping` - A mapping of the format `./host_path.txt:guest.txt`.
-	fn split_guest_and_host_path(mapping: &str) -> Result<(String, OsString), ErrorKind> {
-		let mut mappingiter: std::str::Split<'_, &str> = mapping.split(":");
-		let host_str = mappingiter.next().ok_or(ErrorKind::InvalidInput)?;
-		let guest_str = mappingiter.next().ok_or(ErrorKind::InvalidInput)?;
-
-		// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
-		// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
-		let host_path = canonicalize(host_str)
-			.map_or_else(|_| clean(absolute(host_str).unwrap()), clean)
-			.into();
-		let guest_path: String = clean(guest_str).display().to_string();
-
-		Ok((guest_path, host_path))
 	}
 
 	/// Returns the host_path on the host filesystem given a requested guest_path, if it exists.
@@ -89,7 +69,6 @@ impl UhyveFileMap {
 						let guest_path_remainder = requested_guest_pathbuf
 							.strip_prefix(searched_parent_guest)
 							.unwrap();
-
 						host_path.push(guest_path_remainder);
 
 						// Handles symbolic links.
@@ -102,6 +81,18 @@ impl UhyveFileMap {
 			debug!("The file is not in a child directory, returning None...");
 			None
 		}
+	}
+
+	/// Returns an array of all host paths (for Landlock).
+	#[cfg(target_os = "linux")]
+	pub(crate) fn get_all_host_paths(&self) -> Vec<OsString> {
+		self.files.clone().into_values().collect::<Vec<_>>()
+	}
+
+	/// Returns the path to the temporary directory (for Landlock).
+	#[cfg(target_os = "linux")]
+	pub(crate) fn get_temp_dir(&self) -> Option<String> {
+		self.tempdir.path().to_str().map(String::from)
 	}
 
 	/// Inserts an opened temporary file into the file map. Returns a CString so that
@@ -118,53 +109,26 @@ impl UhyveFileMap {
 		self.files.insert(String::from(guest_path), host_path);
 		ret
 	}
+
+	/// Removes an association between a guest path and a host path.
+	/// Exclusively used by [crate::hypercall::unlink] for the event that
+	/// a file, which is mapped, is removed together with its corresponding
+	/// inode object. The intention is for Uhyve to create a new temporary
+	/// file, should the guest OS request to access the same guest path after
+	/// its corresponding host path has been unlinked. Otherwise, this would
+	/// prompt security mechanisms like Landlock to kill Uhyve.
+	///
+	/// * `guest_path` - The requested guest path.
+	pub fn remove_path(&mut self, guest_path: &str) {
+		// Returns None if the guest path is not mapped, i.e. a temporary file
+		// is unlinked or a parent directory has been mapped instead.
+		self.files.remove(guest_path);
+	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-
-	#[test]
-	fn test_split_guest_and_host_path() {
-		let host_guest_strings = [
-			"./host_string.txt:guest_string.txt",
-			"/home/user/host_string.txt:guest_string.md.txt",
-			"host_string.txt:this_does_exist.txt:should_not_exist.txt",
-			"host_string.txt:test/..//guest_string.txt",
-		];
-
-		// We will use `host_string.txt` for all tests checking canonicalization.
-		let mut fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-		fixture_path.push("host_string.txt");
-
-		// Mind the inverted order.
-		let results = [
-			(
-				String::from("guest_string.txt"),
-				fixture_path.clone().into(),
-			),
-			(
-				String::from("guest_string.md.txt"),
-				OsString::from("/home/user/host_string.txt"),
-			),
-			(
-				String::from("this_does_exist.txt"),
-				fixture_path.clone().into(),
-			),
-			(String::from("guest_string.txt"), fixture_path.into()),
-		];
-
-		for (i, host_and_guest_string) in host_guest_strings
-			.into_iter()
-			.map(UhyveFileMap::split_guest_and_host_path)
-			.enumerate()
-		{
-			assert_eq!(
-				host_and_guest_string.expect("Result is an error!"),
-				results[i]
-			);
-		}
-	}
 
 	#[test]
 	fn test_uhyvefilemap() {

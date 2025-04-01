@@ -7,6 +7,8 @@ use std::{
 
 use byte_unit::{Byte, Unit};
 use log::info;
+#[cfg(target_os = "linux")]
+use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
 	params::{Output, Params},
 	vm::{UhyveVm, VmResult},
@@ -49,12 +51,14 @@ pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 	println!("Launching kernel {}", kernel_path.display());
 	let params = Params {
 		cpu_count: 2.try_into().unwrap(),
-		memory_size: Byte::from_u64_with_unit(64, Unit::MiB)
+		memory_size: Byte::from_u64_with_unit(128, Unit::MiB)
 			.unwrap()
 			.try_into()
 			.unwrap(),
 		output: Output::Buffer,
 		stats: true,
+		#[cfg(target_os = "linux")]
+		file_isolation: strict_sandbox(),
 		..Default::default()
 	};
 
@@ -75,6 +79,27 @@ pub fn check_result(res: &VmResult) {
 	if res.code != 0 {
 		println!("Kernel Output:\n{}", res.output.as_ref().unwrap());
 		panic!();
+	}
+}
+
+#[allow(dead_code)]
+pub fn get_fs_fixture_path() -> PathBuf {
+	let mut fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+	fixture_path.push("tests/data/fixtures/fs");
+	assert!(fixture_path.is_dir());
+	fixture_path
+}
+
+/// If UHYVE_TEST_STRICT_SANDBOX == 1, enable strict sandboxing mode (for the CI).
+///
+/// Currently unused for fs-test.rs because of mysterious cargo test shenanigans.
+#[cfg(target_os = "linux")]
+#[allow(dead_code)]
+pub fn strict_sandbox() -> FileSandboxMode {
+	if env::var("UHYVE_TEST_STRICT_SANDBOX").is_ok() {
+		FileSandboxMode::Strict
+	} else {
+		FileSandboxMode::Normal
 	}
 }
 

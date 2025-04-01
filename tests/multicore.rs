@@ -3,6 +3,8 @@ mod common;
 use byte_unit::{Byte, Unit};
 use common::{build_hermit_bin, check_result};
 use regex::Regex;
+#[cfg(target_os = "linux")]
+use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
 	params::{Output, Params},
 	vm::UhyveVm,
@@ -24,6 +26,11 @@ fn multicore_test() {
 				.try_into()
 				.unwrap(),
 			output: Output::Buffer,
+			#[cfg(target_os = "linux")]
+			// We are not testing for Landlock here, and running UhyveVm::new
+			// repeatedly causes the creation of a new temporary directory,
+			// which will fail on the second iteration.
+			file_isolation: FileSandboxMode::None,
 			..Default::default()
 		};
 		let vm = UhyveVm::new(bin_path.clone(), params).unwrap();
