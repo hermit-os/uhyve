@@ -6,7 +6,8 @@ use std::{num::NonZeroU32, sync::Arc};
 use log::debug;
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress};
 use xhypervisor::{
-	self, MemPerm, Register, SystemRegister, VirtualCpuExitReason, create_vm, map_mem,
+	self, Gic, MemPerm, Register, SystemRegister, VirtualCpuExitReason, create_vm, map_mem,
+	protect_mem,
 };
 
 use crate::{
@@ -15,7 +16,9 @@ use crate::{
 		MT_DEVICE_GRE, MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_NORMAL, MT_NORMAL_NC, PSR, TCR_FLAGS,
 		TCR_TG1_4K, VA_BITS, mair, tcr_size,
 	},
-	consts::{BOOT_INFO_OFFSET, PGT_OFFSET},
+	consts::{
+		BOOT_INFO_OFFSET, GICD_BASE_ADDRESS, GICR_BASE_ADDRESS, MSI_BASE_ADDRESS, PGT_OFFSET,
+	},
 	hypercall::{self, copy_argv, copy_env},
 	params::Params,
 	stats::{CpuStats, VmExit},
@@ -27,6 +30,8 @@ use crate::{
 
 pub struct XhyveVm {
 	peripherals: Arc<VmPeripherals>,
+	#[allow(dead_code)]
+	gic: Gic,
 }
 impl VirtualizationBackendInternal for XhyveVm {
 	type VCPU = XhyveCpu;
@@ -59,9 +64,16 @@ impl VirtualizationBackendInternal for XhyveVm {
 		map_mem(
 			unsafe { peripherals.mem.as_slice_mut() },
 			0,
-			MemPerm::ExecAndWrite,
+			MemPerm::ExecReadWrite,
 		)?;
-		Ok(Self { peripherals })
+		// protect the first page for hypercall
+		// Apple uses on aarch64 default page size of 16K
+		protect_mem(0, 0x4000, MemPerm::None)?;
+
+		debug!("Create GIC...");
+		let gic = Gic::new(GICD_BASE_ADDRESS, GICR_BASE_ADDRESS, MSI_BASE_ADDRESS)?;
+
+		Ok(Self { peripherals, gic })
 	}
 }
 
@@ -103,7 +115,7 @@ impl VirtualCPU for XhyveCpu {
 		);
 
 		// Initialize CPU
-		let vcpu = xhypervisor::VirtualCpu::new()?;
+		let vcpu = xhypervisor::VirtualCpu::new(self.id)?;
 
 		/* pstate = all interrupts masked */
 		let pstate: PSR = PSR::D_BIT | PSR::A_BIT | PSR::I_BIT | PSR::F_BIT | PSR::MODE_EL1H;
@@ -201,7 +213,6 @@ impl VirtualCPU for XhyveCpu {
 
 		self.vcpu = Some(vcpu);
 
-		self.print_registers();
 		Ok(())
 	}
 
@@ -288,16 +299,14 @@ impl VirtualCPU for XhyveCpu {
 										&self.peripherals.mem,
 										sysread,
 										GuestPhysAddr::new(
-											vcpu.read_system_register(SystemRegister::TTBR0_EL1)
-												.unwrap(),
+											vcpu.read_system_register(SystemRegister::TTBR0_EL1)?,
 										),
 									),
 									Hypercall::FileWrite(syswrite) => hypercall::write(
 										&self.peripherals,
 										syswrite,
 										GuestPhysAddr::new(
-											vcpu.read_system_register(SystemRegister::TTBR0_EL1)
-												.unwrap(),
+											vcpu.read_system_register(SystemRegister::TTBR0_EL1)?,
 										),
 									)
 									.unwrap(),
@@ -357,68 +366,8 @@ impl VirtualCPU for XhyveCpu {
 	}
 
 	fn print_registers(&self) {
-		println!("\nDump state of CPU {}", self.id);
-
 		if let Some(vcpu) = &self.vcpu {
-			let pc = vcpu.read_register(Register::PC).unwrap();
-			let cpsr = vcpu.read_register(Register::CPSR).unwrap();
-			let sp = vcpu.read_system_register(SystemRegister::SP_EL1).unwrap();
-			let sctlr = vcpu
-				.read_system_register(SystemRegister::SCTLR_EL1)
-				.unwrap();
-			let ttbr0 = vcpu
-				.read_system_register(SystemRegister::TTBR0_EL1)
-				.unwrap();
-			let lr = vcpu.read_register(Register::LR).unwrap();
-			let x0 = vcpu.read_register(Register::X0).unwrap();
-			let x1 = vcpu.read_register(Register::X1).unwrap();
-			let x2 = vcpu.read_register(Register::X2).unwrap();
-			let x3 = vcpu.read_register(Register::X3).unwrap();
-			let x4 = vcpu.read_register(Register::X4).unwrap();
-			let x5 = vcpu.read_register(Register::X5).unwrap();
-			let x6 = vcpu.read_register(Register::X6).unwrap();
-			let x7 = vcpu.read_register(Register::X7).unwrap();
-			let x8 = vcpu.read_register(Register::X8).unwrap();
-			let x9 = vcpu.read_register(Register::X9).unwrap();
-			let x10 = vcpu.read_register(Register::X10).unwrap();
-			let x11 = vcpu.read_register(Register::X11).unwrap();
-			let x12 = vcpu.read_register(Register::X12).unwrap();
-			let x13 = vcpu.read_register(Register::X13).unwrap();
-			let x14 = vcpu.read_register(Register::X14).unwrap();
-			let x15 = vcpu.read_register(Register::X15).unwrap();
-			let x16 = vcpu.read_register(Register::X16).unwrap();
-			let x17 = vcpu.read_register(Register::X17).unwrap();
-			let x18 = vcpu.read_register(Register::X18).unwrap();
-			let x19 = vcpu.read_register(Register::X19).unwrap();
-			let x20 = vcpu.read_register(Register::X20).unwrap();
-			let x21 = vcpu.read_register(Register::X21).unwrap();
-			let x22 = vcpu.read_register(Register::X22).unwrap();
-			let x23 = vcpu.read_register(Register::X23).unwrap();
-			let x24 = vcpu.read_register(Register::X24).unwrap();
-			let x25 = vcpu.read_register(Register::X25).unwrap();
-			let x26 = vcpu.read_register(Register::X26).unwrap();
-			let x27 = vcpu.read_register(Register::X27).unwrap();
-			let x28 = vcpu.read_register(Register::X28).unwrap();
-			let x29 = vcpu.read_register(Register::X29).unwrap();
-
-			println!("\nRegisters:");
-			println!("----------");
-			println!(
-				"PC    : {pc:016x}  LR    : {lr:016x}  CPSR  : {cpsr:016x}\n\
-		     SP    : {sp:016x}  SCTLR : {sctlr:016x}  TTBR0 : {ttbr0:016x}",
-			);
-			print!(
-				"x0    : {x0:016x}  x1    : {x1:016x}  x2    : {x2:016x}\n\
-			 x3    : {x3:016x}  x4    : {x4:016x}  x5    : {x5:016x}\n\
-			 x6    : {x6:016x}  x7    : {x7:016x}  x8    : {x8:016x}\n\
-			 x9    : {x9:016x}  x10   : {x10:016x}  x11   : {x11:016x}\n\
-			 x12   : {x12:016x}  x13   : {x13:016x}  x14   : {x14:016x}\n\
-			 x15   : {x15:016x}  x16   : {x16:016x}  x17   : {x17:016x}\n\
-			 x18   : {x18:016x}  x19   : {x19:016x}  x20   : {x20:016x}\n\
-			 x21   : {x21:016x}  x22   : {x22:016x}  x23   : {x23:016x}\n\
-			 x24   : {x24:016x}  x25   : {x25:016x}  x26   : {x26:016x}\n\
-			 x27   : {x27:016x}  x28   : {x28:016x}  x29   : {x29:016x}\n",
-			);
+			println!("{:?}", vcpu);
 		}
 	}
 
