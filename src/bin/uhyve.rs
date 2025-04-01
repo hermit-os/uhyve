@@ -8,6 +8,8 @@ use either::Either;
 use env_logger::Builder;
 use log::LevelFilter;
 use thiserror::Error;
+#[cfg(target_os = "linux")]
+use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
 	params::{CpuCount, EnvVars, GuestMemorySize, Output, Params},
 	vm::UhyveVm,
@@ -67,6 +69,20 @@ struct Args {
 	/// Defaults to /tmp.
 	#[clap(long)]
 	tempdir: Option<String>,
+
+	/// File isolation (none, normal, strict)
+	///
+	/// - 'none' disables all file isolation features
+	///
+	/// - 'normal' enables all file isolation features supported on the host system
+	///
+	/// - 'strict' enforces the highest amount of file isolation possible, fails on systems
+	///   that do not support them (e.g. a Linux kernel without Landlock support)
+	///
+	/// [default: normal]
+	#[clap(long)]
+	#[cfg(target_os = "linux")]
+	file_isolation: Option<String>,
 
 	/// GDB server port
 	///
@@ -281,6 +297,8 @@ impl From<Args> for Params {
 			gdb_port,
 			file_mapping,
 			tempdir,
+			#[cfg(target_os = "linux")]
+			file_isolation,
 			kernel: _,
 			kernel_args,
 			output,
@@ -304,6 +322,12 @@ impl From<Args> for Params {
 			gdb_port: None,
 			kernel_args,
 			tempdir,
+			#[cfg(target_os = "linux")]
+			file_isolation: if let Some(file_isolation) = file_isolation {
+				FileSandboxMode::from_str(&file_isolation).unwrap()
+			} else {
+				FileSandboxMode::default()
+			},
 			// TODO
 			output: if let Some(outp) = output {
 				Output::from_str(&outp).unwrap()

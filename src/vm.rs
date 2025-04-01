@@ -33,6 +33,8 @@ use crate::{
 	vcpu::VirtualCPU,
 	virtio::*,
 };
+#[cfg(target_os = "linux")]
+use crate::{isolation::landlock::initialize, params::FileSandboxMode};
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
 
@@ -197,6 +199,19 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		#[cfg(not(target_os = "linux"))]
 		let mut mem = MmapMemory::new(0, memory_size, guest_address, false, false);
 
+		// TODO: file_mapping not in kernel_info
+		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping, &params.tempdir));
+
+		let serial = UhyveSerial::from_params(&params.output)?;
+
+		// Takes place before the kernel is actually loaded.
+		#[cfg(target_os = "linux")]
+		Self::landlock_init(
+			&params,
+			&file_mapping.lock().unwrap(),
+			kernel_path.to_str().unwrap(),
+		);
+
 		let (
 			LoadedKernel {
 				load_info,
@@ -227,13 +242,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		// https://github.com/rust-lang/rust-clippy/issues/11382
 		#[allow(clippy::arc_with_non_send_sync)]
 		let virtio_device = Mutex::new(VirtioNetPciDevice::new());
-
-		let file_mapping = Mutex::new(UhyveFileMap::new(
-			&kernel_info.params.file_mapping,
-			&kernel_info.params.tempdir,
-		));
-
-		let serial = UhyveSerial::from_params(&kernel_info.params.output)?;
 
 		let peripherals = Arc::new(VmPeripherals {
 			mem,
@@ -294,6 +302,23 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			kernel_info,
 			vcpus,
 		})
+	}
+
+	#[cfg(target_os = "linux")]
+	pub fn landlock_init(params: &Params, file_map: &UhyveFileMap, kernel_path: &str) {
+		if params.file_isolation != FileSandboxMode::None {
+			debug!("Attempting to initialize Landlock...");
+			let mut host_paths = file_map.get_all_host_paths();
+			let temp_dir = file_map.get_temp_dir().unwrap().to_owned();
+			let landlock = initialize(
+				params.file_isolation,
+				kernel_path.to_owned(),
+				&params.output,
+				&mut host_paths,
+				temp_dir,
+			);
+			landlock.apply_landlock_restrictions();
+		}
 	}
 
 	pub fn run_no_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
