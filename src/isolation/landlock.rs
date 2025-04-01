@@ -8,7 +8,7 @@ use thiserror::Error;
 
 /// Contains types of errors that may occur during Landlock's initialization.
 #[derive(Debug, Error)]
-pub enum RestrictError {
+pub(crate) enum RestrictError {
 	#[error(transparent)]
 	Ruleset(#[from] RulesetError),
 	#[error(transparent)]
