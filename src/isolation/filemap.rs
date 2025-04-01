@@ -109,6 +109,21 @@ impl UhyveFileMap {
 		self.files.insert(String::from(guest_path), host_path);
 		ret
 	}
+
+	/// Removes an association between a guest path and a host path.
+	/// Exclusively used by [crate::hypercall::unlink] for the event that
+	/// a file, which is mapped, is removed together with its corresponding
+	/// inode object. The intention is for Uhyve to create a new temporary
+	/// file, should the guest OS request to access the same guest path after
+	/// its corresponding host path has been unlinked. Otherwise, this would
+	/// prompt security mechanisms like Landlock to kill Uhyve.
+	///
+	/// * `guest_path` - The requested guest path.
+	pub fn remove_path(&mut self, guest_path: &str) {
+		// Returns None if the guest path is not mapped, i.e. a temporary file
+		// is unlinked or a parent directory has been mapped instead.
+		self.files.remove(guest_path);
+	}
 }
 
 #[cfg(test)]
