@@ -21,6 +21,8 @@ use rand::Rng;
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
 
+#[cfg(target_os = "linux")]
+use crate::isolation::landlock::initialize_landlock_vm;
 use crate::{
 	HypervisorError, arch,
 	consts::*,
@@ -139,6 +141,7 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(crate) peripherals: Arc<VmPeripherals>,
 	pub(crate) kernel_info: Arc<KernelInfo>,
 }
+
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
 		let memory_size = params.memory_size.get();
@@ -205,6 +208,30 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		#[cfg(not(target_os = "linux"))]
 		let mut mem = MmapMemory::new(0, memory_size, guest_address, false, false);
 
+		// TODO: file_mapping not in kernel_info
+		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping, &params.tempdir));
+
+		let serial = UhyveSerial::from_params(&params.output)?;
+
+		// Takes place before the kernel is actually loaded.
+		#[cfg(target_os = "linux")]
+		{
+			let mut host_paths = file_mapping.lock().unwrap().get_all_host_paths();
+			let temp_dir = file_mapping
+				.lock()
+				.unwrap()
+				.get_temp_dir()
+				.unwrap()
+				.to_owned();
+			let landlock = initialize_landlock_vm(
+				kernel_path.to_str().unwrap().to_owned(),
+				&params.output,
+				&mut host_paths,
+				temp_dir,
+			);
+			landlock.apply_landlock_restrictions();
+		}
+
 		let (
 			LoadedKernel {
 				load_info,
@@ -235,13 +262,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		// https://github.com/rust-lang/rust-clippy/issues/11382
 		#[allow(clippy::arc_with_non_send_sync)]
 		let virtio_device = Mutex::new(VirtioNetPciDevice::new());
-
-		let file_mapping = Mutex::new(UhyveFileMap::new(
-			&kernel_info.params.file_mapping,
-			&kernel_info.params.tempdir,
-		));
-
-		let serial = UhyveSerial::from_params(&kernel_info.params.output)?;
 
 		let peripherals = Arc::new(VmPeripherals {
 			mem,
