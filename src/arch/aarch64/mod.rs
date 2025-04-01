@@ -159,7 +159,7 @@ pub fn virt_to_phys(
 	let table_index = ((addr.as_u64() >> PAGE_BITS) & PAGE_MAP_MASK) as usize;
 	let pte = PageTableEntry::from(pagetable[table_index]);
 
-	Ok(pte.address())
+	Ok((pte.address() + (addr.as_u64() & !((!0u64) << PAGE_BITS))).into())
 }
 
 pub fn init_guest_mem(
