@@ -106,6 +106,7 @@ pub struct VmResult {
 }
 
 /// mutable devices that a vCPU interacts with
+#[derive(Debug)]
 pub(crate) struct VmPeripherals {
 	pub file_mapping: Mutex<UhyveFileMap>,
 	pub mem: MmapMemory,
@@ -466,6 +467,12 @@ fn write_fdt_into_mem(mem: &MmapMemory, params: &Params, cpu_freq: Option<NonZer
 		EnvVars::Host => fdt.envs(env::vars()),
 		EnvVars::Set(map) => fdt.envs(map.iter().map(|(a, b)| (a.as_str(), b.as_str()))),
 	};
+
+	#[cfg(target_arch = "aarch64")]
+	{
+		fdt = fdt.gic().unwrap();
+		fdt = fdt.cpus(params.cpu_count).unwrap();
+	}
 
 	if let Some(tsc_khz) = cpu_freq {
 		fdt = fdt.tsc_khz(tsc_khz.into()).unwrap();
