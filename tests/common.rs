@@ -7,6 +7,8 @@ use std::{
 
 use byte_unit::{Byte, Unit};
 use log::info;
+#[cfg(target_os = "linux")]
+use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
 	params::{Output, Params},
 	vm::{UhyveVm, VmResult},
@@ -53,6 +55,8 @@ pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 			.unwrap()
 			.try_into()
 			.unwrap(),
+		#[cfg(target_os = "linux")]
+		file_isolation: FileSandboxMode::Strict,
 		output: Output::Buffer,
 		stats: true,
 		..Default::default()
