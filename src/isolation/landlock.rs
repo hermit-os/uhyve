@@ -1,5 +1,12 @@
-use std::{ffi::OsString, path::PathBuf, sync::Mutex, vec::Vec};
+use std::{
+	ffi::OsString,
+	os::fd::{AsFd, AsRawFd, RawFd},
+	path::PathBuf,
+	sync::Mutex,
+	vec::Vec,
+};
 
+use clap::error::Error;
 use landlock::{
 	ABI, Access, AccessFs, CompatLevel, Compatible, PathBeneath, PathFd, PathFdError,
 	RestrictionStatus, Ruleset, RulesetAttr, RulesetCreatedAttr, RulesetError,
@@ -103,8 +110,6 @@ impl UhyveLandlockWrapper {
 		let abi = ABI::V4;
 		// Used for explicitly whitelisted files (read & write).
 		let access_all: landlock::BitFlags<AccessFs, u64> = AccessFs::from_all(abi);
-		// Used for the kernel itself, as well as "system directories" that we only read from.
-		let access_read: landlock::BitFlags<AccessFs, u64> = AccessFs::from_read(abi);
 
 		// LANDLOCK_ACCESS_FS_REMOVE_FILE and LANDLOCK_ACCESS_FS_REMOVE_DIR do not apply to
 		// whitelisted files themselves, but apply to the contents of directories transitively.
@@ -122,7 +127,8 @@ impl UhyveLandlockWrapper {
 					.as_slice()
 					.iter()
 					.map::<Result<_, RestrictError>, _>(|p| {
-						Ok(PathBeneath::new(PathFd::new(p)?, AccessFs::from_all(abi)))
+						debug!("Adding read-write path ruleset for {:#?}", *p);
+						Self::determine_ruleset(PathFd::new(p)?, abi)
 					}),
 			)?
 			.set_compatibility(self.compat_level)
@@ -131,7 +137,8 @@ impl UhyveLandlockWrapper {
 					.as_slice()
 					.iter()
 					.map::<Result<_, RestrictError>, _>(|p| {
-						Ok(PathBeneath::new(PathFd::new(p)?, access_read))
+						debug!("Adding read-only path ruleset for {:#?}", *p);
+						Self::determine_ruleset(PathFd::new(p)?, abi)
 					}),
 			)?
 			.set_compatibility(self.compat_level)
@@ -140,6 +147,7 @@ impl UhyveLandlockWrapper {
 					.as_slice()
 					.iter()
 					.map::<Result<_, RestrictError>, _>(|p| {
+						debug!("Adding read-only directory ruleset for {:#?}", *p);
 						Ok(PathBeneath::new(PathFd::new(p)?, access_dir_with_rm))
 					}),
 			)?
@@ -156,6 +164,43 @@ impl UhyveLandlockWrapper {
 		);
 
 		Ok(res_status)
+	}
+
+	/// Derive a suitable Landlock policy for a given file descriptor.
+	///
+	/// Although applying directory-specific access rights to a file will just result in those rights being ignored
+	/// in "best effort mode", this is not the case when running Uhyve
+	/// in strict mode. Therefore, this function omits directory-specific
+	/// access rights to "R/W" files.
+	///
+	/// - `fd` - File descriptor (of type [`PathFd`])
+	/// - `abi` - Landlock ABI version
+	fn determine_ruleset(fd: PathFd, abi: ABI) -> Result<PathBeneath<PathFd>, RestrictError> {
+		let is_file = Self::is_file(fd.as_fd().as_raw_fd()).unwrap();
+		match is_file {
+			true => Ok(PathBeneath::new(fd, AccessFs::from_file(abi))),
+			false => Ok(PathBeneath::new(fd, AccessFs::from_all(abi))),
+		}
+	}
+
+	/// Checks whether a raw file descriptor represents a file using [`libc::fstat`].
+	///
+	/// Adapted from Mickaël Salaün's Rust Landlock library, which is distributed
+	/// under the terms of the MIT and Apache 2.0 licenses.
+	///
+	/// For the original source code authored by Mickaël Salaün, see:
+	/// https://github.com/landlock-lsm/rust-landlock/blob/aaccff53/src/fs.rs#L198-L210
+	///
+	/// * `rawfd` - Raw file descriptor ([`RawFd`])
+	fn is_file(rawfd: RawFd) -> Result<bool, Error> {
+		unsafe {
+			let mut stat = std::mem::zeroed();
+			match libc::fstat(rawfd, &mut stat) {
+				0 => Ok((stat.st_mode & libc::S_IFMT) != libc::S_IFDIR),
+				// Should not be practically reachable.
+				_ => panic!("stat against fd {:?} failed", rawfd),
+			}
+		}
 	}
 }
 
