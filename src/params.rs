@@ -42,6 +42,10 @@ pub struct Params {
 	/// Path to create temporary directory on
 	pub tempdir: Option<String>,
 
+	/// Level of file isolation to be enforced
+	#[cfg(target_os = "linux")]
+	pub file_isolation: FileSandboxMode,
+
 	/// Kernel output handling
 	pub output: Output,
 
@@ -70,6 +74,8 @@ impl Default for Params {
 			gdb_port: Default::default(),
 			file_mapping: Default::default(),
 			tempdir: Default::default(),
+			#[cfg(target_os = "linux")]
+			file_isolation: FileSandboxMode::default(),
 			kernel_args: Default::default(),
 			output: Default::default(),
 			stats: false,
@@ -259,6 +265,42 @@ impl<S: AsRef<str> + std::fmt::Debug + PartialEq<S> + From<&'static str>> TryFro
 	}
 }
 
+/// Enforcement strictness for file sandbox
+///
+/// Use None if you are using Uhyve as a library, as it is not currently
+/// possible to run UhyveVm::new again if a mechanism like Landlock is enforced.
+#[cfg(target_os = "linux")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum FileSandboxMode {
+	/// Do not enable filesystem isolation features.
+	None,
+	/// Enable filesystem isolation features on a best-effort basis.
+	Normal,
+	/// Enforce filesystem isolation strictly.
+	Strict,
+}
+
+#[cfg(target_os = "linux")]
+#[allow(clippy::derivable_impls)]
+impl Default for FileSandboxMode {
+	fn default() -> Self {
+		FileSandboxMode::Normal
+	}
+}
+
+#[cfg(target_os = "linux")]
+impl FromStr for FileSandboxMode {
+	type Err = &'static str;
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		match s.to_lowercase().as_str() {
+			"none" => Ok(FileSandboxMode::None),
+			"normal" => Ok(FileSandboxMode::Normal),
+			"strict" => Ok(FileSandboxMode::Strict),
+			_ => Err("Unknown file sandbox mode"),
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -276,5 +318,16 @@ mod tests {
 
 		let env_vars = EnvVars::try_from(&["host", "OTHER=asdf"] as &[&str]).unwrap();
 		assert_eq!(env_vars, EnvVars::Host);
+	}
+
+	#[test]
+	#[cfg(target_os = "linux")]
+	fn test_file_sandbox_mode() {
+		let mut mode = FileSandboxMode::from_str("none");
+		assert_eq!(mode, Ok(FileSandboxMode::None));
+		mode = FileSandboxMode::from_str("normal");
+		assert_eq!(mode, Ok(FileSandboxMode::Normal));
+		mode = FileSandboxMode::from_str("strict");
+		assert_eq!(mode, Ok(FileSandboxMode::Strict));
 	}
 }
