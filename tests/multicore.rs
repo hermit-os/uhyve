@@ -1,8 +1,10 @@
 mod common;
 
 use byte_unit::{Byte, Unit};
-use common::{build_hermit_bin, check_result, get_fs_fixture_path};
+use common::{build_hermit_bin, check_result};
 use regex::Regex;
+#[cfg(target_os = "linux")]
+use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
 	params::{Output, Params},
 	vm::UhyveVm,
@@ -15,18 +17,6 @@ fn multicore_test() {
 
 	let re = Regex::new(r"Speedup: [\d]+us / \d+us =\s*([\d.]+)").unwrap();
 
-	/*
-	 * Workaround so as to avoid the multicore test from freaking out
-	 * because of Landlock on Linux platforms. Given that UhyveVm::new creates
-	 * new temporary files and enforces a process-wide Landlock restriction,
-	 * we avoid an error from being raised by adding the directory in which
-	 * the temporary directories are generated as a "mapping", from which a R/W
-	 * ruleset is generated.
-	 */
-
-	let fixture_path = get_fs_fixture_path();
-	let uhyvefilemap_params = [format!("{}:{}", fixture_path.to_str().unwrap(), "/root/")];
-
 	for nr_cpus in [2, 4] {
 		println!("Launching kernel {}", bin_path.display());
 		let params = Params {
@@ -36,8 +26,11 @@ fn multicore_test() {
 				.try_into()
 				.unwrap(),
 			output: Output::Buffer,
-			file_mapping: uhyvefilemap_params.to_vec(),
-			tempdir: get_fs_fixture_path().to_str().map(String::from),
+			#[cfg(target_os = "linux")]
+			// We are not testing for Landlock here, and running UhyveVm::new
+			// repeatedly causes the creation of a new temporary directory,
+			// which will fail after the second iteration.
+			file_isolation: FileSandboxMode::None,
 			..Default::default()
 		};
 		let vm = UhyveVm::new(bin_path.clone(), params).unwrap();
