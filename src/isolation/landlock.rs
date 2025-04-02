@@ -1,4 +1,4 @@
-use std::{ffi::OsString, path::PathBuf, vec::Vec};
+use std::{ffi::OsString, path::PathBuf, sync::Mutex, vec::Vec};
 
 use landlock::{
 	ABI, Access, AccessFs, CompatLevel, Compatible, PathBeneath, PathFd, PathFdError,
@@ -7,6 +7,9 @@ use landlock::{
 use thiserror::Error;
 
 use crate::params::FileSandboxMode;
+
+/// Makes Uhyve aware of an already-existing Landlock policy previously enforced by Uhyve.
+static LANDLOCK_ENABLED: Mutex<bool> = Mutex::new(false);
 
 /// Contains types of errors that may occur during Landlock's initialization.
 #[derive(Debug, Error)]
@@ -62,6 +65,17 @@ impl UhyveLandlockWrapper {
 	/// been provided and "stored" in UhyveLandlockWrapper. The restrictions have
 	/// a process-wide effect.
 	pub(crate) fn apply_landlock_restrictions(&self) {
+		debug!(
+			"Enabling Landlock path isolation with following compatibility mode: {:?}",
+			self.compat_level
+		);
+
+		if *LANDLOCK_ENABLED.lock().unwrap() {
+			warn!(
+				"Landlock has been enabled already. Further policies will not affect existing ones."
+			);
+		}
+
 		Self::enforce_landlock(self)
 			.unwrap_or_else(|error| panic!("Unable to initialize Landlock: {error:?}"));
 	}
@@ -100,12 +114,7 @@ impl UhyveLandlockWrapper {
 		let access_dir_with_rm: landlock::BitFlags<AccessFs, u64> =
 			AccessFs::ReadDir | AccessFs::RemoveDir | AccessFs::RemoveFile;
 
-		debug!(
-			"Enabling Landlock path isolation with following compatibility mode: {:?}",
-			self.compat_level
-		);
-
-		Ok(Ruleset::default()
+		let res_status = Ruleset::default()
 			.handle_access(access_all)?
 			.create()?
 			.add_rules(
@@ -136,7 +145,17 @@ impl UhyveLandlockWrapper {
 			)?
 			.set_compatibility(self.compat_level)
 			.set_no_new_privs(true)
-			.restrict_self()?)
+			.restrict_self()?;
+
+		let mut is_already_enabled = LANDLOCK_ENABLED.lock().unwrap();
+		*is_already_enabled = true;
+
+		debug!(
+			"Landlock ruleset status: {:#?} (no_new_privs: {:#?})",
+			res_status.ruleset, res_status.no_new_privs
+		);
+
+		Ok(res_status)
 	}
 }
 
