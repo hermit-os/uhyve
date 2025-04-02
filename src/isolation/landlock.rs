@@ -1,4 +1,4 @@
-use std::{ffi::OsString, path::PathBuf, vec::Vec};
+use std::{ffi::OsString, path::PathBuf, sync::Mutex, vec::Vec};
 
 use landlock::{
 	ABI, Access, AccessFs, CompatLevel, Compatible, PathBeneath, PathFd, PathFdError,
@@ -7,6 +7,8 @@ use landlock::{
 use thiserror::Error;
 
 use crate::params::FileSandboxMode;
+
+static LANDLOCK_ENABLED: Mutex<bool> = Mutex::new(false);
 
 /// Contains types of errors that may occur during Landlock's initialization.
 #[derive(Debug, Error)]
@@ -61,6 +63,18 @@ impl UhyveLandlockWrapper {
 	/// been provided and "stored" in UhyveLandlockWrapper. The restrictions have
 	/// a process-wide effect.
 	pub fn apply_landlock_restrictions(&self) {
+		debug!(
+			"Enabling Landlock path isolation with following compatibility mode: {:?}",
+			self.compat_level
+		);
+
+		let is_already_enabled = LANDLOCK_ENABLED.lock();
+		if *is_already_enabled.unwrap() {
+			warn!(
+				"Landlock has been enabled already. Further policies will not affect existing ones."
+			);
+		}
+
 		{
 			let _status = match Self::enforce_landlock(self) {
 				Ok(status) => status,
@@ -103,12 +117,7 @@ impl UhyveLandlockWrapper {
 		let access_dir_with_rm: landlock::BitFlags<AccessFs, u64> =
 			AccessFs::ReadDir | AccessFs::RemoveDir | AccessFs::RemoveFile;
 
-		debug!(
-			"Enabling Landlock path isolation with following compatibility mode: {:?}",
-			self.compat_level
-		);
-
-		Ok(Ruleset::default()
+		let res_status = Ruleset::default()
 			.handle_access(access_all)?
 			.create()?
 			.add_rules(
@@ -139,7 +148,17 @@ impl UhyveLandlockWrapper {
 			)?
 			.set_compatibility(self.compat_level)
 			.set_no_new_privs(true)
-			.restrict_self()?)
+			.restrict_self()?;
+
+		let mut is_already_enabled = LANDLOCK_ENABLED.lock().unwrap();
+		*is_already_enabled = true;
+
+		debug!(
+			"Landlock ruleset status: {:#?} (no_new_privs: {:#?})",
+			res_status.ruleset, res_status.no_new_privs
+		);
+
+		Ok(res_status)
 	}
 }
 
