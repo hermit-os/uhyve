@@ -21,8 +21,6 @@ use rand::Rng;
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
 
-#[cfg(target_os = "linux")]
-use crate::isolation::landlock::initialize_landlock_vm;
 use crate::{
 	HypervisorError, arch,
 	consts::*,
@@ -36,6 +34,8 @@ use crate::{
 	vcpu::VirtualCPU,
 	virtio::*,
 };
+#[cfg(target_os = "linux")]
+use crate::{isolation::landlock::initialize_landlock_vm, params::FileSandboxMode};
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
 
@@ -216,20 +216,23 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		// Takes place before the kernel is actually loaded.
 		#[cfg(target_os = "linux")]
 		{
-			let mut host_paths = file_mapping.lock().unwrap().get_all_host_paths();
-			let temp_dir = file_mapping
-				.lock()
-				.unwrap()
-				.get_temp_dir()
-				.unwrap()
-				.to_owned();
-			let landlock = initialize_landlock_vm(
-				kernel_path.to_str().unwrap().to_owned(),
-				&params.output,
-				&mut host_paths,
-				temp_dir,
-			);
-			landlock.apply_landlock_restrictions();
+			if params.file_isolation != FileSandboxMode::None {
+				let mut host_paths = file_mapping.lock().unwrap().get_all_host_paths();
+				let temp_dir = file_mapping
+					.lock()
+					.unwrap()
+					.get_temp_dir()
+					.unwrap()
+					.to_owned();
+				let landlock = initialize_landlock_vm(
+					params.file_isolation,
+					kernel_path.to_str().unwrap().to_owned(),
+					&params.output,
+					&mut host_paths,
+					temp_dir,
+				);
+				landlock.apply_landlock_restrictions();
+			}
 		}
 
 		let (

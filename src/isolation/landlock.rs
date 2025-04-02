@@ -1,10 +1,12 @@
 use std::{ffi::OsString, path::PathBuf, vec::Vec};
 
 use landlock::{
-	ABI, Access, AccessFs, PathBeneath, PathFd, PathFdError, RestrictionStatus, Ruleset,
-	RulesetAttr, RulesetCreatedAttr, RulesetError,
+	ABI, Access, AccessFs, CompatLevel, Compatible, PathBeneath, PathFd, PathFdError,
+	RestrictionStatus, Ruleset, RulesetAttr, RulesetCreatedAttr, RulesetError,
 };
 use thiserror::Error;
+
+use crate::params::FileSandboxMode;
 
 /// Contains types of errors that may occur during Landlock's initialization.
 #[derive(Debug, Error)]
@@ -21,11 +23,13 @@ pub(crate) struct UhyveLandlockWrapper {
 	rw_paths: Vec<String>,
 	ro_paths: Vec<String>,
 	ro_dirs: Vec<String>,
+	compat_level: landlock::CompatLevel,
 }
 
 impl UhyveLandlockWrapper {
 	/// Create a new instance of UhyveLandlockWrapper
 	///
+	/// - `sandbox_mode` - User-provided [`crate::params::FileSandboxMode`]
 	/// - `rw_paths` - Paths that Uhyve should have read-write access to
 	/// - `ro_paths` - Paths that Uhyve should have read-only access to
 	/// - `ro_dirs` - Directories with "read-only" access. Internally, this
@@ -34,6 +38,7 @@ impl UhyveLandlockWrapper {
 	///   "read-only", as the given directories will also have removable files
 	///   and directories (but won't be readable). See [`Self::enforce_landlock`].
 	pub(crate) fn new(
+		sandbox_mode: FileSandboxMode,
 		rw_paths: &[String],
 		ro_paths: &[String],
 		ro_dirs: &[String],
@@ -45,6 +50,7 @@ impl UhyveLandlockWrapper {
 			rw_paths: rw_paths.to_vec(),
 			ro_paths: ro_paths.to_vec(),
 			ro_dirs: ro_dirs.to_vec(),
+			compat_level: Self::determine_compat_level(sandbox_mode),
 		}
 	}
 
@@ -58,6 +64,20 @@ impl UhyveLandlockWrapper {
 	pub(crate) fn apply_landlock_restrictions(&self) {
 		Self::enforce_landlock(self)
 			.unwrap_or_else(|error| panic!("Unable to initialize Landlock: {error:?}"));
+	}
+
+	/// Using the file sandbox mode provided by the user, we derive the corresponding
+	/// Landlock compatibility mode. This deliberately omits the CompatLevel::SoftRequirement
+	/// possibility, while leaving room for future enhancements to the host file access
+	/// layer.
+	///
+	/// - `sandbox_mode` - User-provided [`crate::params::FileSandboxMode`]
+	fn determine_compat_level(sandbox_mode: FileSandboxMode) -> CompatLevel {
+		match sandbox_mode {
+			FileSandboxMode::None => panic!(),
+			FileSandboxMode::Normal => CompatLevel::BestEffort,
+			FileSandboxMode::Strict => CompatLevel::HardRequirement,
+		}
 	}
 
 	/// Internal Landlock enforcement function used by [`Self::apply_landlock_restrictions`].
@@ -80,6 +100,11 @@ impl UhyveLandlockWrapper {
 		let access_dir_with_rm: landlock::BitFlags<AccessFs, u64> =
 			AccessFs::ReadDir | AccessFs::RemoveDir | AccessFs::RemoveFile;
 
+		debug!(
+			"Enabling Landlock path isolation with following compatibility mode: {:?}",
+			self.compat_level
+		);
+
 		Ok(Ruleset::default()
 			.handle_access(access_all)?
 			.create()?
@@ -91,6 +116,7 @@ impl UhyveLandlockWrapper {
 						Ok(PathBeneath::new(PathFd::new(p)?, AccessFs::from_all(abi)))
 					}),
 			)?
+			.set_compatibility(self.compat_level)
 			.add_rules(
 				self.ro_paths
 					.as_slice()
@@ -99,6 +125,7 @@ impl UhyveLandlockWrapper {
 						Ok(PathBeneath::new(PathFd::new(p)?, access_read))
 					}),
 			)?
+			.set_compatibility(self.compat_level)
 			.add_rules(
 				self.ro_dirs
 					.as_slice()
@@ -107,6 +134,7 @@ impl UhyveLandlockWrapper {
 						Ok(PathBeneath::new(PathFd::new(p)?, access_dir_with_rm))
 					}),
 			)?
+			.set_compatibility(self.compat_level)
 			.set_no_new_privs(true)
 			.restrict_self()?)
 	}
@@ -149,11 +177,13 @@ fn get_parent_directory(host_path: &OsString) -> PathBuf {
 /// security implications, however, combined with the other security measures implemented into
 /// Uhyve, this should be fine.
 ///
+/// * `sandbox_mode` - File isolation sandbox mode set by the user
 /// * `kernel_path` - Location of the unikernel image
 /// * `output` - Output of Uhyve, used for adding file outputs to Landlock (if applicable)
 /// * `host_paths` - List of host paths derived from mappings by the user
 /// * `temp_dir` - Location of the temporary directory for unmapped files
 pub(crate) fn initialize_landlock_vm(
+	sandbox_mode: FileSandboxMode,
 	kernel_path: String,
 	output: &crate::params::Output,
 	host_paths: &mut [OsString],
@@ -199,5 +229,10 @@ pub(crate) fn initialize_landlock_vm(
 		uhyve_ro_dirs.push(tmp.display().to_string());
 	}
 
-	UhyveLandlockWrapper::new(&uhyve_rw_paths, &uhyve_ro_paths, &uhyve_ro_dirs)
+	UhyveLandlockWrapper::new(
+		sandbox_mode,
+		&uhyve_rw_paths,
+		&uhyve_ro_paths,
+		&uhyve_ro_dirs,
+	)
 }
