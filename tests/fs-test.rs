@@ -9,6 +9,7 @@ use byte_unit::{Byte, Unit};
 use common::{
 	build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists, run_simple_vm,
 };
+use serial_test::serial;
 use uhyvelib::{
 	params::{Output, Params},
 	vm::UhyveVm,
@@ -23,6 +24,7 @@ pub fn verify_file_equals(testfile: &PathBuf, contents: &str) {
 
 /// This checks whether a VM can create and write to a file on the host.
 #[test]
+#[serial]
 fn create_mapped_parent_nonpresent_file() {
 	env_logger::try_init().ok();
 	// Tests successful directory traversal starting from file in child
@@ -59,6 +61,7 @@ fn create_mapped_parent_nonpresent_file() {
 
 /// This is expected to fail.
 #[test]
+#[serial]
 fn create_write_unmapped_nonpresent_file() {
 	env_logger::try_init().ok();
 	let mut host_path = get_fs_fixture_path();
@@ -94,6 +97,7 @@ fn create_write_unmapped_nonpresent_file() {
 }
 
 #[test]
+#[serial]
 fn create_write_mapped_nonpresent_file() {
 	env_logger::try_init().ok();
 	let mut host_path = get_fs_fixture_path();
@@ -130,6 +134,7 @@ fn create_write_mapped_nonpresent_file() {
 
 /// This might break because of a misconfiguration in Landlock.
 #[test]
+#[serial]
 fn remove_mapped_present_file() {
 	env_logger::try_init().ok();
 	let mut host_path = get_fs_fixture_path();
@@ -169,6 +174,7 @@ fn remove_mapped_present_file() {
 
 /// This might break because of a misconfiguration in Landlock or a UhyveFileMap regression.
 #[test]
+#[serial]
 fn remove_mapped_parent_present_file() {
 	env_logger::try_init().ok();
 	let mut host_path = get_fs_fixture_path();
@@ -204,6 +210,7 @@ fn remove_mapped_parent_present_file() {
 /// This checks whether UhyveFileMap rejects unlink calls to unmapped files that do not exist.
 /// This is expected to fail.
 #[test]
+#[serial]
 fn remove_nonpresent_file_test() {
 	// kernel tries to open a non-present file, so uhyve will reject the hypercall and the kernel
 	// will panic.
@@ -216,6 +223,7 @@ fn remove_nonpresent_file_test() {
 /// Checks whether an unmapped file written from the VM itself can be removed by the VM.
 /// This might break if the temporary directory, the hypercall or Landlock do not function properly.
 #[test]
+#[serial]
 fn create_and_remove_unmapped_file_test() {
 	env_logger::try_init().ok();
 

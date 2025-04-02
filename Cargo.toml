@@ -99,3 +99,4 @@ assert_fs = "1"
 criterion = "0.5"
 home = "0.5"
 regex = { version = "1.11.1", default-features = false, features = ["unicode-perl"] }
+serial_test = "3.2.0"
