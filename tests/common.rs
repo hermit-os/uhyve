@@ -7,6 +7,8 @@ use std::{
 
 use byte_unit::{Byte, Unit};
 use log::info;
+#[cfg(target_os = "linux")]
+use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
 	params::{Output, Params},
 	vm::{UhyveVm, VmResult},
@@ -49,10 +51,12 @@ pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 	println!("Launching kernel {}", kernel_path.display());
 	let params = Params {
 		cpu_count: 2.try_into().unwrap(),
-		memory_size: Byte::from_u64_with_unit(64, Unit::MiB)
+		memory_size: Byte::from_u64_with_unit(128, Unit::MiB)
 			.unwrap()
 			.try_into()
 			.unwrap(),
+		#[cfg(target_os = "linux")]
+		file_isolation: FileSandboxMode::Strict,
 		output: Output::Buffer,
 		stats: true,
 		..Default::default()
@@ -76,6 +80,14 @@ pub fn check_result(res: &VmResult) {
 		println!("Kernel Output:\n{}", res.output.as_ref().unwrap());
 		panic!();
 	}
+}
+
+#[allow(dead_code)]
+pub fn get_fs_fixture_path() -> PathBuf {
+	let mut fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+	fixture_path.push("tests/data/fixtures/fs");
+	assert!(fixture_path.is_dir());
+	fixture_path
 }
 
 pub fn cargo() -> Command {
