@@ -48,7 +48,7 @@ impl VirtualizationBackendInternal for KvmVm {
 		enable_stats: bool,
 	) -> HypervisorResult<KvmCpu> {
 		let vcpu = self.vm_fd.create_vcpu(id as u64)?;
-		Ok(KvmCpu {
+		let mut kvcpu = KvmCpu {
 			id,
 			vcpu,
 			peripherals: self.peripherals.clone(),
@@ -59,7 +59,10 @@ impl VirtualizationBackendInternal for KvmVm {
 			} else {
 				None
 			},
-		})
+		};
+		kvcpu.init()?;
+
+		Ok(kvcpu)
 	}
 
 	fn new(peripherals: Arc<VmPeripherals>, params: &Params) -> HypervisorResult<Self> {
@@ -167,6 +170,26 @@ pub struct KvmCpu {
 }
 
 impl KvmCpu {
+	fn init(&mut self) -> HypervisorResult<()> {
+		self.setup_long_mode(
+			self.kernel_info.entry_point,
+			self.kernel_info.stack_address,
+			self.kernel_info.guest_address,
+			self.id,
+		)?;
+		self.setup_cpuid()?;
+
+		// be sure that the multiprocessor is runable
+		let mp_state = kvm_mp_state {
+			mp_state: KVM_MP_STATE_RUNNABLE,
+		};
+		self.vcpu.set_mp_state(mp_state)?;
+
+		self.setup_msrs()?;
+
+		Ok(())
+	}
+
 	fn setup_cpuid(&self) -> Result<(), kvm_ioctls::Error> {
 		//debug!("Setup cpuid");
 
@@ -352,23 +375,8 @@ impl KvmCpu {
 }
 
 impl VirtualCPU for KvmCpu {
-	fn init(&mut self) -> HypervisorResult<()> {
-		self.setup_long_mode(
-			self.kernel_info.entry_point,
-			self.kernel_info.stack_address,
-			self.kernel_info.guest_address,
-			self.id,
-		)?;
-		self.setup_cpuid()?;
-
-		// be sure that the multiprocessor is runable
-		let mp_state = kvm_mp_state {
-			mp_state: KVM_MP_STATE_RUNNABLE,
-		};
-		self.vcpu.set_mp_state(mp_state)?;
-
-		self.setup_msrs()?;
-
+	fn thread_local_init(&mut self) -> HypervisorResult<()> {
+		// no thread-local initialization necessary
 		Ok(())
 	}
 
