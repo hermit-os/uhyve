@@ -26,6 +26,7 @@ use crate::{
 		x86_64::kvm_cpu::KvmVm,
 	},
 	serial::Destination,
+	vcpu::VirtualCPU,
 	vm::{UhyveVm, VmResult},
 };
 
@@ -78,7 +79,7 @@ impl UhyveVm<KvmVm> {
 		}
 	}
 
-	fn run_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
+	fn run_gdb(mut self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
 		let cpu_id = 0;
 
 		let local_cpu_affinity = cpu_affinity
@@ -92,6 +93,10 @@ impl UhyveVm<KvmVm> {
 			}
 			None => debug!("No affinity specified, not binding thread"),
 		}
+
+		self.vcpus[0]
+			.thread_local_init()
+			.expect("Unable to initialize vCPU");
 
 		let connection =
 			wait_for_gdb_connection(self.kernel_info.params.gdb_port.unwrap()).unwrap();
