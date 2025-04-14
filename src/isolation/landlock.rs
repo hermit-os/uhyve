@@ -78,9 +78,13 @@ impl UhyveLandlockWrapper {
 		);
 
 		if *LANDLOCK_ENABLED.lock().unwrap() {
-			warn!(
-				"Landlock has been enabled already. Further policies will not affect existing ones."
-			);
+			if self.compat_level == CompatLevel::HardRequirement {
+				panic!("Landlock has been enabled already. Failing because of strict sandbox mode.")
+			} else {
+				warn!(
+					"Landlock has been enabled already. Further policies will not affect existing ones."
+				);
+			}
 		}
 
 		Self::enforce_landlock(self)
