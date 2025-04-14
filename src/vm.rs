@@ -1,5 +1,6 @@
 use std::{
 	env, fmt, fs, io,
+	mem::MaybeUninit,
 	num::NonZeroU32,
 	os::unix::prelude::JoinHandleExt,
 	path::PathBuf,
@@ -20,19 +21,23 @@ use log::error;
 use rand::Rng;
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
+use vm_memory::{
+	Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion, GuestRegionMmap,
+	MemoryRegionAddress, MmapRegion,
+};
 
 use crate::{
 	HypervisorError, arch,
 	consts::*,
 	fdt::Fdt,
 	isolation::filemap::UhyveFileMap,
-	mem::MmapMemory,
+	mem::mem_as_slice,
 	os::KickSignal,
 	params::{EnvVars, Params},
 	serial::{Destination, UhyveSerial},
 	stats::{CpuStats, VmStats},
 	vcpu::VirtualCPU,
-	virtio::*,
+	virtio::net::VirtioNetPciDevice,
 };
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
@@ -109,7 +114,7 @@ pub struct VmResult {
 #[derive(Debug)]
 pub(crate) struct VmPeripherals {
 	pub file_mapping: Mutex<UhyveFileMap>,
-	pub mem: MmapMemory,
+	pub mem: Arc<GuestMemoryMmap>,
 	pub(crate) serial: UhyveSerial,
 	pub virtio_device: Mutex<VirtioNetPciDevice>,
 }
@@ -142,6 +147,8 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
 		let memory_size = params.memory_size.get();
+
+		println!("memory_size: {:#x}", memory_size);
 
 		let elf = fs::read(&kernel_path)?;
 		let object: KernelObject<'_> =
@@ -199,11 +206,12 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		debug!("Kernel gets loaded to {kernel_address:#x}");
 
-		#[cfg(target_os = "linux")]
-		let mut mem = MmapMemory::new(0, memory_size, guest_address, params.thp, params.ksm);
-
-		#[cfg(not(target_os = "linux"))]
-		let mut mem = MmapMemory::new(0, memory_size, guest_address, false, false);
+		let regionmap = GuestRegionMmap::<()>::new(
+			MmapRegion::new(memory_size).unwrap(),
+			GuestAddress(guest_address.as_u64()),
+		)
+		.unwrap();
+		let mem = Arc::new(GuestMemoryMmap::from_regions(vec![regionmap]).unwrap());
 
 		let (
 			LoadedKernel {
@@ -211,8 +219,12 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 				entry_point,
 			},
 			kernel_end_address,
-		) = load_kernel_to_mem(&object, &mut mem, kernel_address - guest_address)
-			.expect("Unable to load Kernel {kernel_path}");
+		) = load_kernel_to_mem(
+			&object,
+			mem.iter().next().unwrap(),
+			kernel_address - guest_address,
+		)
+		.expect("Unable to load Kernel {kernel_path}");
 
 		assert!(
 			kernel_address.as_u64() > KERNEL_STACK_SIZE,
@@ -224,7 +236,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		let kernel_info = Arc::new(KernelInfo {
 			entry_point: entry_point.into(),
 			kernel_address,
-			guest_address: mem.guest_address,
+			guest_address,
 			path: kernel_path,
 			params,
 			stack_address,
@@ -234,7 +246,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		// TODO: Remove allow once fixed:
 		// https://github.com/rust-lang/rust-clippy/issues/11382
 		#[allow(clippy::arc_with_non_send_sync)]
-		let virtio_device = Mutex::new(VirtioNetPciDevice::new());
+		let virtio_device = Mutex::new(VirtioNetPciDevice::new(mem.clone()));
 
 		let file_mapping = Mutex::new(UhyveFileMap::new(
 			&kernel_info.params.file_mapping,
@@ -274,8 +286,17 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		let freq = vcpus[0].get_cpu_frequency();
 
-		write_fdt_into_mem(&peripherals.mem, &kernel_info.params, freq);
-		write_boot_info_to_mem(&peripherals.mem, load_info, cpu_count as u64, freq);
+		write_fdt_into_mem(
+			peripherals.mem.iter().next().unwrap(),
+			&kernel_info.params,
+			freq,
+		);
+		write_boot_info_to_mem(
+			peripherals.mem.iter().next().unwrap(),
+			load_info,
+			cpu_count as u64,
+			freq,
+		);
 
 		let legacy_mapping = if let Some(version) = hermit_version {
 			// actually, all versions that have the tag in the elf are valid, but an explicit check doesn't hurt
@@ -289,8 +310,15 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			true
 		};
 		init_guest_mem(
-			unsafe { peripherals.mem.as_slice_mut() }, // slice only lives during this fn call
-			peripherals.mem.guest_address,
+			unsafe {
+				mem_as_slice(
+					&peripherals.mem,
+					guest_address,
+					(stack_address - guest_address) as usize,
+				)
+				.unwrap()
+			}, // slice only lives during this fn call
+			guest_address,
 			kernel_end_address - guest_address,
 			legacy_mapping,
 		);
@@ -436,16 +464,14 @@ fn init_guest_mem(
 	legacy_mapping: bool,
 ) {
 	debug!("Initialize guest memory");
-	crate::arch::init_guest_mem(
-		mem.try_into()
-			.expect("Guest memory is not large enough for pagetables"),
-		guest_addr,
-		memory_size,
-		legacy_mapping,
-	);
+	crate::arch::init_guest_mem(mem, guest_addr, memory_size, legacy_mapping);
 }
 
-fn write_fdt_into_mem(mem: &MmapMemory, params: &Params, cpu_freq: Option<NonZeroU32>) {
+fn write_fdt_into_mem<REGION: GuestMemoryRegion>(
+	mem: &REGION,
+	params: &Params,
+	cpu_freq: Option<NonZeroU32>,
+) {
 	debug!("Writing FDT in memory");
 
 	let sep = params
@@ -458,7 +484,7 @@ fn write_fdt_into_mem(mem: &MmapMemory, params: &Params, cpu_freq: Option<NonZer
 
 	let mut fdt = Fdt::new()
 		.unwrap()
-		.memory(mem.guest_address..mem.guest_address + mem.memory_size as u64)
+		.memory(GuestPhysAddr::new(mem.start_addr().0)..GuestPhysAddr::new(mem.last_addr().0 + 1))
 		.unwrap()
 		.kernel_args(&params.kernel_args[..sep])
 		.app_args(params.kernel_args.get(sep + 1..).unwrap_or_default());
@@ -482,30 +508,31 @@ fn write_fdt_into_mem(mem: &MmapMemory, params: &Params, cpu_freq: Option<NonZer
 	debug!("fdt.len() = {}", fdt.len());
 	assert!(fdt.len() < (BOOT_INFO_OFFSET - FDT_OFFSET) as usize);
 	unsafe {
-		let fdt_ptr = mem.host_address.add(FDT_OFFSET as usize);
+		let fdt_ptr = mem
+			.get_host_address(MemoryRegionAddress(FDT_OFFSET))
+			.unwrap();
 		fdt_ptr.copy_from_nonoverlapping(fdt.as_ptr(), fdt.len());
 	}
 }
 
-fn write_boot_info_to_mem(
-	mem: &MmapMemory,
+fn write_boot_info_to_mem<REGION: GuestMemoryRegion>(
+	mem: &REGION,
 	load_info: LoadInfo,
 	num_cpus: u64,
 	cpu_freq: Option<NonZeroU32>,
 ) {
 	debug!(
 		"Writing BootInfo to {:?}",
-		mem.guest_address + BOOT_INFO_OFFSET
+		mem.start_addr().checked_add(BOOT_INFO_OFFSET).unwrap()
 	);
 	let boot_info = BootInfo {
 		hardware_info: HardwareInfo {
-			phys_addr_range: mem.guest_address.as_u64()
-				..mem.guest_address.as_u64() + mem.memory_size as u64,
+			phys_addr_range: mem.start_addr().raw_value()..mem.start_addr().raw_value() + mem.len(),
 			serial_port_base: SerialPortBase::new(
 				(uhyve_interface::HypercallAddress::Uart as u16).into(),
 			),
 			device_tree: Some(
-				(mem.guest_address.as_u64() + FDT_OFFSET)
+				(mem.start_addr().raw_value() + FDT_OFFSET)
 					.try_into()
 					.unwrap(),
 			),
@@ -518,32 +545,41 @@ fn write_boot_info_to_mem(
 			boot_time: SystemTime::now().into(),
 		},
 	};
+
 	unsafe {
-		let raw_boot_info_ptr = mem.host_address.add(BOOT_INFO_OFFSET as usize) as *mut RawBootInfo;
+		let raw_boot_info_ptr = mem
+			.get_host_address(MemoryRegionAddress(BOOT_INFO_OFFSET))
+			.unwrap() as *mut RawBootInfo;
 		*raw_boot_info_ptr = RawBootInfo::from(boot_info);
 	}
 }
 
 /// loads the kernel `object` into `mem`. `relative_offset` is the start address the kernel relative to `mem`.
 /// Returns the loaded kernel marker and the kernel's end address.
-fn load_kernel_to_mem(
+fn load_kernel_to_mem<REGION: GuestMemoryRegion>(
 	object: &KernelObject<'_>,
-	mem: &mut MmapMemory,
+	mem: &REGION,
 	relative_offset: u64,
 ) -> LoadKernelResult<(LoadedKernel, GuestPhysAddr)> {
-	let kernel_end_address = mem.guest_address + relative_offset + object.mem_size();
+	debug!("loading kernel. relative_offset: {relative_offset:x}");
+	let kernel_end_address = MemoryRegionAddress::new(relative_offset + object.mem_size() as u64);
 
-	if kernel_end_address > mem.guest_address + mem.memory_size {
+	if !mem.address_in_range(kernel_end_address) {
 		return Err(LoadKernelError::InsufficientMemory);
 	}
 
 	Ok((
 		object.load_kernel(
 			// Safety: Slice only lives during this fn call, so no aliasing happens
-			&mut unsafe { mem.as_slice_uninit_mut() }
-				[relative_offset as usize..relative_offset as usize + object.mem_size()],
-			relative_offset + mem.guest_address.as_u64(),
+			unsafe {
+				std::slice::from_raw_parts_mut(
+					mem.get_host_address(MemoryRegionAddress(relative_offset))
+						.unwrap() as *mut MaybeUninit<u8>,
+					object.mem_size(),
+				)
+			},
+			relative_offset + mem.start_addr().0,
 		),
-		kernel_end_address,
+		GuestPhysAddr::new(mem.start_addr().0 + relative_offset + object.mem_size() as u64),
 	))
 }
