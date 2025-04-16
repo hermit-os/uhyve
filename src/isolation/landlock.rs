@@ -315,3 +315,42 @@ pub(crate) fn initialize_landlock_vm(
 		&uhyve_ro_dirs,
 	)
 }
+
+#[cfg(test)]
+mod tests {
+	use std::panic;
+
+	use super::*;
+
+	#[test]
+	fn test_get_parent_directory() {
+		assert_eq!(
+			get_parent_directory(&OsString::from("/dev/zero"))
+				.display()
+				.to_string(),
+			"/dev/zero".to_string()
+		);
+
+		assert_eq!(
+			get_parent_directory(&OsString::from("/dev/zero/one"))
+				.display()
+				.to_string(),
+			"/dev/zero".to_string()
+		);
+	}
+
+	#[test]
+	fn test_landlock_strict_mode() {
+		let landlock = UhyveLandlockWrapper::new(
+			FileSandboxMode::Strict,
+			&["/dev/null".to_string()],
+			&["/dev/zero".to_string()],
+			&["/dev/".to_string()],
+		);
+
+		landlock.apply_landlock_restrictions();
+		// Assume that the second time will fail.
+		let result = panic::catch_unwind(|| landlock.apply_landlock_restrictions());
+		assert!(result.is_err());
+	}
+}
