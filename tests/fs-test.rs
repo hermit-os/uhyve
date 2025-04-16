@@ -6,12 +6,12 @@ use std::{
 };
 
 use byte_unit::{Byte, Unit};
+#[cfg(target_os = "linux")]
+use common::strict_sandbox;
 use common::{
 	build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists, run_simple_vm,
 };
 use serial_test::serial;
-#[cfg(target_os = "linux")]
-use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
 	params::{Output, Params},
 	vm::UhyveVm,
@@ -52,8 +52,6 @@ fn create_mapped_parent_nonpresent_file() {
 			.try_into()
 			.unwrap(),
 		file_mapping: uhyvefilemap_params.clone(),
-		#[cfg(target_os = "linux")]
-		file_isolation: FileSandboxMode::Strict,
 		..Default::default()
 	};
 
@@ -87,8 +85,6 @@ fn create_write_unmapped_nonpresent_file() {
 			.try_into()
 			.unwrap(),
 		file_mapping: uhyvefilemap_params,
-		#[cfg(target_os = "linux")]
-		file_isolation: FileSandboxMode::Strict,
 		output: Output::Buffer,
 		stats: true,
 		..Default::default()
@@ -125,8 +121,6 @@ fn create_write_mapped_nonpresent_file() {
 			.try_into()
 			.unwrap(),
 		file_mapping: uhyvefilemap_params,
-		#[cfg(target_os = "linux")]
-		file_isolation: FileSandboxMode::Strict,
 		output: Output::Buffer,
 		stats: true,
 		..Default::default()
@@ -168,7 +162,7 @@ fn remove_mapped_present_file() {
 			.unwrap(),
 		file_mapping: uhyvefilemap_params,
 		#[cfg(target_os = "linux")]
-		file_isolation: FileSandboxMode::Strict,
+		file_isolation: strict_sandbox(),
 		output: Output::Buffer,
 		stats: true,
 		..Default::default()
@@ -205,8 +199,6 @@ fn remove_mapped_parent_present_file() {
 			.try_into()
 			.unwrap(),
 		file_mapping: uhyvefilemap_params,
-		#[cfg(target_os = "linux")]
-		file_isolation: FileSandboxMode::Strict,
 		output: Output::Buffer,
 		stats: true,
 		..Default::default()
@@ -245,8 +237,6 @@ fn create_and_remove_unmapped_file_test() {
 			.unwrap()
 			.try_into()
 			.unwrap(),
-		#[cfg(target_os = "linux")]
-		file_isolation: FileSandboxMode::Strict,
 		..Default::default()
 	};
 

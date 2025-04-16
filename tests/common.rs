@@ -55,8 +55,6 @@ pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 			.unwrap()
 			.try_into()
 			.unwrap(),
-		#[cfg(target_os = "linux")]
-		file_isolation: FileSandboxMode::Strict,
 		output: Output::Buffer,
 		stats: true,
 		..Default::default()
@@ -88,6 +86,19 @@ pub fn get_fs_fixture_path() -> PathBuf {
 	fixture_path.push("tests/data/fixtures/fs");
 	assert!(fixture_path.is_dir());
 	fixture_path
+}
+
+/// If UHYVE_TEST_STRICT_SANDBOX == 1, enable strict sandboxing mode (for the CI).
+///
+/// Currently unused for fs-test.rs because of mysterious cargo test shenanigans.
+#[cfg(target_os = "linux")]
+#[allow(dead_code)]
+pub fn strict_sandbox() -> FileSandboxMode {
+	if env::var("UHYVE_TEST_STRICT_SANDBOX").is_ok() {
+		FileSandboxMode::Strict
+	} else {
+		FileSandboxMode::Normal
+	}
 }
 
 pub fn cargo() -> Command {
