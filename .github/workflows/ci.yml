@@ -66,7 +66,13 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --locked
-      - name: Run images
+      - name: Run images (No sandboxing)
+        timeout-minutes: 1
+        run: |
+          cargo run data/x86_64/hello_world --stats --file-isolation none
+          cargo run data/x86_64/rusty_demo --stats --file-isolation none
+          cargo run data/x86_64/hello_c --stats --file-isolation none
+      - name: Run images (Default)
         timeout-minutes: 1
         run: |
           cargo run data/x86_64/hello_world --stats
