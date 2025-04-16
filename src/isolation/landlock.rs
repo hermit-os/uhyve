@@ -9,7 +9,7 @@ use std::{
 use clap::error::Error;
 use landlock::{
 	ABI, Access, AccessFs, CompatLevel, Compatible, PathBeneath, PathFd, PathFdError,
-	RestrictionStatus, Ruleset, RulesetAttr, RulesetCreatedAttr, RulesetError,
+	RestrictionStatus, Ruleset, RulesetAttr, RulesetCreatedAttr, RulesetError, RulesetStatus,
 };
 use thiserror::Error;
 
@@ -99,7 +99,7 @@ impl UhyveLandlockWrapper {
 	/// - `sandbox_mode` - User-provided [`crate::params::FileSandboxMode`]
 	fn determine_compat_level(sandbox_mode: FileSandboxMode) -> CompatLevel {
 		match sandbox_mode {
-			FileSandboxMode::None => panic!(),
+			FileSandboxMode::None => unreachable!(),
 			FileSandboxMode::Normal => CompatLevel::BestEffort,
 			FileSandboxMode::Strict => CompatLevel::HardRequirement,
 		}
@@ -159,13 +159,24 @@ impl UhyveLandlockWrapper {
 			.set_no_new_privs(true)
 			.restrict_self()?;
 
-		let mut is_already_enabled = LANDLOCK_ENABLED.lock().unwrap();
-		*is_already_enabled = true;
-
 		debug!(
 			"Landlock ruleset status: {:#?} (no_new_privs: {:#?})",
 			res_status.ruleset, res_status.no_new_privs
 		);
+
+		// Adapted from Mickaël Salaün's Rust Landlock library, which is distributed
+		// under the terms of the MIT and Apache 2.0 licenses.
+		//
+		// For the original source code authored by Mickaël Salaün, see:
+		// https://github.com/landlock-lsm/rust-landlock/blob/07f2a9a7/examples/sandboxer.rs#L133C1-L135C6
+		if res_status.ruleset == RulesetStatus::NotEnforced {
+			panic!(
+				"Landlock is not supported by the running kernel. You can disable Landlock using `--file-isolation none`."
+			);
+		}
+
+		let mut is_already_enabled = LANDLOCK_ENABLED.lock().unwrap();
+		*is_already_enabled = true;
 
 		Ok(res_status)
 	}
