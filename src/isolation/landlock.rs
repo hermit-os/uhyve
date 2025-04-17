@@ -261,7 +261,7 @@ fn get_parent_directory(host_path: &OsString) -> PathBuf {
 /// * `output` - Output of Uhyve, used for adding file outputs to Landlock (if applicable)
 /// * `host_paths` - List of host paths derived from mappings by the user
 /// * `temp_dir` - Location of the temporary directory for unmapped files
-pub(crate) fn initialize_landlock_vm(
+pub(crate) fn configure_landlock_uhyvevm(
 	sandbox_mode: FileSandboxMode,
 	kernel_path: String,
 	output: &crate::params::Output,
