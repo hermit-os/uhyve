@@ -2,6 +2,8 @@
 
 use std::{mem::size_of, ops::Add};
 
+use align_address::u8_align_up;
+
 use crate::{
 	pci::{IOBASE, PciError, PciType0ConfigSpaceHeader},
 	virtio::{capabilities::*, virtqueue::VirtqueueNotification},
@@ -28,7 +30,10 @@ pub const ISR_CFG_START: u8 = COMMON_CFG_START + size_of::<ComCfg>() as u8;
 pub const ISR_CFG_END: u8 = NOTIFY_REGION_START - 1;
 
 // The notification capabilite refers to the notification region directly
-pub const NOTIFY_REGION_START: u8 = ISR_CFG_START + size_of::<IsrStatus>() as u8;
+pub const NOTIFY_REGION_START: u8 = u8_align_up(
+	ISR_CFG_START + size_of::<IsrStatus>() as u8,
+	size_of::<u32>() as u8,
+);
 pub const MEM_NOTIFY: ConfigAddress =
 	ConfigAddress::from_configuration_address(NOTIFY_REGION_START as u32);
 pub const MEM_NOTIFY_1: ConfigAddress = ConfigAddress::from_configuration_address(
@@ -37,7 +42,7 @@ pub const MEM_NOTIFY_1: ConfigAddress = ConfigAddress::from_configuration_addres
 pub const NOTIFY_REGION_END: u8 =
 	NOTIFY_REGION_START + 2 * size_of::<VirtqueueNotification>() as u8 - 1;
 
-pub const DEVICE_CFG_START: u8 = NOTIFY_REGION_END + 1;
+pub const DEVICE_CFG_START: u8 = u8_align_up(NOTIFY_REGION_END + 1, size_of::<u32>() as u8);
 pub const DEVICE_CFG_END: u8 = DEVICE_CFG_START + size_of::<NetDevCfg>() as u8 - 1;
 
 /// An address in the PCI configuration space.
@@ -104,11 +109,11 @@ pub(crate) use get_offset;
 ///       │  Common Configuration   │  │ │ │
 ///  0xC4 ├─────────────────────────┤◄─┼─┼─┘
 ///       │  ISR Configuration      │  │ │
-///  0xC5 ├─────────────────────────┤◄─┼─┘
+///  0xC8 ├─────────────────────────┤◄─┼─┘
 ///       │  Notification Region    │  │
-///  0xC6 ├─────────────────────────┤◄─┘
+///  0xD0 ├─────────────────────────┤◄─┘
 ///       │  Device Configuration   │
-///  0xDE └─────────────────────────┘
+///  0xE8 └─────────────────────────┘
 /// ```
 #[derive(Default, Debug)]
 #[repr(C)]
