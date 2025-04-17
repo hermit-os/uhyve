@@ -19,6 +19,7 @@ use crate::{
 	vcpu::{VcpuStopReason, VirtualCPU},
 	virtio::{
 		capabilities::{ComCfg, IsrStatus, NetDevCfg},
+		net::{Area, VirtioNetPciDevice},
 		pci::{ConfigAddress, MEM_NOTIFY, MEM_NOTIFY_1},
 	},
 	vm::{
@@ -167,6 +168,10 @@ impl VirtualizationBackendInternal for KvmVm {
 			vm_fd: vm,
 			peripherals,
 		})
+	}
+
+	fn register_virtio_device(&self, device: &mut VirtioNetPciDevice) {
+		device.setup(&self.vm_fd);
 	}
 }
 

@@ -79,6 +79,7 @@ pub(crate) mod internal {
 	use crate::{
 		HypervisorResult,
 		vcpu::VirtualCPU,
+		virtio::net::VirtioNetPciDevice,
 		vm::{KernelInfo, Params, VmPeripherals},
 	};
 
@@ -96,6 +97,8 @@ pub(crate) mod internal {
 		) -> HypervisorResult<Self::VCPU>;
 
 		fn new(peripherals: Arc<VmPeripherals>, params: &Params) -> HypervisorResult<Self>;
+
+		fn register_virtio_device(&self, device: &mut VirtioNetPciDevice);
 	}
 }
 
@@ -263,6 +266,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		});
 
 		let virt_backend = VirtBackend::BACKEND::new(peripherals.clone(), &kernel_info.params)?;
+
+		virt_backend.register_virtio_device(&mut (peripherals.virtio_device.lock().unwrap()));
 
 		let cpu_count = kernel_info.params.cpu_count.get();
 
