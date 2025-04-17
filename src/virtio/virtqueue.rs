@@ -8,6 +8,7 @@ use std::{
 	sync::atomic::{AtomicPtr, Ordering},
 };
 
+use align_address::usize_align_up;
 use uhyve_interface::GuestPhysAddr;
 
 use crate::consts::PAGE_SIZE;
@@ -148,16 +149,12 @@ impl Iterator for AvailIter<'_> {
 	}
 }
 
-pub(crate) fn align(addr: usize, boundary: usize) -> usize {
-	(addr + boundary - 1) & !(boundary - 1)
-}
-
 fn get_available_ring_offset() -> usize {
 	size_of::<VringDescriptor>() * QUEUE_LIMIT
 }
 
 fn get_used_ring_offset() -> usize {
-	align(
+	usize_align_up(
 		get_available_ring_offset() + size_of::<u16>() * (QUEUE_LIMIT + 3),
 		PAGE_SIZE,
 	)
