@@ -546,7 +546,8 @@ impl VirtualCPU for KvmCpu {
 						match addr {
 							0x9_F000..0xA_0000 | 0xF_0000..0x10_0000 => {} // Search for MP floating table
 							_ => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
+								let mut virtio_device =
+									self.peripherals.virtio_device.lock().unwrap();
 								match ConfigAddress::from_guest_address(addr).unwrap() {
 									IsrStatus::ISR_FLAGS => virtio_device.read_isr_notify(data),
 									ComCfg::DEVICE_STATUS => {
@@ -555,6 +556,8 @@ impl VirtualCPU for KvmCpu {
 									ComCfg::DEVICE_FEATURE => {
 										virtio_device.read_host_features(data)
 									}
+									ComCfg::CONFIG_GENERATION => virtio_device
+										.read_config_generation(data.try_into().unwrap()),
 									ComCfg::QUEUE_SIZE => virtio_device.read_queue_size(data),
 									ComCfg::QUEUE_NOTIFY_OFFSET => {
 										virtio_device.read_queue_notify_offset(data)

@@ -358,6 +358,9 @@ impl ComCfg {
 
 	pub const DEVICE_STATUS: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, device_status);
 
+	pub const CONFIG_GENERATION: ConfigAddress =
+		get_offset!(COMMON_CFG_START, ComCfg, config_generation);
+
 	pub const QUEUE_SELECT: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_select);
 
 	pub const QUEUE_SIZE: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_size);

@@ -70,6 +70,7 @@ pub struct VirtioNetPciDevice {
 	guest_mmap: Arc<GuestMemoryMmap>,
 	/// Store all negotiated feature sets. Chapter 2.2 virtio v1.2
 	feature_set: u64,
+	config_generation: (bool, u8), // changed & counter
 }
 impl fmt::Debug for VirtioNetPciDevice {
 	// TODO: More exhaustive debug print
@@ -105,6 +106,17 @@ impl VirtioNetPciDevice {
 			notify_evtfd: None,
 			guest_mmap,
 			feature_set: (UHYVE_NET_FEATURES_LOW as u64) & ((UHYVE_NET_FEATURES_HIGH as u64) << 32),
+			config_generation: (false, 0),
+		}
+	}
+
+	/// VirtIO v1.2 - 4.1.4.3.1 requires that "The device MUST present a changed config_generation
+	/// after the driver has read a device-specific configuration value which has changed since any
+	/// part of the device-specific configuration was last read."
+	fn update_config_generation(&mut self) {
+		if !self.config_generation.0 {
+			self.config_generation.1 += 1;
+			self.config_generation.0 = true;
 		}
 	}
 
@@ -135,6 +147,7 @@ impl VirtioNetPciDevice {
 			UHYVE_IRQ_NET as u32,
 		)
 		.unwrap();
+		self.update_config_generation();
 	}
 
 	#[inline]
@@ -159,6 +172,7 @@ impl VirtioNetPciDevice {
 			queue.reset();
 		}
 		self.header_caps.common_cfg.queue_reset = 0;
+		self.update_config_generation();
 	}
 
 	/// Read queue_reset from common capability structure when VIRTIO_F_RING_RESET is negotiated.
@@ -218,6 +232,7 @@ impl VirtioNetPciDevice {
 			);
 			*status_reg = DeviceStatus::DEVICE_NEEDS_RESET;
 		}
+		self.update_config_generation();
 	}
 
 	pub fn read_status_reg(&self) -> u8 {
@@ -327,6 +342,7 @@ impl VirtioNetPciDevice {
 		// "should've would've panicked by now, if no mac existed!" BAD!
 		self.get_mac_addr();
 		self.header_caps.dev.status = NetDevStatus::VIRTIO_NET_S_LINK_UP;
+		self.update_config_generation();
 	}
 
 	#[inline]
@@ -360,6 +376,7 @@ impl VirtioNetPciDevice {
 		}
 		// trace!("Select queue: {val}");
 		self.header_caps.common_cfg.queue_select = val;
+		self.update_config_generation();
 	}
 
 	/// Enable or disable the currently selected queue.
@@ -372,20 +389,23 @@ impl VirtioNetPciDevice {
 
 		let stat = val == 1;
 
-		let mut queue = match self.header_caps.common_cfg.queue_select {
-			RX_QUEUE => self.rx_queue.lock(),
-			TX_QUEUE => self.tx_queue.lock(),
-			_ => {
-				panic!("Cannot enable invalid queue!")
+		{
+			let mut queue = match self.header_caps.common_cfg.queue_select {
+				RX_QUEUE => self.rx_queue.lock(),
+				TX_QUEUE => self.tx_queue.lock(),
+				_ => {
+					panic!("Cannot enable invalid queue!")
+				}
+			};
+			queue.set_ready(stat);
+			// we'll need to set if we're enabling, as queue is_valid will return false
+			// the queue is disabled
+			if stat && !queue.is_valid(self.guest_mmap.as_ref()) {
+				error!("tried to set queue as ready, but is not valid")
 			}
-		};
-		queue.set_ready(stat);
-		// we'll need to set if we're enabling, as queue is_valid will return false
-		// the queue is disabled
-		if stat && !queue.is_valid(self.guest_mmap.as_ref()) {
-			error!("tried to set queue as ready, but is not valid")
 		}
 		self.header_caps.common_cfg.queue_enable = val;
+		self.update_config_generation();
 	}
 
 	/// The driver tells us the addresses of the queues used for communication
@@ -439,6 +459,12 @@ impl VirtioNetPciDevice {
 				_ => unreachable!("Not a 4 or 8 byte access to the virtqueue configuration"),
 			}
 		}
+		self.update_config_generation();
+	}
+
+	pub fn read_config_generation(&mut self, data: &mut [u8; 1]) {
+		data[0] = self.config_generation.1;
+		self.config_generation.0 = false;
 	}
 
 	pub fn write_requested_features(&mut self, data: &[u8]) {
@@ -462,16 +488,19 @@ impl VirtioNetPciDevice {
 					}
 				}
 		}
+		self.update_config_generation();
 	}
 
 	pub fn write_device_feature_select(&mut self, data: &[u8]) {
 		self.header_caps.common_cfg.device_feature_select =
-			FeatureSelector::from(u32::from_le_bytes(data.try_into().unwrap()))
+			FeatureSelector::from(u32::from_le_bytes(data.try_into().unwrap()));
+		self.update_config_generation();
 	}
 
 	pub fn write_driver_feature_select(&mut self, data: &[u8]) {
 		self.header_caps.common_cfg.driver_feature_select =
-			FeatureSelector::from(u32::from_le_bytes(data.try_into().unwrap()))
+			FeatureSelector::from(u32::from_le_bytes(data.try_into().unwrap()));
+		self.update_config_generation();
 	}
 
 	pub fn read_host_features(&self, data: &mut [u8]) {
