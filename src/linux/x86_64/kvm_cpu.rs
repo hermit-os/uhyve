@@ -560,6 +560,9 @@ impl VirtualCPU for KvmCpu {
 										virtio_device.read_queue_notify_offset(data)
 									}
 									NetDevCfg::MAC_ADDRESS => virtio_device.read_mac_address(data),
+									NetDevCfg::MAC_ADDRESS_HIGH => {
+										virtio_device.read_mac_address_high(data)
+									}
 									NetDevCfg::NET_STATUS => virtio_device.read_net_status(data),
 									NetDevCfg::MTU => virtio_device.read_mtu(data),
 									ComCfg::QUEUE_RESET => virtio_device.read_queue_reset(data),
@@ -595,10 +598,25 @@ impl VirtualCPU for KvmCpu {
 							}
 							ComCfg::DRIVER_FEATURE => virtio_device.write_requested_features(data),
 							ComCfg::QUEUE_SELECT => virtio_device.write_selected_queue(data),
-							ComCfg::QUEUE_DESC => virtio_device.write_pfn(data), // write descriptor address
+							ComCfg::QUEUE_DESC_LOW => {
+								virtio_device.update_queue_addr(Area::DescLow, data)
+							}
+							ComCfg::QUEUE_DESC_HIGH => {
+								virtio_device.update_queue_addr(Area::DescHigh, data)
+							}
 							ComCfg::QUEUE_ENABLE => virtio_device.queue_enable(data),
-							ComCfg::QUEUE_DRIVER => virtio_device.write_queue_driver(data),
-							ComCfg::QUEUE_DEVICE => virtio_device.write_queue_driver(data),
+							ComCfg::QUEUE_DRIVER_LOW => {
+								virtio_device.update_queue_addr(Area::DriverLow, data)
+							}
+							ComCfg::QUEUE_DRIVER_HIGH => {
+								virtio_device.update_queue_addr(Area::DriverHigh, data)
+							}
+							ComCfg::QUEUE_DEVICE_LOW => {
+								virtio_device.update_queue_addr(Area::DeviceLow, data)
+							}
+							ComCfg::QUEUE_DEVICE_HIGH => {
+								virtio_device.update_queue_addr(Area::DeviceHigh, data)
+							}
 							ComCfg::QUEUE_RESET => virtio_device.write_reset_queue(),
 							IsrStatus::ISR_FLAGS => {
 								panic!("Guest should not write to ISR!")

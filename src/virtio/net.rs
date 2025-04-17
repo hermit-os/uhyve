@@ -15,8 +15,8 @@ use spin::Mutex;
 use virtio_bindings::{
 	bindings::virtio_net::virtio_net_hdr_v1, virtio_config::VIRTIO_F_RING_RESET,
 };
-use virtio_queue::{Descriptor, DescriptorChain, Error as VirtIOError, Queue, QueueOwnedT, QueueT};
-use vm_memory::{GuestAddress, GuestMemoryMmap};
+use virtio_queue::{DescriptorChain, Error as VirtIOError, Queue, QueueOwnedT, QueueT};
+use vm_memory::GuestMemoryMmap;
 use vmm_sys_util::eventfd::EventFd;
 
 use crate::{
@@ -28,7 +28,7 @@ use crate::{
 		capabilities::IsrStatus,
 		features::{UHYVE_NET_FEATURES_HIGH, UHYVE_NET_FEATURES_LOW},
 		pci::{HeaderConf, MEM_NOTIFY, MEM_NOTIFY_1},
-		virtqueue::{self, QUEUE_LIMIT},
+		virtqueue::QUEUE_LIMIT,
 	},
 };
 
@@ -38,6 +38,17 @@ const RX_QUEUE: u16 = 0;
 const TX_QUEUE: u16 = 1;
 
 use crate::virtio::capabilities::{FeatureSelector, NetDevStatus};
+
+/// Write access to u64 fields in virtio is done in two separate accesses. This is a helper struct to support this pattern.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Area {
+	DescHigh,
+	DescLow,
+	DriverHigh,
+	DriverLow,
+	DeviceHigh,
+	DeviceLow,
+}
 
 /// Struct to manage uhyve's network device.
 pub struct VirtioNetPciDevice {
@@ -226,6 +237,16 @@ impl VirtioNetPciDevice {
 		}
 	}
 
+	// provide the upper two bytes of the mac address and the status
+	pub fn read_mac_address_high(&self, data: &mut [u8]) {
+		data[0] = self.header_caps.dev.mac[4];
+		data[1] = self.header_caps.dev.mac[5];
+		if data.len() == 4 {
+			data[2] = self.header_caps.dev.status.bits().to_le_bytes()[0];
+			data[3] = self.header_caps.dev.status.bits().to_le_bytes()[1];
+		}
+	}
+
 	fn start_network_interface(&mut self) {
 		// Create a TAP device without packet info headers.
 		let iface = self.iface.insert(Arc::new(sync::Mutex::new(
@@ -341,32 +362,6 @@ impl VirtioNetPciDevice {
 		self.header_caps.common_cfg.queue_select = val;
 	}
 
-	pub fn write_queue_device(&mut self, data: &[u8]) {
-		let data_u64 = match data.len() {
-			1 => [data[0], 0, 0, 0, 0, 0, 0, 0],
-			2 => [data[0], data[1], 0, 0, 0, 0, 0, 0],
-			4 => [data[0], data[1], data[2], data[3], 0, 0, 0, 0],
-			8 => [
-				data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-			],
-			_ => panic!("Invalid write length"),
-		};
-		self.header_caps.common_cfg.queue_device = u64::from_le_bytes(data_u64)
-	}
-
-	pub fn write_queue_driver(&mut self, data: &[u8]) {
-		let data_u64 = match data.len() {
-			1 => [data[0], 0, 0, 0, 0, 0, 0, 0],
-			2 => [data[0], data[1], 0, 0, 0, 0, 0, 0],
-			4 => [data[0], data[1], data[2], data[3], 0, 0, 0, 0],
-			8 => [
-				data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-			],
-			_ => panic!("Invalid write length"),
-		};
-		self.header_caps.common_cfg.queue_driver = u64::from_le_bytes(data_u64)
-	}
-
 	/// Enable or disable the currently selected queue.
 	#[inline]
 	pub fn queue_enable(&mut self, data: &[u8]) {
@@ -393,36 +388,56 @@ impl VirtioNetPciDevice {
 		self.header_caps.common_cfg.queue_enable = val;
 	}
 
-	/// Register virtqueue and grab the host-address pointer
-	pub fn write_pfn(&mut self, dest: &[u8]) {
+	/// The driver tells us the addresses of the queues used for communication
+	pub fn update_queue_addr(&mut self, area: Area, bytes: &[u8]) {
+		debug!("updating queue address {area:?} to {bytes:x?}");
 		let status = self.header_caps.pci_config_hdr.status;
-		if status.contains(DeviceStatus::FEATURES_OK) && !status.contains(DeviceStatus::DRIVER_OK) {
-			let gpa = unsafe { *(dest.as_ptr() as *const usize) };
-			assert!(gpa != 0, "Received a null pointer as an address!");
+		assert!(
+			status.contains(DeviceStatus::FEATURES_OK),
+			"Driver tries to set queue addresses before feature negotiation"
+		);
+		assert!(
+			!status.contains(DeviceStatus::DRIVER_OK),
+			"Driver tries to set queue addresses after driver initialization"
+		);
 
-			let guest_addr = GuestAddress(gpa as u64);
-			let availaddr = GuestAddress(
-				(mem::size_of::<Descriptor>() * QUEUE_LIMIT + guest_addr.0 as usize) as u64,
-			);
-
-			let usedaddr = GuestAddress(virtqueue::align(
-				availaddr.0 as usize + (mem::size_of::<u16>() * (QUEUE_LIMIT + 3)),
-				crate::consts::PAGE_SIZE,
-			) as u64);
-
+		{
 			let mut queue = match self.header_caps.common_cfg.queue_select {
 				RX_QUEUE => self.rx_queue.as_ref().lock(),
 				TX_QUEUE => self.tx_queue.as_ref().lock(),
 				_ => panic!("Invalid queue selected!"),
 			};
 
-			queue.set_size(QUEUE_LIMIT as u16);
-			queue.set_desc_table_address(
-				Some(guest_addr.0 as u32),
-				Some((guest_addr.0 >> 32) as u32),
-			);
-			queue.set_avail_ring_address(Some(availaddr.0 as u32), None);
-			queue.set_used_ring_address(Some(usedaddr.0 as u32), None)
+			match bytes.len() {
+				4 => {
+					let addr_part = u32::from_le_bytes(bytes.try_into().unwrap());
+					match area {
+						Area::DescHigh => queue.set_desc_table_address(None, Some(addr_part)),
+						Area::DescLow => queue.set_desc_table_address(Some(addr_part), None),
+						Area::DriverHigh => queue.set_avail_ring_address(None, Some(addr_part)),
+						Area::DriverLow => queue.set_avail_ring_address(Some(addr_part), None),
+						Area::DeviceHigh => queue.set_used_ring_address(None, Some(addr_part)),
+						Area::DeviceLow => queue.set_used_ring_address(Some(addr_part), None),
+					}
+				}
+				8 => {
+					let addr_low = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+					let addr_high = u32::from_le_bytes(bytes[4..7].try_into().unwrap());
+					match area {
+						Area::DescLow => {
+							queue.set_desc_table_address(Some(addr_low), Some(addr_high))
+						}
+						Area::DriverLow => {
+							queue.set_avail_ring_address(Some(addr_low), Some(addr_high))
+						}
+						Area::DeviceLow => {
+							queue.set_used_ring_address(Some(addr_low), Some(addr_high))
+						}
+						_ => panic!("Unaligned virtqueue area address"),
+					}
+				}
+				_ => unreachable!("Not a 4 or 8 byte access to the virtqueue configuration"),
+			}
 		}
 	}
 

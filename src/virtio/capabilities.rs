@@ -156,6 +156,8 @@ pub struct NetDevCfg {
 }
 impl NetDevCfg {
 	pub const MAC_ADDRESS: ConfigAddress = get_offset!(DEVICE_CFG_START, NetDevCfg, mac);
+	pub const MAC_ADDRESS_HIGH: ConfigAddress =
+		ConfigAddress(get_offset!(DEVICE_CFG_START, NetDevCfg, mac).0 + 4);
 	// pub const MAC_ADDRESS_1: ConfigAddress = ConfigAddress(MAC_ADDRESS.0 + 4);
 	pub const NET_STATUS: ConfigAddress = get_offset!(DEVICE_CFG_START, NetDevCfg, status);
 	pub const MTU: ConfigAddress = get_offset!(DEVICE_CFG_START, NetDevCfg, mtu);
@@ -368,11 +370,17 @@ impl ComCfg {
 	pub const QUEUE_NOTIFY_OFFSET: ConfigAddress =
 		get_offset!(COMMON_CFG_START, ComCfg, queue_notify_off);
 
-	pub const QUEUE_DESC: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_desc);
+	pub const QUEUE_DESC_LOW: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_desc);
+	pub const QUEUE_DESC_HIGH: ConfigAddress =
+		ConfigAddress(get_offset!(COMMON_CFG_START, ComCfg, queue_desc).0 + 4);
 
-	pub const QUEUE_DRIVER: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_driver);
+	pub const QUEUE_DRIVER_LOW: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_driver);
+	pub const QUEUE_DRIVER_HIGH: ConfigAddress =
+		ConfigAddress(get_offset!(COMMON_CFG_START, ComCfg, queue_driver).0 + 4);
 
-	pub const QUEUE_DEVICE: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_device);
+	pub const QUEUE_DEVICE_LOW: ConfigAddress = get_offset!(COMMON_CFG_START, ComCfg, queue_device);
+	pub const QUEUE_DEVICE_HIGH: ConfigAddress =
+		ConfigAddress(get_offset!(COMMON_CFG_START, ComCfg, queue_device).0 + 4);
 
 	pub const QUEUE_NOTIFY_DATA: ConfigAddress =
 		get_offset!(COMMON_CFG_START, ComCfg, queue_notify_data);
