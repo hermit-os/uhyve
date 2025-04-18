@@ -105,7 +105,7 @@ impl XhyveCpu {
 
 impl VirtualCPU for XhyveCpu {
 	fn thread_local_init(&mut self) -> HypervisorResult<()> {
-		debug!("Initialize VirtualCPU");
+		debug!("Initialize VirtualCPU {}", self.id);
 
 		let (entry_point, stack_address, guest_address, cpu_id) = (
 			self.kernel_info.entry_point,
