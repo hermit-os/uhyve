@@ -185,7 +185,8 @@ pub fn init_guest_mem(
 		(PAGETABLES_END - PAGETABLES_OFFSET) / SIZE_4KIB,
 	);
 
-	// Hypercalls are MMIO reads/writes in the lowest 4KiB of address space. Thus, we need to provide pagetable entries for this region.
+	// Hypercalls are MMIO reads/writes in the lowest 4KiB of address space.
+	// Thus, we need to provide pagetable entries for this region.
 	let pgd0_addr = boot_frame_allocator.allocate().unwrap().as_u64();
 	pgt_slice[0] = pgd0_addr | PT_PT;
 	let pgd0_slice = unsafe {
@@ -216,7 +217,7 @@ pub fn init_guest_mem(
 	};
 	pmd0_slice.fill(0);
 	// Hypercall/IO mapping
-	pmd0_slice[0] = PT_MEM;
+	pmd0_slice[0] = PT_MEM_CD;
 
 	for frame_addr in (guest_address.align_down(SIZE_4KIB).as_u64()
 		..(guest_address + length).align_up(SIZE_4KIB).as_u64())
