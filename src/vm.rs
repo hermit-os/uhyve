@@ -197,6 +197,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		}
 		.into();
 
+		debug!("Guest starts at {guest_address:#x}");
 		debug!("Kernel gets loaded to {kernel_address:#x}");
 
 		#[cfg(target_os = "linux")]
