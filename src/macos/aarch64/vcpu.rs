@@ -56,19 +56,23 @@ impl VirtualizationBackendInternal for XhyveVm {
 		})
 	}
 
-	fn new(peripherals: Arc<VmPeripherals>, _params: &Params) -> HypervisorResult<Self> {
+	fn new(
+		peripherals: Arc<VmPeripherals>,
+		_params: &Params,
+		guest_addr: GuestPhysAddr,
+	) -> HypervisorResult<Self> {
 		debug!("Create VM...");
 		create_vm()?;
 
 		debug!("Map guest memory...");
 		map_mem(
 			unsafe { peripherals.mem.as_slice_mut() },
-			crate::RAM_START.as_u64(),
+			guest_addr.as_u64(),
 			MemPerm::ExecReadWrite,
 		)?;
 		// protect the first page for hypercall
 		// Apple uses on aarch64 default page size of 16K
-		protect_mem(crate::RAM_START.as_u64(), 0x4000, MemPerm::None)?;
+		protect_mem(guest_addr.as_u64(), 0x4000, MemPerm::None)?;
 
 		debug!("Create GIC...");
 		let gic = Gic::new(GICD_BASE_ADDRESS, GICR_BASE_ADDRESS, MSI_BASE_ADDRESS)?;
@@ -235,7 +239,9 @@ impl VirtualCPU for XhyveCpu {
 							if let Some(hypercall) = unsafe {
 								hypercall::address_to_hypercall(
 									&self.peripherals.mem,
-									(addr - crate::RAM_START.as_u64()).try_into().unwrap(),
+									(addr - self.kernel_info.guest_address.as_u64())
+										.try_into()
+										.unwrap(),
 									data_addr,
 								)
 							} {

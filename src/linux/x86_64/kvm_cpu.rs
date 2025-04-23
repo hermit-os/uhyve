@@ -65,7 +65,11 @@ impl VirtualizationBackendInternal for KvmVm {
 		Ok(kvcpu)
 	}
 
-	fn new(peripherals: Arc<VmPeripherals>, params: &Params) -> HypervisorResult<Self> {
+	fn new(
+		peripherals: Arc<VmPeripherals>,
+		params: &Params,
+		_guest_addr: GuestPhysAddr,
+	) -> HypervisorResult<Self> {
 		let vm = KVM.create_vm().unwrap();
 
 		let sz = std::cmp::min(peripherals.mem.memory_size, KVM_32BIT_GAP_START);
