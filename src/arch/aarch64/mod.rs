@@ -10,7 +10,7 @@ use crate::{
 	paging::{BumpAllocator, PagetableError},
 };
 
-pub(crate) const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x00);
+pub(crate) const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x1000_0000);
 
 const SIZE_4KIB: u64 = 0x1000;
 
@@ -217,20 +217,20 @@ pub fn init_guest_mem(
 	};
 	pmd0_slice.fill(0);
 	// Hypercall/IO mapping
-	pmd0_slice[0] = PT_MEM_CD;
+	pmd0_slice[0] = guest_address | PT_MEM_CD;
 
 	for frame_addr in (guest_address.align_down(SIZE_4KIB).as_u64()
 		..(guest_address + length).align_up(SIZE_4KIB).as_u64())
 		.step_by(SIZE_4KIB as usize)
 	{
-		let idx_l4 = (frame_addr as usize / (0x80_0000_0000)) & (0xFFF);
-		let idx_l3 = (frame_addr as usize / (0x4000_0000)) & (0xFFF);
-		let idx_l2 = (frame_addr as usize / (0x20_0000)) & (0xFFF);
-		let idx_l1 = (frame_addr as usize / (0x1000)) & (0xFFF);
+		let idx_l4 = (frame_addr as usize >> 39) & (0x1FF);
+		let idx_l3 = (frame_addr as usize >> 30) & (0x1FF);
+		let idx_l2 = (frame_addr as usize >> 21) & (0x1FF);
+		let idx_l1 = (frame_addr as usize >> 12) & (0x1FF);
 		debug!("mapping frame {frame_addr:x} to pagetable {idx_l4}-{idx_l3}-{idx_l2}-{idx_l1}");
 
 		let (pgd_addr, new) = if pgt_slice[idx_l4] == 0 {
-			(boot_frame_allocator.allocate().unwrap() | PT_PT, true)
+			(boot_frame_allocator.allocate().unwrap().as_u64(), true)
 		} else {
 			(
 				PageTableEntry::from(pgt_slice[idx_l4]).address().as_u64(),
@@ -249,7 +249,7 @@ pub fn init_guest_mem(
 		}
 
 		let (pud_addr, new) = if pgd_slice[idx_l3] == 0 {
-			(boot_frame_allocator.allocate().unwrap() | PT_PT, true)
+			(boot_frame_allocator.allocate().unwrap().as_u64(), true)
 		} else {
 			(
 				PageTableEntry::from(pgd_slice[idx_l3]).address().as_u64(),
@@ -268,7 +268,7 @@ pub fn init_guest_mem(
 		}
 
 		let (pmd_addr, new) = if pud_slice[idx_l2] == 0 {
-			(boot_frame_allocator.allocate().unwrap() | PT_PT, true)
+			(boot_frame_allocator.allocate().unwrap().as_u64(), true)
 		} else {
 			(
 				PageTableEntry::from(pud_slice[idx_l2]).address().as_u64(),
