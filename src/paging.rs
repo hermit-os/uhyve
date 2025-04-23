@@ -23,7 +23,7 @@ impl<const FRAMESIZE: u64> BumpAllocator<FRAMESIZE> {
 	/// Create a new allocator at `start` with `length` *frames* as capacity
 	///
 	/// - `start` must be 4KiB aligned.
-	/// - If `lenght` exceedes the intended memory region, this allocator will produce invalid
+	/// - If `length` exceeds the intended memory region, this allocator will produce invalid
 	///   allocations
 	pub(crate) fn new(start: GuestPhysAddr, length: u64) -> Self {
 		assert!(start.as_u64().is_aligned_to(FRAMESIZE));
