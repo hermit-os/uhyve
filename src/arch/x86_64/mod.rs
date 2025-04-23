@@ -1,16 +1,32 @@
 mod paging;
 pub(crate) mod registers;
 
+use align_address::Align;
 use paging::initialize_pagetables;
+use rand::Rng;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 use x86_64::structures::paging::{
 	PageTable, PageTableIndex,
 	page_table::{FrameError, PageTableEntry},
 };
 
-use crate::{mem::MmapMemory, paging::PagetableError};
+use crate::{consts::KERNEL_OFFSET, mem::MmapMemory, paging::PagetableError};
 
 pub const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x00);
+
+/// Generates a random guest address for Uhyve's virtualized memory.
+/// This function gets invoked when a new UhyveVM gets created, provided that the object file is relocatable.
+pub(crate) fn generate_address(object_mem_size: usize) -> GuestPhysAddr {
+	let mut rng = rand::rng();
+	// TODO: Also allow mappings beyond the 32 Bit gap
+	let start_address_upper_bound: u64 =
+		0x0000_0000_CFF0_0000 - object_mem_size as u64 - KERNEL_OFFSET;
+
+	GuestPhysAddr::new(
+		rng.random_range(0x0..start_address_upper_bound)
+			.align_down(0x20_0000),
+	)
+}
 
 /// Converts a virtual address in the guest to a physical address in the guest
 pub fn virt_to_phys(

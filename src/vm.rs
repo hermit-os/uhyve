@@ -8,7 +8,6 @@ use std::{
 	time::SystemTime,
 };
 
-use align_address::Align;
 use core_affinity::CoreId;
 use hermit_entry::{
 	HermitVersion,
@@ -17,7 +16,6 @@ use hermit_entry::{
 };
 use internal::VirtualizationBackendInternal;
 use log::error;
-use rand::Rng;
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
 
@@ -25,6 +23,7 @@ use crate::{
 	HypervisorError, arch,
 	consts::*,
 	fdt::Fdt,
+	generate_address,
 	isolation::filemap::UhyveFileMap,
 	mem::MmapMemory,
 	os::KickSignal,
@@ -49,20 +48,6 @@ pub enum LoadKernelError {
 
 type LoadKernelResult<T> = Result<T, LoadKernelError>;
 
-/// Generates a random guest address for Uhyve's virtualized memory.
-/// This function gets invoked when a new UhyveVM gets created, provided that the object file is relocatable.
-fn generate_address(object_mem_size: usize) -> GuestPhysAddr {
-	let mut rng = rand::rng();
-	// TODO: Also allow mappings beyond the 32 Bit gap
-	let start_address_upper_bound: u64 =
-		0x0000_0000_CFF0_0000 - object_mem_size as u64 - KERNEL_OFFSET;
-
-	GuestPhysAddr::new(
-		rng.random_range(0x0..start_address_upper_bound)
-			.align_down(0x20_0000),
-	)
-}
-
 #[cfg(target_os = "linux")]
 pub type DefaultBackend = crate::linux::x86_64::kvm_cpu::KvmVm;
 #[cfg(target_os = "macos")]
@@ -70,6 +55,8 @@ pub type DefaultBackend = crate::macos::XhyveVm;
 
 pub(crate) mod internal {
 	use std::sync::Arc;
+
+	use uhyve_interface::GuestPhysAddr;
 
 	use crate::{
 		HypervisorResult,
@@ -90,7 +77,11 @@ pub(crate) mod internal {
 			enable_stats: bool,
 		) -> HypervisorResult<Self::VCPU>;
 
-		fn new(peripherals: Arc<VmPeripherals>, params: &Params) -> HypervisorResult<Self>;
+		fn new(
+			peripherals: Arc<VmPeripherals>,
+			params: &Params,
+			guest_addr: GuestPhysAddr,
+		) -> HypervisorResult<Self>;
 	}
 }
 
@@ -251,7 +242,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			serial,
 		});
 
-		let virt_backend = VirtBackend::BACKEND::new(peripherals.clone(), &kernel_info.params)?;
+		let virt_backend =
+			VirtBackend::BACKEND::new(peripherals.clone(), &kernel_info.params, guest_address)?;
 
 		let cpu_count = kernel_info.params.cpu_count.get();
 
