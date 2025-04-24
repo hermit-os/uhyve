@@ -182,8 +182,6 @@ pub fn init_guest_mem(
 	length: u64,
 	_legacy_mapping: bool,
 ) {
-	warn!("aarch64 pagetable initialization is untested!");
-
 	let mem_addr = std::ptr::addr_of_mut!(mem[0]);
 
 	assert!(mem.len() >= PGT_OFFSET as usize + 512 * size_of::<u64>());
