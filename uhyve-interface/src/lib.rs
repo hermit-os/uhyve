@@ -64,6 +64,8 @@ pub enum HypercallAddress {
 	FileUnlink = 0x840,
 	/// Port address = `0x880`
 	SerialBufferWrite = 0x880,
+	/// Port address = `0x900`
+	GetUnixTimestamp = 0x900,
 }
 // TODO: Remove this in the next major version
 impl From<Hypercall<'_>> for HypercallAddress {
@@ -80,6 +82,7 @@ impl From<Hypercall<'_>> for HypercallAddress {
 			Hypercall::FileUnlink(_) => Self::FileUnlink,
 			Hypercall::SerialWriteByte(_) => Self::Uart,
 			Hypercall::SerialWriteBuffer(_) => Self::SerialBufferWrite,
+			Hypercall::GetUnixTimestamp(_) => Self::GetUnixTimestamp,
 		}
 	}
 }
@@ -97,6 +100,7 @@ impl From<&Hypercall<'_>> for HypercallAddress {
 			Hypercall::FileUnlink(_) => Self::FileUnlink,
 			Hypercall::SerialWriteByte(_) => Self::Uart,
 			Hypercall::SerialWriteBuffer(_) => Self::SerialBufferWrite,
+			Hypercall::GetUnixTimestamp(_) => Self::GetUnixTimestamp,
 		}
 	}
 }
@@ -123,6 +127,8 @@ pub enum Hypercall<'a> {
 	SerialWriteByte(u8),
 	/// Write a buffer to the terminal.
 	SerialWriteBuffer(&'a SerialWriteBufferParams),
+	/// Returns the unix timestamp
+	GetUnixTimestamp(&'a mut GetUnixTimestampParams),
 }
 impl Hypercall<'_> {
 	// TODO: Remove this in the next major version

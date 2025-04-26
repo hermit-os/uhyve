@@ -2,6 +2,7 @@ use std::{
 	ffi::{CStr, CString, OsStr},
 	io::{self, Error, ErrorKind},
 	os::unix::ffi::OsStrExt,
+	time::SystemTime,
 };
 
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*};
@@ -69,6 +70,11 @@ pub unsafe fn address_to_hypercall(
 			HypercallAddress::SerialBufferWrite => {
 				let sysserialwrite = unsafe { mem.get_ref_mut(data).unwrap() };
 				Hypercall::SerialWriteBuffer(sysserialwrite)
+			}
+			HypercallAddress::GetUnixTimestamp => {
+				let sysgetunixtimestamp =
+					unsafe { mem.get_ref_mut::<GetUnixTimestampParams>(data).unwrap() };
+				Hypercall::GetUnixTimestamp(sysgetunixtimestamp)
 			}
 			_ => unimplemented!(),
 		})
@@ -298,4 +304,13 @@ pub fn copy_env(env: &EnvVars, syscmdval: &CmdvalParams, mem: &MmapMemory) {
 		env_dest[key.len() + 1..len].copy_from_slice(value.as_bytes());
 		env_dest[len] = 0;
 	}
+}
+
+/// Handles an getunixtimestamp syscall to determine host's unixtimestamp.
+#[allow(dead_code)]
+pub fn get_unix_timestamp(sysgetunixtimestamp: &mut GetUnixTimestampParams) {
+	sysgetunixtimestamp.ret = SystemTime::now()
+		.duration_since(SystemTime::UNIX_EPOCH)
+		.expect("SystemTime before UNIX EPOCH!")
+		.as_secs();
 }

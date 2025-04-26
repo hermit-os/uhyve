@@ -321,6 +321,9 @@ impl VirtualCPU for XhyveCpu {
 										sysunlink,
 										&mut self.peripherals.file_mapping.lock().unwrap(),
 									),
+									Hypercall::GetUnixTimestamp(sysgetunixtimestamp) => {
+										hypercall::get_unix_timestamp(sysgetunixtimestamp)
+									}
 									_ => {
 										panic! {"Hypercall {hypercall:?} not implemented on macos-aarch64"}
 									}

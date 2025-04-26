@@ -145,6 +145,13 @@ pub struct SerialWriteBufferParams {
 	pub len: usize,
 }
 
+/// Parameters for a [`GetUnixTimestamp`](crate::Hypercall::GetUnixTimestamp) hypercall.
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct GetUnixTimestampParams {
+	pub ret: u64,
+}
+
 // File operations supported by Hermit and Uhyve
 pub const O_RDONLY: i32 = 0o0000;
 pub const O_WRONLY: i32 = 0o0001;
