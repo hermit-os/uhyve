@@ -22,7 +22,9 @@ pub const PT_DEVICE: u64 = 0b11100000111;
 pub const PT_PT: u64 = 0b11100010011;
 /// Present + 4KiB + normal + inner_sharable + accessed
 pub const PT_MEM: u64 = 0b11100010011;
-/// Present + 4KiB + device + inner_sharable + accessed
+/// Present + 4KiB + normal + inner_sharable + accessed + contiguous
+pub const PT_MEM_CONTIGUOUS: u64 = 0b11100010011 | 1 << 52;
+/// Present + 4KiB + device + inner_sharable + accessed + non-cacheable
 pub const PT_MEM_CD: u64 = 0b11100001111;
 /// Self reference flag
 pub const PT_SELF: u64 = 1 << 55;
@@ -301,8 +303,12 @@ pub fn init_guest_mem(
 		if idx_l1 == 0 && idx_l2 == 0 && idx_l3 == 0 && idx_l4 == 0 {
 			// Hypercall/IO mapping
 			pmd_slice[idx_l1] = frame_addr | PT_MEM_CD;
-		} else {
+		} else if idx_l1 == 0 && idx_l2 == 0 && idx_l3 == 0 && idx_l4 < 16 {
 			pmd_slice[idx_l1] = frame_addr | PT_MEM;
+		} else {
+			// set contiguous bit only if the page is mapped contiguous
+			// and each 16 * 4 KByte area have the same access property
+			pmd_slice[idx_l1] = frame_addr | PT_MEM_CONTIGUOUS;
 		}
 	}
 }
