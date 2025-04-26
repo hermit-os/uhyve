@@ -479,6 +479,7 @@ fn write_fdt_into_mem(mem: &MmapMemory, params: &Params, cpu_freq: Option<NonZer
 	{
 		fdt = fdt.gic().unwrap();
 		fdt = fdt.cpus(params.cpu_count).unwrap();
+		fdt = fdt.timer().unwrap();
 	}
 
 	if let Some(tsc_khz) = cpu_freq {

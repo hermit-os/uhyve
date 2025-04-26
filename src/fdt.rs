@@ -115,6 +115,21 @@ impl Fdt {
 	}
 
 	#[cfg(target_arch = "aarch64")]
+	pub fn timer(mut self) -> FdtWriterResult<Self> {
+		let node_name = "timer";
+
+		let timer_node = self.writer.begin_node(node_name)?;
+		self.writer
+			.property_array_u32("interrupts", &[1, 13, 4, 1, 14, 4, 1, 11, 4, 1, 10, 4])?;
+		self.writer.property_array_u32("always-on", &[])?;
+		self.writer
+			.property_string("compatible", "arm,armv8-timer")?;
+		self.writer.end_node(timer_node)?;
+
+		Ok(self)
+	}
+
+	#[cfg(target_arch = "aarch64")]
 	pub fn gic(mut self) -> FdtWriterResult<Self> {
 		let node_name = format!("intc@{:x}", GICD_BASE_ADDRESS);
 		let reg = &[
