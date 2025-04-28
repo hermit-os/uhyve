@@ -1,7 +1,9 @@
 #![cfg_attr(target_os = "macos", allow(dead_code))] // no virtio implementation for macos
 use std::{
-	collections::VecDeque as Vec,
-	fmt, mem,
+	collections::VecDeque,
+	fmt,
+	io::{Read, Write},
+	mem,
 	sync::{
 		self, Arc,
 		atomic::{AtomicBool, Ordering},
@@ -15,7 +17,7 @@ use spin::Mutex;
 use virtio_bindings::{
 	bindings::virtio_net::virtio_net_hdr_v1, virtio_config::VIRTIO_F_RING_RESET,
 };
-use virtio_queue::{DescriptorChain, Error as VirtIOError, Queue, QueueOwnedT, QueueT};
+use virtio_queue::{Error as VirtIOError, Queue, QueueOwnedT, QueueT};
 use vm_memory::GuestMemoryMmap;
 use vmm_sys_util::eventfd::EventFd;
 
@@ -302,7 +304,8 @@ impl VirtioNetPciDevice {
 		let poll_rx_queue = self.rx_queue.clone();
 		let stream = self.iface.as_mut().unwrap().clone();
 		let alert = Arc::clone(&self.isr_changed);
-		let mut frame_queue: Vec<([u8; 1500], usize)> = Vec::with_capacity(QUEUE_LIMIT / 2);
+		let mut frame_queue: VecDeque<([u8; 1500], usize)> =
+			VecDeque::with_capacity(QUEUE_LIMIT / 2);
 
 		let irq_evtfd = self.irq_evtfd.take().unwrap();
 		let mmap = Arc::clone(&guest_mmap);
@@ -536,10 +539,11 @@ impl PciDevice for VirtioNetPciDevice {
 	}
 }
 
+/// Write host-received packets to the virtio-queue.
 /// Returns true if notification must occur
 fn write_packet(
 	rx_queue: &Arc<Mutex<Queue>>,
-	frame_queue: &mut Vec<([u8; UHYVE_NET_MTU], usize)>,
+	frame_queue: &mut VecDeque<([u8; UHYVE_NET_MTU], usize)>,
 	mmap: &GuestMemoryMmap,
 ) -> Result<bool, VirtIOError> {
 	let mut queue = rx_queue.lock();
@@ -556,52 +560,63 @@ fn write_packet(
 
 	queue.disable_notification(mmap)?;
 
-	let l = frame_queue.len();
+	for &(frame, len) in frame_queue.iter() {
+		debug!("Transmitting: writing host-received frame of length {len} into virtqueue");
 
-	frame_queue.retain(|(frame, len)| {
-		while let Some(chain) = queue.iter(mmap).unwrap().next() {
-			let c: DescriptorChain<&GuestMemoryMmap> = chain.clone();
-			for desc in chain.into_iter() {
-				if desc.refers_to_indirect_table() {
-					error!("Unhandled indirect descriptor");
-					return true;
-				}
-				if desc.has_next() {
-					error!("Buffer continues in another field!");
-					return true;
-				}
+		let header = virtio_net_hdr_v1 {
+			num_buffers: 1,
+			..Default::default()
+		};
 
-				let mut buf = vec![0u8; len + VIRTIO_NET_HEADER_SZ];
-				let p: *mut u8 = (&virtio_net_hdr_v1 {
-					num_buffers: 1,
-					..Default::default()
-				} as *const _ as *const u8)
-					.cast_mut();
-
-				// Write virtio header
-				buf[0..VIRTIO_NET_HEADER_SZ].copy_from_slice(unsafe {
-					std::slice::from_raw_parts_mut(p, VIRTIO_NET_HEADER_SZ)
-				});
-				// write packet content
-				buf[VIRTIO_NET_HEADER_SZ..].copy_from_slice(&frame[0..*len]);
-
-				mmap.write_slice(&buf, desc.addr()).unwrap();
-
-				queue.add_used(mmap, c.head_index(), desc.len()).unwrap();
+		let desc_chain;
+		loop {
+			if let Some(d) = queue.pop_descriptor_chain(mmap) {
+				desc_chain = d;
+				break;
 			}
+			// TODO: more inteligent algorithm here
+			warn!("full virtqueue - waiting 1 sec");
+			thread::sleep(time::Duration::from_secs(1));
 		}
-		false
-	});
+
+		let mut writer = desc_chain.clone().writer(mmap).unwrap();
+		writer
+			.write_all(unsafe {
+				std::slice::from_raw_parts(
+					&header as *const _ as *const u8,
+					size_of::<virtio_net_hdr_v1>(),
+				)
+			})
+			.unwrap();
+		writer.write_all(frame.as_slice()).unwrap();
+		trace!(
+			"Transmitting: Putting index {} to used ring (next used: {}, size: {})",
+			desc_chain.head_index(),
+			queue.next_used(),
+			queue.size()
+		);
+		queue
+			.add_used(
+				mmap,
+				desc_chain.head_index(),
+				(len + VIRTIO_NET_HEADER_SZ) as u32,
+			)
+			.unwrap();
+	}
+	frame_queue.clear();
+
 	queue.enable_notification(mmap)?;
 
-	Ok(l - frame_queue.len() > 0)
+	Ok(true)
 }
 
+/// Sends the packets received from the guest to the network interface
 fn send_available_packets(
 	sink: &dyn NetworkInterface,
 	tx_queue_locked: &Arc<Mutex<Queue>>,
 	mem: &GuestMemoryMmap,
 ) -> std::result::Result<bool, VirtIOError> {
+	trace!("reading frames from VM");
 	let queue = &mut tx_queue_locked.try_lock().unwrap();
 	if !queue.is_valid(mem) {
 		error!("Queue is not valid!");
@@ -616,36 +631,34 @@ fn send_available_packets(
 	queue.disable_notification(mem)?;
 
 	while let Some(chain) = queue.iter(mem).unwrap().next() {
-		let c = chain.clone();
+		let mut buff = Vec::<u8>::with_capacity(1512);
+		let mut reader = chain.clone().reader(mem).unwrap();
+		let mut packet_reader = reader.split_at(VIRTIO_NET_HEADER_SZ).unwrap();
 
-		for desc in chain {
-			let len = desc.len();
+		let header_bytes_read = reader.read_to_end(&mut buff).unwrap();
+		let packet_bytes_read = packet_reader.read_to_end(&mut buff).unwrap();
+		trace!("received frame of length {packet_bytes_read} from VM");
 
-			assert!(
-				len as usize <= UHYVE_NET_MTU + VIRTIO_NET_HEADER_SZ,
-				"VirtIO buffer is larger than permitted"
-			);
-
-			let mut buf = vec![0; len as usize];
-			mem.read_slice(&mut buf, desc.addr()).unwrap();
-
-			match (*sink).send(&buf[VIRTIO_NET_HEADER_SZ..]) {
-				Ok(sent_len) => {
-					if sent_len != len as usize - VIRTIO_NET_HEADER_SZ {
-						error!("Could not send all data provided! sent {sent_len}, vs {len}");
-					}
-				}
-				Err(e) => {
-					error!("could not send frame: {e}");
+		match (*sink).send(&buff[VIRTIO_NET_HEADER_SZ..]) {
+			Ok(sent_len) => {
+				if sent_len != packet_bytes_read {
 					error!(
-						"frame slice: {:x?}",
-						&buf[VIRTIO_NET_HEADER_SZ..(len as usize)]
+						"Could not send all data provided! sent {sent_len}, vs {}",
+						packet_bytes_read
 					);
 				}
 			}
-
-			queue.add_used(mem, c.head_index(), desc.len())?;
+			Err(e) => {
+				error!("could not send frame: {e}");
+				error!("frame slice: {:x?}", &buff[VIRTIO_NET_HEADER_SZ..]);
+			}
 		}
+
+		queue.add_used(
+			mem,
+			chain.head_index(),
+			(header_bytes_read + packet_bytes_read) as u32,
+		)?;
 	}
 	queue.enable_notification(mem)?;
 
