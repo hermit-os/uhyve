@@ -21,7 +21,7 @@ use vmm_sys_util::eventfd::EventFd;
 
 use crate::{
 	consts::{UHYVE_IRQ_NET, UHYVE_NET_MTU},
-	net::{NetworkInterface, macvtap::MacVTap},
+	net::{NetworkInterface, macvtap::MacVTap, UHYVE_QUEUE_SIZE},
 	pci::{MemoryBar64, PciDevice},
 	virtio::{
 		DeviceStatus, IOBASE, NET_DEVICE_ID,
@@ -90,11 +90,16 @@ impl VirtioNetPciDevice {
 		header_caps.common_cfg.num_queues = 2;
 		header_caps.common_cfg.device_feature_select = FeatureSelector::Low;
 		header_caps.common_cfg.device_feature = UHYVE_NET_FEATURES_LOW;
+		header_caps.common_cfg.queue_size = UHYVE_QUEUE_SIZE;
 
 		// Create invalid virtqueues. Improper, unsafe and poor practice!
 		// Ideally, we would mark and watch the queues as ready.
-		let rx_queue = Arc::new(Mutex::new(Queue::new(QUEUE_LIMIT as u16).unwrap()));
-		let tx_queue = Arc::new(Mutex::new(Queue::new(QUEUE_LIMIT as u16).unwrap()));
+		let rx_queue = Arc::new(Mutex::new(
+			Queue::new(header_caps.common_cfg.queue_size).unwrap(),
+		));
+		let tx_queue = Arc::new(Mutex::new(
+			Queue::new(header_caps.common_cfg.queue_size).unwrap(),
+		));
 
 		VirtioNetPciDevice {
 			header_caps,

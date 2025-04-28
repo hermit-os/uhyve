@@ -4,7 +4,7 @@ use bitflags::bitflags;
 use zerocopy::AsBytes;
 
 use crate::{
-	net::{BROADCAST_MAC_ADDR, UHYVE_NET_MTU, UHYVE_QUEUE_SIZE},
+	net::{BROADCAST_MAC_ADDR, UHYVE_NET_MTU},
 	pci::PciError,
 	virtio::{
 		pci::{COMMON_CFG_START, ConfigAddress, DEVICE_CFG_START, ISR_CFG_START, get_offset},
@@ -422,7 +422,7 @@ impl Default for ComCfg {
 			device_status: 0,
 			config_generation: 0,
 			queue_select: 0,
-			queue_size: UHYVE_QUEUE_SIZE as u16,
+			queue_size: 0,
 			queue_msix_vector: 0,
 			queue_enable: 0,
 			// we will use the same address for all queues, since we only have 2. TODO
