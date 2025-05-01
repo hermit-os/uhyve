@@ -119,6 +119,13 @@ impl Fdt {
 		let node_name = "timer";
 
 		let timer_node = self.writer.begin_node(node_name)?;
+
+		// interrupts: Interrupt list for secure, non-secure, virtual and
+		// hypervisor timers
+		// Three values describe one a timer. The first value descibe the typo
+		// of interrupt (1 = PPI), the second value the interrupt number and the
+		// third value specifies a flag (4 = trigger type "level")
+		// The current configuration is equivalent to Qemu's configuration.
 		self.writer
 			.property_array_u32("interrupts", &[1, 13, 4, 1, 14, 4, 1, 11, 4, 1, 10, 4])?;
 		self.writer.property_array_u32("always-on", &[])?;
