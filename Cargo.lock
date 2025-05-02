@@ -889,16 +889,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "macvtap"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52e4fb5b9c6a11da7f26043ffcfcc40873d3a338e92f0db4433cf7503dde5d7d"
-dependencies = [
- "cc",
- "libc",
-]
-
-[[package]]
 name = "managed"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1732,7 +1722,6 @@ dependencies = [
  "libc",
  "log",
  "mac_address",
- "macvtap",
  "memory_addresses",
  "nix 0.28.0",
  "rand 0.9.0",

@@ -23,7 +23,7 @@ use vmm_sys_util::eventfd::EventFd;
 
 use crate::{
 	consts::{UHYVE_IRQ_NET, UHYVE_NET_MTU},
-	net::{NetworkInterface, macvtap::MacVTap, UHYVE_QUEUE_SIZE},
+	net::{NetworkInterface, UHYVE_QUEUE_SIZE, tap::Tap},
 	pci::{MemoryBar64, PciDevice},
 	virtio::{
 		DeviceStatus, IOBASE, NET_DEVICE_ID,
@@ -272,8 +272,7 @@ impl VirtioNetPciDevice {
 	fn start_network_interface(&mut self) {
 		// Create a TAP device without packet info headers.
 		let iface = self.iface.insert(Arc::new(sync::Mutex::new(
-			// Tap::new().expect("Could not create TAP device"),
-			MacVTap::new().expect("Could not create TAP device"),
+			Tap::new().expect("Could not create TAP device"),
 		)));
 		let sink = iface.clone();
 

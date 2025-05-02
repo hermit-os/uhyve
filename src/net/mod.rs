@@ -14,7 +14,6 @@ pub const UHYVE_PCI_CLASS_INFO: [u8; 3] = [
 	PCI_ETHERNET_SUBCLASS,
 ];
 
-pub(crate) mod macvtap;
 pub(crate) mod tap;
 
 // TODO: Remove Sync and split in two
