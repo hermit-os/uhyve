@@ -5,7 +5,7 @@ use std::{
 	io::{Read, Write},
 	mem,
 	sync::{
-		self, Arc,
+		Arc,
 		atomic::{AtomicBool, Ordering},
 	},
 	thread, time,
@@ -23,7 +23,7 @@ use vmm_sys_util::eventfd::EventFd;
 
 use crate::{
 	consts::{UHYVE_IRQ_NET, UHYVE_NET_MTU},
-	net::{NetworkInterface, UHYVE_QUEUE_SIZE, tap::Tap},
+	net::{NetworkInterface, NetworkInterfaceRX, NetworkInterfaceTX, UHYVE_QUEUE_SIZE, tap::Tap},
 	pci::{MemoryBar64, PciDevice},
 	virtio::{
 		DeviceStatus, IOBASE, NET_DEVICE_ID,
@@ -65,8 +65,6 @@ pub struct VirtioNetPciDevice {
 	rx_queue: Arc<Mutex<Queue>>,
 	/// transmitted virtqueue
 	tx_queue: Arc<Mutex<Queue>>,
-	/// virtual network interface
-	iface: Option<Arc<dyn NetworkInterface>>,
 	/// File Descriptor for IRQ event signalling to guest
 	irq_evtfd: Option<EventFd>,
 	/// File Descriptor for polling guest (MMIO) IOEventFD signals
@@ -112,7 +110,6 @@ impl VirtioNetPciDevice {
 			isr_changed: Arc::new(AtomicBool::new(false)),
 			rx_queue,
 			tx_queue,
-			iface: None,
 			irq_evtfd: None,
 			notify_evtfd_rx: None,
 			notify_evtfd_tx: None,
@@ -248,12 +245,6 @@ impl VirtioNetPciDevice {
 		self.header_caps.pci_config_hdr.status.bits() as u8
 	}
 
-	/// Gets the mac address from the TAP device.
-	/// This function is reliant on tap devices as the underlying packet sending mechanism
-	fn get_mac_addr(&mut self) {
-		self.header_caps.dev.mac = self.iface.as_ref().unwrap().mac_address_as_bytes();
-	}
-
 	/// Write the MAC address to the input slice.
 	pub fn read_mac_address(&self, data: &mut [u8]) {
 		for (d, m) in data.iter_mut().zip(self.header_caps.dev.mac.iter()).take(6) {
@@ -273,10 +264,13 @@ impl VirtioNetPciDevice {
 
 	fn start_network_interface(&mut self) {
 		// Create a TAP device without packet info headers.
-		let iface = self.iface.insert(Arc::new(sync::Mutex::new(
-			Tap::new().expect("Could not create TAP device"),
-		)));
-		let sink = iface.clone();
+		// TODO: Create network dynamically
+		let iface = Tap::new().expect("Could not create TAP device");
+
+		// store the interfaces MAC address
+		self.header_caps.dev.mac = iface.mac_address_as_bytes();
+
+		let (mut rx, mut tx) = iface.split();
 
 		let notify_evtfd_tx = self.notify_evtfd_tx.take().unwrap();
 
@@ -289,7 +283,7 @@ impl VirtioNetPciDevice {
 			debug!("Starting notification watcher.");
 			loop {
 				if notify_evtfd_tx.read().is_ok() {
-					match send_available_packets(&(*sink), &poll_tx_queue, &mmap) {
+					match send_available_packets(&mut tx, &poll_tx_queue, &mmap) {
 						Ok(_) => {}
 						Err(VirtIOError::QueueNotReady) => {
 							error!("Sending before queue is ready!")
@@ -303,7 +297,6 @@ impl VirtioNetPciDevice {
 		});
 
 		let poll_rx_queue = self.rx_queue.clone();
-		let stream = self.iface.as_mut().unwrap().clone();
 		let alert = Arc::clone(&self.isr_changed);
 		let mut frame_queue: VecDeque<([u8; 1500], usize)> =
 			VecDeque::with_capacity(QUEUE_LIMIT / 2);
@@ -317,7 +310,7 @@ impl VirtioNetPciDevice {
 				let mut _delay = time::Instant::now();
 
 				let mut buf = [0u8; UHYVE_NET_MTU];
-				let len = stream.recv(&mut buf).unwrap();
+				let len = rx.recv(&mut buf).unwrap();
 				let mmap = mmap.as_ref().clone();
 				frame_queue.push_back((buf, len));
 
@@ -340,7 +333,6 @@ impl VirtioNetPciDevice {
 		});
 
 		// "should've would've panicked by now, if no mac existed!" BAD!
-		self.get_mac_addr();
 		self.header_caps.dev.status = NetDevStatus::VIRTIO_NET_S_LINK_UP;
 		self.update_config_generation();
 	}
@@ -612,7 +604,7 @@ fn write_packet(
 
 /// Sends the packets received from the guest to the network interface
 fn send_available_packets(
-	sink: &dyn NetworkInterface,
+	sink: &mut dyn NetworkInterfaceTX,
 	tx_queue_locked: &Arc<Mutex<Queue>>,
 	mem: &GuestMemoryMmap,
 ) -> std::result::Result<bool, VirtIOError> {

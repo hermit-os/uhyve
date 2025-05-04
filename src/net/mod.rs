@@ -16,22 +16,31 @@ pub const UHYVE_PCI_CLASS_INFO: [u8; 3] = [
 
 pub(crate) mod tap;
 
-// TODO: Remove Sync and split in two
-pub(crate) trait NetworkInterface: Sync + Send {
+pub(crate) trait NetworkInterface {
+	type RX: NetworkInterfaceRX;
+	type TX: NetworkInterfaceTX;
+
 	/// Return the MAC address as a byte array
 	fn mac_address_as_bytes(&self) -> [u8; 6];
 
+	/// Split off a tx and rx object.
+	fn split(self) -> (Self::RX, Self::TX);
+}
+
+pub(crate) trait NetworkInterfaceTX: Send {
 	/// Sends a packet to the interface.
 	///
 	/// **NOTE**: ensure the packet has the appropriate format and header.
 	/// Incorrect packets will be dropped without warning.
-	fn send(&self, buf: &[u8]) -> io::Result<usize>;
+	fn send(&mut self, buf: &[u8]) -> io::Result<usize>;
+}
 
+pub(crate) trait NetworkInterfaceRX: Send {
 	/// Receives a packet from the interface.
 	///
 	/// Blocks until a packet is sent into the virtual interface. At that point, the content of the
 	/// packet is copied into the provided buffer.
 	///
 	/// Returns the size of the received packet
-	fn recv(&self, buf: &mut [u8]) -> io::Result<usize>;
+	fn recv(&mut self, buf: &mut [u8]) -> io::Result<usize>;
 }

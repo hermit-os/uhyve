@@ -2,13 +2,12 @@ use std::{
 	fs::{File, OpenOptions},
 	io::{self, Error, Read, Write},
 	os::unix::io::AsRawFd,
-	sync::Mutex,
 };
 
 use libc::{IFF_NO_PI, IFF_TAP, ifreq};
 use nix::{ifaddrs::getifaddrs, ioctl_write_int};
 
-use crate::net::NetworkInterface;
+use crate::net::{NetworkInterface, NetworkInterfaceRX, NetworkInterfaceTX};
 
 /// An existing (externally created) TAP device
 pub struct Tap {
@@ -73,21 +72,47 @@ impl Tap {
 		})
 	}
 }
-impl NetworkInterface for Mutex<Tap> {
+impl NetworkInterface for Tap {
+	type RX = TapRX;
+	type TX = TapTX;
+
 	fn mac_address_as_bytes(&self) -> [u8; 6] {
-		self.lock().unwrap().mac
+		self.mac
 	}
 
-	fn send(&self, buf: &[u8]) -> io::Result<usize> {
-		let mut guard = self.lock().unwrap();
-		trace!("sending {} bytes on {}", buf.len(), guard.name);
-		guard.fd.write(buf)
+	fn split(self) -> (Self::RX, Self::TX) {
+		(
+			Self::RX {
+				fd: self.fd.try_clone().unwrap(),
+				name: self.name.clone(),
+			},
+			Self::TX {
+				fd: self.fd.try_clone().unwrap(),
+				name: self.name.clone(),
+			},
+		)
 	}
+}
 
-	fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-		let mut guard = self.lock().unwrap();
-		let res = guard.fd.read(buf);
-		trace!("receiving {res:?} bytes on {}", guard.name);
+pub struct TapTX {
+	fd: File,
+	name: String,
+}
+impl NetworkInterfaceTX for TapTX {
+	fn send(&mut self, buf: &[u8]) -> io::Result<usize> {
+		trace!("sending {} bytes on {}", buf.len(), self.name);
+		self.fd.write(buf)
+	}
+}
+
+pub struct TapRX {
+	fd: File,
+	name: String,
+}
+impl NetworkInterfaceRX for TapRX {
+	fn recv(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+		let res = self.fd.read(buf);
+		trace!("receiving {res:?} bytes on {}", self.name);
 		res
 	}
 }
