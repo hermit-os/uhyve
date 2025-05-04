@@ -20,7 +20,7 @@ use crate::{
 	virtio::{
 		capabilities::{ComCfg, IsrStatus, NetDevCfg},
 		net::{Area, VirtioNetPciDevice},
-		pci::{ConfigAddress, MEM_NOTIFY, MEM_NOTIFY_1},
+		pci::{ConfigAddress, MEM_NOTIFY_RX, MEM_NOTIFY_TX},
 	},
 	vm::{
 		KernelInfo, VirtualizationBackend, VmPeripherals, internal::VirtualizationBackendInternal,
@@ -624,8 +624,7 @@ impl VirtualCPU for KvmCpu {
 							IsrStatus::ISR_FLAGS => {
 								panic!("Guest should not write to ISR!")
 							}
-							MEM_NOTIFY | MEM_NOTIFY_1 => {
-								// TODO: are we only writing to two addresses or alerting/switching twice?
+							MEM_NOTIFY_TX | MEM_NOTIFY_RX => {
 								panic!(
 									"Writing to MemNotify address! Is IOEventFD correctly configured?"
 								)

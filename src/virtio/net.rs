@@ -29,14 +29,16 @@ use crate::{
 		DeviceStatus, IOBASE, NET_DEVICE_ID,
 		capabilities::IsrStatus,
 		features::{UHYVE_NET_FEATURES_HIGH, UHYVE_NET_FEATURES_LOW},
-		pci::{HeaderConf, MEM_NOTIFY, MEM_NOTIFY_1},
+		pci::{HeaderConf, MEM_NOTIFY_RX, MEM_NOTIFY_TX},
 		virtqueue::QUEUE_LIMIT,
 	},
 };
 
 const VIRTIO_NET_HEADER_SZ: usize = mem::size_of::<virtio_net_hdr_v1>();
 
+/// Network -> Uhyve -> VM
 const RX_QUEUE: u16 = 0;
+/// VM -> Uhyve -> Network
 const TX_QUEUE: u16 = 1;
 
 use crate::virtio::capabilities::{FeatureSelector, NetDevStatus};
@@ -68,7 +70,8 @@ pub struct VirtioNetPciDevice {
 	/// File Descriptor for IRQ event signalling to guest
 	irq_evtfd: Option<EventFd>,
 	/// File Descriptor for polling guest (MMIO) IOEventFD signals
-	notify_evtfd: Option<EventFd>,
+	notify_evtfd_rx: Option<EventFd>,
+	notify_evtfd_tx: Option<EventFd>,
 	guest_mmap: Arc<GuestMemoryMmap>,
 	/// Store all negotiated feature sets. Chapter 2.2 virtio v1.2
 	feature_set: u64,
@@ -93,6 +96,7 @@ impl VirtioNetPciDevice {
 		header_caps.common_cfg.device_feature_select = FeatureSelector::Low;
 		header_caps.common_cfg.device_feature = UHYVE_NET_FEATURES_LOW;
 		header_caps.common_cfg.queue_size = UHYVE_QUEUE_SIZE;
+		header_caps.notify_cap.notify_off_multiplier = 4;
 
 		// Create invalid virtqueues. Improper, unsafe and poor practice!
 		// Ideally, we would mark and watch the queues as ready.
@@ -110,7 +114,8 @@ impl VirtioNetPciDevice {
 			tx_queue,
 			iface: None,
 			irq_evtfd: None,
-			notify_evtfd: None,
+			notify_evtfd_rx: None,
+			notify_evtfd_tx: None,
 			guest_mmap,
 			feature_set: (UHYVE_NET_FEATURES_LOW as u64) & ((UHYVE_NET_FEATURES_HIGH as u64) << 32),
 			config_generation: (false, 0),
@@ -132,19 +137,16 @@ impl VirtioNetPciDevice {
 		self.header_caps.pci_config_hdr.status =
 			DeviceStatus::DEVICE_NEEDS_RESET | DeviceStatus::PCI_CAPABILITIES_LIST_ENABLE;
 
-		let notifd = self.notify_evtfd.insert(EventFd::new(0).unwrap());
-
 		vm.register_ioevent(
-			notifd,
-			&IoEventAddress::Mmio(MEM_NOTIFY.guest_address()),
+			self.notify_evtfd_rx.insert(EventFd::new(0).unwrap()),
+			&IoEventAddress::Mmio(MEM_NOTIFY_RX.guest_address()),
 			NoDatamatch,
 		)
 		.unwrap();
 
-		// TODO: Possibly remove 2nd MEM_NOTIFY address?
 		vm.register_ioevent(
-			notifd,
-			&IoEventAddress::Mmio(MEM_NOTIFY_1.guest_address()),
+			self.notify_evtfd_tx.insert(EventFd::new(0).unwrap()),
+			&IoEventAddress::Mmio(MEM_NOTIFY_TX.guest_address()),
 			NoDatamatch,
 		)
 		.unwrap();
@@ -276,7 +278,7 @@ impl VirtioNetPciDevice {
 		)));
 		let sink = iface.clone();
 
-		let notify_evtfd = self.notify_evtfd.take().unwrap();
+		let notify_evtfd_tx = self.notify_evtfd_tx.take().unwrap();
 
 		let poll_tx_queue = self.tx_queue.clone();
 		let guest_mmap = Arc::clone(&self.guest_mmap);
@@ -286,7 +288,7 @@ impl VirtioNetPciDevice {
 		thread::spawn(move || {
 			debug!("Starting notification watcher.");
 			loop {
-				if notify_evtfd.read().is_ok() {
+				if notify_evtfd_tx.read().is_ok() {
 					match send_available_packets(&(*sink), &poll_tx_queue, &mmap) {
 						Ok(_) => {}
 						Err(VirtIOError::QueueNotReady) => {
@@ -307,6 +309,7 @@ impl VirtioNetPciDevice {
 			VecDeque::with_capacity(QUEUE_LIMIT / 2);
 
 		let irq_evtfd = self.irq_evtfd.take().unwrap();
+		let notify_evtfd_rx = self.notify_evtfd_rx.take().unwrap();
 		let mmap = Arc::clone(&guest_mmap);
 		// Start the rx thread.
 		thread::spawn(move || {
@@ -318,24 +321,14 @@ impl VirtioNetPciDevice {
 				let mmap = mmap.as_ref().clone();
 				frame_queue.push_back((buf, len));
 
-				// Not ideal to wait random values or queue lengths.
-				if _delay
-					.elapsed()
-					.cmp(&time::Duration::from_micros(300))
-					.is_le() && frame_queue.len() < 5
-				{
-					continue;
-				}
-
 				assert!(
 					len <= UHYVE_NET_MTU,
 					"Frame larger than MTU, was the device reconfigured?"
 				);
 
-				match write_packet(&poll_rx_queue, &mut frame_queue, &mmap) {
+				match write_packet(&poll_rx_queue, &mut frame_queue, &mmap, &notify_evtfd_rx) {
 					Ok(data_sent) => {
 						if data_sent && poll_rx_queue.lock().needs_notification(&mmap).unwrap() {
-							_delay = time::Instant::now();
 							alert.store(true, Ordering::Release);
 							irq_evtfd.write(1).unwrap();
 						}
@@ -369,7 +362,15 @@ impl VirtioNetPciDevice {
 
 	#[inline]
 	pub fn read_queue_notify_offset(&self, data: &mut [u8]) {
-		data.copy_from_slice(&self.header_caps.common_cfg.queue_notify_off.to_le_bytes());
+		let offs = match self.header_caps.common_cfg.queue_select {
+			RX_QUEUE => 0,
+			TX_QUEUE => 1,
+			_ => {
+				warn!("driver reads invalid queue");
+				0
+			}
+		};
+		data.copy_from_slice(&[offs, 0]);
 	}
 
 	pub fn write_selected_queue(&mut self, data: &[u8]) {
@@ -544,6 +545,7 @@ fn write_packet(
 	rx_queue: &Arc<Mutex<Queue>>,
 	frame_queue: &mut VecDeque<([u8; UHYVE_NET_MTU], usize)>,
 	mmap: &GuestMemoryMmap,
+	notify_fd: &EventFd,
 ) -> Result<bool, VirtIOError> {
 	let mut queue = rx_queue.lock();
 
@@ -573,9 +575,8 @@ fn write_packet(
 				desc_chain = d;
 				break;
 			}
-			// TODO: more inteligent algorithm here
-			warn!("full virtqueue - waiting 1 sec");
-			thread::sleep(time::Duration::from_secs(1));
+			trace!("full virtqueue - waiting for notification");
+			notify_fd.read().unwrap();
 		}
 
 		let mut writer = desc_chain.clone().writer(mmap).unwrap();

@@ -34,9 +34,9 @@ pub const NOTIFY_REGION_START: u8 = u8_align_up(
 	ISR_CFG_START + size_of::<IsrStatus>() as u8,
 	size_of::<u32>() as u8,
 );
-pub const MEM_NOTIFY: ConfigAddress =
+pub const MEM_NOTIFY_RX: ConfigAddress =
 	ConfigAddress::from_configuration_address(NOTIFY_REGION_START as u32);
-pub const MEM_NOTIFY_1: ConfigAddress = ConfigAddress::from_configuration_address(
+pub const MEM_NOTIFY_TX: ConfigAddress = ConfigAddress::from_configuration_address(
 	NOTIFY_REGION_START as u32 + size_of::<VirtqueueNotification>() as u32,
 );
 pub const NOTIFY_REGION_END: u8 =
