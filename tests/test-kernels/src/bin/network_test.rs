@@ -3,32 +3,31 @@
 
 use std::{
 	fs::File,
-	io::{Error, Read},
-	net::{Ipv4Addr, SocketAddrV4, TcpListener},
+	io::{Error, Read, Write},
+	net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
 };
 
 #[cfg(target_os = "hermit")]
 use hermit as _;
 
 fn main() -> Result<(), Error> {
-	println!("Network Test - ");
-	// let loopback = Ipv4Addr::new(10, 8, 8, 11);
-	// println!("1");
-	// let socket = SocketAddrV4::new(loopback, 0);
-	// println!("2");
-	// let listener = TcpListener::bind(socket)?;
-	// println!("3");
-
+	println!("Network Test");
 	let listener = TcpListener::bind("127.0.0.1:9975").unwrap();
+	println!("socket bound");
 	let (mut socket, _) = listener.accept().unwrap();
-	let mut buf = [0u8; 1000];
-	println!("about to read");
-	match socket.read(&mut buf) {
-		Err(e) => {
-			println!("read err {e:?}");
-		}
-		Ok(received) => {
-			print!("read {}", std::str::from_utf8(&buf[..received]).unwrap());
+	println!("connection established");
+	loop {
+		let mut buf = [0u8; 1500];
+		match socket.read(&mut buf) {
+			Err(e) => {
+				println!("read err {e:?}");
+			}
+			Ok(received) => {
+				if &buf[0..4] == b"exit" {
+					break;
+				}
+				println!("read {}", std::str::from_utf8(&buf[..received]).unwrap());
+			}
 		}
 	}
 	Ok(())
