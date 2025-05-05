@@ -339,7 +339,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 					.and_then(|core_ids| core_ids.get(cpu_id).copied());
 
 				thread::spawn(move || {
-					debug!("Create thread for CPU {}", cpu_id);
+					debug!("Create thread for CPU {cpu_id}");
 					match local_cpu_affinity {
 						Some(core_id) => {
 							debug!("Trying to pin thread {} to CPU {}", cpu_id, core_id.id);
@@ -362,7 +362,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 							(Ok(code), stats)
 						}
 						Err(err) => {
-							error!("CPU {} crashed with {:?}", cpu_id, err);
+							error!("CPU {cpu_id} crashed with {err:?}");
 							barrier.wait();
 							(Err(err), None)
 						}

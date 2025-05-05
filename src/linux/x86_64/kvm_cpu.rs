@@ -526,7 +526,7 @@ impl VirtualCPU for KvmCpu {
 										.output(buf)
 										.unwrap_or_else(|e| error!("{e:?}"))
 								}
-								_ => panic!("Got unknown hypercall {:?}", hypercall),
+								_ => panic!("Got unknown hypercall {hypercall:?}"),
 							};
 						} else {
 							if let Some(s) = self.stats.as_mut() {

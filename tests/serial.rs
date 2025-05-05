@@ -16,7 +16,7 @@ fn serial_buffer_test() {
 	env_logger::try_init().ok();
 	let bin_path = build_hermit_bin("serial");
 	let res = run_simple_vm(bin_path);
-	println!("Kernel output: {:?}", res);
+	println!("Kernel output: {res:?}");
 	assert_eq!(res.code, 0);
 	assert!(
 		res.output
