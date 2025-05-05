@@ -3,6 +3,7 @@ use std::{
 	fs::remove_file,
 	path::{Path, PathBuf},
 	process::Command,
+	thread,
 };
 
 use byte_unit::{Byte, Unit};
@@ -88,6 +89,21 @@ pub fn get_fs_fixture_path() -> PathBuf {
 	fixture_path.push("tests/data/fixtures/fs");
 	assert!(fixture_path.is_dir());
 	fixture_path
+}
+
+/// Wrapper that builds test kernels and runs the VM in a new thread.
+/// Useful for testing Landlock.
+///
+/// * `bin_path` - Path of kernel to be run.
+/// * `params` - Params to run the VM with.
+#[allow(dead_code)]
+pub fn run_vm_in_thread(bin_path: PathBuf, params: Params) -> VmResult {
+	thread::spawn(move || {
+		let vm = UhyveVm::new(bin_path, params).unwrap();
+		vm.run(None)
+	})
+	.join()
+	.expect("Uhyve thread panicked.")
 }
 
 /// If UHYVE_TEST_STRICT_SANDBOX == 1, enable strict sandboxing mode (for the CI).

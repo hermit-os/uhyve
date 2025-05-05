@@ -10,12 +10,10 @@ use byte_unit::{Byte, Unit};
 use common::strict_sandbox;
 use common::{
 	build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists, run_simple_vm,
+	run_vm_in_thread,
 };
 use serial_test::serial;
-use uhyvelib::{
-	params::{Output, Params},
-	vm::UhyveVm,
-};
+use uhyvelib::params::{Output, Params};
 
 /// Verifies successful file creation on the host OS and its contents.
 pub fn verify_file_equals(testfile: &PathBuf, contents: &str) {
@@ -72,9 +70,8 @@ fn create_mapped_parent_nonpresent_file() {
 		..Default::default()
 	};
 
-	let bin_path = build_hermit_bin("open_close_file");
-	let vm = UhyveVm::new(bin_path, params).unwrap();
-	let res = vm.run(None);
+	let bin_path: PathBuf = build_hermit_bin("open_close_file");
+	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 }
 
@@ -103,9 +100,8 @@ fn create_write_unmapped_nonpresent_file() {
 	};
 
 	// The file should not exist on the host OS.
-	let bin_path = build_hermit_bin("create_file");
-	let vm = UhyveVm::new(bin_path.clone(), params.clone()).unwrap();
-	let res = vm.run(None);
+	let bin_path: PathBuf = build_hermit_bin("create_file");
+	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 	assert!(!host_path.exists());
 }
@@ -133,10 +129,8 @@ fn create_write_mapped_nonpresent_file() {
 		..Default::default()
 	};
 
-	let bin_path = build_hermit_bin("create_file");
-	let vm = UhyveVm::new(bin_path.clone(), params.clone()).unwrap();
-	let res = vm.run(None);
-
+	let bin_path: PathBuf = build_hermit_bin("create_file");
+	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 	verify_file_equals(&host_path, "Hello, world!");
 }
@@ -153,7 +147,6 @@ fn remove_mapped_present_file() {
 	remove_file_if_exists(&host_path);
 	File::create(&host_path).unwrap();
 
-	let bin_path = build_hermit_bin("remove_file");
 	let params = Params {
 		cpu_count: 2.try_into().unwrap(),
 		memory_size: Byte::from_u64_with_unit(64, Unit::MiB)
@@ -169,9 +162,8 @@ fn remove_mapped_present_file() {
 	};
 
 	assert!(host_path.exists());
-	let vm = UhyveVm::new(bin_path.clone(), params.clone()).unwrap();
-	let res = vm.run(None);
-
+	let bin_path: PathBuf = build_hermit_bin("remove_file");
+	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 	assert!(!host_path.exists());
 }
@@ -189,7 +181,6 @@ fn remove_mapped_parent_present_file() {
 	remove_file_if_exists(&file_to_remove);
 	File::create(&file_to_remove).unwrap();
 
-	let bin_path = build_hermit_bin("remove_file");
 	let params = Params {
 		cpu_count: 2.try_into().unwrap(),
 		memory_size: Byte::from_u64_with_unit(64, Unit::MiB)
@@ -205,8 +196,8 @@ fn remove_mapped_parent_present_file() {
 	};
 
 	assert!(file_to_remove.exists());
-	let vm = UhyveVm::new(bin_path.clone(), params.clone()).unwrap();
-	let res = vm.run(None);
+	let bin_path: PathBuf = build_hermit_bin("remove_file");
+	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 	assert!(!file_to_remove.exists());
 }
@@ -243,8 +234,7 @@ fn create_and_remove_unmapped_file_test() {
 		..Default::default()
 	};
 
-	let bin_path = build_hermit_bin("open_close_remove_file");
-	let vm = UhyveVm::new(bin_path, params).unwrap();
-	let res = vm.run(None);
+	let bin_path: PathBuf = build_hermit_bin("open_close_remove_file");
+	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 }
