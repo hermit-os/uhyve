@@ -201,7 +201,7 @@ impl VirtioNetPciDevice {
 					self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET;
 				}
 				Err(e) => {
-					info!("{:?}", e);
+					info!("{e:?}");
 					self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET;
 				}
 			}
@@ -236,7 +236,7 @@ impl VirtioNetPciDevice {
 			self.iface = match Iface::new("", Mode::Tap) {
 				Ok(tap) => Some(Mutex::new(tap)),
 				Err(err) => {
-					info!("Error creating TAP device: {}", err);
+					info!("Error creating TAP device: {err}");
 					self.registers[STATUS_REGISTER as usize] |= STATUS_DRIVER_NEEDS_RESET;
 					None
 				}

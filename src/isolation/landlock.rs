@@ -214,17 +214,17 @@ fn get_file_or_parent(host_path: &OsString) -> Result<PathBuf, Error> {
 	let mut host_pathbuf: PathBuf = host_path.into();
 	for i in 0..iterations {
 		if !host_pathbuf.exists() {
-			warn!("Mapped file {:#?} not found. Popping...", host_pathbuf);
+			warn!("Mapped file {host_pathbuf:#?} not found. Popping...");
 			host_pathbuf.pop();
 			continue;
 		}
 
 		if host_pathbuf.is_dir() {
-			debug!("Adding directory {:#?}.", host_pathbuf);
+			debug!("Adding directory {host_pathbuf:#?}.");
 			return Ok(host_pathbuf);
 		} else if !host_pathbuf.is_dir() && i == 0 {
 			// "File" means "all paths that don't have a directory on them but exist".
-			debug!("Mapped file {:#?} found.", host_pathbuf);
+			debug!("Mapped file {host_pathbuf:#?} found.");
 			return Ok(host_pathbuf);
 		} else {
 			return Err(Error::new(
@@ -233,10 +233,7 @@ fn get_file_or_parent(host_path: &OsString) -> Result<PathBuf, Error> {
 			));
 		}
 	}
-	panic!(
-		"Mapped file's parent directory not found within {} iterations.",
-		iterations
-	);
+	panic!("Mapped file's parent directory not found within {iterations} iterations.");
 }
 
 /// Checks whether a raw file descriptor represents a file using [`libc::fstat`].
@@ -256,7 +253,7 @@ fn is_file(rawfd: RawFd) -> bool {
 			0 => (stat.st_mode & libc::S_IFMT) != libc::S_IFDIR,
 			// Should not be practically reachable under optimal circumstances,
 			// but we'll assume otherwise.
-			_ => panic!("stat against fd {:?} failed", rawfd),
+			_ => panic!("stat against fd {rawfd:?} failed"),
 		}
 	}
 }
