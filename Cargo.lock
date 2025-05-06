@@ -1480,18 +1480,19 @@ dependencies = [
 
 [[package]]
 name = "rftrace"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21bbe879479cc19052fc8cd14c4e840e3893abbc76ee43533367527fe15009b0"
+checksum = "af7e6cf0e8757e15188f80c86dfd705a9cf516dbf737c2d9268e423177d88a39"
 dependencies = [
+ "home",
  "llvm-tools",
 ]
 
 [[package]]
 name = "rftrace-frontend"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0beac55bcba086801d315cfaa3a777814b296991b6768ba503f38b06f523b1a0"
+checksum = "40d0ade29161af27a247aeebf24a58f7bfa77bea6719556c5bb4f9f605666b03"
 dependencies = [
  "byteorder",
  "cfg-if",
