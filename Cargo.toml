@@ -45,7 +45,7 @@ instrument = ["rftrace", "rftrace-frontend"]
 align-address = "0.3.0"
 byte-unit = { version = "5", features = ["byte"] }
 clap = { version = "4.5", features = ["derive", "env"] }
-nix = { version = "0.29", features = ["mman", "pthread", "signal"] }
+nix = { version = "0.30", features = ["mman", "pthread", "signal"] }
 core_affinity = "0.8"
 either = "1.15"
 env_logger = "0.11"
