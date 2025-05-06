@@ -34,7 +34,9 @@ use crate::{
 	virtio::*,
 };
 #[cfg(target_os = "linux")]
-use crate::{isolation::landlock::initialize, params::FileSandboxMode};
+use crate::{
+	isolation::landlock::initialize, isolation::seccomp::seccomp_init, params::FileSandboxMode,
+};
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
 
@@ -204,13 +206,18 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		let serial = UhyveSerial::from_params(&params.output)?;
 
-		// Takes place before the kernel is actually loaded.
+		// Initialize Linux Security Modules on Linux, _before_
+		// the kernel is actually loaded into memory.
 		#[cfg(target_os = "linux")]
-		Self::landlock_init(
-			&params,
-			&file_mapping.lock().unwrap(),
-			kernel_path.to_str().unwrap(),
-		);
+		{
+			seccomp_init();
+
+			Self::landlock_init(
+				&params,
+				&file_mapping.lock().unwrap(),
+				kernel_path.to_str().unwrap(),
+			);
+		}
 
 		let (
 			LoadedKernel {

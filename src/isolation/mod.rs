@@ -2,6 +2,8 @@ pub mod fd;
 pub mod filemap;
 #[cfg(target_os = "linux")]
 pub mod landlock;
+#[cfg(target_os = "linux")]
+pub mod seccomp;
 pub mod tempdir;
 
 use std::{ffi::OsString, fs::canonicalize, io::ErrorKind, path::absolute};
