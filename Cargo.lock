@@ -927,13 +927,13 @@ dependencies = [
 
 [[package]]
 name = "landlock"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18738c5d4c7fae6727a96adb94722ef7ce82f3eafea0a11777e258a93816537e"
+checksum = "b3d2ef408b88e913bfc6594f5e693d57676f6463ded7d8bf994175364320c706"
 dependencies = [
  "enumflags2",
  "libc",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
@@ -1775,31 +1775,11 @@ checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708"
 dependencies = [
- "thiserror-impl 2.0.12",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.98",
+ "thiserror-impl",
 ]
 
 [[package]]
@@ -1924,7 +1904,7 @@ dependencies = [
  "shell-words",
  "sysinfo",
  "tempfile",
- "thiserror 2.0.12",
+ "thiserror",
  "time",
  "tun-tap",
  "uhyve-interface",
@@ -2367,7 +2347,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fab4e3dfc581f52efdf5784a1562164ae66bcce33c04df6e2ac676955ff883d9"
 dependencies = [
  "libc",
- "thiserror 2.0.12",
+ "thiserror",
 ]
 
 [[package]]
