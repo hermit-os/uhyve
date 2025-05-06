@@ -12,6 +12,9 @@ updates:
       gdbstub:
         patterns:
           - "gdbstub*"
+      rftrace:
+        patterns:
+          - "rftrace*"
       rust-vmm:
         patterns:
           - "kvm-ioctls"
