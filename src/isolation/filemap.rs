@@ -99,7 +99,6 @@ impl UhyveFileMap {
 	}
 
 	/// Returns all present file descriptors (for Drop trait in UhyveVm)
-	#[cfg(target_os = "linux")]
 	pub(crate) fn get_fds(&self) -> Vec<&i32> {
 		self.fdmap
 			.left_values()

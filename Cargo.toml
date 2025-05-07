@@ -43,9 +43,10 @@ instrument = ["rftrace", "rftrace-frontend"]
 
 [dependencies]
 align-address = "0.3.0"
+bimap = "0.6.3"
 byte-unit = { version = "5", features = ["byte"] }
 clap = { version = "4.5", features = ["derive", "env"] }
-nix = { version = "0.30", features = ["mman", "pthread", "signal"] }
+clean-path = "0.2.1"
 core_affinity = "0.8"
 either = "1.15"
 env_logger = "0.11"
@@ -55,6 +56,7 @@ hermit-entry = { version = "0.10.3", features = ["loader"] }
 libc = "0.2"
 log = "0.4"
 mac_address = "1.1"
+nix = { version = "0.30", features = ["mman", "pthread", "signal"] }
 thiserror = "2.0.9"
 time = "0.3"
 tun-tap = { version = "0.1.3", default-features = false }
@@ -68,8 +70,6 @@ sysinfo = { version = "0.35.0", default-features = false, features = ["system"] 
 vm-fdt = "0.3"
 tempfile = "3.19.1"
 uuid = { version = "1.16.0", features = ["fast-rng", "v4"]}
-clean-path = "0.2.1"
-bimap = "0.6.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.11"
