@@ -294,8 +294,14 @@ impl VirtualCPU for XhyveCpu {
 											&self.peripherals.mem,
 										);
 									}
-									Hypercall::FileClose(sysclose) => hypercall::close(sysclose),
-									Hypercall::FileLseek(syslseek) => hypercall::lseek(syslseek),
+									Hypercall::FileClose(sysclose) => hypercall::close(
+										sysclose,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
+									Hypercall::FileLseek(syslseek) => hypercall::lseek(
+										syslseek,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
 									Hypercall::FileOpen(sysopen) => hypercall::open(
 										&self.peripherals.mem,
 										sysopen,
@@ -307,6 +313,7 @@ impl VirtualCPU for XhyveCpu {
 										GuestPhysAddr::new(
 											vcpu.read_system_register(SystemRegister::TTBR0_EL1)?,
 										),
+										&mut self.peripherals.file_mapping.lock().unwrap(),
 									),
 									Hypercall::FileWrite(syswrite) => hypercall::write(
 										&self.peripherals,
@@ -314,6 +321,7 @@ impl VirtualCPU for XhyveCpu {
 										GuestPhysAddr::new(
 											vcpu.read_system_register(SystemRegister::TTBR0_EL1)?,
 										),
+										&mut self.peripherals.file_mapping.lock().unwrap(),
 									)
 									.unwrap(),
 									Hypercall::FileUnlink(sysunlink) => hypercall::unlink(

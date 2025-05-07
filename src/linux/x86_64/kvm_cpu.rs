@@ -480,8 +480,14 @@ impl VirtualCPU for KvmCpu {
 								Hypercall::Exit(sysexit) => {
 									return Ok(VcpuStopReason::Exit(sysexit.arg));
 								}
-								Hypercall::FileClose(sysclose) => hypercall::close(sysclose),
-								Hypercall::FileLseek(syslseek) => hypercall::lseek(syslseek),
+								Hypercall::FileClose(sysclose) => hypercall::close(
+									sysclose,
+									&mut self.peripherals.file_mapping.lock().unwrap(),
+								),
+								Hypercall::FileLseek(syslseek) => hypercall::lseek(
+									syslseek,
+									&mut self.peripherals.file_mapping.lock().unwrap(),
+								),
 								Hypercall::FileOpen(sysopen) => hypercall::open(
 									&self.peripherals.mem,
 									sysopen,
@@ -491,11 +497,13 @@ impl VirtualCPU for KvmCpu {
 									&self.peripherals.mem,
 									sysread,
 									self.get_root_pagetable(),
+									&mut self.peripherals.file_mapping.lock().unwrap(),
 								),
 								Hypercall::FileWrite(syswrite) => hypercall::write(
 									&self.peripherals,
 									syswrite,
 									self.get_root_pagetable(),
+									&mut self.peripherals.file_mapping.lock().unwrap(),
 								)?,
 								Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
 									&self.peripherals.mem,
