@@ -261,3 +261,49 @@ fn test_fd_open_remove_close() {
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 }
+
+/// Tests whether the file descriptor sandbox works correctly, by unlinking an open
+/// file on the host before the file descriptor of that said file is closed.
+#[test]
+#[serial]
+fn test_fd_open_remove_close_remove() {
+	env_logger::try_init().ok();
+
+	let params = Params {
+		cpu_count: 2.try_into().unwrap(),
+		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
+			.unwrap()
+			.try_into()
+			.unwrap(),
+		#[cfg(target_os = "linux")]
+		file_isolation: strict_sandbox(),
+		..Default::default()
+	};
+
+	let bin_path: PathBuf = build_hermit_bin("open_remove_close_remove_file");
+	let res = run_vm_in_thread(bin_path, params);
+	assert_ne!(res.code, 0);
+}
+
+/// Tests whether the file descriptor sandbox works correctly, by unlinking an open
+/// file on the host before the file descriptor of that said file is closed.
+#[test]
+#[serial]
+fn test_fd_open_remove_remove_close_file() {
+	env_logger::try_init().ok();
+
+	let params = Params {
+		cpu_count: 2.try_into().unwrap(),
+		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
+			.unwrap()
+			.try_into()
+			.unwrap(),
+		#[cfg(target_os = "linux")]
+		file_isolation: strict_sandbox(),
+		..Default::default()
+	};
+
+	let bin_path: PathBuf = build_hermit_bin("open_remove_remove_close_file");
+	let res = run_vm_in_thread(bin_path, params);
+	assert_ne!(res.code, 0);
+}
