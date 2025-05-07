@@ -13,7 +13,7 @@ fn main() {
 		let mut file = File::create("/root/foo.txt").unwrap();
 		file.write_all(b"Hello, world!").unwrap();
 		remove_file("/root/foo.txt").unwrap();
-		
+
 		// This is expected to panic.
 		remove_file("/root/foo.txt").unwrap();
 	}
