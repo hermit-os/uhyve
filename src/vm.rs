@@ -1,9 +1,7 @@
 use std::{
-	env, fmt,
-	fs::{self, File},
-	io,
+	env, fmt, fs, io,
 	num::NonZeroU32,
-	os::{fd::FromRawFd, unix::prelude::JoinHandleExt},
+	os::unix::prelude::JoinHandleExt,
 	path::PathBuf,
 	sync::{Arc, Barrier, Mutex},
 	thread,
@@ -432,17 +430,6 @@ impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 			.field("params", &self.kernel_info.params)
 			.field("file_mapping", &self.peripherals.file_mapping)
 			.finish()
-	}
-}
-
-impl<VirtIf: VirtualizationBackend> Drop for UhyveVm<VirtIf> {
-	fn drop(&mut self) {
-		let file_mapping = self.peripherals.file_mapping.lock().unwrap();
-		for fd in file_mapping.get_fds() {
-			// This creates a File instance from a non-closed fd.
-			// Rust "will then close" the file at the end of the unsafe block.
-			unsafe { File::from_raw_fd(*fd) };
-		}
 	}
 }
 

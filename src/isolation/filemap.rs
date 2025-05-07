@@ -2,7 +2,10 @@ use std::{
 	collections::{HashMap, HashSet},
 	ffi::{CString, OsString},
 	fs::canonicalize,
-	os::{fd::RawFd, unix::ffi::OsStrExt},
+	os::{
+		fd::{FromRawFd, RawFd},
+		unix::ffi::OsStrExt,
+	},
 	path::PathBuf,
 };
 
@@ -339,5 +342,15 @@ mod tests {
 		map = UhyveFileMap::new(&empty_array, &None);
 		found_host_path = map.get_host_path(target_guest_path.to_str().unwrap());
 		assert!(found_host_path.is_none());
+	}
+}
+
+impl Drop for UhyveFileMap {
+	fn drop(&mut self) {
+		for fd in self.get_fds() {
+			// This creates a File instance from a non-closed fd.
+			// Rust "will then close" the file at the end of the unsafe block.
+			unsafe { std::fs::File::from_raw_fd(*fd) };
+		}
 	}
 }
