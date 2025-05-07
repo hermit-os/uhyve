@@ -95,6 +95,16 @@ impl UhyveFileMap {
 		self.files.clone().into_values().collect::<Vec<_>>()
 	}
 
+	/// Returns all present file descriptors (for Drop trait in UhyveVm)
+	#[cfg(target_os = "linux")]
+	pub(crate) fn get_fds(&self) -> Vec<&i32> {
+		self.fdmap
+			.left_values()
+			.into_iter()
+			.chain(self.unlinkedfd.iter())
+			.collect::<Vec<_>>()
+	}
+
 	/// Returns the path to the temporary directory (for Landlock).
 	#[cfg(target_os = "linux")]
 	pub(crate) fn get_temp_dir(&self) -> Option<String> {
@@ -122,7 +132,7 @@ impl UhyveFileMap {
 	///
 	/// * `fd` - The opened guest path's file descriptor.
 	pub fn is_fd_closable(&mut self, fd: RawFd) -> bool {
-		debug!("is_fd_closable: {:#?}", &self.fdmap);
+		trace!("is_fd_closable: {:#?}", &self.fdmap);
 		self.is_fd_present(fd) || self.unlinkedfd.contains(&fd)
 	}
 
@@ -130,7 +140,7 @@ impl UhyveFileMap {
 	///
 	/// * `fd` - The opened guest path's file descriptor.
 	pub fn is_fd_present(&mut self, fd: RawFd) -> bool {
-		debug!("is_fd_present: {:#?}", &self.fdmap);
+		trace!("is_fd_present: {:#?}", &self.fdmap);
 		if (fd >= 0 && self.fdmap.contains_left(&fd)) || (0..=2).contains(&fd) {
 			return true;
 		}
@@ -145,7 +155,7 @@ impl UhyveFileMap {
 		if fd > 2 {
 			self.fdmap.insert(fd, guest_path.into());
 		}
-		debug!("insert_fd_path: {:#?}", &self.fdmap);
+		trace!("insert_fd_path: {:#?}", &self.fdmap);
 	}
 
 	/// Removes an fd from UhyveFileMap. This is only used by [crate::hypercall::close],
@@ -154,7 +164,7 @@ impl UhyveFileMap {
 	///
 	/// * `fd` - The file descriptor of the file being removed.
 	pub fn close_fd(&mut self, fd: RawFd) {
-		debug!("close_fd: {:#?}", &self.fdmap);
+		trace!("close_fd: {:#?}", &self.fdmap);
 		// The file descriptor in fdclosed is supposedly still alive.
 		// It is safe to assume that the host OS will not assign the
 		// same file descriptor to another opened file, until _after_
@@ -172,7 +182,7 @@ impl UhyveFileMap {
 	///
 	/// * `fd` - The file descriptor of the file being removed.
 	pub fn remove_fd(&mut self, fd: RawFd) {
-		debug!("remove_fd: {:#?}", &self.fdmap);
+		trace!("remove_fd: {:#?}", &self.fdmap);
 		if fd > 2 {
 			self.fdmap.remove_by_left(&fd);
 		}
@@ -189,7 +199,7 @@ impl UhyveFileMap {
 	///
 	/// * `guest_path` - The path of the file being removed.
 	pub fn unlink_guest_path(&mut self, guest_path: &str) {
-		debug!("unlink_guest_path: {:#?}", &guest_path);
+		trace!("unlink_guest_path: {:#?}", &guest_path);
 		if let Some(fd) = self.fdmap.get_by_right(guest_path) {
 			self.unlinkedfd.insert(*fd);
 			self.fdmap.remove_by_right(guest_path);
