@@ -330,6 +330,7 @@ fn test_fd_write_to_fd() {
 		..Default::default()
 	};
 
+
 	let bin_path: PathBuf = build_hermit_bin("write_to_fd");
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
@@ -342,7 +343,8 @@ fn test_fd_write_to_same_path() {
 	env_logger::try_init().ok();
 
 	let params = Params {
-		cpu_count: 2.try_into().unwrap(),
+		cpu_count
+		: 2.try_into().unwrap(),
 		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
 			.unwrap()
 			.try_into()

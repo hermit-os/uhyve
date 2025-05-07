@@ -119,6 +119,8 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 
 			sysopen.ret =
 				unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode) };
+			let fd = sysopen.ret;
+			error!("fd (normal): {}", fd);
 
 			if sysopen.ret >= 0 {
 				file_map.insert_fd_path(sysopen.ret, guest_path);
@@ -135,6 +137,8 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 				let host_path_c_string = file_map.create_temporary_file(guest_path);
 				let new_host_path = host_path_c_string.as_c_str().as_ptr();
 				sysopen.ret = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
+				let fd = sysopen.ret;
+				error!("fd (tempfile): {}", fd);
 				if sysopen.ret >= 0 {
 					file_map.insert_fd_path(sysopen.ret.into_raw_fd(), guest_path);
 				}
