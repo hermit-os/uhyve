@@ -55,7 +55,7 @@ impl UhyveFileMap {
 			.files
 			.get(&requested_guest_pathbuf.display().to_string())
 			.map(OsString::from);
-		debug!("get_host_path (host_path): {:#?}", host_path);
+		debug!("get_host_path (host_path): {host_path:#?}");
 		if host_path.is_some() {
 			host_path
 		} else {
@@ -123,7 +123,7 @@ impl UhyveFileMap {
 			.path()
 			.join(Uuid::new_v4().to_string())
 			.into_os_string();
-		debug!("create_temporary_file (host_path): {:#?}", host_path);
+		debug!("create_temporary_file (host_path): {host_path:#?}");
 		let ret = CString::new(host_path.as_bytes()).unwrap();
 		self.files.insert(String::from(guest_path), host_path);
 		ret
@@ -215,6 +215,16 @@ impl UhyveFileMap {
 			self.fdmap.remove_by_right(guest_path);
 		}
 		self.files.remove(guest_path);
+	}
+}
+
+impl Drop for UhyveFileMap {
+	fn drop(&mut self) {
+		for fd in self.get_fds() {
+			// This creates a File instance from a non-closed fd.
+			// Rust "will then close" the file at the end of the unsafe block.
+			unsafe { std::fs::File::from_raw_fd(*fd) };
+		}
 	}
 }
 
@@ -349,15 +359,5 @@ mod tests {
 		map = UhyveFileMap::new(&empty_array, &None);
 		found_host_path = map.get_host_path(target_guest_path.to_str().unwrap());
 		assert!(found_host_path.is_none());
-	}
-}
-
-impl Drop for UhyveFileMap {
-	fn drop(&mut self) {
-		for fd in self.get_fds() {
-			// This creates a File instance from a non-closed fd.
-			// Rust "will then close" the file at the end of the unsafe block.
-			unsafe { std::fs::File::from_raw_fd(*fd) };
-		}
 	}
 }
