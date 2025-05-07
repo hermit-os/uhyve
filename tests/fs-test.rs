@@ -243,7 +243,7 @@ fn create_and_remove_unmapped_file_test() {
 /// file on the host before the file descriptor of that said file is closed.
 #[test]
 #[serial]
-fn test_fd_open_unlink_close() {
+fn test_fd_open_remove_close() {
 	env_logger::try_init().ok();
 
 	let params = Params {

@@ -1,5 +1,5 @@
 use std::{
-	fs::{File, read_to_string, remove_file},
+	fs::{File, remove_file},
 	io::prelude::*,
 };
 
@@ -12,9 +12,6 @@ fn main() {
 	{
 		let mut file = File::create("/root/foo.txt").unwrap();
 		file.write_all(b"Hello, world!").unwrap();
-		remove("/root/foo.txt").unwrap();
+		remove_file("/root/foo.txt").unwrap();
 	}
-	// let file_content = read_to_string("/root/foo.txt").unwrap();
-	// assert_eq!(file_content, "Hello, world!".to_string());
-	// remove_file("/root/foo.txt").unwrap();
 }
