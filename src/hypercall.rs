@@ -113,6 +113,7 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 
 		if let Some(host_path) = file_map.get_host_path(guest_path) {
 			debug!("{guest_path:#?} found in file map.");
+			debug_assert!(std::path::PathBuf::from(host_path.clone()).exists());
 			// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 			// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 			let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
