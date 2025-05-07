@@ -144,6 +144,9 @@ impl UhyveFileMap {
 	/// * `fd` - The opened guest path's file descriptor.
 	pub fn is_fd_present(&mut self, fd: RawFd) -> bool {
 		trace!("is_fd_present: {:#?}", &self.fdmap);
+		// Although standard streams (0, 1, 2) are not "present", they should always be valid.
+		// Therefore, we choose to "lie" to the guest OS instead. Other functions / hypercalls
+		// will specifically handle those file descriptors on a case-by-case basis.
 		if (fd >= 0 && self.fdmap.contains_left(&fd)) || (0..=2).contains(&fd) {
 			return true;
 		}
@@ -155,10 +158,12 @@ impl UhyveFileMap {
 	/// * `fd` - The opened guest path's file descriptor.
 	/// * `guest_path` - The guest path.
 	pub fn insert_fd_path(&mut self, fd: RawFd, guest_path: &str) {
+		// Don't insert standard streams (which "conflict" with Uhyve's).
 		if fd > 2 {
 			self.fdmap.insert(fd, guest_path.into());
+		} else {
+			warn!("Guest attempted to insert negative/standard stream {fd}, ignoring...")
 		}
-		trace!("insert_fd_path: {:#?}", &self.fdmap);
 	}
 
 	/// Removes an fd from UhyveFileMap. This is only used by [crate::hypercall::close],
@@ -186,8 +191,11 @@ impl UhyveFileMap {
 	/// * `fd` - The file descriptor of the file being removed.
 	pub fn remove_fd(&mut self, fd: RawFd) {
 		trace!("remove_fd: {:#?}", &self.fdmap);
+		// Don't close Uhyve's standard streams.
 		if fd > 2 {
 			self.fdmap.remove_by_left(&fd);
+		} else {
+			warn!("Guest attempted to remove negative/standard stream {fd}, ignoring...")
 		}
 	}
 
