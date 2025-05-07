@@ -125,8 +125,7 @@ impl UhyveFileMap {
 			.into_os_string();
 		debug!("create_temporary_file (host_path): {host_path:#?}");
 		let ret = CString::new(host_path.as_bytes()).unwrap();
-		let _insertion = self.files.insert(String::from(guest_path), host_path);
-		debug_assert_eq!(_insertion, None);
+		self.files.insert(String::from(guest_path), host_path);
 		ret
 	}
 
