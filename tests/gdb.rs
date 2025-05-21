@@ -4,13 +4,13 @@
 mod common;
 
 use std::{
-	fs::File,
+	fs::{self, File},
 	io::{self, Write},
 	thread,
 };
 
-use assert_fs::{TempDir, assert::PathAssert, fixture::PathChild};
 use common::{build_hermit_bin, rust_gdb};
+use tempfile::TempDir;
 use uhyvelib::{
 	params::{Output, Params},
 	vm::UhyveVm,
@@ -38,8 +38,8 @@ fn gdb() -> io::Result<()> {
 	});
 
 	let temp = TempDir::new().unwrap();
-	let output_path = temp.child("output");
-	let command_path = temp.child("commands");
+	let output_path = temp.path().join("output");
+	let command_path = temp.path().join("commands");
 	let mut command_file = File::create(&command_path)?;
 
 	write!(
@@ -96,8 +96,8 @@ continue
 		.status()?;
 	assert!(status.success());
 
-	output_path.assert(
-		"$1 = 5
+	let output_contents = fs::read_to_string(output_path).unwrap();
+	let expected_result = "$1 = 5
 $2 = 6
 $3 = 3.5
 $4 = 4.5
@@ -108,8 +108,9 @@ $8 = 0
 $9 = 3
 $10 = 0
 $11 = 3
-",
-	);
+";
+
+	assert_eq!(output_contents, expected_result);
 
 	temp.close().unwrap();
 	vm.join().unwrap();
