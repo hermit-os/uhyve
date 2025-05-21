@@ -251,7 +251,7 @@ pub fn write(
 	Ok(())
 }
 
-/// Handles an write syscall on the host.
+/// Handles an lseek syscall on the host.
 pub fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 	if file_map.fdmap.is_fd_present(syslseek.fd.into_raw_fd()) {
 		unsafe {
