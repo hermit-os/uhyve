@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 #[cfg(target_os = "hermit")]
 use hermit as _;
 use uhyve_interface::{GuestPhysAddr, HypercallAddress, parameters::SerialWriteBufferParams};

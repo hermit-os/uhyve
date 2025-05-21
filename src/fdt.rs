@@ -1,5 +1,6 @@
-//! Flattened Device Trees (FDT).
+// SPDX-License-Identifier: Apache-2.0 OR MIT
 
+//! Flattened Device Trees (FDT).
 use std::{fmt::Write, ops::Range};
 
 use uhyve_interface::GuestPhysAddr;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 pub mod fd;
 pub mod filemap;
 #[cfg(target_os = "linux")]

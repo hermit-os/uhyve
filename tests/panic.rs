@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 mod common;
 
 use common::{build_hermit_bin, run_simple_vm};

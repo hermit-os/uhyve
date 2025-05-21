@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 mod breakpoints;
 mod regs;
 mod section_offsets;

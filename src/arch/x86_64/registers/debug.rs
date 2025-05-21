@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! Functions to read and write debug registers.
 
 use gdbstub::{stub::SingleThreadStopReason, target::ext::breakpoints::WatchKind};

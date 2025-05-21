@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 pub const PAGE_SIZE: usize = 0x1000;
 pub const GDT_KERNEL_CODE: u16 = 1;
 pub const GDT_KERNEL_DATA: u16 = 2;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 #![cfg_attr(target_os = "macos", allow(dead_code))] // no virtio implementation for macos
 use std::{fmt, mem::size_of, ptr::copy_nonoverlapping, sync::Mutex, vec::Vec};
 
@@ -272,7 +274,7 @@ impl VirtioNetPciDevice {
 				*(dest.as_ptr() as *const u64)
 			});
 			let hva = mem.host_address(gpa).unwrap();
-			let queue = unsafe { Virtqueue::new(hva as *mut u8, QUEUE_LIMIT) };
+			let queue = unsafe { Virtqueue::new(hva as *mut u8, QUEUE_LIMIT };
 			self.virt_queues.push(queue);
 		}
 	}

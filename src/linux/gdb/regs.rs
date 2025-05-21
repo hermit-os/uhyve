@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use gdbstub_arch::x86::reg::{F80, X86_64CoreRegs, X86SegmentRegs, X87FpuInternalRegs};
 use kvm_bindings::{kvm_fpu, kvm_regs, kvm_sregs};
 use kvm_ioctls::VcpuFd;

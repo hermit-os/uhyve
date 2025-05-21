@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use std::{mem::MaybeUninit, ops::Index, os::raw::c_void, ptr::NonNull};
 
 use nix::sys::mman::*;

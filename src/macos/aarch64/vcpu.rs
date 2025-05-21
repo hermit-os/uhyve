@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 #![allow(non_snake_case)]
 #![allow(clippy::identity_op)]
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! General paging related code
 use align_address::Align;
 use thiserror::Error;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use gdbstub::target::{self, ext::section_offsets::Offsets};
 
 use super::GdbUhyve;

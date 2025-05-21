@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 #![cfg_attr(target_os = "macos", allow(dead_code))] // no virtio implementation for macos
 use std::{marker::PhantomData, mem, mem::size_of};
 
