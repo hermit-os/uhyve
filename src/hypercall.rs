@@ -119,11 +119,9 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 
 			sysopen.ret =
 				unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode) };
-			let fd = sysopen.ret;
-			error!("fd (normal): {}", fd);
 
 			if sysopen.ret >= 0 {
-				file_map.insert_fd_path(sysopen.ret, guest_path);
+				file_map.fdmap.insert_fd_path(sysopen.ret, guest_path);
 			}
 		} else {
 			debug!("{guest_path:#?} not found in file map.");
@@ -137,10 +135,10 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 				let host_path_c_string = file_map.create_temporary_file(guest_path);
 				let new_host_path = host_path_c_string.as_c_str().as_ptr();
 				sysopen.ret = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
-				let fd = sysopen.ret;
-				error!("fd (tempfile): {}", fd);
 				if sysopen.ret >= 0 {
-					file_map.insert_fd_path(sysopen.ret.into_raw_fd(), guest_path);
+					file_map
+						.fdmap
+						.insert_fd_path(sysopen.ret.into_raw_fd(), guest_path);
 				}
 			} else {
 				debug!("Returning -ENOENT for {guest_path:#?}");
@@ -155,10 +153,10 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 
 /// Handles an close syscall by closing the file on the host.
 pub fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
-	if file_map.is_fd_closable(sysclose.fd.into_raw_fd()) {
+	if file_map.fdmap.is_fd_closable(sysclose.fd.into_raw_fd()) {
 		if sysclose.fd > 2 {
 			unsafe { sysclose.ret = libc::close(sysclose.fd) }
-			file_map.close_fd(sysclose.fd);
+			file_map.fdmap.close_fd(sysclose.fd);
 		} else {
 			// Ignore closes of stdin, stdout and stderr that would
 			// otherwise affect Uhyve
@@ -176,7 +174,7 @@ pub fn read(
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
 ) {
-	if file_map.is_fd_present(sysread.fd.into_raw_fd()) {
+	if file_map.fdmap.is_fd_present(sysread.fd.into_raw_fd()) {
 		unsafe {
 			let bytes_read = libc::read(
 				sysread.fd,
@@ -224,7 +222,7 @@ pub fn write(
 					})?
 			};
 			return peripherals.serial.output(bytes);
-		} else if !file_map.is_fd_present(syswrite.fd.into_raw_fd()) {
+		} else if !file_map.fdmap.is_fd_present(syswrite.fd.into_raw_fd()) {
 			// We don't write anything if the file descriptor is not available,
 			// but this is OK for now, as we have no means of returning an error codee
 			// and writes are not necessarily guaranteed to write anything.
@@ -260,7 +258,7 @@ pub fn write(
 
 /// Handles an write syscall on the host.
 pub fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
-	if file_map.is_fd_present(syslseek.fd.into_raw_fd()) {
+	if file_map.fdmap.is_fd_present(syslseek.fd.into_raw_fd()) {
 		unsafe {
 			syslseek.offset =
 				libc::lseek(syslseek.fd, syslseek.offset as i64, syslseek.whence) as isize;

@@ -1,3 +1,4 @@
+pub mod fdmap;
 pub mod filemap;
 #[cfg(target_os = "linux")]
 pub mod landlock;
