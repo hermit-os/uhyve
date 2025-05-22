@@ -10,6 +10,7 @@ use hermit as _;
 /// Create (+ open), write, close, read, close, remove.
 fn create_rw_remove_file(filename: &str) {
 	println!("Running create_rw_remove_file with filename {}.", filename);
+
 	{
 		let mut file = File::create(filename).unwrap();
 		file.write_all(b"Hello, world!").unwrap();
@@ -27,6 +28,7 @@ fn create_rw_remove_file(filename: &str) {
 /// The file is not deleted, so that its contents can be analyzed by the host.
 fn create_rw_file(filename: &str) {
 	println!("Running create_rw_file with filename {}.", filename);
+
 	{
 		let mut file = File::create(filename).unwrap();
 		file.write_all(b"Hello, world!").unwrap();
@@ -39,14 +41,15 @@ fn create_rw_file(filename: &str) {
 
 /// Simply removes a file presumed to have been created by the host.
 fn simple_remove_file(filename: &str) {
-	println!("Hello from simple_remove_file with filename {}.", filename);
+	println!("Running simple_remove_file with filename {}.", filename);
 
 	remove_file(filename).unwrap();
 }
 
+/// Opens a file and unlinks it before the file is closed.
 fn open_remove_before_closing(filename: &str) {
 	println!(
-		"Hello from open_remove_before_closing with filename {}.",
+		"Running open_remove_before_closing with filename {}.",
 		filename
 	);
 
@@ -57,9 +60,10 @@ fn open_remove_before_closing(filename: &str) {
 	}
 }
 
+/// Opens a file and unlinks it before and after the file is closed.
 fn open_remove_before_and_after_closing(filename: &str) {
 	println!(
-		"Hello from open_remove_before_closing with filename {}.",
+		"Running open_remove_before_closing with filename {}.",
 		filename
 	);
 
@@ -73,9 +77,10 @@ fn open_remove_before_and_after_closing(filename: &str) {
 	remove_file(filename).unwrap();
 }
 
+/// Opens a file and unlinks it twice before closing it.
 fn remove_twice_before_closing(filename: &str) {
 	println!(
-		"Hello from remove_twice_before_closing with filename {}.",
+		"Running remove_twice_before_closing with filename {}.",
 		filename
 	);
 
