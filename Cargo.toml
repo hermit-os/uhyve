@@ -97,4 +97,3 @@ memory_addresses = { version = "0.2.3", default-features = false, features = [
 criterion = "0.6"
 home = "0.5"
 regex = { version = "1.11.1", default-features = false, features = ["unicode-perl"] }
-serial_test = "3.2.0"
