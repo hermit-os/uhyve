@@ -102,17 +102,17 @@ fn main() {
 	println!("Hello from fs_tests (test: {})!", testname);
 
 	match *testname {
-		"create_mapped_parent_nonpresent_file" => create_rw_remove_file(&filename),
-		"create_write_unmapped_nonpresent_file" => create_rw_remove_file(&filename),
-		"create_write_mapped_nonpresent_file" => create_rw_file(&filename),
-		"remove_mapped_present_file" => simple_remove_file(&filename),
-		"remove_mapped_parent_present_file" => simple_remove_file(&filename),
-		"remove_nonpresent_file_test" => simple_remove_file(&filename),
-		"fd_open_remove_close" => open_remove_before_closing(&filename),
+		"create_mapped_parent_nonpresent_file" => create_rw_remove_file(filename),
+		"create_write_unmapped_nonpresent_file" => create_rw_remove_file(filename),
+		"create_write_mapped_nonpresent_file" => create_rw_file(filename),
+		"remove_mapped_present_file" => simple_remove_file(filename),
+		"remove_mapped_parent_present_file" => simple_remove_file(filename),
+		"remove_nonpresent_file_test" => simple_remove_file(filename),
+		"fd_open_remove_close" => open_remove_before_closing(filename),
 		"fd_open_remove_before_and_after_closing" => {
-			open_remove_before_and_after_closing(&filename)
+			open_remove_before_and_after_closing(filename)
 		}
-		"fd_remove_twice_before_closing" => remove_twice_before_closing(&filename),
+		"fd_remove_twice_before_closing" => remove_twice_before_closing(filename),
 		_ => panic!("test not found"),
 	}
 }
