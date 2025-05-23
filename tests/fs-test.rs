@@ -9,10 +9,9 @@ use byte_unit::{Byte, Unit};
 #[cfg(target_os = "linux")]
 use common::strict_sandbox;
 use common::{
-	build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists, run_simple_vm,
-	run_vm_in_thread,
+	build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists, run_vm_in_thread,
 };
-use serial_test::serial;
+use rand::{Rng, distr::Alphanumeric};
 use uhyvelib::params::{Output, Params};
 
 /// Verifies successful file creation on the host OS and its contents.
@@ -38,25 +37,54 @@ impl AsStr for &str {
 	}
 }
 
-fn create_uhyvefilemap_params<T: AsStr, U: AsStr>(host_path: T, guest_path: U) -> Vec<String> {
+// Creates a vector out of a given host path and guest path for UhyveFileMap.
+fn create_filemap_params<T: AsStr, U: AsStr>(host_path: T, guest_path: U) -> Vec<String> {
 	[format!("{}:{}", host_path.as_str(), guest_path.as_str())].to_vec()
 }
 
-/// This checks whether a VM can create and write to a file on the host.
+fn create_kernel_args<T: AsStr, U: AsStr>(testname: T, filepath: U) -> Vec<String> {
+	[
+		("--".to_owned()),
+		("testname=".to_owned() + testname.as_str()),
+		("filepath=".to_owned() + filepath.as_str()),
+	]
+	.to_vec()
+}
+
+/// Generates a filename in the format of prefixab1cD23.txt
+fn generate_filename(prefix: &str) -> String {
+	let mut filename = prefix.to_owned();
+	let randomchar: String = rand::rng()
+		.sample_iter(&Alphanumeric)
+		.take(7)
+		.map(char::from)
+		.collect();
+	filename.push_str(&randomchar);
+	filename.push_str(".txt");
+	filename
+}
+
+/// Checks whether guests can create, then use files on the host.
+/// (The file is present in a mapped parent directory.)
 #[test]
-#[serial]
 fn create_mapped_parent_nonpresent_file() {
 	env_logger::try_init().ok();
+
+	let testname: &'static str = "create_mapped_parent_nonpresent_file";
+	let filename = generate_filename(testname);
+
 	// Tests successful directory traversal starting from file in child
 	// directory of a mapped directory.
-	let guest_path = PathBuf::from("/root/");
-	let mut host_path = get_fs_fixture_path();
-	host_path.push("ignore_everything_here");
-	let mut file_path = host_path.clone();
-	file_path.push("foo.txt");
-	remove_file_if_exists(&file_path);
+	let guest_dir_path: PathBuf = PathBuf::from("/root/");
+	let mut host_dir_path = get_fs_fixture_path();
+	host_dir_path.push("ignore_everything_here");
 
-	let uhyvefilemap_params = create_uhyvefilemap_params(&host_path, &guest_path);
+	let mut host_file_path = host_dir_path.clone();
+	host_file_path.push(&filename);
+	let mut guest_file_path = guest_dir_path.clone();
+	guest_file_path.push(&filename);
+
+	let uhyvefilemap_params = create_filemap_params(&host_dir_path, &guest_dir_path);
 
 	let params = Params {
 		cpu_count: 2.try_into().unwrap(),
@@ -67,54 +95,35 @@ fn create_mapped_parent_nonpresent_file() {
 		file_mapping: uhyvefilemap_params,
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
-	let bin_path: PathBuf = build_hermit_bin("open_close_file");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
+	remove_file_if_exists(&host_file_path);
 	check_result(&res);
 }
 
-/// This checks whether UhyveFileMap's temporary directory functionality works.
+/// Checks whether guests can create, then use files on the host.
+/// (File directly mapped.)
 #[test]
-#[serial]
-fn create_write_unmapped_nonpresent_file() {
-	env_logger::try_init().ok();
-	let mut host_path = get_fs_fixture_path();
-	host_path.push("ignore_everything_here");
-	host_path.push("file_to_write.txt");
-	remove_file_if_exists(&host_path);
-
-	let params = Params {
-		cpu_count: 2.try_into().unwrap(),
-		memory_size: Byte::from_u64_with_unit(64, Unit::MiB)
-			.unwrap()
-			.try_into()
-			.unwrap(),
-		file_mapping: create_uhyvefilemap_params(&host_path, "/root/dir/wrong.txt"),
-		output: Output::Buffer,
-		stats: true,
-		#[cfg(target_os = "linux")]
-		file_isolation: strict_sandbox(),
-		..Default::default()
-	};
-
-	// The file should not exist on the host OS.
-	let bin_path: PathBuf = build_hermit_bin("create_file");
-	let res = run_vm_in_thread(bin_path, params);
-	check_result(&res);
-	assert!(!host_path.exists());
-}
-
-/// This checks whether it is possible to create and use a new file on the host.
-#[test]
-#[serial]
 fn create_write_mapped_nonpresent_file() {
 	env_logger::try_init().ok();
-	let mut host_path = get_fs_fixture_path();
-	host_path.push("ignore_everything_here");
-	host_path.push("foo.txt");
-	remove_file_if_exists(&host_path);
+
+	let testname: &'static str = "create_write_mapped_nonpresent_file";
+	let filename = generate_filename(testname);
+
+	let guest_dir_path: PathBuf = PathBuf::from("/root/");
+	let mut host_dir_path = get_fs_fixture_path();
+	host_dir_path.push("ignore_everything_here");
+
+	let mut guest_file_path = guest_dir_path;
+	guest_file_path.push(&filename);
+	let mut host_file_path = host_dir_path;
+	host_file_path.push(&filename);
+
+	let uhyvefilemap_params = create_filemap_params(&host_file_path, &guest_file_path);
 
 	let params = Params {
 		cpu_count: 2.try_into().unwrap(),
@@ -122,31 +131,79 @@ fn create_write_mapped_nonpresent_file() {
 			.unwrap()
 			.try_into()
 			.unwrap(),
-		file_mapping: create_uhyvefilemap_params(&host_path, "/root/foo.txt"),
+		output: Output::Buffer,
+		stats: true,
+		file_mapping: uhyvefilemap_params,
+		#[cfg(target_os = "linux")]
+		file_isolation: strict_sandbox(),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
+		..Default::default()
+	};
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let res = run_vm_in_thread(bin_path, params);
+	verify_file_equals(&host_file_path, "Hello, world!");
+	remove_file_if_exists(&host_file_path);
+	check_result(&res);
+}
+
+/// Checks UhyveFileMap temporary directory functionality.
+/// (No mappings present.)
+#[test]
+fn create_write_unmapped_nonpresent_file() {
+	env_logger::try_init().ok();
+
+	let testname: &'static str = "create_write_unmapped_nonpresent_file";
+	let filename = generate_filename(testname);
+
+	let guest_dir_path: PathBuf = PathBuf::from("/root/");
+	let mut guest_file_path = guest_dir_path.clone();
+	guest_file_path.push(&filename);
+
+	let params = Params {
+		cpu_count: 2.try_into().unwrap(),
+		memory_size: Byte::from_u64_with_unit(64, Unit::MiB)
+			.unwrap()
+			.try_into()
+			.unwrap(),
 		output: Output::Buffer,
 		stats: true,
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
-	let bin_path: PathBuf = build_hermit_bin("create_file");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
-	verify_file_equals(&host_path, "Hello, world!");
 }
 
+/// Guest attempts to remove file created by host.
+/// (File directly mapped.)
+///
 /// Should this test ever fail, it is probably because of a regression
 /// involving a misconfiguration in Landlock.
 #[test]
-#[serial]
 fn remove_mapped_present_file() {
 	env_logger::try_init().ok();
-	let mut host_path = get_fs_fixture_path();
-	host_path.push("ignore_everything_here");
-	host_path.push("file_to_remove.txt");
-	remove_file_if_exists(&host_path);
-	File::create(&host_path).unwrap();
+
+	let testname: &'static str = "remove_mapped_present_file";
+	let filename = generate_filename(testname);
+
+	let guest_dir_path: PathBuf = PathBuf::from("/root/");
+	let mut host_dir_path = get_fs_fixture_path();
+	host_dir_path.push("ignore_everything_here");
+
+	let mut guest_file_path = guest_dir_path;
+	guest_file_path.push(&filename);
+	let mut host_file_path = host_dir_path;
+	host_file_path.push(&filename);
+
+	// The file is created on the host, and passed to UhyveFileMap.
+	File::create(&host_file_path).unwrap();
+
+	let uhyvefilemap_params = create_filemap_params(&host_file_path, &guest_file_path);
 
 	let params = Params {
 		cpu_count: 2.try_into().unwrap(),
@@ -154,33 +211,47 @@ fn remove_mapped_present_file() {
 			.unwrap()
 			.try_into()
 			.unwrap(),
-		file_mapping: create_uhyvefilemap_params(&host_path, "/root/file_to_remove.txt"),
+		file_mapping: uhyvefilemap_params,
 		output: Output::Buffer,
 		stats: true,
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
-	assert!(host_path.exists());
-	let bin_path: PathBuf = build_hermit_bin("remove_file");
+	assert!(host_file_path.exists());
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
-	assert!(!host_path.exists());
+	assert!(!host_file_path.exists());
 }
 
+/// Guest attempts to remove file created by host.
+/// (The file is present in a mapped parent directory.)
+///
 /// Should this test ever fail, it is probably either because of a misconfiguration in Landlock
 /// or because of a UhyveFileMap regression.
 #[test]
-#[serial]
 fn remove_mapped_parent_present_file() {
 	env_logger::try_init().ok();
-	let mut host_path = get_fs_fixture_path();
-	host_path.push("ignore_everything_here");
-	let mut file_to_remove = host_path.clone();
-	file_to_remove.push("file_to_remove.txt");
-	remove_file_if_exists(&file_to_remove);
-	File::create(&file_to_remove).unwrap();
+
+	let testname: &'static str = "remove_mapped_parent_present_file";
+	let filename = generate_filename(testname);
+
+	let guest_dir_path: PathBuf = PathBuf::from("/root/");
+	let mut host_dir_path = get_fs_fixture_path();
+	host_dir_path.push("ignore_everything_here");
+
+	let mut guest_file_path = guest_dir_path.clone();
+	guest_file_path.push(&filename);
+	let mut host_file_path = host_dir_path.clone();
+	host_file_path.push(&filename);
+
+	// The file is created on the host, and passed to UhyveFileMap.
+	File::create(&host_file_path).unwrap();
+
+	let uhyvefilemap_params = create_filemap_params(&host_dir_path, &guest_dir_path);
 
 	let params = Params {
 		cpu_count: 2.try_into().unwrap(),
@@ -188,100 +259,52 @@ fn remove_mapped_parent_present_file() {
 			.unwrap()
 			.try_into()
 			.unwrap(),
-		file_mapping: create_uhyvefilemap_params(&host_path, "/root"),
+		file_mapping: uhyvefilemap_params,
 		output: Output::Buffer,
 		stats: true,
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
-	assert!(file_to_remove.exists());
-	let bin_path: PathBuf = build_hermit_bin("remove_file");
+	assert!(host_file_path.exists());
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
-	assert!(!file_to_remove.exists());
+	assert!(!host_file_path.exists());
 }
 
 /// This checks whether UhyveFileMap rejects unlink calls to unmapped files that do not exist.
 /// Unlike other tests, the VM should not return a success code (0).
 #[test]
-#[serial]
 fn remove_nonpresent_file_test() {
 	// kernel tries to open a non-present file, so uhyve will reject the hypercall and the kernel
 	// will panic.
 	env_logger::try_init().ok();
-	let bin_path = build_hermit_bin("remove_file");
-	let res = run_simple_vm(bin_path);
-	assert_ne!(res.code, 0);
-}
 
-/// Checks whether an unmapped file written from the VM itself can be removed by the VM.
-/// This test might break if a regression, which affects the tempdir, hypercall or Landlock components,
-/// appears.
-#[test]
-#[serial]
-fn create_and_remove_unmapped_file_test() {
-	env_logger::try_init().ok();
+	let testname: &'static str = "remove_nonpresent_file_test";
+	let filename = generate_filename(testname);
+
+	let guest_dir_path: PathBuf = PathBuf::from("/root/");
+	let mut guest_file_path = guest_dir_path;
+	guest_file_path.push(&filename);
 
 	let params = Params {
 		cpu_count: 2.try_into().unwrap(),
-		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
+		memory_size: Byte::from_u64_with_unit(64, Unit::MiB)
 			.unwrap()
 			.try_into()
 			.unwrap(),
+		output: Output::Buffer,
+		stats: true,
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
-	let bin_path: PathBuf = build_hermit_bin("open_close_remove_file");
-	let res = run_vm_in_thread(bin_path, params);
-	check_result(&res);
-}
-
-/// Tests whether the file descriptor sandbox works correctly, by unlinking an open
-/// file on the host before the file descriptor of that said file is closed.
-#[test]
-#[serial]
-fn test_fd_open_remove_close() {
-	env_logger::try_init().ok();
-
-	let params = Params {
-		cpu_count: 2.try_into().unwrap(),
-		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
-			.unwrap()
-			.try_into()
-			.unwrap(),
-		#[cfg(target_os = "linux")]
-		file_isolation: strict_sandbox(),
-		..Default::default()
-	};
-
-	let bin_path: PathBuf = build_hermit_bin("open_remove_close_file");
-	let res = run_vm_in_thread(bin_path, params);
-	check_result(&res);
-}
-
-/// Tests whether the file descriptor sandbox works correctly, by unlinking an open
-/// file on the host before the file descriptor of that said file is closed.
-#[test]
-#[serial]
-fn test_fd_open_remove_close_remove() {
-	env_logger::try_init().ok();
-
-	let params = Params {
-		cpu_count: 2.try_into().unwrap(),
-		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
-			.unwrap()
-			.try_into()
-			.unwrap(),
-		#[cfg(target_os = "linux")]
-		file_isolation: strict_sandbox(),
-		..Default::default()
-	};
-
-	let bin_path: PathBuf = build_hermit_bin("open_remove_close_remove_file");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	assert_ne!(res.code, 0);
 }
@@ -289,9 +312,15 @@ fn test_fd_open_remove_close_remove() {
 /// Tests whether the file descriptor sandbox works correctly, by unlinking an open
 /// file on the host before the file descriptor of that said file is closed.
 #[test]
-#[serial]
-fn test_fd_open_remove_remove_close_file() {
+fn fd_open_remove_close() {
 	env_logger::try_init().ok();
+
+	let testname: &'static str = "fd_open_remove_close";
+	let filename = generate_filename(testname);
+
+	let guest_dir_path: PathBuf = PathBuf::from("/root/");
+	let mut guest_file_path = guest_dir_path;
+	guest_file_path.push(&filename);
 
 	let params = Params {
 		cpu_count: 2.try_into().unwrap(),
@@ -301,10 +330,71 @@ fn test_fd_open_remove_remove_close_file() {
 			.unwrap(),
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
-	let bin_path: PathBuf = build_hermit_bin("open_remove_remove_close_file");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let res = run_vm_in_thread(bin_path, params);
+	check_result(&res);
+}
+
+/// fd sandbox test: Unlinks a file with a still-open file descriptor.
+/// Then unlinks again, after the file descriptor is closed.
+#[test]
+fn fd_open_remove_before_and_after_closing() {
+	env_logger::try_init().ok();
+
+	let testname: &'static str = "fd_open_remove_before_and_after_closing";
+	let filename = generate_filename(testname);
+
+	let guest_dir_path: PathBuf = PathBuf::from("/root/");
+	let mut guest_file_path = guest_dir_path;
+	guest_file_path.push(&filename);
+
+	let params = Params {
+		cpu_count: 2.try_into().unwrap(),
+		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
+			.unwrap()
+			.try_into()
+			.unwrap(),
+		#[cfg(target_os = "linux")]
+		file_isolation: strict_sandbox(),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
+		..Default::default()
+	};
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let res = run_vm_in_thread(bin_path, params);
+	assert_ne!(res.code, 0);
+}
+
+/// fd sandbox test: Unlinks an open file on the host twice, before the
+/// file descriptor of that said file is closed.
+#[test]
+fn fd_remove_twice_before_closing() {
+	env_logger::try_init().ok();
+
+	let testname: &'static str = "fd_remove_twice_before_closing";
+	let filename = generate_filename(testname);
+
+	let guest_dir_path: PathBuf = PathBuf::from("/root/");
+	let mut guest_file_path = guest_dir_path;
+	guest_file_path.push(&filename);
+
+	let params = Params {
+		cpu_count: 2.try_into().unwrap(),
+		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
+			.unwrap()
+			.try_into()
+			.unwrap(),
+		#[cfg(target_os = "linux")]
+		file_isolation: strict_sandbox(),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
+		..Default::default()
+	};
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	assert_ne!(res.code, 0);
 }
@@ -316,8 +406,7 @@ fn test_fd_open_remove_remove_close_file() {
 ///   (It shouldn't be able to do so!)
 /// - the guest can write to a leaked, yet valid file descriptor.
 #[test]
-#[serial]
-fn test_fd_write_to_fd() {
+fn fd_write_to_fd() {
 	env_logger::try_init().ok();
 
 	let params = Params {
