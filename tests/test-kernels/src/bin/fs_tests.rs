@@ -95,11 +95,13 @@ fn remove_twice_before_closing(filename: &str) {
 }
 
 fn main() {
-	let testname = env::var("TESTNAME").ok().unwrap();
-	let filename = env::var("FILEPATH").ok().unwrap();
-	println!("Hello from open_close_env (test: {})!", testname);
+	let args: Vec<String> = env::args().collect();
+	let testname = &args[1].split('=').collect::<Vec<_>>()[1];
+	let filename = &args[2].split('=').collect::<Vec<_>>()[1];
 
-	match testname.as_str() {
+	println!("Hello from fs_tests (test: {})!", testname);
+
+	match *testname {
 		"create_mapped_parent_nonpresent_file" => create_rw_remove_file(&filename),
 		"create_write_unmapped_nonpresent_file" => create_rw_remove_file(&filename),
 		"create_write_mapped_nonpresent_file" => create_rw_file(&filename),

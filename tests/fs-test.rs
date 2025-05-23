@@ -1,7 +1,6 @@
 mod common;
 
 use std::{
-	collections::HashMap,
 	fs::{File, read_to_string},
 	path::PathBuf,
 };
@@ -13,7 +12,7 @@ use common::{
 	build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists, run_vm_in_thread,
 };
 use rand::{Rng, distr::Alphanumeric};
-use uhyvelib::params::{EnvVars, Output, Params};
+use uhyvelib::params::{Output, Params};
 
 /// Verifies successful file creation on the host OS and its contents.
 pub fn verify_file_equals(testfile: &PathBuf, contents: &str) {
@@ -43,11 +42,13 @@ fn create_filemap_params<T: AsStr, U: AsStr>(host_path: T, guest_path: U) -> Vec
 	[format!("{}:{}", host_path.as_str(), guest_path.as_str())].to_vec()
 }
 
-fn create_envvars<T: AsStr, U: AsStr>(testname: T, filepath: U) -> EnvVars {
-	EnvVars::Set(HashMap::from([
-		("TESTNAME".to_owned(), testname.as_str().to_owned()),
-		("FILEPATH".to_owned(), filepath.as_str().to_owned()),
-	]))
+fn create_kernel_args<T: AsStr, U: AsStr>(testname: T, filepath: U) -> Vec<String> {
+	[
+		("--".to_owned()),
+		("testname=".to_owned() + testname.as_str()),
+		("filepath=".to_owned() + filepath.as_str()),
+	]
+	.to_vec()
 }
 
 /// Generates a filename in the format of prefixab1cD23.txt
@@ -94,11 +95,11 @@ fn create_mapped_parent_nonpresent_file() {
 		file_mapping: uhyvefilemap_params,
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
-		env: create_envvars(testname, &guest_file_path),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
-	let bin_path: PathBuf = build_hermit_bin("fs_test");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	remove_file_if_exists(&host_file_path);
 	check_result(&res);
@@ -135,11 +136,11 @@ fn create_write_mapped_nonpresent_file() {
 		file_mapping: uhyvefilemap_params,
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
-		env: create_envvars(testname, &guest_file_path),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
-	let bin_path: PathBuf = build_hermit_bin("fs_test");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	verify_file_equals(&host_file_path, "Hello, world!");
 	remove_file_if_exists(&host_file_path);
@@ -169,11 +170,11 @@ fn create_write_unmapped_nonpresent_file() {
 		stats: true,
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
-		env: create_envvars(testname, &guest_file_path),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
-	let bin_path: PathBuf = build_hermit_bin("fs_test");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 }
@@ -215,12 +216,12 @@ fn remove_mapped_present_file() {
 		stats: true,
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
-		env: create_envvars(testname, &guest_file_path),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
 	assert!(host_file_path.exists());
-	let bin_path: PathBuf = build_hermit_bin("fs_test");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 	assert!(!host_file_path.exists());
@@ -263,12 +264,12 @@ fn remove_mapped_parent_present_file() {
 		stats: true,
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
-		env: create_envvars(testname, &guest_file_path),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
 	assert!(host_file_path.exists());
-	let bin_path: PathBuf = build_hermit_bin("fs_test");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 	assert!(!host_file_path.exists());
@@ -299,11 +300,11 @@ fn remove_nonpresent_file_test() {
 		stats: true,
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
-		env: create_envvars(testname, &guest_file_path),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
-	let bin_path: PathBuf = build_hermit_bin("fs_test");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	assert_ne!(res.code, 0);
 }
@@ -329,11 +330,11 @@ fn fd_open_remove_close() {
 			.unwrap(),
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
-		env: create_envvars(testname, &guest_file_path),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
-	let bin_path: PathBuf = build_hermit_bin("fs_test");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 }
@@ -359,11 +360,11 @@ fn fd_open_remove_before_and_after_closing() {
 			.unwrap(),
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
-		env: create_envvars(testname, &guest_file_path),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
-	let bin_path: PathBuf = build_hermit_bin("fs_test");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	assert_ne!(res.code, 0);
 }
@@ -389,11 +390,11 @@ fn fd_remove_twice_before_closing() {
 			.unwrap(),
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
-		env: create_envvars(testname, &guest_file_path),
+		kernel_args: create_kernel_args(testname, &guest_file_path),
 		..Default::default()
 	};
 
-	let bin_path: PathBuf = build_hermit_bin("fs_test");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	assert_ne!(res.code, 0);
 }
