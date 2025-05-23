@@ -109,9 +109,7 @@ fn main() {
 		"remove_mapped_parent_present_file" => simple_remove_file(filename),
 		"remove_nonpresent_file_test" => simple_remove_file(filename),
 		"fd_open_remove_close" => open_remove_before_closing(filename),
-		"fd_open_remove_before_and_after_closing" => {
-			open_remove_before_and_after_closing(filename)
-		}
+		"fd_open_remove_before_and_after_closing" => open_remove_before_and_after_closing(filename),
 		"fd_remove_twice_before_closing" => remove_twice_before_closing(filename),
 		_ => panic!("test not found"),
 	}
