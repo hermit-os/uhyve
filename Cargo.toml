@@ -71,10 +71,10 @@ tempfile = "3.20.0"
 uuid = { version = "1.16.0", features = ["fast-rng", "v4"]}
 
 [target.'cfg(target_os = "linux")'.dependencies]
-kvm-bindings = "0.11"
-kvm-ioctls = "0.21"
+kvm-bindings = "0.12"
+kvm-ioctls = "0.22"
 landlock = "0.4.2"
-vmm-sys-util = "0.12"
+vmm-sys-util = "0.14"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 xhypervisor = { version = "0.3.0", features = ["macos_15_0_0"] }
