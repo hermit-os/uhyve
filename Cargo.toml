@@ -37,8 +37,9 @@ path = "benches/benchmarks.rs"
 harness = false
 
 [features]
-default = ["aslr"]
+default = ["aslr", "landlock"]
 aslr = ["dep:rand"]
+landlock = ["dep:landlock"]
 instrument = ["rftrace", "rftrace-frontend"]
 
 [dependencies]
@@ -73,7 +74,7 @@ uuid = { version = "1.17.0", features = ["fast-rng", "v4"]}
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.12"
 kvm-ioctls = "0.22"
-landlock = "0.4.2"
+landlock = { version = "0.4.2", optional = true }
 vmm-sys-util = "0.14"
 
 [target.'cfg(target_os = "macos")'.dependencies]

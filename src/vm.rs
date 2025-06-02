@@ -34,6 +34,7 @@ use crate::{
 	virtio::*,
 };
 #[cfg(target_os = "linux")]
+#[cfg(feature = "landlock")]
 use crate::{isolation::landlock::initialize, params::FileSandboxMode};
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
@@ -206,6 +207,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		// Takes place before the kernel is actually loaded.
 		#[cfg(target_os = "linux")]
+		#[cfg(feature = "landlock")]
 		Self::landlock_init(
 			&params,
 			&file_mapping.lock().unwrap(),
@@ -305,6 +307,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	}
 
 	#[cfg(target_os = "linux")]
+	#[cfg(feature = "landlock")]
 	pub fn landlock_init(params: &Params, file_map: &UhyveFileMap, kernel_path: &str) {
 		if params.file_isolation != FileSandboxMode::None {
 			debug!("Attempting to initialize Landlock...");

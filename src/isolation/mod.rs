@@ -1,6 +1,7 @@
 pub mod fd;
 pub mod filemap;
 #[cfg(target_os = "linux")]
+#[cfg(feature = "landlock")]
 pub mod landlock;
 pub mod tempdir;
 
