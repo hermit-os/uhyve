@@ -72,7 +72,7 @@ impl Fdt {
 
 	#[cfg(target_arch = "aarch64")]
 	fn cpu(&mut self, id: u32) -> FdtWriterResult<()> {
-		let node_name = format!("cpu@{}", id);
+		let node_name = format!("cpu@{id}");
 
 		let cpu_node = self.writer.begin_node(&node_name)?;
 		self.writer
@@ -85,7 +85,7 @@ impl Fdt {
 
 	#[cfg(target_arch = "aarch64")]
 	fn its(&mut self) -> FdtWriterResult<()> {
-		let node_name = format!("its@{:x}", MSI_BASE_ADDRESS);
+		let node_name = format!("its@{MSI_BASE_ADDRESS:x}");
 		let reg = &[MSI_BASE_ADDRESS, MSI_SIZE.try_into().unwrap()][..];
 
 		let its_node = self.writer.begin_node(&node_name)?;
@@ -138,7 +138,7 @@ impl Fdt {
 
 	#[cfg(target_arch = "aarch64")]
 	pub fn gic(mut self) -> FdtWriterResult<Self> {
-		let node_name = format!("intc@{:x}", GICD_BASE_ADDRESS);
+		let node_name = format!("intc@{GICD_BASE_ADDRESS:x}");
 		let reg = &[
 			GICD_BASE_ADDRESS,
 			GICD_SIZE.try_into().unwrap(),

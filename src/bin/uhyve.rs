@@ -360,11 +360,9 @@ fn run_uhyve() -> i32 {
 	let vm = UhyveVm::new(kernel_path, params).unwrap_or_else(|e| panic!("Error: {e}"));
 
 	let res = vm.run(affinity);
-	if stats {
-		if let Some(stats) = res.stats {
-			println!("Run statistics:");
-			println!("{stats}");
-		}
+	if stats && let Some(stats) = res.stats {
+		println!("Run statistics:");
+		println!("{stats}");
 	}
 	res.code
 }

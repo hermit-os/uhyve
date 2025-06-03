@@ -339,20 +339,20 @@ impl VirtualCPU for XhyveCpu {
 								#[allow(clippy::match_single_binding)]
 								match addr {
 									_ => {
-										error!("Unable to handle exception {:?}", exception);
+										error!("Unable to handle exception {exception:?}");
 										self.print_registers();
 										return Err(xhypervisor::Error::Error.into());
 									}
 								}
 							}
 						} else {
-							error!("Unsupported exception class: 0x{:x}", ec);
+							error!("Unsupported exception class: 0x{ec:x}");
 							self.print_registers();
 							return Err(xhypervisor::Error::Error.into());
 						}
 					}
 					_ => {
-						error!("Unknown exit reason: {:?}", reason);
+						error!("Unknown exit reason: {reason:?}");
 						return Err(xhypervisor::Error::Error.into());
 					}
 				}
@@ -381,7 +381,7 @@ impl VirtualCPU for XhyveCpu {
 
 	fn print_registers(&self) {
 		if let Some(vcpu) = &self.vcpu {
-			println!("{:?}", vcpu);
+			println!("{vcpu:?}");
 		}
 	}
 
