@@ -3,6 +3,8 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::useless_conversion)]
 
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 #[macro_use]
@@ -48,6 +50,9 @@ pub enum HypervisorError {
 
 	#[error("IO Error: {0}")]
 	IOError(#[from] std::io::Error),
+
+	#[error("Invalid kernel path ({0})")]
+	InvalidKernelPath(PathBuf),
 
 	#[error("Kernel Loading Error: {0}")]
 	LoadedKernelError(#[from] vm::LoadKernelError),

@@ -136,7 +136,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
 		let memory_size = params.memory_size.get();
 
-		let elf = fs::read(&kernel_path)?;
+		let elf = fs::read(&kernel_path)
+			.map_err(|_e| HypervisorError::InvalidKernelPath(kernel_path.clone()))?;
 		let object: KernelObject<'_> =
 			KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
