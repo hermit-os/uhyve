@@ -357,8 +357,7 @@ fn run_uhyve() -> i32 {
 	let affinity = args.cpu_args.clone().get_affinity(&mut app);
 	let params = Params::from(args);
 
-	let vm = UhyveVm::new(kernel_path, params)
-		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated? Is hypervisor signed on macOS?");
+	let vm = UhyveVm::new(kernel_path, params).unwrap_or_else(|e| panic!("Error: {e}"));
 
 	let res = vm.run(affinity);
 	if stats {
