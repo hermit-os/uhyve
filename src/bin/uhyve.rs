@@ -361,11 +361,9 @@ fn run_uhyve() -> i32 {
 		.expect("Unable to create VM! Is the hypervisor interface (e.g. KVM) activated? Is hypervisor signed on macOS?");
 
 	let res = vm.run(affinity);
-	if stats {
-		if let Some(stats) = res.stats {
-			println!("Run statistics:");
-			println!("{stats}");
-		}
+	if stats && let Some(stats) = res.stats {
+		println!("Run statistics:");
+		println!("{stats}");
 	}
 	res.code
 }
