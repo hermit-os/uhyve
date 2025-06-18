@@ -402,14 +402,12 @@ impl VirtualCPU for KvmCpu {
 
 						match port {
 							PCI_CONFIG_DATA_PORT => {
-								if let Some(pci_addr) = self.pci_addr {
-									if pci_addr & 0x1ff800 == 0 {
-										let virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										virtio_device.handle_read(pci_addr & 0x3ff, addr);
-									} else {
-										unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
-									}
+								if let Some(pci_addr) = self.pci_addr
+									&& pci_addr & 0x1ff800 == 0
+								{
+									let virtio_device =
+										self.peripherals.virtio_device.lock().unwrap();
+									virtio_device.handle_read(pci_addr & 0x3ff, addr);
 								} else {
 									unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
 								}
@@ -543,12 +541,12 @@ impl VirtualCPU for KvmCpu {
 							match port {
 								//TODO:
 								PCI_CONFIG_DATA_PORT => {
-									if let Some(pci_addr) = self.pci_addr {
-										if pci_addr & 0x1ff800 == 0 {
-											let mut virtio_device =
-												self.peripherals.virtio_device.lock().unwrap();
-											virtio_device.handle_write(pci_addr & 0x3ff, addr);
-										}
+									if let Some(pci_addr) = self.pci_addr
+										&& pci_addr & 0x1ff800 == 0
+									{
+										let mut virtio_device =
+											self.peripherals.virtio_device.lock().unwrap();
+										virtio_device.handle_write(pci_addr & 0x3ff, addr);
 									}
 								}
 								PCI_CONFIG_ADDRESS_PORT => {
