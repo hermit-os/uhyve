@@ -16,22 +16,27 @@ use uhyvelib::{
 };
 
 #[cfg(feature = "instrument")]
+extern crate rftrace as _;
+#[cfg(feature = "instrument")]
+use rftrace_frontend as rftrace;
+
+#[cfg(feature = "instrument")]
 fn setup_trace() {
-	use rftrace_frontend::Events;
+	use rftrace::Events;
 
 	static mut EVENTS: Option<&mut Events> = None;
 
+	#[allow(static_mut_refs)]
 	extern "C" fn dump_trace() {
 		unsafe {
 			if let Some(e) = &mut EVENTS {
-				rftrace_frontend::dump_full_uftrace(e, "uhyve_trace", "uhyve", true)
-					.expect("Saving trace failed");
+				rftrace::dump_full_uftrace(e, "uhyve_trace", "uhyve").expect("Saving trace failed");
 			}
 		}
 	}
 
 	let events = rftrace_frontend::init(1000000, true);
-	rftrace_frontend::enable();
+	rftrace::enable();
 
 	unsafe {
 		EVENTS = Some(events);
