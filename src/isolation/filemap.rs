@@ -98,8 +98,8 @@ impl UhyveFileMap {
 
 	/// Returns the path to the temporary directory (for Landlock).
 	#[cfg(target_os = "linux")]
-	pub(crate) fn get_temp_dir(&self) -> Option<&str> {
-		self.tempdir.path().to_str()
+	pub(crate) fn get_temp_dir(&self) -> &Path {
+		self.tempdir.path()
 	}
 
 	/// Inserts an opened temporary file into the file map. Returns a CString so that
