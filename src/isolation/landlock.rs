@@ -1,5 +1,5 @@
 use std::{
-	ffi::OsString,
+	ffi::OsStr,
 	io::{Error, ErrorKind},
 	os::fd::{AsFd, AsRawFd, RawFd},
 	path::PathBuf,
@@ -207,11 +207,10 @@ impl UhyveLandlockWrapper {
 /// VMs the ability to remove them. See
 /// [`apply_landlock_restrictions`](crate::isolation::landlock::UhyveLandlockWrapper::apply_landlock_restrictions).
 ///
-/// * `host_path` - Path whose parent directory should be derived
-fn get_file_or_parent(host_path: &OsString) -> Result<PathBuf, Error> {
+/// * `host_pathbuf` - Path whose parent directory should be derived
+fn get_file_or_parent(mut host_pathbuf: PathBuf) -> Result<PathBuf, Error> {
 	// TODO: Make iteration amount configurable
 	let iterations = 2;
-	let mut host_pathbuf: PathBuf = host_path.into();
 	for i in 0..iterations {
 		if !host_pathbuf.exists() {
 			warn!("Mapped file {host_pathbuf:#?} not found. Popping...");
@@ -272,13 +271,16 @@ fn is_file(rawfd: RawFd) -> bool {
 /// * `output` - Output of Uhyve, used for adding file outputs to Landlock (if applicable)
 /// * `host_paths` - List of host paths derived from mappings by the user
 /// * `temp_dir` - Location of the temporary directory for unmapped files
-pub(crate) fn initialize(
+pub(crate) fn initialize<'hpi, HPI>(
 	sandbox_mode: FileSandboxMode,
 	kernel_path: String,
 	output: &crate::params::Output,
-	host_paths: &[OsString],
+	host_paths: HPI,
 	temp_dir: PathBuf,
-) -> UhyveLandlockWrapper {
+) -> UhyveLandlockWrapper
+where
+	HPI: Iterator<Item = &'hpi OsStr>,
+{
 	// This segment adds certain paths necessary for Uhyve to function before we
 	// enforce Landlock, such as the kernel path and a couple of paths useful for sysinfo.
 	//
@@ -294,17 +296,17 @@ pub(crate) fn initialize(
 	let mut uhyve_rw_paths: Vec<PathBuf> = vec![PathBuf::from("/dev/kvm")];
 	let mut uhyve_ro_dirs = Vec::new();
 
-	host_paths.iter().for_each(|host_path| {
+	for host_path in host_paths {
 		let host_pathbuf = PathBuf::from(host_path);
 		if host_pathbuf.exists() {
-			uhyve_rw_paths.push(host_pathbuf.clone());
-			if let Some(parent_dir) = PathBuf::from(host_pathbuf).parent() {
+			if let Some(parent_dir) = host_pathbuf.parent() {
 				uhyve_ro_dirs.push(parent_dir.to_path_buf());
 			}
+			uhyve_rw_paths.push(host_pathbuf);
 		} else {
-			uhyve_rw_paths.push(get_file_or_parent(host_path).unwrap());
+			uhyve_rw_paths.push(get_file_or_parent(host_pathbuf).unwrap());
 		}
-	});
+	}
 
 	if let crate::params::Output::File(path) = output {
 		uhyve_rw_paths.push(path.to_owned());
@@ -313,7 +315,7 @@ pub(crate) fn initialize(
 	if let Some(tmp) = temp_dir.parent() {
 		uhyve_ro_dirs.push(tmp.to_owned());
 	}
-	uhyve_rw_paths.push(temp_dir.clone());
+	uhyve_rw_paths.push(temp_dir);
 
 	UhyveLandlockWrapper::new(sandbox_mode, uhyve_rw_paths, uhyve_ro_paths, uhyve_ro_dirs)
 }
@@ -327,7 +329,7 @@ mod tests {
 	#[test]
 	fn test_get_file_or_parent() {
 		assert_eq!(
-			get_file_or_parent(&OsString::from("/dev/zero"))
+			get_file_or_parent(PathBuf::from("/dev/zero"))
 				.unwrap()
 				.display()
 				.to_string(),
@@ -335,7 +337,7 @@ mod tests {
 		);
 
 		assert_eq!(
-			get_file_or_parent(&OsString::from("/dev/doesntexist"))
+			get_file_or_parent(PathBuf::from("/dev/doesntexist"))
 				.unwrap()
 				.display()
 				.to_string(),
@@ -343,7 +345,7 @@ mod tests {
 		);
 
 		assert_eq!(
-			get_file_or_parent(&OsString::from("/dev/zero/doesntexist"))
+			get_file_or_parent(PathBuf::from("/dev/zero/doesntexist"))
 				.err()
 				.unwrap()
 				.kind(),

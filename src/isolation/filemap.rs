@@ -90,8 +90,8 @@ impl UhyveFileMap {
 
 	/// Returns an array of all host paths (for Landlock).
 	#[cfg(target_os = "linux")]
-	pub(crate) fn get_all_host_paths(&self) -> Vec<OsString> {
-		self.files.clone().into_values().collect::<Vec<_>>()
+	pub(crate) fn get_all_host_paths(&self) -> impl Iterator<Item = &std::ffi::OsStr> {
+		self.files.values().map(|i| i.as_os_str())
 	}
 
 	/// Returns the path to the temporary directory (for Landlock).

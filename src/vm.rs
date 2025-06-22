@@ -315,7 +315,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 				params.file_isolation,
 				kernel_path.to_owned(),
 				&params.output,
-				&host_paths,
+				host_paths,
 				temp_dir,
 			);
 			landlock.apply_landlock_restrictions();
