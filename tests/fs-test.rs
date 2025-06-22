@@ -71,7 +71,7 @@ fn get_testname_derived_guest_path(test_name: &str) -> PathBuf {
 
 // Creates a vector out of a given host path and guest path for UhyveFileMap.
 fn create_filemap_params<T: AsStr, U: AsStr>(host_path: T, guest_path: U) -> Vec<String> {
-	[format!("{}:{}", host_path.as_str(), guest_path.as_str())].to_vec()
+	vec![format!("{}:{}", host_path.as_str(), guest_path.as_str())]
 }
 
 /// Creates kernel arguments for fs-tests.
@@ -79,12 +79,11 @@ fn create_filemap_params<T: AsStr, U: AsStr>(host_path: T, guest_path: U) -> Vec
 /// * `test_name` - Name of the test.
 /// * `file_path` - This parameter defines the guest path that the kernel will open.
 fn create_kernel_args<T: AsStr, U: AsStr>(test_name: T, file_path: U) -> Vec<String> {
-	[
-		("--".to_owned()),
-		("testname=".to_owned() + test_name.as_str()),
-		("filepath=".to_owned() + file_path.as_str()),
+	vec![
+		"--".to_owned(),
+		"testname=".to_owned() + test_name.as_str(),
+		"filepath=".to_owned() + file_path.as_str(),
 	]
-	.to_vec()
 }
 
 /// Generates a set of parameters to boot the VM with.
