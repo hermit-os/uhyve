@@ -288,7 +288,7 @@ impl VirtioNetPciDevice {
 		}
 	}
 
-	pub fn read_requested_features(&mut self, dest: &mut [u8]) {
+	pub fn read_requested_features(&self, dest: &mut [u8]) {
 		if self.read_status_reg() == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
 			let bytes = self.requested_features.to_ne_bytes();
 			dest[0..(bytes.len())].clone_from_slice(&bytes[..]);
