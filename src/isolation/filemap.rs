@@ -3,7 +3,7 @@ use std::{
 	ffi::{CString, OsString},
 	fs::canonicalize,
 	os::unix::ffi::OsStrExt,
-	path::PathBuf,
+	path::{Path, PathBuf},
 };
 
 use clean_path::clean;
@@ -43,17 +43,19 @@ impl UhyveFileMap {
 	/// Returns the host_path on the host filesystem given a requested guest_path, if it exists.
 	///
 	/// * `guest_path` - The guest path that is to be looked up in the map.
-	pub fn get_host_path(&mut self, guest_path: &str) -> Option<OsString> {
+	pub fn get_host_path(&self, guest_path: &str) -> Option<OsString> {
+		let try_resolve_path = |path: &Path| {
+			path.to_str()
+				.and_then(|requested_path| self.files.get(requested_path))
+		};
+
 		// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
 		// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
 		let requested_guest_pathbuf = clean(guest_path);
-		let host_path = self
-			.files
-			.get(&requested_guest_pathbuf.display().to_string())
-			.map(OsString::from);
-		trace!("get_host_path (host_path): {host_path:#?}");
-		if host_path.is_some() {
-			host_path
+		if let Some(host_path) = try_resolve_path(&requested_guest_pathbuf) {
+			let host_path = OsString::from(host_path);
+			trace!("get_host_path (host_path): {host_path:#?}");
+			Some(host_path)
 		} else {
 			debug!("Guest requested to open a path that was not mapped.");
 			if self.files.is_empty() {
@@ -67,9 +69,7 @@ impl UhyveFileMap {
 					// If one of the guest paths' parent directories (parent_host) is mapped,
 					// use the mapped host path and push the "remainder" (the path's components
 					// that come after the mapped guest path) onto the host path.
-					if let Some(parent_host) =
-						self.files.get(searched_parent_guest.to_str().unwrap())
-					{
+					if let Some(parent_host) = try_resolve_path(searched_parent_guest) {
 						let mut host_path = PathBuf::from(parent_host);
 						let guest_path_remainder = requested_guest_pathbuf
 							.strip_prefix(searched_parent_guest)
@@ -96,8 +96,8 @@ impl UhyveFileMap {
 
 	/// Returns the path to the temporary directory (for Landlock).
 	#[cfg(target_os = "linux")]
-	pub(crate) fn get_temp_dir(&self) -> Option<String> {
-		self.tempdir.path().to_str().map(String::from)
+	pub(crate) fn get_temp_dir(&self) -> Option<&str> {
+		self.tempdir.path().to_str()
 	}
 
 	/// Inserts an opened temporary file into the file map. Returns a CString so that
@@ -149,7 +149,7 @@ mod tests {
 			path_prefix.clone() + "/this_symlink_leads_to_a_file" + ":guest_file_symlink",
 		];
 
-		let mut map = UhyveFileMap::new(&map_parameters, &None);
+		let map = UhyveFileMap::new(&map_parameters, &None);
 
 		assert_eq!(
 			map.get_host_path("readme_file.md").unwrap(),
