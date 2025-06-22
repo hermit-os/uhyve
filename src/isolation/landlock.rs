@@ -30,9 +30,9 @@ pub(crate) enum RestrictError {
 /// Interface for Landlock crate.
 #[derive(Clone, Debug)]
 pub(crate) struct UhyveLandlockWrapper {
-	rw_paths: Vec<String>,
-	ro_paths: Vec<String>,
-	ro_dirs: Vec<String>,
+	rw_paths: Vec<PathBuf>,
+	ro_paths: Vec<PathBuf>,
+	ro_dirs: Vec<PathBuf>,
 	compat_level: landlock::CompatLevel,
 }
 
@@ -49,17 +49,17 @@ impl UhyveLandlockWrapper {
 	///   and directories (but won't be readable). See [`Self::enforce_landlock`].
 	fn new(
 		sandbox_mode: FileSandboxMode,
-		rw_paths: &[String],
-		ro_paths: &[String],
-		ro_dirs: &[String],
+		rw_paths: Vec<PathBuf>,
+		ro_paths: Vec<PathBuf>,
+		ro_dirs: Vec<PathBuf>,
 	) -> UhyveLandlockWrapper {
 		#[cfg(not(target_os = "linux"))]
 		compile_error!("Landlock is only available on Linux.");
 
 		UhyveLandlockWrapper {
-			rw_paths: rw_paths.to_vec(),
-			ro_paths: ro_paths.to_vec(),
-			ro_dirs: ro_dirs.to_vec(),
+			rw_paths,
+			ro_paths,
+			ro_dirs,
 			compat_level: Self::determine_compat_level(sandbox_mode),
 		}
 	}
@@ -219,21 +219,24 @@ fn get_file_or_parent(host_path: &OsString) -> Result<PathBuf, Error> {
 			continue;
 		}
 
-		if host_pathbuf.is_dir() {
+		return if host_pathbuf.is_dir() {
 			debug!("Adding directory {host_pathbuf:#?}.");
-			return Ok(host_pathbuf);
+			Ok(host_pathbuf)
 		} else if !host_pathbuf.is_dir() && i == 0 {
 			// "File" means "all paths that don't have a directory on them but exist".
 			debug!("Mapped file {host_pathbuf:#?} found.");
-			return Ok(host_pathbuf);
+			Ok(host_pathbuf)
 		} else {
-			return Err(Error::new(
+			Err(Error::new(
 				ErrorKind::NotADirectory,
 				"Found parent is not a directory.",
-			));
-		}
+			))
+		};
 	}
-	panic!("Mapped file's parent directory not found within {iterations} iterations.");
+	Err(Error::new(
+		ErrorKind::NotFound,
+		format!("Mapped file's parent directory not found within {iterations} iterations."),
+	))
 }
 
 /// Checks whether a raw file descriptor represents a file using [`libc::fstat`].
@@ -273,52 +276,46 @@ pub(crate) fn initialize(
 	sandbox_mode: FileSandboxMode,
 	kernel_path: String,
 	output: &crate::params::Output,
-	host_paths: &mut [OsString],
-	temp_dir: String,
+	host_paths: &[OsString],
+	temp_dir: PathBuf,
 ) -> UhyveLandlockWrapper {
 	// This segment adds certain paths necessary for Uhyve to function before we
 	// enforce Landlock, such as the kernel path and a couple of paths useful for sysinfo.
 	//
 	// See: https://github.com/GuillaumeGomez/sysinfo/blob/8fd58b8/src/unix/linux/cpu.rs#L420
-	let uhyve_ro_paths = [
-		kernel_path,
-		String::from("/etc/"),
-		String::from("/sys/devices/system"),
-		String::from("/proc/cpuinfo"),
-		String::from("/proc/stat"),
-	]
-	.to_vec();
+	let uhyve_ro_paths = vec![
+		kernel_path.into(),
+		PathBuf::from("/etc/"),
+		PathBuf::from("/sys/devices/system"),
+		PathBuf::from("/proc/cpuinfo"),
+		PathBuf::from("/proc/stat"),
+	];
 
-	let mut uhyve_rw_paths: Vec<String> = [String::from("/dev/kvm")].to_vec();
-	let mut uhyve_ro_dirs = Vec::<String>::new();
+	let mut uhyve_rw_paths: Vec<PathBuf> = vec![PathBuf::from("/dev/kvm")];
+	let mut uhyve_ro_dirs = Vec::new();
 
-	host_paths.iter_mut().for_each(|host_path| {
-		let host_pathbuf = PathBuf::from(host_path.clone());
+	host_paths.iter().for_each(|host_path| {
+		let host_pathbuf = PathBuf::from(host_path);
 		if host_pathbuf.exists() {
-			uhyve_rw_paths.push(host_pathbuf.display().to_string());
+			uhyve_rw_paths.push(host_pathbuf.clone());
 			if let Some(parent_dir) = PathBuf::from(host_pathbuf).parent() {
-				uhyve_ro_dirs.push(parent_dir.display().to_string());
+				uhyve_ro_dirs.push(parent_dir.to_path_buf());
 			}
 		} else {
-			uhyve_rw_paths.push(get_file_or_parent(host_path).unwrap().display().to_string());
+			uhyve_rw_paths.push(get_file_or_parent(host_path).unwrap());
 		}
 	});
 
 	if let crate::params::Output::File(path) = output {
-		uhyve_rw_paths.push(path.display().to_string());
+		uhyve_rw_paths.push(path.to_owned());
 	}
 
+	if let Some(tmp) = temp_dir.parent() {
+		uhyve_ro_dirs.push(tmp.to_owned());
+	}
 	uhyve_rw_paths.push(temp_dir.clone());
-	if let Some(tmp) = PathBuf::from(temp_dir).parent() {
-		uhyve_ro_dirs.push(tmp.display().to_string());
-	}
 
-	UhyveLandlockWrapper::new(
-		sandbox_mode,
-		&uhyve_rw_paths,
-		&uhyve_ro_paths,
-		&uhyve_ro_dirs,
-	)
+	UhyveLandlockWrapper::new(sandbox_mode, uhyve_rw_paths, uhyve_ro_paths, uhyve_ro_dirs)
 }
 
 #[cfg(test)]
@@ -358,9 +355,9 @@ mod tests {
 	fn test_landlock_strict_mode() {
 		let landlock = UhyveLandlockWrapper::new(
 			FileSandboxMode::Strict,
-			&["/dev/null".to_string()],
-			&["/dev/zero".to_string()],
-			&["/dev/".to_string()],
+			vec![PathBuf::from("/dev/null")],
+			vec![PathBuf::from("/dev/zero")],
+			vec![PathBuf::from("/dev/")],
 		);
 
 		landlock.apply_landlock_restrictions();

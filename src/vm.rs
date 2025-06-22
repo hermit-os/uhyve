@@ -309,13 +309,13 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn landlock_init(params: &Params, file_map: &UhyveFileMap, kernel_path: &str) {
 		if params.file_isolation != FileSandboxMode::None {
 			debug!("Attempting to initialize Landlock...");
-			let mut host_paths = file_map.get_all_host_paths();
-			let temp_dir = file_map.get_temp_dir().unwrap().to_owned();
+			let host_paths = file_map.get_all_host_paths();
+			let temp_dir = file_map.get_temp_dir().to_owned();
 			let landlock = initialize(
 				params.file_isolation,
 				kernel_path.to_owned(),
 				&params.output,
-				&mut host_paths,
+				&host_paths,
 				temp_dir,
 			);
 			landlock.apply_landlock_restrictions();
