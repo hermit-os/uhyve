@@ -52,7 +52,7 @@ impl UhyveFileDescriptorLayer {
 	//// are always considered to be present and return `true`.
 	///
 	/// * `fd` - File descriptor of to-be-operated file.
-	pub fn is_fd_present(&mut self, fd: RawFd) -> bool {
+	pub fn is_fd_present(&self, fd: RawFd) -> bool {
 		trace!("is_fd_present: {:#?}", &self.fdset);
 		if (fd >= 0 && self.fdset.contains(&fd)) || (0..=2).contains(&fd) {
 			return true;

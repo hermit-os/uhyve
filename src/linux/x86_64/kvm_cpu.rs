@@ -422,8 +422,7 @@ impl VirtualCPU for KvmCpu {
 								virtio_device.read_host_features(addr);
 							}
 							VIRTIO_PCI_GUEST_FEATURES => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
+								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
 								virtio_device.read_requested_features(addr);
 							}
 							VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
