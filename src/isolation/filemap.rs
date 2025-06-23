@@ -2,7 +2,7 @@
 use std::path::Path;
 use std::{
 	collections::HashMap,
-	ffi::{CString, OsString},
+	ffi::{CStr, CString, OsStr, OsString},
 	fs::canonicalize,
 	os::unix::ffi::OsStrExt,
 	path::PathBuf,
@@ -45,11 +45,11 @@ impl UhyveFileMap {
 	/// Returns the host_path on the host filesystem given a requested guest_path, if it exists.
 	///
 	/// * `guest_path` - The guest path that is to be looked up in the map.
-	pub fn get_host_path(&self, guest_path: &str) -> Option<OsString> {
+	pub fn get_host_path(&self, guest_path: &CStr) -> Option<OsString> {
 		// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
 		// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
-		let requested_guest_pathbuf = clean(guest_path);
-		if let Some(host_path) = self.files.get(&requested_guest_pathbuf) {
+		let guest_pathbuf = clean(OsStr::from_bytes(guest_path.to_bytes()));
+		if let Some(host_path) = self.files.get(&guest_pathbuf) {
 			let host_path = OsString::from(host_path);
 			trace!("get_host_path (host_path): {host_path:#?}");
 			Some(host_path)
@@ -60,7 +60,7 @@ impl UhyveFileMap {
 				return None;
 			}
 
-			if let Some(parent_of_guest_path) = requested_guest_pathbuf.parent() {
+			if let Some(parent_of_guest_path) = guest_pathbuf.parent() {
 				debug!("The file is in a child directory, searching for a parent directory...");
 				for searched_parent_guest in parent_of_guest_path.ancestors() {
 					// If one of the guest paths' parent directories (parent_host) is mapped,
@@ -68,9 +68,8 @@ impl UhyveFileMap {
 					// that come after the mapped guest path) onto the host path.
 					if let Some(parent_host) = self.files.get(searched_parent_guest) {
 						let mut host_path = PathBuf::from(parent_host);
-						let guest_path_remainder = requested_guest_pathbuf
-							.strip_prefix(searched_parent_guest)
-							.unwrap();
+						let guest_path_remainder =
+							guest_pathbuf.strip_prefix(searched_parent_guest).unwrap();
 						host_path.push(guest_path_remainder);
 
 						// Handles symbolic links.
@@ -101,11 +100,14 @@ impl UhyveFileMap {
 	/// the file can be directly used by [crate::hypercall::open].
 	///
 	/// * `guest_path` - The requested guest path.
-	pub fn create_temporary_file(&mut self, guest_path: &str) -> CString {
+	pub fn create_temporary_file(&mut self, guest_path: &CStr) -> CString {
 		let host_path = self.tempdir.path().join(Uuid::new_v4().to_string());
 		trace!("create_temporary_file (host_path): {host_path:#?}");
 		let ret = CString::new(host_path.as_os_str().as_bytes()).unwrap();
-		self.files.insert(PathBuf::from(guest_path), host_path);
+		self.files.insert(
+			PathBuf::from(OsStr::from_bytes(guest_path.to_bytes())),
+			host_path,
+		);
 		ret
 	}
 }
@@ -145,31 +147,31 @@ mod tests {
 		let map = UhyveFileMap::new(&map_parameters, &None);
 
 		assert_eq!(
-			map.get_host_path("readme_file.md").unwrap(),
+			map.get_host_path(c"readme_file.md").unwrap(),
 			OsString::from(&map_results[0])
 		);
 		assert_eq!(
-			map.get_host_path("guest_folder").unwrap(),
+			map.get_host_path(c"guest_folder").unwrap(),
 			OsString::from(&map_results[1])
 		);
 		assert_eq!(
-			map.get_host_path("guest_symlink").unwrap(),
+			map.get_host_path(c"guest_symlink").unwrap(),
 			OsString::from(&map_results[2])
 		);
 		assert_eq!(
-			map.get_host_path("guest_dangling_symlink").unwrap(),
+			map.get_host_path(c"guest_dangling_symlink").unwrap(),
 			OsString::from(&map_results[3])
 		);
 		assert_eq!(
-			map.get_host_path("guest_file").unwrap(),
+			map.get_host_path(c"guest_file").unwrap(),
 			OsString::from(&map_results[4])
 		);
 		assert_eq!(
-			map.get_host_path("guest_file_symlink").unwrap(),
+			map.get_host_path(c"guest_file_symlink").unwrap(),
 			OsString::from(&map_results[5])
 		);
 
-		assert!(map.get_host_path("this_file_is_not_mapped").is_none());
+		assert!(map.get_host_path(c"this_file_is_not_mapped").is_none());
 	}
 
 	#[test]
@@ -196,7 +198,11 @@ mod tests {
 		)];
 		let mut map = UhyveFileMap::new(&uhyvefilemap_params, &None);
 
-		let mut found_host_path = map.get_host_path(target_guest_path.clone().to_str().unwrap());
+		let mut found_host_path = map.get_host_path(
+			CString::new(target_guest_path.as_os_str().as_bytes())
+				.unwrap()
+				.as_c_str(),
+		);
 
 		assert_eq!(
 			found_host_path.unwrap(),
@@ -209,7 +215,11 @@ mod tests {
 		target_host_path.pop();
 		target_guest_path.pop();
 
-		found_host_path = map.get_host_path(target_guest_path.to_str().unwrap());
+		found_host_path = map.get_host_path(
+			CString::new(target_guest_path.as_os_str().as_bytes())
+				.unwrap()
+				.as_c_str(),
+		);
 		assert_eq!(
 			found_host_path.unwrap(),
 			target_host_path.as_os_str().to_str().unwrap()
@@ -230,7 +240,11 @@ mod tests {
 		target_guest_path = PathBuf::from("/root/this_symlink_leads_to_a_file");
 		target_host_path = fixture_path.clone();
 		target_host_path.push("this_folder_exists/file_in_folder.txt");
-		found_host_path = map.get_host_path(target_guest_path.to_str().unwrap());
+		found_host_path = map.get_host_path(
+			CString::new(target_guest_path.as_os_str().as_bytes())
+				.unwrap()
+				.as_c_str(),
+		);
 		assert_eq!(
 			found_host_path.unwrap(),
 			target_host_path.as_os_str().to_str().unwrap()
@@ -239,7 +253,11 @@ mod tests {
 		// Tests directory traversal with no maps
 		let empty_array: [String; 0] = [];
 		map = UhyveFileMap::new(&empty_array, &None);
-		found_host_path = map.get_host_path(target_guest_path.to_str().unwrap());
+		found_host_path = map.get_host_path(
+			CString::new(target_guest_path.as_os_str().as_bytes())
+				.unwrap()
+				.as_c_str(),
+		);
 		assert!(found_host_path.is_none());
 	}
 }
