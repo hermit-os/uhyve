@@ -331,17 +331,17 @@ mod tests {
 		assert_eq!(
 			get_file_or_parent(PathBuf::from("/dev/zero"))
 				.unwrap()
-				.display()
-				.to_string(),
-			"/dev/zero".to_string()
+				.to_str()
+				.unwrap(),
+			"/dev/zero"
 		);
 
 		assert_eq!(
 			get_file_or_parent(PathBuf::from("/dev/doesntexist"))
 				.unwrap()
-				.display()
-				.to_string(),
-			"/dev".to_string()
+				.to_str()
+				.unwrap(),
+			"/dev"
 		);
 
 		assert_eq!(
