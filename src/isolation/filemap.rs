@@ -17,7 +17,7 @@ use crate::isolation::{
 /// Wrapper around a `HashMap` to map guest paths to arbitrary host paths and track file descriptors.
 #[derive(Debug)]
 pub struct UhyveFileMap {
-	files: HashMap<String, PathBuf>,
+	files: HashMap<PathBuf, PathBuf>,
 	tempdir: TempDir,
 	pub fdmap: UhyveFileDescriptorLayer,
 }
@@ -44,15 +44,10 @@ impl UhyveFileMap {
 	///
 	/// * `guest_path` - The guest path that is to be looked up in the map.
 	pub fn get_host_path(&self, guest_path: &str) -> Option<OsString> {
-		let try_resolve_path = |path: &Path| {
-			path.to_str()
-				.and_then(|requested_path| self.files.get(requested_path))
-		};
-
 		// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
 		// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
 		let requested_guest_pathbuf = clean(guest_path);
-		if let Some(host_path) = try_resolve_path(&requested_guest_pathbuf) {
+		if let Some(host_path) = self.files.get(&requested_guest_pathbuf) {
 			let host_path = OsString::from(host_path);
 			trace!("get_host_path (host_path): {host_path:#?}");
 			Some(host_path)
@@ -69,7 +64,7 @@ impl UhyveFileMap {
 					// If one of the guest paths' parent directories (parent_host) is mapped,
 					// use the mapped host path and push the "remainder" (the path's components
 					// that come after the mapped guest path) onto the host path.
-					if let Some(parent_host) = try_resolve_path(searched_parent_guest) {
+					if let Some(parent_host) = self.files.get(searched_parent_guest) {
 						let mut host_path = PathBuf::from(parent_host);
 						let guest_path_remainder = requested_guest_pathbuf
 							.strip_prefix(searched_parent_guest)
@@ -108,7 +103,7 @@ impl UhyveFileMap {
 		let host_path = self.tempdir.path().join(Uuid::new_v4().to_string());
 		trace!("create_temporary_file (host_path): {host_path:#?}");
 		let ret = CString::new(host_path.as_os_str().as_bytes()).unwrap();
-		self.files.insert(String::from(guest_path), host_path);
+		self.files.insert(PathBuf::from(guest_path), host_path);
 		ret
 	}
 }
