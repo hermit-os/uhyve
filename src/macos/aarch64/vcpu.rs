@@ -111,12 +111,12 @@ impl VirtualCPU for XhyveCpu {
 	fn thread_local_init(&mut self) -> HypervisorResult<()> {
 		debug!("Initialize VirtualCPU {}", self.id);
 
-		let (entry_point, stack_address, guest_address, cpu_id) = (
-			self.kernel_info.entry_point,
-			self.kernel_info.stack_address,
-			self.kernel_info.guest_address,
-			self.id,
-		);
+		let KernelInfo {
+			entry_point,
+			stack_address,
+			guest_address,
+			..
+		} = &*self.kernel_info;
 
 		// Initialize CPU
 		let vcpu = xhypervisor::VirtualCpu::new(self.id)?;
@@ -126,8 +126,8 @@ impl VirtualCPU for XhyveCpu {
 		vcpu.write_register(Register::CPSR, pstate.bits())?;
 		vcpu.write_register(Register::PC, entry_point.as_u64())?;
 		vcpu.write_system_register(SystemRegister::SP_EL1, stack_address.as_u64())?;
-		vcpu.write_register(Register::X0, (guest_address + BOOT_INFO_OFFSET).as_u64())?;
-		vcpu.write_register(Register::X1, cpu_id.into())?;
+		vcpu.write_register(Register::X0, (*guest_address + BOOT_INFO_OFFSET).as_u64())?;
+		vcpu.write_register(Register::X1, self.id.into())?;
 
 		/*
 		 * Setup memory attribute type tables
@@ -172,7 +172,7 @@ impl VirtualCPU for XhyveCpu {
 		vcpu.write_system_register(SystemRegister::TTBR1_EL1, 0)?;
 		vcpu.write_system_register(
 			SystemRegister::TTBR0_EL1,
-			(guest_address + PGT_OFFSET).as_u64(),
+			(*guest_address + PGT_OFFSET).as_u64(),
 		)?;
 
 		/*

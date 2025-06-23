@@ -265,14 +265,13 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			"gdbstub is only supported with one CPU"
 		);
 
-		let mut vcpus = Vec::with_capacity(cpu_count as usize);
-		for cpu_id in 0..cpu_count {
-			vcpus.push(
+		let vcpus: Vec<_> = (0..cpu_count)
+			.map(|cpu_id| {
 				virt_backend
 					.new_cpu(cpu_id, kernel_info.clone(), kernel_info.params.stats)
-					.unwrap(),
-			)
-		}
+					.unwrap()
+			})
+			.collect();
 
 		let freq = vcpus[0].get_cpu_frequency();
 
@@ -390,15 +389,9 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			.filter_map(|ret| *ret)
 			.count()
 		{
-			0 => panic!(
-				"No return code from any CPU? Maybe all have been kick
-d?"
-			),
+			0 => panic!("No return code from any CPU? Maybe all have been kicked?"),
 			1 => cpu_results[0].0.as_ref().unwrap().unwrap(),
-			_ => panic!(
-				"more than one thread finished with an exit code (code
-: {cpu_results:?})"
-			),
+			_ => panic!("more than one thread finished with an exit code (code: {cpu_results:?})"),
 		};
 
 		let stats: Vec<CpuStats> = cpu_results
