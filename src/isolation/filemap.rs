@@ -19,7 +19,7 @@ use crate::isolation::{
 /// Wrapper around a `HashMap` to map guest paths to arbitrary host paths and track file descriptors.
 #[derive(Debug)]
 pub struct UhyveFileMap {
-	files: HashMap<String, OsString>,
+	files: HashMap<String, PathBuf>,
 	tempdir: TempDir,
 	pub fdmap: UhyveFileDescriptorLayer,
 }
@@ -107,13 +107,9 @@ impl UhyveFileMap {
 	///
 	/// * `guest_path` - The requested guest path.
 	pub fn create_temporary_file(&mut self, guest_path: &str) -> CString {
-		let host_path = self
-			.tempdir
-			.path()
-			.join(Uuid::new_v4().to_string())
-			.into_os_string();
+		let host_path = self.tempdir.path().join(Uuid::new_v4().to_string());
 		trace!("create_temporary_file (host_path): {host_path:#?}");
-		let ret = CString::new(host_path.as_bytes()).unwrap();
+		let ret = CString::new(host_path.as_os_str().as_bytes()).unwrap();
 		self.files.insert(String::from(guest_path), host_path);
 		ret
 	}
