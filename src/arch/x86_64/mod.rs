@@ -99,7 +99,7 @@ mod tests {
 		println!("mmap memory created {mem:x?}");
 
 		init_guest_mem(
-			unsafe { mem.as_slice_mut() }.try_into().unwrap(),
+			unsafe { mem.as_slice_mut() },
 			guest_address,
 			MIN_PHYSMEM_SIZE as u64 * 2,
 			false,
