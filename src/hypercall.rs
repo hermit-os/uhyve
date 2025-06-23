@@ -84,66 +84,58 @@ pub unsafe fn address_to_hypercall(
 /// open `log.txt` again will result in an error.
 pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut UhyveFileMap) {
 	let requested_path = mem.host_address(sysunlink.name).unwrap() as *const i8;
-	if let Ok(guest_path) = unsafe { CStr::from_ptr(requested_path) }.to_str() {
-		if let Some(host_path) = file_map.get_host_path(guest_path) {
-			// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
-			// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
-			let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
-			sysunlink.ret = unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) };
-		} else {
-			error!("The kernel requested to unlink() an unknown path ({guest_path}): Rejecting...");
-			sysunlink.ret = -ENOENT;
-		}
+	let guest_path = unsafe { CStr::from_ptr(requested_path) };
+	sysunlink.ret = if let Some(host_path) = file_map.get_host_path(guest_path) {
+		// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
+		// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
+		let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
+		unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) }
 	} else {
-		error!("The kernel requested to open() a path that is not valid UTF-8. Rejecting...");
-		sysunlink.ret = -EINVAL;
-	}
+		error!("The kernel requested to unlink() an unknown path ({guest_path:?}): Rejecting...");
+		-ENOENT
+	};
 }
 
 /// Handles an open syscall by opening a file on the host.
 pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
 	let requested_path_ptr = mem.host_address(sysopen.name).unwrap() as *const i8;
 	let mut flags = sysopen.flags & ALLOWED_OPEN_FLAGS;
-	if let Ok(guest_path) = unsafe { CStr::from_ptr(requested_path_ptr) }.to_str() {
-		// See: https://lwn.net/Articles/926782/
-		// See: https://github.com/hermit-os/kernel/commit/71bc629
-		if (flags & (O_DIRECTORY | O_CREAT)) == (O_DIRECTORY | O_CREAT) {
-			error!("An open() call used O_DIRECTORY and O_CREAT at the same time. Aborting...");
-			sysopen.ret = -EINVAL;
-			return;
-		}
-
-		if let Some(host_path) = file_map.get_host_path(guest_path) {
-			debug!("{guest_path:#?} found in file map.");
-			// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
-			// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
-			let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
-
-			sysopen.ret =
-				unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode) };
-
-			file_map.fdmap.insert_fd(sysopen.ret);
-		} else {
-			debug!("{guest_path:#?} not found in file map.");
-			if (flags & O_CREAT) == O_CREAT {
-				debug!("Attempting to open a temp file for {guest_path:#?}...");
-				// Existing files that already exist should be in the file map, not here.
-				// If a supposed attacker can predict where we open a file and its filename,
-				// this contigency, together with O_CREAT, will cause the write to fail.
-				flags |= O_EXCL;
-
-				let host_path_c_string = file_map.create_temporary_file(guest_path);
-				let new_host_path = host_path_c_string.as_c_str().as_ptr();
-				sysopen.ret = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
-				file_map.fdmap.insert_fd(sysopen.ret.into_raw_fd());
-			} else {
-				debug!("Returning -ENOENT for {guest_path:#?}");
-				sysopen.ret = -ENOENT;
-			}
-		}
-	} else {
-		error!("The kernel requested to open() a path that is not valid UTF-8. Rejecting...");
+	let guest_path = unsafe { CStr::from_ptr(requested_path_ptr) };
+	// See: https://lwn.net/Articles/926782/
+	// See: https://github.com/hermit-os/kernel/commit/71bc629
+	if (flags & (O_DIRECTORY | O_CREAT)) == (O_DIRECTORY | O_CREAT) {
+		error!("An open() call used O_DIRECTORY and O_CREAT at the same time. Aborting...");
 		sysopen.ret = -EINVAL;
+		return;
+	}
+
+	if let Some(host_path) = file_map.get_host_path(guest_path) {
+		debug!("{guest_path:#?} found in file map.");
+		// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
+		// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
+		let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
+
+		sysopen.ret =
+			unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode) };
+
+		file_map.fdmap.insert_fd(sysopen.ret);
+	} else {
+		debug!("{guest_path:#?} not found in file map.");
+		if (flags & O_CREAT) == O_CREAT {
+			debug!("Attempting to open a temp file for {guest_path:#?}...");
+			// Existing files that already exist should be in the file map, not here.
+			// If a supposed attacker can predict where we open a file and its filename,
+			// this contigency, together with O_CREAT, will cause the write to fail.
+			flags |= O_EXCL;
+
+			let host_path_c_string = file_map.create_temporary_file(guest_path);
+			let new_host_path = host_path_c_string.as_c_str().as_ptr();
+			sysopen.ret = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
+			file_map.fdmap.insert_fd(sysopen.ret.into_raw_fd());
+		} else {
+			debug!("Returning -ENOENT for {guest_path:#?}");
+			sysopen.ret = -ENOENT;
+		}
 	}
 }
 
