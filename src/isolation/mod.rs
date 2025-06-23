@@ -16,8 +16,8 @@ use clean_path::clean;
 /// into a guest_path (String) and host_path (OsString) respectively.
 ///
 /// * `mapping` - A mapping of the format `./host_path.txt:guest.txt`.
-fn split_guest_and_host_path(mapping: &str) -> Result<(String, PathBuf), ErrorKind> {
-	let mut mappingiter: std::str::Split<'_, &str> = mapping.split(":");
+fn split_guest_and_host_path(mapping: &str) -> Result<(PathBuf, PathBuf), ErrorKind> {
+	let mut mappingiter = mapping.split(':');
 	let host_str = mappingiter.next().ok_or(ErrorKind::InvalidInput)?;
 	let guest_str = mappingiter.next().ok_or(ErrorKind::InvalidInput)?;
 
@@ -25,7 +25,9 @@ fn split_guest_and_host_path(mapping: &str) -> Result<(String, PathBuf), ErrorKi
 	// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
 	let host_path =
 		canonicalize(host_str).map_or_else(|_| clean(absolute(host_str).unwrap()), clean);
-	let guest_path: String = clean(guest_str).to_str().unwrap().to_string();
+
+	// `.to_str().unwrap()` should never fail because `guest_str` is always valid UTF-8
+	let guest_path = PathBuf::from(clean(guest_str).to_str().unwrap());
 
 	Ok((guest_path, host_path))
 }
@@ -48,18 +50,18 @@ fn test_split_guest_and_host_path() {
 	// Mind the inverted order.
 	let results = [
 		(
-			String::from("guest_string.txt"),
+			PathBuf::from("guest_string.txt"),
 			fixture_path.clone().into(),
 		),
 		(
-			String::from("guest_string.md.txt"),
+			PathBuf::from("guest_string.md.txt"),
 			PathBuf::from("/home/user/host_string.txt"),
 		),
 		(
-			String::from("this_does_exist.txt"),
+			PathBuf::from("this_does_exist.txt"),
 			fixture_path.clone().into(),
 		),
-		(String::from("guest_string.txt"), fixture_path.into()),
+		(PathBuf::from("guest_string.txt"), fixture_path.into()),
 	];
 
 	for (i, host_and_guest_string) in host_guest_strings
