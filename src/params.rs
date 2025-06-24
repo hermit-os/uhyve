@@ -129,10 +129,7 @@ pub struct GuestMemorySize(Byte);
 
 impl GuestMemorySize {
 	const fn minimum() -> Byte {
-		let Some(byte) = Byte::from_u64_with_unit(16, Unit::MiB) else {
-			panic!()
-		};
-		byte
+		Byte::from_u64_with_unit(16, Unit::MiB).unwrap()
 	}
 
 	pub fn get(self) -> usize {
@@ -309,8 +306,7 @@ mod tests {
 	fn test_env_vars() {
 		let strings = [String::from("ASDF=asdf"), String::from("EMOJI=🤷")];
 
-		let env_vars = EnvVars::try_from(strings.as_slice()).unwrap();
-		let EnvVars::Set(map) = env_vars else {
+		let Ok(EnvVars::Set(map)) = EnvVars::try_from(strings.as_slice()) else {
 			panic!();
 		};
 		assert_eq!(map.get("ASDF").unwrap(), "asdf");
