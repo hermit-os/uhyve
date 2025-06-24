@@ -109,7 +109,8 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 		// See: https://github.com/hermit-os/kernel/commit/71bc629
 		if (flags & (O_DIRECTORY | O_CREAT)) == (O_DIRECTORY | O_CREAT) {
 			error!("An open() call used O_DIRECTORY and O_CREAT at the same time. Aborting...");
-			sysopen.ret = -EINVAL
+			sysopen.ret = -EINVAL;
+			return;
 		}
 
 		if let Some(host_path) = file_map.get_host_path(guest_path) {
