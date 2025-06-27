@@ -100,7 +100,6 @@ impl MmapMemory {
 	/// This is unsafe, as can create multiple aliasing. During the lifetime of
 	/// the returned slice, the memory must not be altered to prevent undfined
 	/// behaviour.
-	#[allow(clippy::mut_from_ref)]
 	pub unsafe fn slice_at(&self, addr: GuestPhysAddr, len: usize) -> Result<&[u8], MemoryError> {
 		if addr.as_u64() as usize + len >= self.memory_size + self.guest_address.as_u64() as usize {
 			Err(MemoryError::BoundsViolation)
