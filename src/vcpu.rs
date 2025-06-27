@@ -5,7 +5,7 @@ use crate::stats::CpuStats;
 use crate::{HypervisorResult, os::DebugExitInfo};
 
 /// Reasons for vCPU exits.
-#[allow(dead_code)]
+#[allow(dead_code, reason = "Not all variants are used by all targets")]
 pub enum VcpuStopReason {
 	/// The vCPU stopped for debugging.
 	Debug(DebugExitInfo),

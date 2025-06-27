@@ -59,7 +59,6 @@ pub struct Params {
 	pub aslr: bool,
 }
 
-#[allow(clippy::derivable_impls)]
 impl Default for Params {
 	fn default() -> Self {
 		Self {
@@ -267,22 +266,15 @@ impl<S: AsRef<str> + std::fmt::Debug + PartialEq<S> + From<&'static str>> TryFro
 /// Use None if you are using Uhyve as a library, as it is not currently
 /// possible to run UhyveVm::new again if a mechanism like Landlock is enforced.
 #[cfg(target_os = "linux")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum FileSandboxMode {
 	/// Do not enable filesystem isolation features.
 	None,
 	/// Enable filesystem isolation features on a best-effort basis.
+	#[default]
 	Normal,
 	/// Enforce filesystem isolation strictly.
 	Strict,
-}
-
-#[cfg(target_os = "linux")]
-#[allow(clippy::derivable_impls)]
-impl Default for FileSandboxMode {
-	fn default() -> Self {
-		FileSandboxMode::Normal
-	}
 }
 
 #[cfg(target_os = "linux")]

@@ -1,6 +1,3 @@
-#![allow(non_snake_case)]
-#![allow(clippy::identity_op)]
-
 use std::{num::NonZeroU32, sync::Arc};
 
 use log::debug;
@@ -183,6 +180,7 @@ impl VirtualCPU for XhyveCpu {
 			   - Fill in the missing Documentation for some of the bits and verify if we care about them
 				 or if loading and not setting them would be the appropriate action.
 		*/
+		#[allow(clippy::identity_op)]
 		let sctrl_el1: u64 = 0
 		 | (1 << 26) 	    /* UCI	Enables EL0 access in AArch64 for DC CVAU, DC CIVAC,
 									DC CVAC and IC IVAU instructions */
@@ -232,7 +230,7 @@ impl VirtualCPU for XhyveCpu {
 
 						// data abort from lower or current level
 						if ec == 0b100100u64 || ec == 0b100101u64 {
-							let addr: u64 = exception.physical_address.try_into().unwrap();
+							let addr: u64 = exception.physical_address;
 							let pc = vcpu.read_register(Register::PC)?;
 
 							let data_addr = GuestPhysAddr::new(vcpu.read_register(Register::X8)?);
@@ -336,14 +334,9 @@ impl VirtualCPU for XhyveCpu {
 								// increase the pc to the instruction after the exception to continue execution
 								vcpu.write_register(Register::PC, pc + 4)?;
 							} else {
-								#[allow(clippy::match_single_binding)]
-								match addr {
-									_ => {
-										error!("Unable to handle exception {exception:?}");
-										self.print_registers();
-										return Err(xhypervisor::Error::Error.into());
-									}
-								}
+								error!("Unable to handle exception {exception:?}");
+								self.print_registers();
+								return Err(xhypervisor::Error::Error.into());
 							}
 						} else {
 							error!("Unsupported exception class: 0x{ec:x}");

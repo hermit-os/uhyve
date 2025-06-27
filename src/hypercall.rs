@@ -305,7 +305,7 @@ pub fn copy_env(env: &EnvVars, syscmdval: &CmdvalParams, mem: &MmapMemory) {
 			.map(|(a, b)| (a.to_owned(), b.to_owned()))
 			.collect(),
 	};
-	if env.len() >= usize::try_from(MAX_ARGC_ENVC).unwrap() {
+	if env.len() >= MAX_ARGC_ENVC {
 		warn!(
 			"Environment is larger than the maximum that can be copied to the VM. Remaining environment is ignored"
 		);

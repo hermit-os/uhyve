@@ -1,14 +1,8 @@
 #![warn(rust_2018_idioms)]
-#![allow(unused_macros)]
-#![allow(clippy::missing_safety_doc)]
-#![allow(clippy::useless_conversion)]
 
 use std::path::PathBuf;
 
 use thiserror::Error;
-
-#[macro_use]
-mod macros;
 
 #[macro_use]
 extern crate log;

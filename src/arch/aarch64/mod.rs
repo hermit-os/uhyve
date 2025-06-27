@@ -163,7 +163,7 @@ pub fn virt_to_phys(
 	for level in 0..3 {
 		let table_index = ((addr.as_u64() >> PAGE_BITS >> ((3 - level) * PAGE_MAP_BITS))
 			& PAGE_MAP_MASK) as usize;
-		let pte = PageTableEntry::from(pagetable[table_index]);
+		let pte = pagetable[table_index];
 		// TODO: We could stop here if we have a "Block Entry" (ARM equivalent to huge page). Currently not supported.
 
 		pagetable = unsafe {
@@ -173,9 +173,9 @@ pub fn virt_to_phys(
 		};
 	}
 	let table_index = ((addr.as_u64() >> PAGE_BITS) & PAGE_MAP_MASK) as usize;
-	let pte = PageTableEntry::from(pagetable[table_index]);
+	let pte = pagetable[table_index];
 
-	Ok((pte.address() + (addr.as_u64() & !((!0u64) << PAGE_BITS))).into())
+	Ok(pte.address() + (addr.as_u64() & !((!0u64) << PAGE_BITS)))
 }
 
 pub fn init_guest_mem(
