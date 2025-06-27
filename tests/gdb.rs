@@ -1,6 +1,5 @@
 #![cfg(target_os = "linux")]
 
-#[allow(dead_code)]
 mod common;
 
 use std::{

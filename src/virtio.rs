@@ -82,6 +82,7 @@ macro_rules! write_u16 {
 	};
 }
 
+#[allow(unused_macros)]
 macro_rules! read_u32 {
 	($registers:expr, $address:expr) => {
 		($registers[$address] as u32)
@@ -91,6 +92,7 @@ macro_rules! read_u32 {
 	};
 }
 
+#[allow(unused_macros)]
 macro_rules! write_u32 {
 	($registers:expr, $address:expr, $value:expr) => {
 		$registers[$address] = ($value & 0xFF) as u8;
