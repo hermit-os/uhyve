@@ -118,7 +118,7 @@ pub(crate) struct KernelInfo {
 	/// The first instruction after boot
 	pub entry_point: GuestPhysAddr,
 	/// The starting position of the image in physical memory
-	#[cfg_attr(target_os = "macos", allow(dead_code))] // currently only needed in gdb
+	#[cfg_attr(target_os = "macos", expect(dead_code))] // currently only needed in gdb
 	pub kernel_address: GuestPhysAddr,
 	pub params: Params,
 	pub path: PathBuf,
@@ -493,9 +493,12 @@ fn write_boot_info_to_mem(
 		hardware_info: HardwareInfo {
 			phys_addr_range: mem.guest_address.as_u64()
 				..mem.guest_address.as_u64() + mem.memory_size as u64,
-			#[allow(
-				clippy::useless_conversion,
-				reason = "aarch64 uses 64-bit SerialPortBase, x86_64 uses 16 bit"
+			#[cfg_attr(
+				target_arch = "x86_64",
+				expect(
+					clippy::useless_conversion,
+					reason = "aarch64 uses 64-bit SerialPortBase, x86_64 uses 16 bit"
+				)
 			)]
 			serial_port_base: SerialPortBase::new(
 				(uhyve_interface::HypercallAddress::Uart as u16).into(),

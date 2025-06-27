@@ -1,4 +1,8 @@
-#![allow(dead_code)] // Not all functions here are used in all tests
+#![allow(
+	dead_code,
+	reason = "Many helper functions are not used in every test."
+)]
+
 use std::{
 	env,
 	fs::remove_file,
@@ -47,7 +51,6 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path> + std::fmt::Display) -> PathBuf
 
 /// Small wrapper around [`Uhyve::run`] with default parameters for a small and
 /// simple Uhyve vm
-#[allow(dead_code)]
 pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 	env_logger::try_init().ok();
 	println!("Launching kernel {}", kernel_path.display());

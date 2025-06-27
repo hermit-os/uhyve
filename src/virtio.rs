@@ -82,7 +82,7 @@ macro_rules! write_u16 {
 	};
 }
 
-#[allow(unused_macros)]
+#[expect(unused_macros)]
 macro_rules! read_u32 {
 	($registers:expr, $address:expr) => {
 		($registers[$address] as u32)
@@ -92,7 +92,7 @@ macro_rules! read_u32 {
 	};
 }
 
-#[allow(unused_macros)]
+#[expect(unused_macros)]
 macro_rules! write_u32 {
 	($registers:expr, $address:expr, $value:expr) => {
 		$registers[$address] = ($value & 0xFF) as u8;
@@ -257,7 +257,7 @@ impl VirtioNetPciDevice {
 
 	pub fn write_selected_queue(&mut self, dest: &[u8]) {
 		self.selected_queue_num = unsafe {
-			#[allow(clippy::cast_ptr_alignment)]
+			#[expect(clippy::cast_ptr_alignment)]
 			*(dest.as_ptr() as *const u16)
 		};
 	}
@@ -270,7 +270,7 @@ impl VirtioNetPciDevice {
 			&& self.selected_queue_num as usize == self.virt_queues.len()
 		{
 			let gpa = GuestPhysAddr::new(unsafe {
-				#[allow(clippy::cast_ptr_alignment)]
+				#[expect(clippy::cast_ptr_alignment)]
 				*(dest.as_ptr() as *const u64)
 			});
 			let hva = mem.host_address(gpa).unwrap();
@@ -282,7 +282,7 @@ impl VirtioNetPciDevice {
 	pub fn write_requested_features(&mut self, dest: &[u8]) {
 		if self.read_status_reg() == STATUS_ACKNOWLEDGE | STATUS_DRIVER {
 			let requested_features = unsafe {
-				#[allow(clippy::cast_ptr_alignment)]
+				#[expect(clippy::cast_ptr_alignment)]
 				*(dest.as_ptr() as *const u32)
 			};
 			self.requested_features =
