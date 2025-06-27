@@ -27,7 +27,10 @@ use crate::{
 
 pub struct XhyveVm {
 	peripherals: Arc<VmPeripherals>,
-	#[allow(dead_code)]
+	#[expect(
+		dead_code,
+		reason = "Gic should be created and stored throughout the struct's lifetime, not used actively"
+	)]
 	gic: Gic,
 }
 impl VirtualizationBackendInternal for XhyveVm {
@@ -180,7 +183,7 @@ impl VirtualCPU for XhyveCpu {
 			   - Fill in the missing Documentation for some of the bits and verify if we care about them
 				 or if loading and not setting them would be the appropriate action.
 		*/
-		#[allow(clippy::identity_op)]
+		#[expect(clippy::identity_op)]
 		let sctrl_el1: u64 = 0
 		 | (1 << 26) 	    /* UCI	Enables EL0 access in AArch64 for DC CVAU, DC CIVAC,
 									DC CVAC and IC IVAU instructions */
