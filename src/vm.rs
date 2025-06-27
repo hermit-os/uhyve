@@ -188,8 +188,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 				arch::RAM_START
 			};
 			(guest_address, (guest_address + KERNEL_OFFSET))
-		}
-		.into();
+		};
 
 		debug!("Guest starts at {guest_address:#x}");
 		debug!("Kernel gets loaded to {kernel_address:#x}");
@@ -239,9 +238,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		});
 
 		// create virtio interface
-		// TODO: Remove allow once fixed:
-		// https://github.com/rust-lang/rust-clippy/issues/11382
-		#[allow(clippy::arc_with_non_send_sync)]
 		let virtio_device = Mutex::new(VirtioNetPciDevice::new());
 
 		let peripherals = Arc::new(VmPeripherals {
@@ -444,13 +440,7 @@ fn init_guest_mem(
 	legacy_mapping: bool,
 ) {
 	debug!("Initialize guest memory");
-	crate::arch::init_guest_mem(
-		mem.try_into()
-			.expect("Guest memory is not large enough for pagetables"),
-		guest_addr,
-		memory_size,
-		legacy_mapping,
-	);
+	crate::arch::init_guest_mem(mem, guest_addr, memory_size, legacy_mapping);
 }
 
 fn write_fdt_into_mem(mem: &MmapMemory, params: &Params, cpu_freq: Option<NonZeroU32>) {
@@ -510,6 +500,10 @@ fn write_boot_info_to_mem(
 		hardware_info: HardwareInfo {
 			phys_addr_range: mem.guest_address.as_u64()
 				..mem.guest_address.as_u64() + mem.memory_size as u64,
+			#[allow(
+				clippy::useless_conversion,
+				reason = "aarch64 uses 64-bit SerialPortBase, x86_64 uses 16 bit"
+			)]
 			serial_port_base: SerialPortBase::new(
 				(uhyve_interface::HypercallAddress::Uart as u16).into(),
 			),

@@ -49,19 +49,13 @@ fn test_split_guest_and_host_path() {
 
 	// Mind the inverted order.
 	let results = [
-		(
-			PathBuf::from("guest_string.txt"),
-			fixture_path.clone().into(),
-		),
+		(PathBuf::from("guest_string.txt"), fixture_path.clone()),
 		(
 			PathBuf::from("guest_string.md.txt"),
 			PathBuf::from("/home/user/host_string.txt"),
 		),
-		(
-			PathBuf::from("this_does_exist.txt"),
-			fixture_path.clone().into(),
-		),
-		(PathBuf::from("guest_string.txt"), fixture_path.into()),
+		(PathBuf::from("this_does_exist.txt"), fixture_path.clone()),
+		(PathBuf::from("guest_string.txt"), fixture_path),
 	];
 
 	for (i, host_and_guest_string) in host_guest_strings

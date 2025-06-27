@@ -203,7 +203,6 @@ impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 	type Connection = TcpStream;
 	type StopReason = SingleThreadStopReason<u64>;
 
-	#[allow(clippy::type_complexity)]
 	fn wait_for_stop_reason(
 		target: &mut Self::Target,
 		conn: &mut Self::Connection,
