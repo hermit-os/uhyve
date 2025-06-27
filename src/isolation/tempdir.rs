@@ -17,7 +17,8 @@ pub fn create_temp_dir(dir_path: &Option<String>) -> TempDir {
 				.map(PathBuf::from)
 				.unwrap_or_else(env::temp_dir),
 		)
-		.expect("The temporary directory could not be created.");
+		.ok()
+		.unwrap_or_else(|| panic!("The temporary directory could not be created."));
 
 	assert!(!dir.path().metadata().unwrap().permissions().readonly());
 

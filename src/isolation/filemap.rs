@@ -1,7 +1,6 @@
 #[cfg(target_os = "linux")]
 use std::path::Path;
 use std::{
-	collections::HashMap,
 	ffi::{CStr, CString, OsStr, OsString},
 	fs::canonicalize,
 	os::unix::ffi::OsStrExt,
@@ -12,14 +11,15 @@ use clean_path::clean;
 use tempfile::TempDir;
 use uuid::Uuid;
 
-use crate::isolation::{
-	fd::UhyveFileDescriptorLayer, split_guest_and_host_path, tempdir::create_temp_dir,
+use crate::{
+	isolation::{fd::UhyveFileDescriptorLayer, tempdir::create_temp_dir},
+	params::FileMappings,
 };
 
 /// Wrapper around a `HashMap` to map guest paths to arbitrary host paths and track file descriptors.
 #[derive(Debug)]
 pub struct UhyveFileMap {
-	files: HashMap<PathBuf, PathBuf>,
+	files: FileMappings,
 	tempdir: TempDir,
 	pub fdmap: UhyveFileDescriptorLayer,
 }
@@ -29,14 +29,9 @@ impl UhyveFileMap {
 	///
 	/// * `mappings` - A list of host->guest path mappings with the format "./host_path.txt:guest.txt"
 	/// * `tempdir` - Path to create temporary directory on
-	pub fn new(mappings: &[String], tempdir: &Option<String>) -> UhyveFileMap {
+	pub fn new(mappings: &FileMappings, tempdir: &Option<String>) -> UhyveFileMap {
 		UhyveFileMap {
-			files: mappings
-				.iter()
-				.map(String::as_str)
-				.map(split_guest_and_host_path)
-				.map(Result::unwrap)
-				.collect(),
+			files: mappings.clone(),
 			tempdir: create_temp_dir(tempdir),
 			fdmap: UhyveFileDescriptorLayer::default(),
 		}
@@ -49,13 +44,13 @@ impl UhyveFileMap {
 		// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
 		// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
 		let guest_pathbuf = clean(OsStr::from_bytes(guest_path.to_bytes()));
-		if let Some(host_path) = self.files.get(&guest_pathbuf) {
+		if let Some(host_path) = self.files.0.get(&guest_pathbuf) {
 			let host_path = OsString::from(host_path);
 			trace!("get_host_path (host_path): {host_path:#?}");
 			Some(host_path)
 		} else {
 			debug!("Guest requested to open a path that was not mapped.");
-			if self.files.is_empty() {
+			if self.files.0.is_empty() {
 				debug!("UhyveFileMap is empty, returning None...");
 				return None;
 			}
@@ -66,7 +61,7 @@ impl UhyveFileMap {
 					// If one of the guest paths' parent directories (parent_host) is mapped,
 					// use the mapped host path and push the "remainder" (the path's components
 					// that come after the mapped guest path) onto the host path.
-					if let Some(parent_host) = self.files.get(searched_parent_guest) {
+					if let Some(parent_host) = self.files.0.get(searched_parent_guest) {
 						let mut host_path = PathBuf::from(parent_host);
 						let guest_path_remainder =
 							guest_pathbuf.strip_prefix(searched_parent_guest).unwrap();
@@ -87,7 +82,7 @@ impl UhyveFileMap {
 	/// Returns an array of all host paths (for Landlock).
 	#[cfg(target_os = "linux")]
 	pub(crate) fn get_all_host_paths(&self) -> impl Iterator<Item = &std::ffi::OsStr> {
-		self.files.values().map(|i| i.as_os_str())
+		self.files.0.values().map(|i| i.as_os_str())
 	}
 
 	/// Returns the path to the temporary directory (for Landlock).
@@ -104,7 +99,7 @@ impl UhyveFileMap {
 		let host_path = self.tempdir.path().join(Uuid::new_v4().to_string());
 		trace!("create_temporary_file (host_path): {host_path:#?}");
 		let ret = CString::new(host_path.as_os_str().as_bytes()).unwrap();
-		self.files.insert(
+		self.files.0.insert(
 			PathBuf::from(OsStr::from_bytes(guest_path.to_bytes())),
 			host_path,
 		);
@@ -196,7 +191,7 @@ mod tests {
 			host_path_map.to_str().unwrap(),
 			guest_path_map.to_str().unwrap()
 		)];
-		let mut map = UhyveFileMap::new(&uhyvefilemap_params, &None);
+		let mut map = UhyveFileMap::new(FileMappings::try_from(&uhyvefilemap_params), &None);
 
 		let mut found_host_path = map.get_host_path(
 			CString::new(target_guest_path.as_os_str().as_bytes())

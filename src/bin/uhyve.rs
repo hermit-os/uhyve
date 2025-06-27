@@ -11,7 +11,7 @@ use thiserror::Error;
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
-	params::{CpuCount, EnvVars, GuestMemorySize, Output, Params},
+	params::{CpuCount, EnvVars, FileMappings, GuestMemorySize, Output, Params},
 	vm::UhyveVm,
 };
 
@@ -315,7 +315,7 @@ impl From<Args> for Params {
 			cpu_count,
 			#[cfg(target_os = "linux")]
 			pit,
-			file_mapping,
+			file_mapping: FileMappings::try_from(file_mapping.as_slice()).unwrap(),
 			#[cfg(target_os = "linux")]
 			gdb_port,
 			#[cfg(target_os = "macos")]
