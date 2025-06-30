@@ -37,7 +37,7 @@ pub struct Params {
 	pub kernel_args: Vec<String>,
 
 	/// Mapped paths between the guest and host OS
-	pub file_mapping: Vec<String>,
+	pub file_mapping: FileMappings,
 
 	/// Path to create temporary directory on
 	pub tempdir: Option<String>,
@@ -72,7 +72,7 @@ impl Default for Params {
 			pit: false,
 			cpu_count: Default::default(),
 			gdb_port: Default::default(),
-			file_mapping: Default::default(),
+			file_mapping: FileMappings::default(),
 			tempdir: Default::default(),
 			#[cfg(target_os = "linux")]
 			file_isolation: FileSandboxMode::default(),
@@ -217,6 +217,42 @@ impl FromStr for GuestMemorySize {
 		let requested = Byte::from_str(s)?;
 		let memory_size = requested.try_into()?;
 		Ok(memory_size)
+	}
+}
+
+use std::{fs::canonicalize, path::absolute};
+
+use clean_path::clean;
+
+#[derive(Default, Debug, Clone)]
+pub struct FileMappings(pub HashMap<PathBuf, PathBuf>);
+
+impl<S: AsRef<str> + std::fmt::Debug + PartialEq<S> + From<&'static str>> TryFrom<&[S]>
+	for FileMappings
+{
+	type Error = &'static str;
+
+	fn try_from(v: &[S]) -> Result<Self, Self::Error> {
+		Ok(Self(v.iter().try_fold(HashMap::new(), |mut acc, s| {
+			if let Some((host_pathbuf, guest_pathbuf)) = s
+				.as_ref()
+				.split_once(":")
+				.map(|(host_str, guest_str)| (PathBuf::from(&host_str), PathBuf::from(&guest_str)))
+			{
+				acc.insert(
+					// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
+					// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
+					canonicalize(&host_pathbuf)
+						.map_or_else(|_| clean(absolute(host_pathbuf).unwrap()), clean),
+					// `.to_str().unwrap()` should never fail because `guest_str` is always valid UTF-8
+					clean(guest_pathbuf),
+				);
+				Ok(acc)
+			} else {
+				// TODO: improve message
+				Err("Failed to create mapping.")
+			}
+		})?))
 	}
 }
 

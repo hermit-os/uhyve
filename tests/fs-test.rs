@@ -12,7 +12,7 @@ use common::{
 	build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists, run_vm_in_thread,
 };
 use rand::{Rng, distr::Alphanumeric};
-use uhyvelib::params::Params;
+use uhyvelib::params::{FileMappings, Params};
 
 /// Verifies successful file creation on the host OS and its contents.
 pub fn verify_file_equals(testfile: &PathBuf, contents: &str) {
@@ -70,8 +70,12 @@ fn get_testname_derived_guest_path(test_name: &str) -> PathBuf {
 }
 
 // Creates a vector out of a given host path and guest path for UhyveFileMap.
-fn create_filemap_params<T: AsStr, U: AsStr>(host_path: T, guest_path: U) -> Vec<String> {
-	vec![format!("{}:{}", host_path.as_str(), guest_path.as_str())]
+fn create_filemap_params<T: AsStr, U: AsStr>(host_path: T, guest_path: U) -> FileMappings {
+	FileMappings::try_from(vec![format!(
+		"{}:{}",
+		host_path.as_str(),
+		guest_path.as_str()
+	)])
 }
 
 /// Creates kernel arguments for fs-tests.

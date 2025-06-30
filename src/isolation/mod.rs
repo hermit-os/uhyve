@@ -4,34 +4,6 @@ pub mod filemap;
 pub mod landlock;
 pub mod tempdir;
 
-use std::{
-	fs::canonicalize,
-	io::ErrorKind,
-	path::{PathBuf, absolute},
-};
-
-use clean_path::clean;
-
-/// Separates a string of the format "./host_dir/host_path.txt:guest_path.txt"
-/// into a guest_path (String) and host_path (OsString) respectively.
-///
-/// * `mapping` - A mapping of the format `./host_path.txt:guest.txt`.
-fn split_guest_and_host_path(mapping: &str) -> Result<(PathBuf, PathBuf), ErrorKind> {
-	let mut mappingiter = mapping.split(':');
-	let host_str = mappingiter.next().ok_or(ErrorKind::InvalidInput)?;
-	let guest_str = mappingiter.next().ok_or(ErrorKind::InvalidInput)?;
-
-	// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
-	// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
-	let host_path =
-		canonicalize(host_str).map_or_else(|_| clean(absolute(host_str).unwrap()), clean);
-
-	// `.to_str().unwrap()` should never fail because `guest_str` is always valid UTF-8
-	let guest_path = PathBuf::from(clean(guest_str).to_str().unwrap());
-
-	Ok((guest_path, host_path))
-}
-
 #[test]
 fn test_split_guest_and_host_path() {
 	use std::path::PathBuf;
