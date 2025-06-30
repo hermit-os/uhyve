@@ -76,12 +76,16 @@ impl MmapMemory {
 		}
 	}
 
+	/// # Safety
+	///
 	/// This can create multiple aliasing. During the lifetime of the returned slice, the memory must not be altered, dropped or simmilar.
 	#[allow(clippy::mut_from_ref)]
 	pub unsafe fn as_slice_mut(&self) -> &mut [u8] {
 		unsafe { std::slice::from_raw_parts_mut(self.host_address, self.memory_size) }
 	}
 
+	/// # Safety
+	///
 	/// Same as [`as_slice_mut`], but for `MaybeUninit<u8>`. Actually the memory is initialized, as Mmap zero initializes it, but some fns like [`hermit_entry::elf::load_kernel`] require [`MaybeUninit`]s.
 	#[allow(clippy::mut_from_ref)]
 	pub unsafe fn as_slice_uninit_mut(&self) -> &mut [MaybeUninit<u8>] {
@@ -150,11 +154,15 @@ impl MmapMemory {
 		Ok(unsafe { self.host_address(addr)?.cast::<T>().read_unaligned() })
 	}
 
+	/// # Safety
+	///
 	/// Get a reference to the type at the given address in the memory.
 	pub unsafe fn get_ref<T>(&self, addr: GuestPhysAddr) -> Result<&T, MemoryError> {
 		Ok(unsafe { &*(self.host_address(addr)? as *const T) })
 	}
 
+	/// # Safety
+	///
 	/// Get a mutable reference to the type at the given address in the memory.
 	#[allow(clippy::mut_from_ref)]
 	pub unsafe fn get_ref_mut<T>(&self, addr: GuestPhysAddr) -> Result<&mut T, MemoryError> {

@@ -1,6 +1,3 @@
-#![allow(non_snake_case)]
-#![allow(clippy::identity_op)]
-
 use std::{num::NonZeroU32, sync::Arc};
 
 use log::debug;
@@ -336,14 +333,9 @@ impl VirtualCPU for XhyveCpu {
 								// increase the pc to the instruction after the exception to continue execution
 								vcpu.write_register(Register::PC, pc + 4)?;
 							} else {
-								#[allow(clippy::match_single_binding)]
-								match addr {
-									_ => {
-										error!("Unable to handle exception {exception:?}");
-										self.print_registers();
-										return Err(xhypervisor::Error::Error.into());
-									}
-								}
+								error!("Unable to handle exception {exception:?}");
+								self.print_registers();
+								return Err(xhypervisor::Error::Error.into());
 							}
 						} else {
 							error!("Unsupported exception class: 0x{ec:x}");
