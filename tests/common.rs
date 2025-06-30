@@ -1,3 +1,8 @@
+#![allow(
+	clippy::allow_attributes,
+	reason = "Helper functions are not used in all tests"
+)]
+
 use std::{
 	env,
 	fs::remove_file,
@@ -46,7 +51,7 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path> + std::fmt::Display) -> PathBuf
 
 /// Small wrapper around [`Uhyve::run`] with default parameters for a small and
 /// simple Uhyve vm
-#[allow(dead_code)]
+#[allow(dead_code, reason = "Most filesystem-related tests do not use this.")]
 pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 	env_logger::try_init().ok();
 	println!("Launching kernel {}", kernel_path.display());
@@ -66,7 +71,10 @@ pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 	UhyveVm::new(kernel_path, params).unwrap().run(None)
 }
 
-#[allow(dead_code)]
+#[allow(
+	dead_code,
+	reason = "Only some tests may leave leftover files on the host."
+)]
 pub fn remove_file_if_exists(path: &PathBuf) {
 	if path.exists() {
 		println!("Removing existing directory {}", path.display());
@@ -75,7 +83,7 @@ pub fn remove_file_if_exists(path: &PathBuf) {
 }
 
 /// Panics if the result's status code is not 0 and prints the serial output of the kernel
-#[allow(dead_code)]
+#[allow(dead_code, reason = "Some tests expect a failure instead.")]
 pub fn check_result(res: &VmResult) {
 	if res.code != 0 {
 		println!("Kernel Output:\n{}", res.output.as_ref().unwrap());
@@ -83,7 +91,7 @@ pub fn check_result(res: &VmResult) {
 	}
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "Only useful for host-related filesystem tests.")]
 pub fn get_fs_fixture_path() -> PathBuf {
 	let mut fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 	fixture_path.push("tests/data/fixtures/fs");
@@ -96,7 +104,7 @@ pub fn get_fs_fixture_path() -> PathBuf {
 ///
 /// * `bin_path` - Path of kernel to be run.
 /// * `params` - Params to run the VM with.
-#[allow(dead_code)]
+#[allow(dead_code, reason = "Only useful for Landlock in filesystem tests.")]
 pub fn run_vm_in_thread(bin_path: PathBuf, params: Params) -> VmResult {
 	thread::spawn(move || {
 		let vm = UhyveVm::new(bin_path, params).unwrap();
@@ -110,7 +118,7 @@ pub fn run_vm_in_thread(bin_path: PathBuf, params: Params) -> VmResult {
 ///
 /// Currently unused for fs-test.rs because of mysterious cargo test shenanigans.
 #[cfg(target_os = "linux")]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "Only useful for host-related filesystem tests.")]
 pub fn strict_sandbox() -> FileSandboxMode {
 	if env::var("UHYVE_TEST_STRICT_SANDBOX").is_ok() {
 		FileSandboxMode::Strict
@@ -123,7 +131,7 @@ pub fn cargo() -> Command {
 	sanitize("cargo")
 }
 
-#[allow(dead_code)] // This is only used by the gdb test.
+#[allow(dead_code, reason = "Only used by the gdb test.")]
 pub fn rust_gdb() -> Command {
 	sanitize("rust-gdb")
 }

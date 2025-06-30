@@ -77,13 +77,13 @@ impl MmapMemory {
 	}
 
 	/// This can create multiple aliasing. During the lifetime of the returned slice, the memory must not be altered, dropped or simmilar.
-	#[allow(clippy::mut_from_ref)]
+	#[expect(clippy::mut_from_ref)]
 	pub unsafe fn as_slice_mut(&self) -> &mut [u8] {
 		unsafe { std::slice::from_raw_parts_mut(self.host_address, self.memory_size) }
 	}
 
 	/// Same as [`as_slice_mut`], but for `MaybeUninit<u8>`. Actually the memory is initialized, as Mmap zero initializes it, but some fns like [`hermit_entry::elf::load_kernel`] require [`MaybeUninit`]s.
-	#[allow(clippy::mut_from_ref)]
+	#[expect(clippy::mut_from_ref)]
 	pub unsafe fn as_slice_uninit_mut(&self) -> &mut [MaybeUninit<u8>] {
 		unsafe {
 			std::slice::from_raw_parts_mut(
@@ -115,7 +115,7 @@ impl MmapMemory {
 	/// This is unsafe, as it can create multiple aliasing. During the lifetime of
 	/// the returned slice, the memory must not be altered to prevent undfined
 	/// behavior.
-	#[allow(clippy::mut_from_ref)]
+	#[expect(clippy::mut_from_ref)]
 	pub unsafe fn slice_at_mut(
 		&self,
 		addr: GuestPhysAddr,
@@ -156,7 +156,7 @@ impl MmapMemory {
 	}
 
 	/// Get a mutable reference to the type at the given address in the memory.
-	#[allow(clippy::mut_from_ref)]
+	#[expect(clippy::mut_from_ref)]
 	pub unsafe fn get_ref_mut<T>(&self, addr: GuestPhysAddr) -> Result<&mut T, MemoryError> {
 		Ok(unsafe { &mut *(self.host_address(addr)? as *mut T) })
 	}
@@ -190,13 +190,13 @@ impl Index<usize> for MmapMemory {
 /// Wrapper aroud a memory allocation that is aligned to x86 HugePages
 /// (`0x20_0000`). Intended for testing purposes only
 #[cfg(test)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub(crate) struct HugePageAlignedMem<'a, const SIZE: usize> {
 	ptr: *mut u8,
 	pub mem: &'a mut [u8],
 }
 #[cfg(test)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 impl<const SIZE: usize> HugePageAlignedMem<'_, SIZE> {
 	pub fn new() -> Self {
 		use std::alloc::{Layout, alloc_zeroed};

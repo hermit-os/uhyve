@@ -32,9 +32,9 @@ pub const PT_SELF: u64 = 1 << 55;
 /*
  * Memory types available.
  */
-#[allow(non_upper_case_globals)]
+#[expect(non_upper_case_globals)]
 pub const MT_DEVICE_nGnRnE: u64 = 0;
-#[allow(non_upper_case_globals)]
+#[expect(non_upper_case_globals)]
 pub const MT_DEVICE_nGnRE: u64 = 1;
 pub const MT_DEVICE_GRE: u64 = 2;
 pub const MT_NORMAL_NC: u64 = 3;

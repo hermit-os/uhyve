@@ -1,6 +1,9 @@
 [workspace]
 exclude = ["tests/test-kernels", "hermit-rs", "hermit-rs/*", "kernel"]
 
+[lints.clippy]
+allow_attributes = "deny"
+
 [package]
 name = "uhyve"
 version = "0.5.0"

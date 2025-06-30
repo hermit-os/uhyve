@@ -28,14 +28,14 @@ impl<T> Vring<T> {
 
 	pub fn _flags(&self) -> u16 {
 		unsafe {
-			#[allow(clippy::cast_ptr_alignment)]
+			#[expect(clippy::cast_ptr_alignment)]
 			*(self.mem as *const u16)
 		}
 	}
 
 	pub fn index(&self) -> u16 {
 		unsafe {
-			#[allow(clippy::cast_ptr_alignment)]
+			#[expect(clippy::cast_ptr_alignment)]
 			*(self.mem.offset(2) as *const u16)
 		}
 	}
@@ -43,7 +43,7 @@ impl<T> Vring<T> {
 	pub fn advance_index(&mut self) {
 		unsafe {
 			let new_value = self.index() + 1;
-			#[allow(clippy::cast_ptr_alignment)]
+			#[expect(clippy::cast_ptr_alignment)]
 			let write_ptr = self.mem.offset(2) as *mut u16;
 			*write_ptr = new_value;
 		}
@@ -69,7 +69,7 @@ pub struct Virtqueue {
 	pub available_ring: VringAvailable,
 	pub used_ring: VringUsed,
 	pub last_seen_available: u16,
-	#[allow(dead_code)]
+	#[expect(dead_code)]
 	pub last_seen_used: u16,
 	pub queue_size: u16,
 }
@@ -111,7 +111,7 @@ fn get_used_ring_offset() -> usize {
 
 impl Virtqueue {
 	pub unsafe fn new(mem: *mut u8, queue_size: usize) -> Self {
-		#[allow(clippy::cast_ptr_alignment)]
+		#[expect(clippy::cast_ptr_alignment)]
 		let descriptor_table = mem as *mut VringDescriptor;
 		let available_ring_ptr = unsafe { mem.add(get_available_ring_offset()) };
 		let used_ring_ptr = unsafe { mem.add(get_used_ring_offset()) };

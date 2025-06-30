@@ -30,7 +30,7 @@ use crate::{
 
 pub struct XhyveVm {
 	peripherals: Arc<VmPeripherals>,
-	#[allow(dead_code)]
+	#[expect(dead_code)]
 	gic: Gic,
 }
 impl VirtualizationBackendInternal for XhyveVm {
@@ -336,7 +336,7 @@ impl VirtualCPU for XhyveCpu {
 								// increase the pc to the instruction after the exception to continue execution
 								vcpu.write_register(Register::PC, pc + 4)?;
 							} else {
-								#[allow(clippy::match_single_binding)]
+								#[expect(clippy::match_single_binding)]
 								match addr {
 									_ => {
 										error!("Unable to handle exception {exception:?}");

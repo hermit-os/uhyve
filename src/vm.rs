@@ -118,7 +118,7 @@ pub(crate) struct KernelInfo {
 	/// The first instruction after boot
 	pub entry_point: GuestPhysAddr,
 	/// The starting position of the image in physical memory
-	#[cfg_attr(target_os = "macos", allow(dead_code))] // currently only needed in gdb
+	#[cfg_attr(target_os = "macos", expect(dead_code))] // currently only needed in gdb
 	pub kernel_address: GuestPhysAddr,
 	pub params: Params,
 	pub path: PathBuf,
@@ -241,7 +241,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		// create virtio interface
 		// TODO: Remove allow once fixed:
 		// https://github.com/rust-lang/rust-clippy/issues/11382
-		#[allow(clippy::arc_with_non_send_sync)]
 		let virtio_device = Mutex::new(VirtioNetPciDevice::new());
 
 		let peripherals = Arc::new(VmPeripherals {

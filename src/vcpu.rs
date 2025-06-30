@@ -5,7 +5,7 @@ use crate::stats::CpuStats;
 use crate::{HypervisorResult, os::DebugExitInfo};
 
 /// Reasons for vCPU exits.
-#[allow(dead_code)]
+#[cfg_attr(target_os = "macos", expect(dead_code))]
 pub enum VcpuStopReason {
 	/// The vCPU stopped for debugging.
 	Debug(DebugExitInfo),
@@ -26,7 +26,6 @@ pub trait VirtualCPU: Sized + Send {
 	fn run(&mut self) -> HypervisorResult<(Option<i32>, Option<CpuStats>)>;
 
 	/// Prints the VCPU's registers to stdout.
-	#[allow(dead_code)]
 	fn print_registers(&self);
 
 	/// Queries the CPUs base frequency in kHz

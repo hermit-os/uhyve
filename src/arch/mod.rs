@@ -1,3 +1,8 @@
+#![allow(
+	clippy::allow_attributes,
+	reason = "Required for arch-specific code (dead code)"
+)]
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]

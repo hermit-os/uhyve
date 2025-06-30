@@ -59,7 +59,6 @@ pub struct Params {
 	pub aslr: bool,
 }
 
-#[allow(clippy::derivable_impls)]
 impl Default for Params {
 	fn default() -> Self {
 		Self {
@@ -278,7 +277,7 @@ pub enum FileSandboxMode {
 }
 
 #[cfg(target_os = "linux")]
-#[allow(clippy::derivable_impls)]
+#[expect(clippy::derivable_impls)]
 impl Default for FileSandboxMode {
 	fn default() -> Self {
 		FileSandboxMode::Normal

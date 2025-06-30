@@ -133,8 +133,8 @@ pub fn initialize_pagetables(
 	}
 }
 
-#[allow(dead_code)]
 /// Helper fn for debugging pagetables
+#[allow(dead_code)]
 fn pretty_print_pagetable(pt: &PageTable) {
 	println!(
 		"Idx       Address          Idx       Address          Idx       Address          Idx       Address      "
