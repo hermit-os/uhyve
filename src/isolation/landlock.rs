@@ -283,7 +283,6 @@ where
 {
 	// This segment adds certain paths necessary for Uhyve to function before we
 	// enforce Landlock, such as the kernel path and a couple of paths useful for sysinfo.
-	//
 	// See: https://github.com/GuillaumeGomez/sysinfo/blob/8fd58b8/src/unix/linux/cpu.rs#L420
 	let uhyve_ro_paths = vec![
 		kernel_path.into(),
@@ -291,9 +290,15 @@ where
 		PathBuf::from("/sys/devices/system"),
 		PathBuf::from("/proc/cpuinfo"),
 		PathBuf::from("/proc/stat"),
+		#[cfg(feature = "instrument")]
+		PathBuf::from("/proc/self/maps"),
 	];
 
-	let mut uhyve_rw_paths: Vec<PathBuf> = vec![PathBuf::from("/dev/kvm")];
+	let mut uhyve_rw_paths: Vec<PathBuf> = vec![
+		PathBuf::from("/dev/kvm"),
+		#[cfg(feature = "instrument")]
+		PathBuf::from("./uhyve_trace"),
+	];
 	let mut uhyve_ro_dirs = Vec::new();
 
 	for host_path in host_paths {
