@@ -198,44 +198,54 @@ impl Index<usize> for MmapMemory {
 /// Wrapper aroud a memory allocation that is aligned to x86 HugePages
 /// (`0x20_0000`). Intended for testing purposes only
 #[cfg(test)]
-#[expect(
+#[allow(
 	dead_code,
 	reason = "Part of ongoing work-in-progress virtio-net feature"
 )]
-pub(crate) struct HugePageAlignedMem<'a, const SIZE: usize> {
-	ptr: *mut u8,
-	pub mem: &'a mut [u8],
+pub(crate) struct HugePageAlignedMem<const SIZE: usize> {
+	ptr: NonNull<u8>,
 }
 #[cfg(test)]
 #[expect(
 	dead_code,
 	reason = "Part of ongoing work-in-progress virtio-net feature"
 )]
-impl<const SIZE: usize> HugePageAlignedMem<'_, SIZE> {
+impl<const SIZE: usize> HugePageAlignedMem<SIZE> {
 	pub fn new() -> Self {
 		use std::alloc::{Layout, alloc_zeroed};
 		// TODO: Make this generic to arbitrary alignments.
 		let layout = Layout::from_size_align(SIZE, 0x20_0000).unwrap();
-		unsafe {
-			let ptr = alloc_zeroed(layout);
-			if ptr.is_null() {
-				panic!("Allocation failed");
-			}
-			Self {
-				ptr,
-				mem: std::slice::from_raw_parts_mut(ptr, SIZE),
-			}
+		let ptr = unsafe { alloc_zeroed(layout) };
+		Self {
+			ptr: NonNull::new(ptr).expect("Allocation failed"),
 		}
 	}
 }
 #[cfg(test)]
-impl<const SIZE: usize> Drop for HugePageAlignedMem<'_, SIZE> {
+impl<const SIZE: usize> Drop for HugePageAlignedMem<SIZE> {
 	fn drop(&mut self) {
 		use std::alloc::{Layout, dealloc};
 		let layout = Layout::from_size_align(SIZE, 0x20_0000).unwrap();
+		let ptr = self.ptr.as_ptr();
 		unsafe {
-			dealloc(self.ptr, layout);
+			dealloc(ptr, layout);
 		}
+	}
+}
+#[cfg(test)]
+impl<const SIZE: usize> core::ops::Deref for HugePageAlignedMem<SIZE> {
+	type Target = [u8];
+	fn deref(&self) -> &[u8] {
+		let slice = NonNull::slice_from_raw_parts(self.ptr, SIZE);
+		unsafe { slice.as_ref() }
+	}
+}
+
+#[cfg(test)]
+impl<const SIZE: usize> core::ops::DerefMut for HugePageAlignedMem<SIZE> {
+	fn deref_mut(&mut self) -> &mut [u8] {
+		let mut slice = NonNull::slice_from_raw_parts(self.ptr, SIZE);
+		unsafe { slice.as_mut() }
 	}
 }
 
