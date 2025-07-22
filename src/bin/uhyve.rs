@@ -1,12 +1,20 @@
 #![warn(rust_2018_idioms)]
 
-use std::{iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process, str::FromStr};
+use std::{
+	fmt, iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process, str::FromStr,
+};
 
 use clap::{Command, CommandFactory, Parser, error::ErrorKind};
 use core_affinity::CoreId;
 use either::Either;
 use env_logger::Builder;
 use log::LevelFilter;
+use serde::{
+	Serialize,
+	de::{SeqAccess, Visitor},
+	ser::SerializeSeq,
+	*,
+};
 use thiserror::Error;
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
@@ -119,8 +127,7 @@ struct UhyveArgs {
 	gdb_port: Option<u16>,
 }
 
-/// Arguments for memory resources allocated to the guest (both guest and host).
-#[derive(Parser, Debug)]
+#[derive(Default, Parser, Debug, Serialize)]
 struct MemoryArgs {
 	/// Guest RAM size
 	#[clap(short = 'm', long, default_value_t, env = "HERMIT_MEMORY_SIZE")]
@@ -229,8 +236,65 @@ impl FromStr for Affinity {
 	}
 }
 
+/*
+ * TODO: The Serialize and Deserialize implementations are effectively a massive
+ * workaround to make up for the fact that CoreId (effectively a usize) does
+ * not implement Serialize and Deserialize, so we can't just derive Serialize
+ * and Deserialize for Affinity itself. We should upstream this someday™.
+ */
+
+impl Serialize for Affinity {
+	/// This initializes a to-be-serialized sequence of length equal to the Vec<CoreId>'s,
+	/// serializes each element, and finishes.
+	///
+	/// As simple as it gets.
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+	{
+		let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+		for core_id in &self.0 {
+			seq.serialize_element(&core_id.id)?;
+		}
+		seq.end()
+	}
+}
+
+impl<'de> Deserialize<'de> for Affinity {
+	/// Takes a list of core IDs and attempts to iteratively deserialize them.
+	///
+	/// **Note:** Heavily inspired from https://serde.rs/impl-deserialize.html
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		struct AffinityVisitor;
+
+		impl<'de> Visitor<'de> for AffinityVisitor {
+			type Value = Affinity;
+
+			fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+				formatter.write_str("a list of core IDs (usize)")
+			}
+
+			fn visit_seq<A>(self, mut seq: A) -> Result<Affinity, A::Error>
+			where
+				A: SeqAccess<'de>,
+			{
+				let mut cores = Vec::new();
+				while let Some(id) = seq.next_element::<usize>()? {
+					cores.push(core_affinity::CoreId { id });
+				}
+				Ok(Affinity(cores))
+			}
+		}
+
+		deserializer.deserialize_seq(AffinityVisitor)
+	}
+}
+
 /// Arguments for the CPU resources allocated to the guest.
-#[derive(Parser, Debug, Clone)]
+#[derive(Default, Parser, Debug, Clone, Serialize)]
 struct CpuArgs {
 	/// Number of guest CPUs
 	#[clap(short, long, default_value_t, env = "HERMIT_CPU_COUNT")]
