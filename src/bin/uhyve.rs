@@ -39,9 +39,26 @@ fn setup_trace() {
 	}
 }
 
+/// Used by clap to derive CLI parameters for Uhyve.
 #[derive(Parser, Debug)]
 #[clap(version, author, about)]
 struct Args {
+	#[clap(flatten, next_help_heading = "Uhyve OPTIONS")]
+	uhyve_args: UhyveArgs,
+
+	#[clap(flatten, next_help_heading = "Memory OPTIONS")]
+	memory_args: MemoryArgs,
+
+	#[clap(flatten, next_help_heading = "Cpu OPTIONS")]
+	cpu_args: CpuArgs,
+
+	#[clap(flatten, next_help_heading = "Guest OPTIONS")]
+	guest_args: GuestArgs,
+}
+
+/// Arguments for Uhyve runtime-related configurations.
+#[derive(Parser, Debug)]
+struct UhyveArgs {
 	/// Kernel output redirection.
 	///
 	/// None discards all output, Omit for stdout
@@ -90,29 +107,9 @@ struct Args {
 	#[clap(short = 's', long, env = "HERMIT_GDB_PORT")]
 	#[cfg(target_os = "linux")]
 	gdb_port: Option<u16>,
-
-	/// Environment variables of the guest as env=value paths
-	///
-	/// `-e host` passes all variables of the parent process to the kernel (discarding any other passed environment variables).
-	///
-	/// Example: --env_vars ASDF=jlk -e TERM=uhyveterm2000
-	#[clap(short, long)]
-	env_vars: Vec<String>,
-
-	#[clap(flatten, next_help_heading = "Memory OPTIONS")]
-	memory_args: MemoryArgs,
-
-	#[clap(flatten, next_help_heading = "Cpu OPTIONS")]
-	cpu_args: CpuArgs,
-
-	/// The kernel to execute
-	#[clap(value_parser)]
-	kernel: PathBuf,
-
-	/// Arguments to forward to the kernel
-	kernel_args: Vec<String>,
 }
 
+/// Arguments for memory resources allocated to the guest (both guest and host).
 #[derive(Parser, Debug)]
 struct MemoryArgs {
 	/// Guest RAM size
@@ -222,6 +219,7 @@ impl FromStr for Affinity {
 	}
 }
 
+/// Arguments for the CPU resources allocated to the guest.
 #[derive(Parser, Debug, Clone)]
 struct CpuArgs {
 	/// Number of guest CPUs
@@ -274,9 +272,39 @@ impl CpuArgs {
 	}
 }
 
+/// Arguments for the guest OS and guest runtime-related configurations.
+#[derive(Parser, Debug)]
+struct GuestArgs {
+	/// The kernel to execute
+	#[clap(value_parser)]
+	kernel: PathBuf,
+
+	/// Arguments to forward to the kernel
+	kernel_args: Vec<String>,
+
+	/// Environment variables of the guest as env=value paths
+	///
+	/// `-e host` passes all variables of the parent process to the kernel (discarding any other passed environment variables).
+	///
+	/// Example: --env_vars ASDF=jlk -e TERM=uhyveterm2000
+	#[clap(short, long)]
+	env_vars: Vec<String>,
+}
+
 impl From<Args> for Params {
 	fn from(args: Args) -> Self {
 		let Args {
+			uhyve_args:
+				UhyveArgs {
+					output,
+					stats,
+					file_mapping,
+					tempdir,
+					#[cfg(target_os = "linux")]
+					file_isolation,
+					#[cfg(target_os = "linux")]
+					gdb_port,
+				},
 			memory_args:
 				MemoryArgs {
 					memory_size,
@@ -293,17 +321,11 @@ impl From<Args> for Params {
 					pit,
 					affinity: _,
 				},
-			#[cfg(target_os = "linux")]
-			gdb_port,
-			file_mapping,
-			tempdir,
-			#[cfg(target_os = "linux")]
-			file_isolation,
-			kernel: _,
-			kernel_args,
-			output,
-			stats,
-			env_vars,
+			guest_args: GuestArgs {
+				kernel: _,
+				kernel_args,
+				env_vars,
+			},
 		} = args;
 		Self {
 			memory_size,
@@ -352,8 +374,8 @@ fn run_uhyve() -> i32 {
 
 	let mut app = Args::command();
 	let args = Args::parse();
-	let stats = args.stats;
-	let kernel_path = args.kernel.clone();
+	let stats = args.uhyve_args.stats;
+	let kernel_path = args.guest_args.kernel.clone();
 	let affinity = args.cpu_args.clone().get_affinity(&mut app);
 	let params = Params::from(args);
 
