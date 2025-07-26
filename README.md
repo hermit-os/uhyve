@@ -108,7 +108,7 @@ uhyve /path/to/the/unikernel/binary
 > If you want to compile Hermit binaries yourself (or create your own), take a look at the following repositories:
 > - [hermit-os/hermit-rs](https://github.com/hermit-os/hermit-rs)
 > - [hermit-os/hermit-rs-template](https://github.com/hermit-os/hermit-rs-template)
-> - [hermit-os/hermit-playground](https://github.com/hermit-os/hermit-playground)
+> - [hermit-os/hermit-c](https://github.com/hermit-os/hermit-c)
 
 ### Configuration
 
