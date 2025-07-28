@@ -1,5 +1,8 @@
 #![cfg_attr(target_os = "macos", allow(dead_code))] // no virtio implementation for macos
-use std::{marker::PhantomData, mem, mem::size_of};
+use std::{
+	marker::PhantomData,
+	mem::{align_of, size_of},
+};
 
 use crate::consts::PAGE_SIZE;
 
@@ -14,12 +17,12 @@ pub struct VringDescriptor {
 }
 
 pub struct Vring<T> {
-	mem: *const u8,
+	mem: *mut u8,
 	_marker: PhantomData<*const T>,
 }
 
 impl<T> Vring<T> {
-	pub fn new(mem: *const u8) -> Self {
+	pub fn new(mem: *mut u8) -> Self {
 		Vring {
 			mem,
 			_marker: PhantomData,
@@ -27,34 +30,47 @@ impl<T> Vring<T> {
 	}
 
 	pub fn _flags(&self) -> u16 {
-		unsafe {
-			#[expect(clippy::cast_ptr_alignment)]
-			*(self.mem as *const u16)
-		}
+		unsafe { self.mem.cast::<u16>().read_unaligned() }
 	}
 
 	pub fn index(&self) -> u16 {
-		unsafe {
-			#[expect(clippy::cast_ptr_alignment)]
-			*(self.mem.offset(2) as *const u16)
-		}
+		unsafe { self.mem.byte_add(2).cast::<u16>().read_unaligned() }
 	}
 
 	pub fn advance_index(&mut self) {
 		unsafe {
-			let new_value = self.index() + 1;
-			#[expect(clippy::cast_ptr_alignment)]
-			let write_ptr = self.mem.offset(2) as *mut u16;
-			*write_ptr = new_value;
+			let ptr = self.mem.byte_add(2).cast::<u16>();
+			ptr.write_unaligned(ptr.read_unaligned() + 1);
 		}
 	}
 
-	pub fn ring_elem(&mut self, index: u16) -> &mut T {
-		let elem_size = mem::size_of::<T>() as u16;
-		unsafe { &mut *(self.mem.offset((4 + index * elem_size) as isize) as *mut T) }
+	// This allows accessing ring elements without having to worry about alignemt
+	pub fn access_ring_elem<R, F>(&mut self, index: u16, inner: F) -> R
+	where
+		T: Copy,
+		F: FnOnce(&mut T) -> R,
+	{
+		unsafe {
+			let elems_mem = self.mem.byte_add(4).cast::<T>();
+			let elem: *mut T = elems_mem.add(index.into());
+			if elem.is_aligned() {
+				// optimization when T is aligned
+				inner(&mut *elem)
+			} else {
+				// if `elem` is not aligned, copy it onto the stack
+				// and use that instead.
+				let mut data: T = elem.read_unaligned();
+				// the following is panic-safe and we won't have to worry about `Drop`
+				// because T: Copy
+				let ret = inner(&mut data);
+				elem.write_unaligned(data);
+				ret
+			}
+		}
 	}
 }
 
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct VringUsedElement {
 	pub id: u32,
@@ -111,8 +127,12 @@ fn get_used_ring_offset() -> usize {
 
 impl Virtqueue {
 	pub unsafe fn new(mem: *mut u8, queue_size: usize) -> Self {
-		#[expect(clippy::cast_ptr_alignment)]
-		let descriptor_table = mem as *mut VringDescriptor;
+		// make sure memory is correctly aligned
+		// TODO: replace this with `mem.is_aligned_to(align_of::<VringDescriptor>())`
+		//       once that's stable.
+		assert_eq!(mem.addr() % align_of::<VringDescriptor>(), 0);
+		// #[expect(clippy::cast_ptr_alignment)]
+		let descriptor_table = mem.cast::<VringDescriptor>();
 		let available_ring_ptr = unsafe { mem.add(get_available_ring_offset()) };
 		let used_ring_ptr = unsafe { mem.add(get_used_ring_offset()) };
 		let available_ring = VringAvailable::new(available_ring_ptr);
@@ -141,9 +161,10 @@ impl Virtqueue {
 
 	pub fn add_used(&mut self, desc_index: u32, len: u32) {
 		let tgt_index = self.used_ring.index() % self.queue_size;
-		let used_elem = self.used_ring.ring_elem(tgt_index);
-		used_elem.id = desc_index;
-		used_elem.len = len;
+		self.used_ring.access_ring_elem(tgt_index, |used_elem| {
+			used_elem.id = desc_index;
+			used_elem.len = len;
+		});
 		self.used_ring.advance_index();
 	}
 }
