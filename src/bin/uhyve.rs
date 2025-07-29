@@ -56,6 +56,16 @@ struct Args {
 	guest_args: GuestArgs,
 }
 
+/// This is the config that defines a set of parameters for a given Hermit machine image.
+///
+/// TODO: Figure out how to adapt file isolation.
+#[derive(Debug)]
+struct UhyveGuestConfig {
+	memory_args: MemoryArgs,
+	cpu_args: CpuArgs,
+	guest_args: GuestArgs,
+}
+
 /// Arguments for Uhyve runtime-related configurations.
 #[derive(Parser, Debug)]
 struct UhyveArgs {
@@ -358,6 +368,48 @@ impl From<Args> for Params {
 			},
 			stats,
 			env: EnvVars::try_from(env_vars.as_slice()).unwrap(),
+		}
+	}
+}
+
+impl From<UhyveGuestConfig> for Params {
+	fn from(guest_config: UhyveGuestConfig) -> Self {
+		let UhyveGuestConfig {
+			memory_args:
+				MemoryArgs {
+					memory_size,
+					no_aslr,
+					#[cfg(target_os = "linux")]
+					thp,
+					#[cfg(target_os = "linux")]
+					ksm,
+				},
+			cpu_args:
+				CpuArgs {
+					cpu_count,
+					#[cfg(target_os = "linux")]
+					pit,
+					affinity: _,
+				},
+			guest_args: GuestArgs {
+				kernel: _,
+				kernel_args,
+				env_vars,
+			},
+		} = guest_config;
+		Self {
+			memory_size,
+			#[cfg(target_os = "linux")]
+			thp,
+			#[cfg(target_os = "linux")]
+			ksm,
+			aslr: !no_aslr,
+			cpu_count,
+			#[cfg(target_os = "linux")]
+			pit,
+			kernel_args,
+			env: EnvVars::try_from(env_vars.as_slice()).unwrap(),
+			..Default::default()
 		}
 	}
 }
