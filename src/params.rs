@@ -8,7 +8,7 @@ use std::{
 };
 
 use byte_unit::{Byte, Unit};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
@@ -85,7 +85,7 @@ impl Default for Params {
 	}
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct CpuCount(NonZeroU32);
 
 impl CpuCount {
@@ -124,7 +124,7 @@ impl FromStr for CpuCount {
 	}
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct GuestMemorySize(Byte);
 
 impl GuestMemorySize {

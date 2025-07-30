@@ -67,7 +67,7 @@ struct Args {
 /// This is the config that defines a set of parameters for a given Hermit machine image.
 ///
 /// TODO: Figure out how to adapt file isolation.
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 struct UhyveGuestConfig {
 	memory_args: MemoryArgs,
 	cpu_args: CpuArgs,
@@ -127,7 +127,7 @@ struct UhyveArgs {
 	gdb_port: Option<u16>,
 }
 
-#[derive(Default, Parser, Debug, Serialize)]
+#[derive(Default, Parser, Debug, Serialize, Deserialize)]
 struct MemoryArgs {
 	/// Guest RAM size
 	#[clap(short = 'm', long, default_value_t, env = "HERMIT_MEMORY_SIZE")]
@@ -156,11 +156,38 @@ struct MemoryArgs {
 	ksm: bool,
 }
 
+/// Arguments for the CPU resources allocated to the guest.
+#[derive(Default, Parser, Debug, Clone, Serialize, Deserialize)]
+struct CpuArgs {
+	/// Number of guest CPUs
+	#[clap(short, long, default_value_t, env = "HERMIT_CPU_COUNT")]
+	cpu_count: CpuCount,
+
+	/// Create a PIT
+	#[clap(long)]
+	#[cfg(target_os = "linux")]
+	pit: bool,
+
+	/// Bind guest vCPUs to host cpus
+	///
+	/// A list of host CPU numbers onto which the guest vCPUs should be bound to obtain performance benefits.
+	/// List items may be single numbers or inclusive ranges.
+	/// List items may be separated with commas or spaces.
+	///
+	/// # Examples
+	///
+	/// * `--affinity "0 1 2"`
+	///
+	/// * `--affinity 0-1,2`
+	#[clap(short, long, name = "CPUs")]
+	affinity: Option<Affinity>,
+}
+
 #[derive(Debug, Clone)]
 struct Affinity(Vec<CoreId>);
 
 impl Affinity {
-	fn parse_ranges_iter<'a>(
+	pub fn parse_ranges_iter<'a>(
 		ranges: impl IntoIterator<Item = &'a str> + 'a,
 	) -> impl Iterator<Item = Result<usize, ParseIntError>> + 'a {
 		struct ParsedRange(RangeInclusive<usize>);
@@ -241,6 +268,8 @@ impl FromStr for Affinity {
  * workaround to make up for the fact that CoreId (effectively a usize) does
  * not implement Serialize and Deserialize, so we can't just derive Serialize
  * and Deserialize for Affinity itself. We should upstream this someday™.
+ * 
+ * ... or maybe they aren't, given that we have special handling for ranges.
  */
 
 impl Serialize for Affinity {
@@ -274,16 +303,43 @@ impl<'de> Deserialize<'de> for Affinity {
 			type Value = Affinity;
 
 			fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-				formatter.write_str("a list of core IDs (usize)")
+				formatter.write_str(
+					"a list of core IDs (usize) or range of core IDs (String, e.g. '1-3')",
+				)
 			}
 
 			fn visit_seq<A>(self, mut seq: A) -> Result<Affinity, A::Error>
 			where
 				A: SeqAccess<'de>,
 			{
-				let mut cores = Vec::new();
-				while let Some(id) = seq.next_element::<usize>()? {
-					cores.push(core_affinity::CoreId { id });
+				/// In a TOML configuration file, strings containing ranges or digits (e.g. '4-5', '4'),
+				/// as well as ordinary digits (e.g. 4) are supported.
+				///
+				/// This means that a combination such as ['4-5', '6', 7] is allowed in the TOML config.
+				/// This is a byproduct of the preexisting clap interface the FromStr trait implementation
+				/// of Affinity, but there wasn't too much of a reason to restrict it; we can support both,
+				/// but merely document combinations like ['4-5', 6] instead.
+				#[derive(Deserialize)]
+				#[serde(untagged)]
+				enum AffinityInputTypes {
+					String(String),
+					Usize(usize),
+				}
+
+				let mut cores: Vec<CoreId> = Vec::new();
+				while let Some(entry) = seq.next_element::<AffinityInputTypes>()? {
+					match entry {
+						AffinityInputTypes::String(core_id_range) => {
+							// This takes advantage of Affinity's FromStr range that was used before for clap,
+							// then it extracts the resulting core IDs from the vector itself.
+							//
+							// CoreId may be part of the core_affinity crate, but we can control Affinity, so.
+							cores.extend(
+								Affinity::from_str(core_id_range.as_str()).unwrap().0.iter(),
+							);
+						}
+						AffinityInputTypes::Usize(id) => cores.push(CoreId { id }),
+					}
 				}
 				Ok(Affinity(cores))
 			}
@@ -291,33 +347,6 @@ impl<'de> Deserialize<'de> for Affinity {
 
 		deserializer.deserialize_seq(AffinityVisitor)
 	}
-}
-
-/// Arguments for the CPU resources allocated to the guest.
-#[derive(Default, Parser, Debug, Clone, Serialize)]
-struct CpuArgs {
-	/// Number of guest CPUs
-	#[clap(short, long, default_value_t, env = "HERMIT_CPU_COUNT")]
-	cpu_count: CpuCount,
-
-	/// Create a PIT
-	#[clap(long)]
-	#[cfg(target_os = "linux")]
-	pit: bool,
-
-	/// Bind guest vCPUs to host cpus
-	///
-	/// A list of host CPU numbers onto which the guest vCPUs should be bound to obtain performance benefits.
-	/// List items may be single numbers or inclusive ranges.
-	/// List items may be separated with commas or spaces.
-	///
-	/// # Examples
-	///
-	/// * `--affinity "0 1 2"`
-	///
-	/// * `--affinity 0-1,2`
-	#[clap(short, long, name = "CPUs")]
-	affinity: Option<Affinity>,
 }
 
 impl CpuArgs {
@@ -347,7 +376,7 @@ impl CpuArgs {
 }
 
 /// Arguments for the guest OS and guest runtime-related configurations.
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Deserialize)]
 struct GuestArgs {
 	/// The kernel to execute
 	#[clap(value_parser)]
@@ -489,6 +518,7 @@ fn run_uhyve() -> i32 {
 	env_builder.init();
 
 	let mut app = Args::command();
+	// TODO: Read UhyveFileConfig, merge with exising args (but do not overwrite Args fields)
 	let args = Args::parse();
 	let stats = args.uhyve_args.stats;
 	let kernel_path = args.guest_args.kernel.clone();
@@ -507,4 +537,103 @@ fn run_uhyve() -> i32 {
 
 fn main() {
 	process::exit(run_uhyve())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	// TODO: Fix affinity usizes
+	// TODO: Make kernel_args optional
+	// TODO: make thp/pit/ksm optional, use defaults if they don't exist
+	// TODO: split boilerplate (linux-specific or not)
+	// TODO: move all Args to a separate file
+	// TODO: Remove Args suffix from e.g. UhyveArgs so that the TOML looks better
+
+	#[test]
+	fn test_toml_affinity_strings() {
+		// TODO: Fix affinity
+		// TODO: Make kernel_args optional
+		let config_affinity_mixed: UhyveGuestConfig = toml::from_str(
+			r#"
+			[memory_args]
+			memory_size = '4M'
+			no_aslr = false
+			thp = false
+			pit = true
+			ksm = true
+
+			[cpu_args]
+			cpu_count = 4
+			pit = false
+			affinity = ['4-5', '6']
+
+			[guest_args]
+			kernel = './data/x86_64/hello_c'
+			kernel_args = ['foo=bar']
+			env_vars = ['bar=foo']
+		"#,
+		)
+		.unwrap();
+
+		assert_eq!(
+			config_affinity_mixed.cpu_args.affinity.unwrap().0,
+			Affinity::from_str("4,5,6").unwrap().0
+		);
+	}
+
+	#[test]
+	fn test_toml_affinity_strings_two() {
+		let config_affinity_mixed: UhyveGuestConfig = toml::from_str(
+			r#"
+			[memory_args]
+			memory_size = '4M'
+			no_aslr = false
+			thp = false
+			pit = true
+			ksm = true
+
+			[cpu_args]
+			cpu_count = 4
+			pit = false
+			affinity = ['4,5,6', '7']
+
+			[guest_args]
+			kernel = './data/x86_64/hello_c'
+			kernel_args = ['foo=bar']
+			env_vars = ['bar=foo']
+		"#,
+		)
+		.unwrap();
+
+		assert_eq!(
+			config_affinity_mixed.cpu_args.affinity.unwrap().0,
+			Affinity::from_str("4,5,6,7").unwrap().0
+		);
+	}
+
+	#[test]
+	fn test_toml_affinity_usize() {
+		let _config_affinity_usize: UhyveGuestConfig = toml::from_str(
+			r#"
+			[memory_args]
+			memory_size = '4M'
+			no_aslr = false
+			thp = false
+			pit = true
+			ksm = true
+
+			[cpu_args]
+			cpu_count = 4
+			pit = false
+			affinity = [4, 5, 6]
+
+			[guest_args]
+			kernel = './data/x86_64/hello_c'
+			kernel_args = ['foo=bar']
+			env_vars = ['bar=foo']
+		"#,
+		)
+		.unwrap();
+	}
 }
