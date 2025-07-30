@@ -268,7 +268,6 @@ impl FromStr for Affinity {
  * workaround to make up for the fact that CoreId (effectively a usize) does
  * not implement Serialize and Deserialize, so we can't just derive Serialize
  * and Deserialize for Affinity itself. We should upstream this someday™.
- * 
  * ... or maybe they aren't, given that we have special handling for ranges.
  */
 
@@ -566,7 +565,7 @@ mod tests {
 			[cpu_args]
 			cpu_count = 4
 			pit = false
-			affinity = ['4-5', '6']
+			affinity = ['1-2', '3']
 
 			[guest_args]
 			kernel = './data/x86_64/hello_c'
@@ -578,7 +577,7 @@ mod tests {
 
 		assert_eq!(
 			config_affinity_mixed.cpu_args.affinity.unwrap().0,
-			Affinity::from_str("4,5,6").unwrap().0
+			Affinity::from_str("1,2,3").unwrap().0
 		);
 	}
 
@@ -596,7 +595,7 @@ mod tests {
 			[cpu_args]
 			cpu_count = 4
 			pit = false
-			affinity = ['4,5,6', '7']
+			affinity = ['1,2', '3']
 
 			[guest_args]
 			kernel = './data/x86_64/hello_c'
@@ -608,7 +607,7 @@ mod tests {
 
 		assert_eq!(
 			config_affinity_mixed.cpu_args.affinity.unwrap().0,
-			Affinity::from_str("4,5,6,7").unwrap().0
+			Affinity::from_str("1,2,3").unwrap().0
 		);
 	}
 
@@ -626,7 +625,7 @@ mod tests {
 			[cpu_args]
 			cpu_count = 4
 			pit = false
-			affinity = [4, 5, 6]
+			affinity = [1, 2, 3]
 
 			[guest_args]
 			kernel = './data/x86_64/hello_c'
