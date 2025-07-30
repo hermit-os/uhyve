@@ -6,9 +6,7 @@ use clap::{Command, Parser, error::ErrorKind};
 use core_affinity::CoreId;
 use either::Either;
 use serde::{
-	Serialize,
-	de::{SeqAccess, Visitor},
-	ser::SerializeSeq,
+	de::{Deserialize, SeqAccess, Visitor},
 	*,
 };
 use thiserror::Error;
@@ -99,7 +97,7 @@ pub struct UhyveArgs {
 	gdb_port: Option<u16>,
 }
 
-#[derive(Default, Parser, Debug, Serialize, Deserialize)]
+#[derive(Default, Parser, Debug, Deserialize)]
 pub struct MemoryArgs {
 	/// Guest RAM size
 	#[clap(short = 'm', long, default_value_t, env = "HERMIT_MEMORY_SIZE")]
@@ -129,7 +127,7 @@ pub struct MemoryArgs {
 }
 
 /// Arguments for the CPU resources allocated to the guest.
-#[derive(Default, Parser, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Parser, Debug, Clone, Deserialize)]
 pub struct CpuArgs {
 	/// Number of guest CPUs
 	#[clap(short, long, default_value_t, env = "HERMIT_CPU_COUNT")]
@@ -232,31 +230,6 @@ impl FromStr for Affinity {
 			.map(|affinity| CoreId { id: affinity })
 			.collect();
 		Ok(Self(core_ids))
-	}
-}
-
-/*
- * TODO: The Serialize and Deserialize implementations are effectively a massive
- * workaround to make up for the fact that CoreId (effectively a usize) does
- * not implement Serialize and Deserialize, so we can't just derive Serialize
- * and Deserialize for Affinity itself. We should upstream this someday™.
- * ... or maybe they aren't, given that we have special handling for ranges.
- */
-
-impl Serialize for Affinity {
-	/// This initializes a to-be-serialized sequence of length equal to the Vec<CoreId>'s,
-	/// serializes each element, and finishes.
-	///
-	/// As simple as it gets.
-	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-	where
-		S: Serializer,
-	{
-		let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
-		for core_id in &self.0 {
-			seq.serialize_element(&core_id.id)?;
-		}
-		seq.end()
 	}
 }
 
