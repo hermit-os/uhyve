@@ -94,21 +94,21 @@ impl From<Args> for Params {
 			},
 		} = args;
 		Self {
-			memory_size,
+			memory_size: memory_size.unwrap_or_default(),
 			#[cfg(target_os = "linux")]
-			thp,
+			thp: thp.unwrap_or_default(),
 			#[cfg(target_os = "linux")]
-			ksm,
-			aslr: !no_aslr,
+			ksm: ksm.unwrap_or_default(),
+			aslr: !no_aslr.unwrap_or_default(),
 			cpu_count,
 			#[cfg(target_os = "linux")]
-			pit,
-			file_mapping,
+			pit: pit.unwrap_or_default(),
+			file_mapping: file_mapping.unwrap_or_default(),
 			#[cfg(target_os = "linux")]
 			gdb_port,
 			#[cfg(target_os = "macos")]
 			gdb_port: None,
-			kernel_args,
+			kernel_args: kernel_args.unwrap_or_default(),
 			tempdir,
 			#[cfg(target_os = "linux")]
 			file_isolation: if let Some(file_isolation) = file_isolation {
@@ -122,8 +122,8 @@ impl From<Args> for Params {
 			} else {
 				Output::StdIo
 			},
-			stats,
-			env: EnvVars::try_from(env_vars.as_slice()).unwrap(),
+			stats: stats.unwrap_or_default(),
+			env: EnvVars::try_from(env_vars.unwrap_or_default().as_slice()).unwrap(),
 		}
 	}
 }
@@ -142,7 +142,7 @@ fn run_uhyve() -> i32 {
 	// TODO: Read UhyveFileConfig, merge with exising args (but do not overwrite Args fields)
 	let args = Args::parse();
 	// TODO: Remove pubs, move these to Params
-	let stats = args.uhyve_args.stats;
+	let stats = args.uhyve_args.stats.unwrap_or_default();
 	let kernel_path = args.guest_args.kernel.clone();
 	let affinity = args.cpu_args.clone().get_affinity(&mut app);
 	let params = Params::from(args);

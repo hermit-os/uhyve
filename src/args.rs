@@ -13,6 +13,28 @@ use thiserror::Error;
 
 use crate::params::{CpuCount, EnvVars, GuestMemorySize, Params};
 
+/*
+ * Few notes:
+ * Although clap offers the convenient default_value_t macro, which would otherwise
+ * help us avoid using Option<T> everywhere, this was removed from structs like
+ * UhyveArgs, CpuArgs, etc., for two reasons:
+ * 
+ * 1. toml-rs does not have a similar macro, instead choosing to rely on Option<T>.
+ * 2. The structs, derived from both CLI arguments (clap) and TOML configuration files
+ *    (toml-rs), are fed to Params. Params implements a Default type itself.
+ * 
+ * There is no need to have the structs representing the command line or configuration
+ * file interface decide on defaults, as such defaults are decided upon by Params.
+ * Params is ultimately what defines, or should define, how Uhyve will actually work.
+ * Params should contain a composition of configurations collected both by clap and
+ * by toml-rs.
+ * 
+ * Both interfaces should only strictly require a configuration if determining a
+ * default is not possible, e.g. the location of a kernel. In the future, it might be
+ * possible to infer a certain default from one interface but not for the other (e.g.
+ * using the pathname of a TOML configuration file to substitute the `kernel` argument.)
+ */
+
 /// This is the config that defines a set of parameters for a given Hermit machine image.
 ///
 /// Note that the field names are relevant for the TOML's tables.
@@ -36,7 +58,7 @@ pub struct UhyveArgs {
 
 	/// Display statistics after the execution
 	#[clap(long)]
-	pub stats: bool,
+	pub stats: Option<bool>,
 
 	/// Paths that the kernel should be able to view, read or write.
 	///
@@ -44,7 +66,7 @@ pub struct UhyveArgs {
 	///
 	/// Example: --file-mapping host_dir:guest_dir --file-mapping file.txt:guest_file.txt
 	#[clap(long)]
-	pub file_mapping: Vec<String>,
+	pub file_mapping: Option<Vec<String>>,
 
 	/// The path that should be used for temporary directories storing unmapped files.
 	///
@@ -81,12 +103,12 @@ pub struct UhyveArgs {
 #[derive(Default, Parser, Debug, Deserialize)]
 pub struct MemoryArgs {
 	/// Guest RAM size
-	#[clap(short = 'm', long, default_value_t, env = "HERMIT_MEMORY_SIZE")]
-	pub memory_size: GuestMemorySize,
+	#[clap(short = 'm', long, env = "HERMIT_MEMORY_SIZE")]
+	pub memory_size: Option<GuestMemorySize>,
 
 	/// Disable ASLR
 	#[clap(long)]
-	pub no_aslr: bool,
+	pub no_aslr: Option<bool>,
 
 	/// Transparent Hugepages
 	///
@@ -95,7 +117,7 @@ pub struct MemoryArgs {
 	/// [THP]: https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html
 	#[clap(long)]
 	#[cfg(target_os = "linux")]
-	pub thp: bool,
+	pub thp: Option<bool>,
 
 	/// Kernel Samepage Merging
 	///
@@ -104,20 +126,20 @@ pub struct MemoryArgs {
 	/// [KSM]: https://www.kernel.org/doc/html/latest/admin-guide/mm/ksm.html
 	#[clap(long)]
 	#[cfg(target_os = "linux")]
-	pub ksm: bool,
+	pub ksm: Option<bool>,
 }
 
 /// Arguments for the CPU resources allocated to the guest.
 #[derive(Default, Parser, Debug, Clone, Deserialize)]
 pub struct CpuArgs {
 	/// Number of guest CPUs
-	#[clap(short, long, default_value_t, env = "HERMIT_CPU_COUNT")]
+	#[clap(short, long, env = "HERMIT_CPU_COUNT")]
 	pub cpu_count: CpuCount,
 
 	/// Create a PIT
 	#[clap(long)]
 	#[cfg(target_os = "linux")]
-	pub pit: bool,
+	pub pit: Option<bool>,
 
 	/// Bind guest vCPUs to host cpus
 	///
@@ -308,7 +330,7 @@ pub struct GuestArgs {
 	pub kernel: PathBuf,
 
 	/// Arguments to forward to the kernel
-	pub kernel_args: Vec<String>,
+	pub kernel_args: Option<Vec<String>>,
 
 	/// Environment variables of the guest as env=value paths
 	///
@@ -316,7 +338,7 @@ pub struct GuestArgs {
 	///
 	/// Example: --env_vars ASDF=jlk -e TERM=uhyveterm2000
 	#[clap(short, long)]
-	pub env_vars: Vec<String>,
+	pub env_vars: Option<Vec<String>>,
 }
 
 impl From<UhyveGuestConfig> for Params {
@@ -345,17 +367,17 @@ impl From<UhyveGuestConfig> for Params {
 			},
 		} = guest_config;
 		Self {
-			memory_size,
+			memory_size: memory_size.unwrap_or_default(),
 			#[cfg(target_os = "linux")]
-			thp,
+			thp: thp.unwrap_or_default(),
 			#[cfg(target_os = "linux")]
-			ksm,
-			aslr: !no_aslr,
+			ksm: ksm.unwrap_or_default(),
+			aslr: !no_aslr.unwrap_or_default(),
 			cpu_count,
 			#[cfg(target_os = "linux")]
-			pit,
-			kernel_args,
-			env: EnvVars::try_from(env_vars.as_slice()).unwrap(),
+			pit: pit.unwrap_or_default(),
+			kernel_args: kernel_args.unwrap_or_default(),
+			env: EnvVars::try_from(env_vars.unwrap_or_default().as_slice()).unwrap(),
 			..Default::default()
 		}
 	}
