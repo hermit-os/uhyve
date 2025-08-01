@@ -11,7 +11,7 @@ use serde::{
 };
 use thiserror::Error;
 
-use crate::params::{CpuCount, EnvVars, GuestMemorySize, Params};
+use crate::params::{CpuCount, GuestMemorySize};
 
 /*
  * Few notes:
@@ -42,19 +42,23 @@ use crate::params::{CpuCount, EnvVars, GuestMemorySize, Params};
 /// TODO: Figure out how to adapt file isolation.
 #[derive(Debug, Deserialize)]
 pub struct UhyveGuestConfig {
-	pub(crate) memory: MemoryArgs,
+	pub memory: MemoryArgs,
 	pub cpu: CpuArgs,
 	pub guest: GuestArgs,
 }
 
-#[derive(Default, Parser, Debug, Deserialize)]
+use merge::Merge;
+
+#[derive(Default, Merge, Parser, Debug, Deserialize)]
 pub struct MemoryArgs {
 	/// Guest RAM size
 	#[clap(short = 'm', long, env = "HERMIT_MEMORY_SIZE")]
+	#[merge(strategy = merge::option::overwrite_none)]
 	pub memory_size: Option<GuestMemorySize>,
 
 	/// Disable ASLR
 	#[clap(long)]
+	#[merge(strategy = merge::option::overwrite_none)]
 	pub no_aslr: Option<bool>,
 
 	/// Transparent Hugepages
@@ -63,6 +67,7 @@ pub struct MemoryArgs {
 	///
 	/// [THP]: https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html
 	#[clap(long)]
+	#[merge(strategy = merge::option::overwrite_none)]
 	#[cfg(target_os = "linux")]
 	pub thp: Option<bool>,
 
@@ -72,19 +77,22 @@ pub struct MemoryArgs {
 	///
 	/// [KSM]: https://www.kernel.org/doc/html/latest/admin-guide/mm/ksm.html
 	#[clap(long)]
+	#[merge(strategy = merge::option::overwrite_none)]
 	#[cfg(target_os = "linux")]
 	pub ksm: Option<bool>,
 }
 
 /// Arguments for the CPU resources allocated to the guest.
-#[derive(Default, Parser, Debug, Clone, Deserialize)]
+#[derive(Default, Debug, Clone, Merge, Parser, Deserialize)]
 pub struct CpuArgs {
 	/// Number of guest CPUs
 	#[clap(short, long, env = "HERMIT_CPU_COUNT")]
-	pub cpu_count: CpuCount,
+	#[merge(strategy = merge::option::overwrite_none)]
+	pub cpu_count: Option<CpuCount>,
 
 	/// Create a PIT
 	#[clap(long)]
+	#[merge(strategy = merge::option::overwrite_none)]
 	#[cfg(target_os = "linux")]
 	pub pit: Option<bool>,
 
@@ -100,6 +108,7 @@ pub struct CpuArgs {
 	///
 	/// * `--affinity 0-1,2`
 	#[clap(short, long, name = "CPUs")]
+	#[merge(strategy = merge::option::overwrite_none)]
 	pub affinity: Option<Affinity>,
 }
 
@@ -247,7 +256,7 @@ impl CpuArgs {
 	pub fn get_affinity(self, app: &mut Command) -> Option<Vec<CoreId>> {
 		self.affinity.map(|affinity| {
 			let affinity_num_vals = affinity.0.len();
-			let cpus_num_vals = usize::try_from(self.cpu_count.get()).unwrap();
+			let cpus_num_vals = usize::try_from(self.cpu_count.unwrap().get()).unwrap();
 			if affinity_num_vals != cpus_num_vals {
 				let affinity_arg = app
 					.get_arguments()
@@ -270,14 +279,17 @@ impl CpuArgs {
 }
 
 /// Arguments for the guest OS and guest runtime-related configurations
-#[derive(Parser, Debug, Deserialize)]
+#[derive(Parser, Merge, Debug, Deserialize)]
 pub struct GuestArgs {
 	/// The kernel to execute
 	#[clap(value_parser)]
-	pub kernel: PathBuf,
+	#[merge(strategy = merge::option::overwrite_none)]
+	pub kernel: Option<PathBuf>,
 
 	/// Arguments to forward to the kernel
-	pub kernel_args: Option<Vec<String>>,
+	#[serde(default)]
+	#[merge(strategy = merge::vec::append)]
+	pub kernel_args: Vec<String>,
 
 	/// Environment variables of the guest as env=value paths
 	///
@@ -285,9 +297,12 @@ pub struct GuestArgs {
 	///
 	/// Example: --env_vars ASDF=jlk -e TERM=uhyveterm2000
 	#[clap(short, long)]
-	pub env_vars: Option<Vec<String>>,
+	#[serde(default)]
+	#[merge(strategy = merge::vec::append)]
+	pub env_vars: Vec<String>,
 }
 
+/*
 impl From<UhyveGuestConfig> for Params {
 	fn from(guest_config: UhyveGuestConfig) -> Self {
 		let UhyveGuestConfig {
@@ -320,7 +335,7 @@ impl From<UhyveGuestConfig> for Params {
 			#[cfg(target_os = "linux")]
 			ksm: ksm.unwrap_or_default(),
 			aslr: !no_aslr.unwrap_or_default(),
-			cpu_count,
+			cpu_count: cpu_count.unwrap_or_default(),
 			#[cfg(target_os = "linux")]
 			pit: pit.unwrap_or_default(),
 			kernel_args: kernel_args.unwrap_or_default(),
@@ -329,13 +344,12 @@ impl From<UhyveGuestConfig> for Params {
 		}
 	}
 }
+*/
 
 #[cfg(test)]
 mod tests {
 	use super::*;
 
-	// TODO: Make kernel_args optional
-	// TODO: make thp/pit/ksm optional, use defaults if they don't exist
 	// TODO: split boilerplate (linux-specific or not)
 
 	#[test]

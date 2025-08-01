@@ -1,0 +1,22 @@
+# This is an example configuration file for the hello_world image present in
+# this directory. It is used for testing the following:
+# - Can Uhyve parse the .toml from a given location?
+# - Does Uhyve override the options here with those provided using the CLI?
+# - Can the kernel location be derived using the config only?
+
+[memory]
+memory_size = '64MiB'
+no_aslr = false
+thp = false
+pit = false
+ksm = false
+
+[cpu]
+pit = false
+cpu_count = 3
+affinity = [1, 2, 3]
+
+[guest]
+kernel = './data/x86_64/hello_c'
+kernel_args = ['foo=bar']
+env_vars = ['bar=foo']

@@ -1,12 +1,14 @@
 #![warn(rust_2018_idioms)]
 
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
 use std::process;
 
 use clap::{CommandFactory, Parser};
 use env_logger::Builder;
 use log::LevelFilter;
 use uhyvelib::{
-	args::{CpuArgs, GuestArgs, MemoryArgs},
+	args::{CpuArgs, GuestArgs, MemoryArgs, UhyveGuestConfig},
 	params::Params,
 	vm::UhyveVm,
 };
@@ -108,6 +110,15 @@ pub struct UhyveArgs {
 	#[clap(short = 's', long, env = "HERMIT_GDB_PORT")]
 	#[cfg(target_os = "linux")]
 	pub gdb_port: Option<u16>,
+
+	/// TOML configuration file
+	///
+	/// Reads configurations from a locally given path.
+	///
+	/// FIXME: Replace the default -K copied from curl (?)
+	#[clap(short = 'K', long, env = "HERMIT_CONFIG")]
+	#[cfg(target_os = "linux")]
+	pub config: Option<PathBuf>,
 }
 
 impl From<Args> for Params {
@@ -123,6 +134,7 @@ impl From<Args> for Params {
 					file_isolation,
 					#[cfg(target_os = "linux")]
 					gdb_port,
+					config: _,
 				},
 			memory_args:
 				MemoryArgs {
@@ -138,22 +150,25 @@ impl From<Args> for Params {
 					cpu_count,
 					#[cfg(target_os = "linux")]
 					pit,
-					affinity: _,
+					affinity,
 				},
 			guest_args: GuestArgs {
-				kernel: _,
+				kernel,
 				kernel_args,
 				env_vars,
 			},
 		} = args;
+
 		Self {
+			kernel,
 			memory_size: memory_size.unwrap_or_default(),
 			#[cfg(target_os = "linux")]
 			thp: thp.unwrap_or_default(),
 			#[cfg(target_os = "linux")]
 			ksm: ksm.unwrap_or_default(),
 			aslr: !no_aslr.unwrap_or_default(),
-			cpu_count,
+			cpu_count: cpu_count.unwrap_or_default(),
+			affinity,
 			#[cfg(target_os = "linux")]
 			pit: pit.unwrap_or_default(),
 			file_mapping: file_mapping.unwrap_or_default(),
@@ -161,7 +176,7 @@ impl From<Args> for Params {
 			gdb_port,
 			#[cfg(target_os = "macos")]
 			gdb_port: None,
-			kernel_args: kernel_args.unwrap_or_default(),
+			kernel_args,
 			tempdir,
 			#[cfg(target_os = "linux")]
 			file_isolation: if let Some(file_isolation) = file_isolation {
@@ -176,10 +191,12 @@ impl From<Args> for Params {
 				Output::StdIo
 			},
 			stats: stats.unwrap_or_default(),
-			env: EnvVars::try_from(env_vars.unwrap_or_default().as_slice()).unwrap(),
+			env: EnvVars::try_from(env_vars.as_slice()).unwrap(),
 		}
 	}
 }
+
+use merge::Merge;
 
 fn run_uhyve() -> i32 {
 	#[cfg(feature = "instrument")]
@@ -192,15 +209,30 @@ fn run_uhyve() -> i32 {
 	env_builder.init();
 
 	let mut app = Args::command();
-	// TODO: Read UhyveFileConfig, merge with exising args (but do not overwrite Args fields)
-	let args = Args::parse();
-	// TODO: Remove pubs, move these to Params
+	let mut args = Args::parse();
+
+	// FIXME: remove the unwraps
+	let file_config_params: Option<UhyveGuestConfig> = {
+		let config_contents =
+			std::fs::read_to_string(args.uhyve_args.config.as_ref().unwrap()).unwrap();
+		toml::from_str(&config_contents).ok()
+	};
+
+	if let Some(params) = file_config_params {
+		// FIXME: Providing the kernel in the config file causes Uhyve to hang.
+		args.memory_args.merge(params.memory);
+		args.cpu_args.merge(params.cpu);
+		args.guest_args.merge(params.guest);
+	}
+
+	// FIXME: Investigate moving this arg to Params
 	let stats = args.uhyve_args.stats.unwrap_or_default();
-	let kernel_path = args.guest_args.kernel.clone();
 	let affinity = args.cpu_args.clone().get_affinity(&mut app);
 	let params = Params::from(args);
+	let kernel_path = params.kernel.clone().unwrap();
 
-	let vm = UhyveVm::new(kernel_path, params).unwrap_or_else(|e| panic!("Error: {e}"));
+	// FIXME: Optimize params usage.
+	let vm = UhyveVm::new(kernel_path, params.clone()).unwrap_or_else(|e| panic!("Error: {e}"));
 
 	let res = vm.run(affinity);
 	if stats && let Some(stats) = res.stats {
