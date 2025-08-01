@@ -1,9 +1,15 @@
+#![warn(rust_2018_idioms)]
+
 use std::process;
 
 use clap::{CommandFactory, Parser};
 use env_logger::Builder;
 use log::LevelFilter;
-use uhyvelib::{args::Args, params::Params, vm::UhyveVm};
+use uhyvelib::{
+	args::{CpuArgs, GuestArgs, MemoryArgs, UhyveArgs},
+	params::Params,
+	vm::UhyveVm,
+};
 
 #[cfg(feature = "instrument")]
 fn setup_trace() {
@@ -26,6 +32,99 @@ fn setup_trace() {
 	unsafe {
 		EVENTS = Some(events);
 		libc::atexit(dump_trace);
+	}
+}
+use std::str::FromStr;
+
+#[cfg(target_os = "linux")]
+use uhyvelib::params::FileSandboxMode;
+use uhyvelib::params::{EnvVars, Output};
+
+/// Used by clap to derive CLI parameters for Uhyve.
+#[derive(Parser, Debug)]
+#[clap(version, author, about)]
+pub struct Args {
+	#[clap(flatten, next_help_heading = "Uhyve OPTIONS")]
+	pub uhyve_args: UhyveArgs,
+
+	#[clap(flatten, next_help_heading = "Memory OPTIONS")]
+	pub memory_args: MemoryArgs,
+
+	#[clap(flatten, next_help_heading = "Cpu OPTIONS")]
+	pub cpu_args: CpuArgs,
+
+	#[clap(flatten, next_help_heading = "Guest OPTIONS")]
+	pub guest_args: GuestArgs,
+}
+
+impl From<Args> for Params {
+	fn from(args: Args) -> Self {
+		let Args {
+			uhyve_args:
+				UhyveArgs {
+					output,
+					stats,
+					file_mapping,
+					tempdir,
+					#[cfg(target_os = "linux")]
+					file_isolation,
+					#[cfg(target_os = "linux")]
+					gdb_port,
+				},
+			memory_args:
+				MemoryArgs {
+					memory_size,
+					no_aslr,
+					#[cfg(target_os = "linux")]
+					thp,
+					#[cfg(target_os = "linux")]
+					ksm,
+				},
+			cpu_args:
+				CpuArgs {
+					cpu_count,
+					#[cfg(target_os = "linux")]
+					pit,
+					affinity: _,
+				},
+			guest_args: GuestArgs {
+				kernel: _,
+				kernel_args,
+				env_vars,
+			},
+		} = args;
+		Self {
+			memory_size,
+			#[cfg(target_os = "linux")]
+			thp,
+			#[cfg(target_os = "linux")]
+			ksm,
+			aslr: !no_aslr,
+			cpu_count,
+			#[cfg(target_os = "linux")]
+			pit,
+			file_mapping,
+			#[cfg(target_os = "linux")]
+			gdb_port,
+			#[cfg(target_os = "macos")]
+			gdb_port: None,
+			kernel_args,
+			tempdir,
+			#[cfg(target_os = "linux")]
+			file_isolation: if let Some(file_isolation) = file_isolation {
+				FileSandboxMode::from_str(&file_isolation).unwrap()
+			} else {
+				FileSandboxMode::default()
+			},
+			// TODO
+			output: if let Some(outp) = output {
+				Output::from_str(&outp).unwrap()
+			} else {
+				Output::StdIo
+			},
+			stats,
+			env: EnvVars::try_from(env_vars.as_slice()).unwrap(),
+		}
 	}
 }
 

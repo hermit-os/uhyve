@@ -11,26 +11,7 @@ use serde::{
 };
 use thiserror::Error;
 
-#[cfg(target_os = "linux")]
-use crate::params::FileSandboxMode;
-use crate::params::{CpuCount, EnvVars, GuestMemorySize, Output, Params};
-
-/// Used by clap to derive CLI parameters for Uhyve.
-#[derive(Parser, Debug)]
-#[clap(version, author, about)]
-pub struct Args {
-	#[clap(flatten, next_help_heading = "Uhyve OPTIONS")]
-	pub uhyve_args: UhyveArgs,
-
-	#[clap(flatten, next_help_heading = "Memory OPTIONS")]
-	pub memory_args: MemoryArgs,
-
-	#[clap(flatten, next_help_heading = "Cpu OPTIONS")]
-	pub cpu_args: CpuArgs,
-
-	#[clap(flatten, next_help_heading = "Guest OPTIONS")]
-	pub guest_args: GuestArgs,
-}
+use crate::params::{CpuCount, EnvVars, GuestMemorySize, Params};
 
 /// This is the config that defines a set of parameters for a given Hermit machine image.
 ///
@@ -51,7 +32,7 @@ pub struct UhyveArgs {
 	///
 	/// None discards all output, Omit for stdout
 	#[clap(short, long, value_name = "FILE")]
-	pub(super) output: Option<String>,
+	pub output: Option<String>,
 
 	/// Display statistics after the execution
 	#[clap(long)]
@@ -63,7 +44,7 @@ pub struct UhyveArgs {
 	///
 	/// Example: --file-mapping host_dir:guest_dir --file-mapping file.txt:guest_file.txt
 	#[clap(long)]
-	file_mapping: Vec<String>,
+	pub file_mapping: Vec<String>,
 
 	/// The path that should be used for temporary directories storing unmapped files.
 	///
@@ -73,7 +54,7 @@ pub struct UhyveArgs {
 	///
 	/// Defaults to /tmp.
 	#[clap(long)]
-	tempdir: Option<String>,
+	pub tempdir: Option<String>,
 
 	/// File isolation (none, normal, strict)
 	///
@@ -87,25 +68,25 @@ pub struct UhyveArgs {
 	/// [default: normal]
 	#[clap(long)]
 	#[cfg(target_os = "linux")]
-	file_isolation: Option<String>,
+	pub file_isolation: Option<String>,
 
 	/// GDB server port
 	///
 	/// Starts a GDB server on the provided port and waits for a connection.
 	#[clap(short = 's', long, env = "HERMIT_GDB_PORT")]
 	#[cfg(target_os = "linux")]
-	gdb_port: Option<u16>,
+	pub gdb_port: Option<u16>,
 }
 
 #[derive(Default, Parser, Debug, Deserialize)]
 pub struct MemoryArgs {
 	/// Guest RAM size
 	#[clap(short = 'm', long, default_value_t, env = "HERMIT_MEMORY_SIZE")]
-	memory_size: GuestMemorySize,
+	pub memory_size: GuestMemorySize,
 
 	/// Disable ASLR
 	#[clap(long)]
-	no_aslr: bool,
+	pub no_aslr: bool,
 
 	/// Transparent Hugepages
 	///
@@ -114,7 +95,7 @@ pub struct MemoryArgs {
 	/// [THP]: https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html
 	#[clap(long)]
 	#[cfg(target_os = "linux")]
-	thp: bool,
+	pub thp: bool,
 
 	/// Kernel Samepage Merging
 	///
@@ -123,7 +104,7 @@ pub struct MemoryArgs {
 	/// [KSM]: https://www.kernel.org/doc/html/latest/admin-guide/mm/ksm.html
 	#[clap(long)]
 	#[cfg(target_os = "linux")]
-	ksm: bool,
+	pub ksm: bool,
 }
 
 /// Arguments for the CPU resources allocated to the guest.
@@ -131,12 +112,12 @@ pub struct MemoryArgs {
 pub struct CpuArgs {
 	/// Number of guest CPUs
 	#[clap(short, long, default_value_t, env = "HERMIT_CPU_COUNT")]
-	cpu_count: CpuCount,
+	pub cpu_count: CpuCount,
 
 	/// Create a PIT
 	#[clap(long)]
 	#[cfg(target_os = "linux")]
-	pit: bool,
+	pub pit: bool,
 
 	/// Bind guest vCPUs to host cpus
 	///
@@ -150,11 +131,11 @@ pub struct CpuArgs {
 	///
 	/// * `--affinity 0-1,2`
 	#[clap(short, long, name = "CPUs")]
-	affinity: Option<Affinity>,
+	pub affinity: Option<Affinity>,
 }
 
 #[derive(Debug, Clone)]
-struct Affinity(Vec<CoreId>);
+pub struct Affinity(Vec<CoreId>);
 
 impl Affinity {
 	pub fn parse_ranges_iter<'a>(
@@ -192,7 +173,7 @@ impl Affinity {
 }
 
 #[derive(Error, Debug)]
-enum ParseAffinityError {
+pub enum ParseAffinityError {
 	#[error(transparent)]
 	Parse(#[from] ParseIntError),
 
@@ -319,7 +300,7 @@ impl CpuArgs {
 	}
 }
 
-/// Arguments for the guest OS and guest runtime-related configurations.
+/// Arguments for the guest OS and guest runtime-related configurations
 #[derive(Parser, Debug, Deserialize)]
 pub struct GuestArgs {
 	/// The kernel to execute
@@ -327,7 +308,7 @@ pub struct GuestArgs {
 	pub kernel: PathBuf,
 
 	/// Arguments to forward to the kernel
-	kernel_args: Vec<String>,
+	pub kernel_args: Vec<String>,
 
 	/// Environment variables of the guest as env=value paths
 	///
@@ -335,78 +316,7 @@ pub struct GuestArgs {
 	///
 	/// Example: --env_vars ASDF=jlk -e TERM=uhyveterm2000
 	#[clap(short, long)]
-	env_vars: Vec<String>,
-}
-
-impl From<Args> for Params {
-	fn from(args: Args) -> Self {
-		let Args {
-			uhyve_args:
-				UhyveArgs {
-					output,
-					stats,
-					file_mapping,
-					tempdir,
-					#[cfg(target_os = "linux")]
-					file_isolation,
-					#[cfg(target_os = "linux")]
-					gdb_port,
-				},
-			memory_args:
-				MemoryArgs {
-					memory_size,
-					no_aslr,
-					#[cfg(target_os = "linux")]
-					thp,
-					#[cfg(target_os = "linux")]
-					ksm,
-				},
-			cpu_args:
-				CpuArgs {
-					cpu_count,
-					#[cfg(target_os = "linux")]
-					pit,
-					affinity: _,
-				},
-			guest_args: GuestArgs {
-				kernel: _,
-				kernel_args,
-				env_vars,
-			},
-		} = args;
-		Self {
-			memory_size,
-			#[cfg(target_os = "linux")]
-			thp,
-			#[cfg(target_os = "linux")]
-			ksm,
-			aslr: !no_aslr,
-			cpu_count,
-			#[cfg(target_os = "linux")]
-			pit,
-			file_mapping,
-			#[cfg(target_os = "linux")]
-			gdb_port,
-			#[cfg(target_os = "macos")]
-			gdb_port: None,
-			kernel_args,
-			tempdir,
-			#[cfg(target_os = "linux")]
-			file_isolation: if let Some(file_isolation) = file_isolation {
-				FileSandboxMode::from_str(&file_isolation).unwrap()
-			} else {
-				FileSandboxMode::default()
-			},
-			// TODO
-			output: if let Some(outp) = output {
-				Output::from_str(&outp).unwrap()
-			} else {
-				Output::StdIo
-			},
-			stats,
-			env: EnvVars::try_from(env_vars.as_slice()).unwrap(),
-		}
-	}
+	pub env_vars: Vec<String>,
 }
 
 impl From<UhyveGuestConfig> for Params {
