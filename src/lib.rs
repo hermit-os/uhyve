@@ -8,6 +8,7 @@ use thiserror::Error;
 extern crate log;
 
 mod arch;
+pub mod args;
 pub mod consts;
 mod fdt;
 #[cfg(target_os = "linux")]

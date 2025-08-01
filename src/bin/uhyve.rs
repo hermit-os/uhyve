@@ -1,17 +1,14 @@
 #![warn(rust_2018_idioms)]
 
-use std::{iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process, str::FromStr};
+use std::path::PathBuf;
+use std::process;
 
-use clap::{Command, CommandFactory, Parser, error::ErrorKind};
-use core_affinity::CoreId;
-use either::Either;
+use clap::{CommandFactory, Parser};
 use env_logger::Builder;
 use log::LevelFilter;
-use thiserror::Error;
-#[cfg(target_os = "linux")]
-use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
-	params::{CpuCount, EnvVars, GuestMemorySize, Output, Params},
+	args::{CpuArgs, GuestArgs, MemoryArgs, UhyveGuestConfig},
+	params::Params,
 	vm::UhyveVm,
 };
 
@@ -38,36 +35,41 @@ fn setup_trace() {
 		libc::atexit(dump_trace);
 	}
 }
+use std::str::FromStr;
+
+#[cfg(target_os = "linux")]
+use uhyvelib::params::FileSandboxMode;
+use uhyvelib::params::{EnvVars, Output};
 
 /// Used by clap to derive CLI parameters for Uhyve.
 #[derive(Parser, Debug)]
 #[clap(version, author, about)]
-struct Args {
+pub struct Args {
 	#[clap(flatten, next_help_heading = "Uhyve OPTIONS")]
-	uhyve_args: UhyveArgs,
+	pub uhyve_args: UhyveArgs,
 
 	#[clap(flatten, next_help_heading = "Memory OPTIONS")]
-	memory_args: MemoryArgs,
+	pub memory_args: MemoryArgs,
 
 	#[clap(flatten, next_help_heading = "Cpu OPTIONS")]
-	cpu_args: CpuArgs,
+	pub cpu_args: CpuArgs,
 
 	#[clap(flatten, next_help_heading = "Guest OPTIONS")]
-	guest_args: GuestArgs,
+	pub guest_args: GuestArgs,
 }
 
 /// Arguments for Uhyve runtime-related configurations.
 #[derive(Parser, Debug)]
-struct UhyveArgs {
+pub struct UhyveArgs {
 	/// Kernel output redirection.
 	///
 	/// None discards all output, Omit for stdout
 	#[clap(short, long, value_name = "FILE")]
-	output: Option<String>,
+	pub output: Option<String>,
 
 	/// Display statistics after the execution
 	#[clap(long)]
-	stats: bool,
+	pub stats: bool,
 
 	/// Paths that the kernel should be able to view, read or write.
 	///
@@ -75,7 +77,7 @@ struct UhyveArgs {
 	///
 	/// Example: --file-mapping host_dir:guest_dir --file-mapping file.txt:guest_file.txt
 	#[clap(long)]
-	file_mapping: Vec<String>,
+	pub file_mapping: Option<Vec<String>>,
 
 	/// The path that should be used for temporary directories storing unmapped files.
 	///
@@ -85,7 +87,7 @@ struct UhyveArgs {
 	///
 	/// Defaults to /tmp.
 	#[clap(long)]
-	tempdir: Option<String>,
+	pub tempdir: Option<String>,
 
 	/// File isolation (none, normal, strict)
 	///
@@ -99,196 +101,22 @@ struct UhyveArgs {
 	/// [default: normal]
 	#[clap(long)]
 	#[cfg(target_os = "linux")]
-	file_isolation: Option<String>,
+	pub file_isolation: Option<String>,
 
 	/// GDB server port
 	///
 	/// Starts a GDB server on the provided port and waits for a connection.
 	#[clap(short = 's', long, env = "HERMIT_GDB_PORT")]
 	#[cfg(target_os = "linux")]
-	gdb_port: Option<u16>,
-}
+	pub gdb_port: Option<u16>,
 
-/// Arguments for memory resources allocated to the guest (both guest and host).
-#[derive(Parser, Debug)]
-struct MemoryArgs {
-	/// Guest RAM size
-	#[clap(short = 'm', long, default_value_t, env = "HERMIT_MEMORY_SIZE")]
-	memory_size: GuestMemorySize,
-
-	/// Disable ASLR
-	#[clap(long)]
-	no_aslr: bool,
-
-	/// Transparent Hugepages
+	/// TOML configuration file
 	///
-	/// Advise the kernel to enable Transparent Hugepages [THP] on the virtual RAM.
+	/// Reads configurations from a locally given path.
 	///
-	/// [THP]: https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html
-	#[clap(long)]
-	#[cfg(target_os = "linux")]
-	thp: bool,
-
-	/// Kernel Samepage Merging
-	///
-	/// Advise the kernel to enable Kernel Samepage Merging [KSM] on the virtual RAM.
-	///
-	/// [KSM]: https://www.kernel.org/doc/html/latest/admin-guide/mm/ksm.html
-	#[clap(long)]
-	#[cfg(target_os = "linux")]
-	ksm: bool,
-}
-
-#[derive(Debug, Clone)]
-struct Affinity(Vec<CoreId>);
-
-impl Affinity {
-	fn parse_ranges_iter<'a>(
-		ranges: impl IntoIterator<Item = &'a str> + 'a,
-	) -> impl Iterator<Item = Result<usize, ParseIntError>> + 'a {
-		struct ParsedRange(RangeInclusive<usize>);
-
-		impl FromStr for ParsedRange {
-			type Err = ParseIntError;
-
-			fn from_str(s: &str) -> Result<Self, Self::Err> {
-				let range = match s.split_once('-') {
-					Some((start, end)) => start.parse()?..=end.parse()?,
-					None => {
-						let idx = s.parse()?;
-						idx..=idx
-					}
-				};
-				Ok(Self(range))
-			}
-		}
-
-		ranges
-			.into_iter()
-			.map(ParsedRange::from_str)
-			.flat_map(|range| match range {
-				Ok(range) => Either::Left(range.0.map(Ok)),
-				Err(err) => Either::Right(iter::once(Err(err))),
-			})
-	}
-
-	fn parse_ranges(ranges: &str) -> Result<Vec<usize>, ParseIntError> {
-		Self::parse_ranges_iter(ranges.split([' ', ','].as_slice())).collect()
-	}
-}
-
-#[derive(Error, Debug)]
-enum ParseAffinityError {
-	#[error(transparent)]
-	Parse(#[from] ParseIntError),
-
-	#[error("Available cores: {available_cores:?}, requested affinities: {requested_affinities:?}")]
-	InvalidValue {
-		available_cores: Vec<usize>,
-		requested_affinities: Vec<usize>,
-	},
-}
-
-impl FromStr for Affinity {
-	type Err = ParseAffinityError;
-
-	fn from_str(s: &str) -> Result<Self, Self::Err> {
-		let available_cores = core_affinity::get_core_ids()
-			.unwrap()
-			.into_iter()
-			.map(|core_id| core_id.id)
-			.collect::<Vec<_>>();
-
-		let requested_affinities = Self::parse_ranges(s)?;
-
-		if !requested_affinities
-			.iter()
-			.all(|affinity| available_cores.contains(affinity))
-		{
-			return Err(ParseAffinityError::InvalidValue {
-				available_cores,
-				requested_affinities,
-			});
-		}
-
-		let core_ids = requested_affinities
-			.into_iter()
-			.map(|affinity| CoreId { id: affinity })
-			.collect();
-		Ok(Self(core_ids))
-	}
-}
-
-/// Arguments for the CPU resources allocated to the guest.
-#[derive(Parser, Debug, Clone)]
-struct CpuArgs {
-	/// Number of guest CPUs
-	#[clap(short, long, default_value_t, env = "HERMIT_CPU_COUNT")]
-	cpu_count: CpuCount,
-
-	/// Create a PIT
-	#[clap(long)]
-	#[cfg(target_os = "linux")]
-	pit: bool,
-
-	/// Bind guest vCPUs to host cpus
-	///
-	/// A list of host CPU numbers onto which the guest vCPUs should be bound to obtain performance benefits.
-	/// List items may be single numbers or inclusive ranges.
-	/// List items may be separated with commas or spaces.
-	///
-	/// # Examples
-	///
-	/// * `--affinity "0 1 2"`
-	///
-	/// * `--affinity 0-1,2`
-	#[clap(short, long, name = "CPUs")]
-	affinity: Option<Affinity>,
-}
-
-impl CpuArgs {
-	fn get_affinity(self, app: &mut Command) -> Option<Vec<CoreId>> {
-		self.affinity.map(|affinity| {
-			let affinity_num_vals = affinity.0.len();
-			let cpus_num_vals = usize::try_from(self.cpu_count.get()).unwrap();
-			if affinity_num_vals != cpus_num_vals {
-				let affinity_arg = app
-					.get_arguments()
-					.find(|arg| arg.get_id() == "affinity")
-					.unwrap();
-				let cpus_arg = app
-					.get_arguments()
-					.find(|arg| arg.get_id() == "cpus")
-					.unwrap();
-				let verb = if affinity_num_vals > 1 { "were" } else { "was" };
-				let message = format!(
-					"The argument '{affinity_arg}' requires {cpus_num_vals} values (matching '{cpus_arg}'), but {affinity_num_vals} {verb} provided",
-				);
-				app.error(ErrorKind::WrongNumberOfValues, message).exit()
-			} else {
-				affinity.0
-			}
-		})
-	}
-}
-
-/// Arguments for the guest OS and guest runtime-related configurations.
-#[derive(Parser, Debug)]
-struct GuestArgs {
-	/// The kernel to execute
-	#[clap(value_parser)]
-	kernel: PathBuf,
-
-	/// Arguments to forward to the kernel
-	kernel_args: Vec<String>,
-
-	/// Environment variables of the guest as env=value paths
-	///
-	/// `-e host` passes all variables of the parent process to the kernel (discarding any other passed environment variables).
-	///
-	/// Example: --env_vars ASDF=jlk -e TERM=uhyveterm2000
-	#[clap(short, long)]
-	env_vars: Vec<String>,
+	/// FIXME: Replace the default -K copied from curl (?)
+	#[clap(short = 'K', long, env = "HERMIT_CONFIG")]
+	pub config: Option<PathBuf>,
 }
 
 impl From<Args> for Params {
@@ -304,6 +132,7 @@ impl From<Args> for Params {
 					file_isolation,
 					#[cfg(target_os = "linux")]
 					gdb_port,
+					config: _,
 				},
 			memory_args:
 				MemoryArgs {
@@ -319,25 +148,28 @@ impl From<Args> for Params {
 					cpu_count,
 					#[cfg(target_os = "linux")]
 					pit,
-					affinity: _,
+					affinity,
 				},
 			guest_args: GuestArgs {
-				kernel: _,
+				kernel,
 				kernel_args,
 				env_vars,
 			},
 		} = args;
+
 		Self {
-			memory_size,
+			kernel,
+			memory_size: memory_size.unwrap_or_default(),
 			#[cfg(target_os = "linux")]
-			thp,
+			thp: thp.unwrap_or_default(),
 			#[cfg(target_os = "linux")]
-			ksm,
-			aslr: !no_aslr,
-			cpu_count,
+			ksm: ksm.unwrap_or_default(),
+			aslr: !no_aslr.unwrap_or_default(),
+			cpu_count: cpu_count.unwrap_or_default(),
+			affinity,
 			#[cfg(target_os = "linux")]
-			pit,
-			file_mapping,
+			pit: pit.unwrap_or_default(),
+			file_mapping: file_mapping.unwrap_or_default(),
 			#[cfg(target_os = "linux")]
 			gdb_port,
 			#[cfg(target_os = "macos")]
@@ -362,6 +194,8 @@ impl From<Args> for Params {
 	}
 }
 
+use merge::Merge;
+
 fn run_uhyve() -> i32 {
 	#[cfg(feature = "instrument")]
 	setup_trace();
@@ -373,13 +207,33 @@ fn run_uhyve() -> i32 {
 	env_builder.init();
 
 	let mut app = Args::command();
-	let args = Args::parse();
+	let mut args = Args::parse();
+
+	// Read and merge options from config file, if present.
+	// CLI has priority.
+	let file_config_params: Option<UhyveGuestConfig> =
+		args.uhyve_args.config.as_ref().and_then(|config_path| {
+			if let Ok(contents) = std::fs::read_to_string(config_path) {
+				toml::from_str(&contents).ok()
+			} else {
+				None
+			}
+		});
+
+	if let Some(params) = file_config_params {
+		args.memory_args.merge(params.memory);
+		args.cpu_args.merge(params.cpu);
+		args.guest_args.merge(params.guest);
+	}
+
+	// FIXME: Investigate moving this arg to Params
 	let stats = args.uhyve_args.stats;
-	let kernel_path = args.guest_args.kernel.clone();
 	let affinity = args.cpu_args.clone().get_affinity(&mut app);
 	let params = Params::from(args);
+	let kernel_path = params.kernel.clone().expect("No kernel path provided.");
 
-	let vm = UhyveVm::new(kernel_path, params).unwrap_or_else(|e| panic!("Error: {e}"));
+	// FIXME: Optimize params usage.
+	let vm = UhyveVm::new(kernel_path, params.clone()).unwrap_or_else(|e| panic!("Error: {e}"));
 
 	let res = vm.run(affinity);
 	if stats && let Some(stats) = res.stats {

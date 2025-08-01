@@ -8,10 +8,17 @@ use std::{
 };
 
 use byte_unit::{Byte, Unit};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::args::Affinity;
+
+/// FIXME: Improve comments
 #[derive(Debug, Clone)]
 pub struct Params {
+	/// Kernel location
+	pub kernel: Option<PathBuf>,
+
 	/// Guest RAM size
 	pub memory_size: GuestMemorySize,
 
@@ -25,6 +32,9 @@ pub struct Params {
 
 	/// Number of guest CPUs
 	pub cpu_count: CpuCount,
+
+	/// Affinity
+	pub affinity: Option<Affinity>,
 
 	/// Create a PIT
 	#[cfg(target_os = "linux")]
@@ -60,8 +70,10 @@ pub struct Params {
 }
 
 impl Default for Params {
+	/// Implementing the Default trait renders the
 	fn default() -> Self {
 		Self {
+			kernel: Default::default(),
 			memory_size: Default::default(),
 			#[cfg(target_os = "linux")]
 			thp: false,
@@ -69,6 +81,7 @@ impl Default for Params {
 			ksm: false,
 			#[cfg(target_os = "linux")]
 			pit: false,
+			affinity: Default::default(),
 			cpu_count: Default::default(),
 			gdb_port: Default::default(),
 			file_mapping: Default::default(),
@@ -84,7 +97,7 @@ impl Default for Params {
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct CpuCount(NonZeroU32);
 
 impl CpuCount {
@@ -123,7 +136,7 @@ impl FromStr for CpuCount {
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct GuestMemorySize(Byte);
 
 impl GuestMemorySize {
