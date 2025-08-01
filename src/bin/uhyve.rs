@@ -117,7 +117,6 @@ pub struct UhyveArgs {
 	///
 	/// FIXME: Replace the default -K copied from curl (?)
 	#[clap(short = 'K', long, env = "HERMIT_CONFIG")]
-	#[cfg(target_os = "linux")]
 	pub config: Option<PathBuf>,
 }
 
