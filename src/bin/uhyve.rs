@@ -213,11 +213,8 @@ fn run_uhyve() -> i32 {
 
 	// Read and merge options from config file, if present.
 	// CLI has priority.
-	let file_config_params: Option<UhyveGuestConfig> = args
-		.uhyve_args
-		.config
-		.as_ref()
-		.and_then(|config_path| {
+	let file_config_params: Option<UhyveGuestConfig> =
+		args.uhyve_args.config.as_ref().and_then(|config_path| {
 			if let Ok(contents) = std::fs::read_to_string(config_path) {
 				toml::from_str(&contents).ok()
 			} else {
