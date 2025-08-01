@@ -1,6 +1,5 @@
 #![warn(rust_2018_idioms)]
 
-#[cfg(target_os = "linux")]
 use std::path::PathBuf;
 use std::process;
 
