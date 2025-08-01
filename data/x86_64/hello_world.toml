@@ -5,6 +5,7 @@
 # - Can the kernel location be derived using the config only?
 
 [memory]
+# FIXME: Adjust settings meaningfully.
 memory_size = '64MiB'
 no_aslr = false
 thp = false
@@ -13,10 +14,12 @@ ksm = false
 
 [cpu]
 pit = false
-cpu_count = 3
-affinity = [1, 2, 3]
+cpu_count = 4
+affinity = [1, 2, 3, 4]
 
 [guest]
+# TODO: Derive cwd instead
 kernel = './data/x86_64/hello_c'
-kernel_args = ['foo=bar']
+# TODO: improve defaults, move to test case
+kernel_args = ['foo=bar', 'fiz=baz']
 env_vars = ['bar=foo']

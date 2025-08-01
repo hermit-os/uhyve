@@ -70,7 +70,7 @@ pub struct UhyveArgs {
 
 	/// Display statistics after the execution
 	#[clap(long)]
-	pub stats: Option<bool>,
+	pub stats: bool,
 
 	/// Paths that the kernel should be able to view, read or write.
 	///
@@ -190,7 +190,7 @@ impl From<Args> for Params {
 			} else {
 				Output::StdIo
 			},
-			stats: stats.unwrap_or_default(),
+			stats,
 			env: EnvVars::try_from(env_vars.as_slice()).unwrap(),
 		}
 	}
@@ -211,22 +211,28 @@ fn run_uhyve() -> i32 {
 	let mut app = Args::command();
 	let mut args = Args::parse();
 
-	// FIXME: remove the unwraps
-	let file_config_params: Option<UhyveGuestConfig> = {
-		let config_contents =
-			std::fs::read_to_string(args.uhyve_args.config.as_ref().unwrap()).unwrap();
-		toml::from_str(&config_contents).ok()
-	};
+	// Read and merge options from config file, if present.
+	// CLI has priority.
+	let file_config_params: Option<UhyveGuestConfig> = args
+		.uhyve_args
+		.config
+		.as_ref()
+		.and_then(|config_path| {
+			if let Ok(contents) = std::fs::read_to_string(config_path) {
+				toml::from_str(&contents).ok()
+			} else {
+				None
+			}
+		});
 
 	if let Some(params) = file_config_params {
-		// FIXME: Providing the kernel in the config file causes Uhyve to hang.
 		args.memory_args.merge(params.memory);
 		args.cpu_args.merge(params.cpu);
 		args.guest_args.merge(params.guest);
 	}
 
 	// FIXME: Investigate moving this arg to Params
-	let stats = args.uhyve_args.stats.unwrap_or_default();
+	let stats = args.uhyve_args.stats;
 	let affinity = args.cpu_args.clone().get_affinity(&mut app);
 	let params = Params::from(args);
 	let kernel_path = params.kernel.clone().unwrap();
