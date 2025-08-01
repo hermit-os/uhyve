@@ -6,7 +6,7 @@ use clap::{CommandFactory, Parser};
 use env_logger::Builder;
 use log::LevelFilter;
 use uhyvelib::{
-	args::{CpuArgs, GuestArgs, MemoryArgs, UhyveArgs},
+	args::{CpuArgs, GuestArgs, MemoryArgs},
 	params::Params,
 	vm::UhyveVm,
 };
@@ -55,6 +55,59 @@ pub struct Args {
 
 	#[clap(flatten, next_help_heading = "Guest OPTIONS")]
 	pub guest_args: GuestArgs,
+}
+
+/// Arguments for Uhyve runtime-related configurations.
+#[derive(Parser, Debug)]
+pub struct UhyveArgs {
+	/// Kernel output redirection.
+	///
+	/// None discards all output, Omit for stdout
+	#[clap(short, long, value_name = "FILE")]
+	pub output: Option<String>,
+
+	/// Display statistics after the execution
+	#[clap(long)]
+	pub stats: Option<bool>,
+
+	/// Paths that the kernel should be able to view, read or write.
+	///
+	/// Desired paths must be explicitly defined after a colon.
+	///
+	/// Example: --file-mapping host_dir:guest_dir --file-mapping file.txt:guest_file.txt
+	#[clap(long)]
+	pub file_mapping: Option<Vec<String>>,
+
+	/// The path that should be used for temporary directories storing unmapped files.
+	///
+	/// This is useful for manually created tmpfs filesystems and for selecting
+	/// directories not managed by a temporary file cleaner, which can remove open files
+	/// manually. In most cases, mapping the guest path /root/ instead should be sufficient.
+	///
+	/// Defaults to /tmp.
+	#[clap(long)]
+	pub tempdir: Option<String>,
+
+	/// File isolation (none, normal, strict)
+	///
+	/// - 'none' disables all file isolation features
+	///
+	/// - 'normal' enables all file isolation features supported on the host system
+	///
+	/// - 'strict' enforces the highest amount of file isolation possible, fails on systems
+	///   that do not support them (e.g. a Linux kernel without Landlock support)
+	///
+	/// [default: normal]
+	#[clap(long)]
+	#[cfg(target_os = "linux")]
+	pub file_isolation: Option<String>,
+
+	/// GDB server port
+	///
+	/// Starts a GDB server on the provided port and waits for a connection.
+	#[clap(short = 's', long, env = "HERMIT_GDB_PORT")]
+	#[cfg(target_os = "linux")]
+	pub gdb_port: Option<u16>,
 }
 
 impl From<Args> for Params {
