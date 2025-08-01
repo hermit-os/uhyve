@@ -61,7 +61,7 @@ pub struct Params {
 }
 
 impl Default for Params {
-	/// Implementing the Default trait renders the 
+	/// Implementing the Default trait renders the
 	fn default() -> Self {
 		Self {
 			memory_size: Default::default(),

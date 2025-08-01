@@ -18,17 +18,17 @@ use crate::params::{CpuCount, EnvVars, GuestMemorySize, Params};
  * Although clap offers the convenient default_value_t macro, which would otherwise
  * help us avoid using Option<T> everywhere, this was removed from structs like
  * UhyveArgs, CpuArgs, etc., for two reasons:
- * 
+ *
  * 1. toml-rs does not have a similar macro, instead choosing to rely on Option<T>.
  * 2. The structs, derived from both CLI arguments (clap) and TOML configuration files
  *    (toml-rs), are fed to Params. Params implements a Default type itself.
- * 
+ *
  * There is no need to have the structs representing the command line or configuration
  * file interface decide on defaults, as such defaults are decided upon by Params.
  * Params is ultimately what defines, or should define, how Uhyve will actually work.
  * Params should contain a composition of configurations collected both by clap and
  * by toml-rs.
- * 
+ *
  * Both interfaces should only strictly require a configuration if determining a
  * default is not possible, e.g. the location of a kernel. In the future, it might be
  * possible to infer a certain default from one interface but not for the other (e.g.
