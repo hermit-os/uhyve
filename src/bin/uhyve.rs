@@ -230,7 +230,7 @@ fn run_uhyve() -> i32 {
 	let stats = args.uhyve_args.stats;
 	let affinity = args.cpu_args.clone().get_affinity(&mut app);
 	let params = Params::from(args);
-	let kernel_path = params.kernel.clone().unwrap();
+	let kernel_path = params.kernel.clone().expect("No kernel path provided.");
 
 	// FIXME: Optimize params usage.
 	let vm = UhyveVm::new(kernel_path, params.clone()).unwrap_or_else(|e| panic!("Error: {e}"));
