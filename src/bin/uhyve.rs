@@ -44,6 +44,7 @@ fn setup_trace() {
 /// Used by clap to derive CLI parameters for Uhyve, as well as
 /// by the TOML extension to derive a _subset_ of the CLI arguments.
 #[derive(Debug, Default, Deserialize, Merge, Parser)]
+#[cfg_attr(test, derive(PartialEq))]
 #[clap(version, author, about)]
 #[serde(default)]
 struct Args {
@@ -68,6 +69,7 @@ impl Args {
 
 /// Arguments for Uhyve runtime-related configurations.
 #[derive(Debug, Default, Deserialize, Merge, Parser)]
+#[cfg_attr(test, derive(PartialEq))]
 #[serde(default)]
 struct UhyveArgs {
 	/// Kernel output redirection.
@@ -142,6 +144,7 @@ struct UhyveArgs {
 
 /// Arguments for memory resources allocated to the guest (both guest and host).
 #[derive(Debug, Default, Deserialize, Merge, Parser)]
+#[cfg_attr(test, derive(PartialEq))]
 #[serde(default)]
 pub struct MemoryArgs {
 	/// Guest RAM size
@@ -181,6 +184,7 @@ pub struct MemoryArgs {
 
 /// Arguments for the CPU resources allocated to the guest.
 #[derive(Clone, Debug, Default, Deserialize, Merge, Parser)]
+#[cfg_attr(test, derive(PartialEq))]
 #[serde(default)]
 struct CpuArgs {
 	/// Number of guest CPUs
@@ -240,6 +244,7 @@ impl CpuArgs {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 struct Affinity(Vec<CoreId>);
 
 impl Affinity {
@@ -359,6 +364,7 @@ impl<'de> serde::de::Deserialize<'de> for Affinity {
 
 /// Arguments for the guest OS and guest runtime-related configurations.
 #[derive(Debug, Default, Deserialize, Merge, Parser)]
+#[cfg_attr(test, derive(PartialEq))]
 struct GuestArgs {
 	/// The kernel to execute
 	#[clap(value_parser)]
@@ -596,41 +602,65 @@ mod tests {
 		)
 		.unwrap();
 
-		let file_mapping = config.uhyve.file_mapping;
-		let config_file = config.uhyve.config;
-		let kernel = config.guest.kernel;
-
-		assert!(file_mapping.is_empty());
-		assert!(config_file.is_none());
-		assert!(kernel.to_str().unwrap().is_empty())
+		assert!(&config.uhyve.file_mapping.is_empty());
+		assert!(&config.uhyve.config.is_none());
+		assert!(&config.guest.kernel.to_str().unwrap().is_empty())
 	}
 
 	/// Tests whether TOML merge works as expected.
 	#[test]
 	fn test_toml_merge() {
-		// This is a bit of a workaround and doesn't test the cases that we
-		// deliberately ignore. However, this is covered by other tests.
-		//
-		// Everything with #[merge(skip)] is omitted in the meantime and not
-		// tested explicitly due to triviality.
-		let mut supposed_uhyve_cli_args: Args = toml::from_str(
+		let mut cli_args = Args {
+			uhyve: UhyveArgs {
+				output: None,
+				stats: None,
+				file_mapping: vec![String::from_str("./host:/root/guest.txt").unwrap()],
+				tempdir: None,
+				#[cfg(target_os = "linux")]
+				file_isolation: None,
+				#[cfg(target_os = "linux")]
+				gdb_port: None,
+				config: Some(PathBuf::from("config.txt")),
+			},
+			memory: MemoryArgs {
+				memory_size: None,
+				no_aslr: None,
+				#[cfg(target_os = "linux")]
+				thp: None,
+				#[cfg(target_os = "linux")]
+				ksm: None,
+			},
+			cpu: CpuArgs {
+				cpu_count: None,
+				affinity: None,
+				#[cfg(target_os = "linux")]
+				pit: None,
+			},
+			guest: GuestArgs {
+				kernel: PathBuf::from_str("my_kernel.hermit").unwrap(),
+				kernel_args: Default::default(),
+				env_vars: Default::default(),
+			},
+		};
+
+		let config_file: Args = toml::from_str(
 			r#"
 			[uhyve]
-			output = "test.txt"
+			output = 'test.txt'
 			stats = true
-			tempdir = "/here"
-			file_isolation = "strict"
+			tempdir = '/tmp/'
+			file_isolation = 'strict'
 			gdb_port = 1
 
 			[memory]
-			memory_size = '4M'
+			memory_size = '16MiB'
 			no_aslr = true
 			thp = true
 			ksm = true
 
 			[cpu]
 			cpu_count = 4
-			affinity = [1, 2, 3, 4]
+			affinity = [0,1,2]
 			pit = true
 
 			[guest]
@@ -639,63 +669,40 @@ mod tests {
 		)
 		.unwrap();
 
-		let config_file: Args = toml::from_str(
-			r#"
-			[uhyve]
-			stats = false
+		let cli_args_postmerge = Args {
+			uhyve: UhyveArgs {
+				output: Some(String::from_str("test.txt").unwrap()),
+				stats: Some(true),
+				file_mapping: vec![String::from_str("./host:/root/guest.txt").unwrap()],
+				tempdir: Some(String::from_str("/tmp/").unwrap()),
+				#[cfg(target_os = "linux")]
+				file_isolation: Some(String::from_str("strict").unwrap()),
+				#[cfg(target_os = "linux")]
+				gdb_port: Some(1),
+				config: Some(PathBuf::from("config.txt")),
+			},
+			memory: MemoryArgs {
+				memory_size: Some(GuestMemorySize::from_str("16MiB").unwrap()),
+				no_aslr: Some(true),
+				#[cfg(target_os = "linux")]
+				thp: Some(true),
+				#[cfg(target_os = "linux")]
+				ksm: Some(true),
+			},
+			cpu: CpuArgs {
+				cpu_count: Some(CpuCount::from_str("4").unwrap()),
+				affinity: Some(Affinity::from_str("0,1,2").unwrap()),
+				#[cfg(target_os = "linux")]
+				pit: Some(true),
+			},
+			guest: GuestArgs {
+				kernel: PathBuf::from_str("my_kernel.hermit").unwrap(),
+				kernel_args: Default::default(),
+				env_vars: vec![String::from("foo=bar")],
+			},
+		};
 
-			[memory]
-			no_aslr = false
-			thp = false
-			ksm = false
-
-			[cpu]
-			pit = false
-
-			[guest]
-			env_vars = ['bar=foo']
-		"#,
-		)
-		.unwrap();
-
-		supposed_uhyve_cli_args.merge(config_file);
-
-		// Uhyve parameters
-		assert_eq!(
-			supposed_uhyve_cli_args.uhyve.output,
-			Some("test.txt".into())
-		);
-		assert!(supposed_uhyve_cli_args.uhyve.stats.unwrap());
-		assert_eq!(supposed_uhyve_cli_args.uhyve.tempdir.unwrap(), "/here");
-		#[cfg(target_os = "linux")]
-		assert_eq!(
-			supposed_uhyve_cli_args.uhyve.file_isolation,
-			Some("strict".into())
-		);
-		#[cfg(target_os = "linux")]
-		assert_eq!(supposed_uhyve_cli_args.uhyve.gdb_port.unwrap(), 1);
-
-		// Memory parameters
-		assert_eq!(
-			supposed_uhyve_cli_args.memory.memory_size.unwrap().get(),
-			4000000
-		);
-		assert!(supposed_uhyve_cli_args.memory.no_aslr.unwrap());
-		#[cfg(target_os = "linux")]
-		assert!(supposed_uhyve_cli_args.memory.thp.unwrap());
-		#[cfg(target_os = "linux")]
-		assert!(supposed_uhyve_cli_args.memory.ksm.unwrap());
-
-		// CPU parameters
-		assert_eq!(supposed_uhyve_cli_args.cpu.cpu_count.unwrap().get(), 4);
-		assert!(supposed_uhyve_cli_args.cpu.affinity.is_some());
-		#[cfg(target_os = "linux")]
-		assert!(supposed_uhyve_cli_args.cpu.pit.unwrap());
-
-		// Guest parameters
-		assert_eq!(
-			supposed_uhyve_cli_args.guest.env_vars,
-			vec!["foo=bar", "bar=foo"]
-		);
+		cli_args.merge(config_file);
+		assert_eq!(cli_args, cli_args_postmerge);
 	}
 }
