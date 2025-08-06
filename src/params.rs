@@ -85,7 +85,7 @@ impl Default for Params {
 	}
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 pub struct CpuCount(NonZeroU32);
 
 impl CpuCount {
@@ -124,7 +124,7 @@ impl FromStr for CpuCount {
 	}
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 pub struct GuestMemorySize(Byte);
 
 impl GuestMemorySize {
