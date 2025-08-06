@@ -1,0 +1,25 @@
+# This is a ready-to-use sample configuration used for Uhyve.
+# Some settings that may be undesirable were commented out deliberately.
+#
+# Feel free to adjust it or use it as-is.
+
+[uhyve]
+# output = "test.txt"
+stats = true
+# tempdir = "/tmp"
+file_isolation = "strict"
+# gdb_port = 1
+
+[memory]
+memory_size = '100MiB'
+no_aslr = true
+thp = true
+ksm = true
+
+[cpu]
+cpu_count = 4
+affinity = [1, 2, 3, 4]
+pit = true
+
+[guest]
+env_vars = ['foo=bar']
