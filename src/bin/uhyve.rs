@@ -146,17 +146,14 @@ struct UhyveArgs {
 #[derive(Debug, Default, Deserialize, Merge, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(default)]
+#[merge(strategy = merge::option::overwrite_none)]
 pub struct MemoryArgs {
 	/// Guest RAM size
 	#[clap(short = 'm', long, env = "HERMIT_MEMORY_SIZE")]
-	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	memory_size: Option<GuestMemorySize>,
 
 	/// Disable ASLR
 	#[clap(long, action = clap::ArgAction::SetTrue)]
-	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	no_aslr: Option<bool>,
 
 	/// Transparent Hugepages
@@ -165,8 +162,6 @@ pub struct MemoryArgs {
 	///
 	/// [THP]: https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html
 	#[clap(long, action = clap::ArgAction::SetTrue)]
-	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	#[cfg(target_os = "linux")]
 	thp: Option<bool>,
 
@@ -176,8 +171,6 @@ pub struct MemoryArgs {
 	///
 	/// [KSM]: https://www.kernel.org/doc/html/latest/admin-guide/mm/ksm.html
 	#[clap(long, action = clap::ArgAction::SetTrue)]
-	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	#[cfg(target_os = "linux")]
 	ksm: Option<bool>,
 }
@@ -186,17 +179,14 @@ pub struct MemoryArgs {
 #[derive(Clone, Debug, Default, Deserialize, Merge, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(default)]
+#[merge(strategy = merge::option::overwrite_none)]
 struct CpuArgs {
 	/// Number of guest CPUs
 	#[clap(short, long, env = "HERMIT_CPU_COUNT")]
-	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	cpu_count: Option<CpuCount>,
 
 	/// Create a PIT
 	#[clap(long, action = clap::ArgAction::SetTrue)]
-	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	#[cfg(target_os = "linux")]
 	pit: Option<bool>,
 
@@ -212,8 +202,6 @@ struct CpuArgs {
 	///
 	/// * `--affinity 0-1,2`
 	#[clap(short, long, name = "CPUs")]
-	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	affinity: Option<Affinity>,
 }
 
