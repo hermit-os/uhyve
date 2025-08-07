@@ -1,10 +1,9 @@
 #![warn(rust_2018_idioms)]
 
-use std::{iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process, str::FromStr};
+use std::{num::ParseIntError, path::PathBuf, process, str::FromStr};
 
 use clap::{Command, CommandFactory, Parser, error::ErrorKind};
 use core_affinity::CoreId;
-use either::Either;
 use env_logger::Builder;
 use log::LevelFilter;
 use merge::Merge;
@@ -208,6 +207,9 @@ struct CpuArgs {
 impl CpuArgs {
 	fn get_affinity(self, app: &mut Command) -> Option<Vec<CoreId>> {
 		self.affinity.map(|affinity| {
+			if let Err(e) = affinity.validate() {
+				app.error(ErrorKind::ValueValidation, e).exit()
+			}
 			let affinity_num_vals = affinity.0.len();
 			let cpus_num_vals = usize::try_from(self.cpu_count.unwrap_or_default().get()).unwrap();
 			if affinity_num_vals != cpus_num_vals {
@@ -231,84 +233,68 @@ impl CpuArgs {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 struct Affinity(Vec<CoreId>);
-
-impl Affinity {
-	fn parse_ranges_iter<'a>(
-		ranges: impl IntoIterator<Item = &'a str> + 'a,
-	) -> impl Iterator<Item = Result<usize, ParseIntError>> + 'a {
-		struct ParsedRange(RangeInclusive<usize>);
-
-		impl FromStr for ParsedRange {
-			type Err = ParseIntError;
-
-			fn from_str(s: &str) -> Result<Self, Self::Err> {
-				let range = match s.split_once('-') {
-					Some((start, end)) => start.parse()?..=end.parse()?,
-					None => {
-						let idx = s.parse()?;
-						idx..=idx
-					}
-				};
-				Ok(Self(range))
-			}
-		}
-
-		ranges
-			.into_iter()
-			.map(ParsedRange::from_str)
-			.flat_map(|range| match range {
-				Ok(range) => Either::Left(range.0.map(Ok)),
-				Err(err) => Either::Right(iter::once(Err(err))),
-			})
-	}
-
-	fn parse_ranges(ranges: &str) -> Result<Vec<usize>, ParseIntError> {
-		Self::parse_ranges_iter(ranges.split([' ', ','].as_slice())).collect()
-	}
-}
 
 #[derive(Error, Debug)]
 enum ParseAffinityError {
 	#[error(transparent)]
-	Parse(#[from] ParseIntError),
+	ParseInt(#[from] ParseIntError),
 
-	#[error("Available cores: {available_cores:?}, requested affinities: {requested_affinities:?}")]
-	InvalidValue {
-		available_cores: Vec<usize>,
-		requested_affinities: Vec<usize>,
-	},
+	#[error("Unexpected format of affinity string")]
+	ParseParts,
+}
+
+#[derive(Error, Debug)]
+#[error("Available cores: {available_cores:?}, requested affinities: {requested_affinities:?}")]
+struct InvalidAffinityValueError {
+	available_cores: Vec<CoreId>,
+	requested_affinities: Vec<CoreId>,
 }
 
 impl FromStr for Affinity {
 	type Err = ParseAffinityError;
 
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
-		let available_cores = core_affinity::get_core_ids()
-			.unwrap()
-			.into_iter()
-			.map(|core_id| core_id.id)
-			.collect::<Vec<_>>();
+		let mut ret = Vec::new();
+		for i in s.split([',', ' ']) {
+			let mut j = i.splitn(2, '-');
+			let first = match j.next() {
+				Some(x) => x.parse::<usize>().map_err(ParseAffinityError::ParseInt)?,
+				None => return Err(ParseAffinityError::ParseParts),
+			};
+			match j.next() {
+				Some(x) => {
+					let second = x.parse::<usize>().map_err(ParseAffinityError::ParseInt)?;
+					ret.extend((first..=second).map(|id| CoreId { id }));
+				}
+				None => {
+					ret.push(CoreId { id: first });
+				}
+			}
+		}
+		Ok(Self(ret))
+	}
+}
 
-		let requested_affinities = Self::parse_ranges(s)?;
+impl Affinity {
+	/// Validates the core affinity against currently available cores
+	fn validate(&self) -> Result<(), InvalidAffinityValueError> {
+		let available_cores = core_affinity::get_core_ids().unwrap();
 
-		if !requested_affinities
+		if self
+			.0
 			.iter()
 			.all(|affinity| available_cores.contains(affinity))
 		{
-			return Err(ParseAffinityError::InvalidValue {
+			Ok(())
+		} else {
+			Err(InvalidAffinityValueError {
 				available_cores,
-				requested_affinities,
-			});
+				requested_affinities: self.0.clone(),
+			})
 		}
-
-		let core_ids = requested_affinities
-			.into_iter()
-			.map(|affinity| CoreId { id: affinity })
-			.collect();
-		Ok(Self(core_ids))
 	}
 }
 

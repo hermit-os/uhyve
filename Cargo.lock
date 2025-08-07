@@ -1653,7 +1653,6 @@ dependencies = [
  "clean-path",
  "core_affinity",
  "criterion",
- "either",
  "env_logger",
  "gdbstub",
  "gdbstub_arch",
