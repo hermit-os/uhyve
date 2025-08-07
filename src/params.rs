@@ -41,7 +41,7 @@ pub struct Params {
 	pub file_mapping: Vec<String>,
 
 	/// Path to create temporary directory on
-	pub tempdir: Option<String>,
+	pub tempdir: Option<PathBuf>,
 
 	/// Level of file isolation to be enforced
 	#[cfg(target_os = "linux")]
