@@ -101,7 +101,7 @@ struct UhyveArgs {
 	/// directories not managed by a temporary file cleaner, which can remove open files
 	/// manually. In most cases, mapping the guest path /root/ instead should be sufficient.
 	///
-	/// Defaults to /tmp.
+	/// Defaults to /tmp/uhyve-{uid}
 	#[clap(long)]
 	#[serde(default)]
 	#[merge(strategy = merge::option::overwrite_none)]
