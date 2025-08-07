@@ -1,12 +1,14 @@
 #![warn(rust_2018_idioms)]
 
-use std::{iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process, str::FromStr};
+use std::{
+	fs, iter, num::ParseIntError, ops::RangeInclusive, path::PathBuf, process, str::FromStr,
+};
 
 use clap::{Command, CommandFactory, Parser, error::ErrorKind};
 use core_affinity::CoreId;
 use either::Either;
 use env_logger::Builder;
-use log::LevelFilter;
+use log::{LevelFilter, info};
 use merge::Merge;
 use serde::Deserialize;
 use thiserror::Error;
@@ -448,6 +450,13 @@ impl From<Args> for Params {
 	}
 }
 
+/// Attempts to read config file and parse contents
+fn read_toml_contents(toml_path: &PathBuf) -> Result<Args, Box<dyn std::error::Error>> {
+	let contents = fs::read_to_string(toml_path)?;
+	let args = toml::from_str::<'_, Args>(&contents)?;
+	Ok(args)
+}
+
 fn run_uhyve() -> i32 {
 	#[cfg(feature = "instrument")]
 	setup_trace();
@@ -468,15 +477,34 @@ fn run_uhyve() -> i32 {
 
 	let mut app = Args::command();
 	let mut args = Args::parse();
+
 	// Tries to read arguments from a configuration file. If it doesn't exist or if
 	// parsing is not possible, continue using args as-is.
-	//
-	// TODO: Attempt to read configuration file from default locations (cwd, .config, etc.)
-	if let Some(config_file) = args.get_config_file()
-		&& let Ok(contents) = std::fs::read_to_string(config_file)
-		&& let Ok(toml_args) = toml::from_str::<'_, Args>(&contents)
+	if let Some(config_file) = args.get_config_file() {
+		if let Ok(toml_args) = read_toml_contents(config_file) {
+			args.merge(toml_args);
+		} else {
+			panic!("Could not parse config file.")
+		}
+	} else if let Ok(cwd) = std::env::current_dir()
+		&& let cwd_config = [cwd, "uhyve.toml".into()].iter().collect::<PathBuf>()
+		&& let Ok(toml_args) = read_toml_contents(&cwd_config)
 	{
-		args.merge(toml_args);
+		info!("Config loaded from current working directory.");
+		args.merge(toml_args)
+	} else if let Ok(config_home) = std::env::var("XDG_CONFIG_HOME")
+		&& !config_home.is_empty()
+		&& let config_path = [
+			PathBuf::from(config_home),
+			"uhyve".into(),
+			"uhyve.toml".into(),
+		]
+		.iter()
+		.collect::<PathBuf>()
+		&& let Ok(toml_args) = read_toml_contents(&config_path)
+	{
+		info!("Config loaded from XDG_CONFIG_HOME.");
+		args.merge(toml_args)
 	}
 
 	let stats = args.uhyve.stats.unwrap_or_default();
