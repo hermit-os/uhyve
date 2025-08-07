@@ -472,14 +472,11 @@ fn run_uhyve() -> i32 {
 	// parsing is not possible, continue using args as-is.
 	//
 	// TODO: Attempt to read configuration file from default locations (cwd, .config, etc.)
-	let config_file = args.get_config_file();
-	if let Some(config_file) = config_file {
-		if let Ok(contents) = std::fs::read_to_string(config_file) {
-			let toml_args: Result<Args, toml::de::Error> = toml::from_str(&contents);
-			if let Ok(toml_args) = toml_args {
-				args.merge(toml_args);
-			}
-		}
+	if let Some(config_file) = args.get_config_file()
+		&& let Ok(contents) = std::fs::read_to_string(config_file)
+		&& let Ok(toml_args) = toml::from_str::<'_, Args>(&contents)
+	{
+		args.merge(toml_args);
 	}
 
 	let stats = args.uhyve.stats.unwrap_or_default();
