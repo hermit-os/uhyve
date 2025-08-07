@@ -1,0 +1,15 @@
+'ci':
+  - changed-files:
+    - any-glob-to-any-file: ['.github/workflows/**']
+'tests':
+  - changed-files:
+    - any-glob-to-any-file: ['tests/**']
+'docs':
+  - changed-files:
+    - any-glob-to-all-files: ['*.md']
+'feature/security':
+  - changed-files:
+    - any-glob-to-any-file: ['src/isolation/**']
+'feature/uhyve-interface':
+  - changed-files:
+    - any-glob-to-any-file: ['uhyve-interface/**']
