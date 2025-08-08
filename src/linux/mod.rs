@@ -7,7 +7,7 @@ pub(crate) type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
 
 use std::{
 	io,
-	net::{TcpListener, TcpStream},
+	net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream},
 	sync::LazyLock,
 };
 
@@ -134,10 +134,21 @@ impl UhyveVm<KvmVm> {
 	}
 }
 
+const LOCALHOST: [IpAddr; 2] = [
+	IpAddr::V4(Ipv4Addr::LOCALHOST),
+	IpAddr::V6(Ipv6Addr::LOCALHOST),
+];
+
 fn wait_for_gdb_connection(port: u16) -> io::Result<TcpStream> {
-	let sockaddr = format!("localhost:{port}");
-	eprintln!("Waiting for a GDB connection on {sockaddr:?}...");
-	let sock = TcpListener::bind(sockaddr)?;
+	eprintln!("Waiting for a local GDB connection on port {port}...");
+
+	let sock = TcpListener::bind(
+		[
+			SocketAddr::new(LOCALHOST[0], port),
+			SocketAddr::new(LOCALHOST[1], port),
+		]
+		.as_ref(),
+	)?;
 	let (stream, addr) = sock.accept()?;
 
 	// Blocks until a GDB client connects via TCP.
