@@ -140,8 +140,6 @@ const LOCALHOST: [IpAddr; 2] = [
 ];
 
 fn wait_for_gdb_connection(port: u16) -> io::Result<TcpStream> {
-	eprintln!("Waiting for a local GDB connection on port {port}...");
-
 	let sock = TcpListener::bind(
 		[
 			SocketAddr::new(LOCALHOST[0], port),
@@ -149,6 +147,10 @@ fn wait_for_gdb_connection(port: u16) -> io::Result<TcpStream> {
 		]
 		.as_ref(),
 	)?;
+	eprintln!(
+		"Waiting for a local GDB connection on port {}...",
+		sock.local_addr().unwrap().port()
+	);
 	let (stream, addr) = sock.accept()?;
 
 	// Blocks until a GDB client connects via TCP.
