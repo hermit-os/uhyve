@@ -126,7 +126,8 @@ struct UhyveArgs {
 	/// GDB server port
 	///
 	/// Starts a GDB server on the provided port and waits for a connection.
-	#[clap(short = 's', long, env = "HERMIT_GDB_PORT")]
+	/// If no port is entered, a random port will be chosen instead.
+	#[clap(short = 's', long, env = "HERMIT_GDB_PORT", num_args(0..=1), default_missing_value("0"))]
 	#[serde(default)]
 	#[merge(strategy = merge::option::overwrite_none)]
 	#[cfg(target_os = "linux")]
