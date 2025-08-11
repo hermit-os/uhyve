@@ -273,7 +273,7 @@ fn is_file(rawfd: RawFd) -> bool {
 /// * `temp_dir` - Location of the temporary directory for unmapped files
 pub(crate) fn initialize<'hpi, HPI>(
 	sandbox_mode: &crate::params::FileSandboxMode,
-	kernel_path: String,
+	kernel_path: &PathBuf,
 	output: &crate::params::Output,
 	host_paths: HPI,
 	temp_dir: PathBuf,
