@@ -105,7 +105,7 @@ struct UhyveArgs {
 	#[clap(long)]
 	#[serde(default)]
 	#[merge(strategy = merge::option::overwrite_none)]
-	tempdir: Option<String>,
+	tempdir: Option<PathBuf>,
 
 	/// File isolation (none, normal, strict)
 	///
@@ -645,7 +645,7 @@ mod tests {
 				output: Some(String::from_str("test.txt").unwrap()),
 				stats: Some(true),
 				file_mapping: vec![String::from_str("./host:/root/guest.txt").unwrap()],
-				tempdir: Some(String::from_str("/tmp/").unwrap()),
+				tempdir: Some(PathBuf::from("/tmp/")),
 				#[cfg(target_os = "linux")]
 				file_isolation: Some(String::from_str("strict").unwrap()),
 				#[cfg(target_os = "linux")]

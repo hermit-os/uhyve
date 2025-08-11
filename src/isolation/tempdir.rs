@@ -18,7 +18,7 @@ use uuid::Uuid;
 /// for the user). Those permissions are checked during the runtime.
 ///
 /// * `dir_path` - The location in which the temporary directory should be created.
-pub fn create_temp_dir(dir_path: &Option<String>) -> TempDir {
+pub fn create_temp_dir(dir_path: Option<&PathBuf>) -> TempDir {
 	Builder::new()
 		.permissions(Permissions::from_mode(0o700))
 		.prefix("uhyve-")
@@ -67,17 +67,15 @@ mod tests {
 
 	#[test]
 	fn test_create_with_dir_path() {
-		let default_tempdir = String::from(env::temp_dir().to_str().unwrap());
-		let tempdir = create_temp_dir(&Some(default_tempdir.clone()));
+		let tempdir = create_temp_dir(Some(&env::temp_dir()));
 		// Assertions deferred for later to clean up directory first.
 		// e.g. /tmp/uhyve-1000/uhyve-8Mubdtc4246409-1913-4123-b4b4-88cb4953a1ea
-		let in_tmp_path: bool = tempdir.path().starts_with(&default_tempdir);
-		let in_tmp_subfolder: bool =
-			tempdir
-				.path()
-				.starts_with(format!("{}/uhyve-{}", &default_tempdir, unsafe {
-					libc::getuid()
-				}));
+		let in_tmp_path: bool = tempdir.path().starts_with(env::temp_dir());
+		let in_tmp_subfolder: bool = tempdir.path().starts_with(format!(
+			"{}/uhyve-{}",
+			String::from(env::temp_dir().to_str().unwrap()),
+			unsafe { libc::getuid() }
+		));
 
 		remove_dir(tempdir.path()).unwrap_or_else(|e| {
 			panic!(
@@ -92,16 +90,14 @@ mod tests {
 
 	#[test]
 	fn test_create_without_dir_path() {
-		let default_tempdir = String::from(env::temp_dir().to_str().unwrap());
-		let tempdir = create_temp_dir(&None);
+		let tempdir = create_temp_dir(None);
 		// Assertions deferred for later to clean up directory first.
 		// e.g. /tmp/uhyve-8Mubdtc4246409-1913-4123-b4b4-88cb4953a1ea
-		let in_tmp_subfolder: bool =
-			tempdir
-				.path()
-				.starts_with(format!("{}/uhyve-{}", default_tempdir, unsafe {
-					libc::getuid()
-				}));
+		let in_tmp_subfolder: bool = tempdir.path().starts_with(format!(
+			"{}/uhyve-{}",
+			String::from(env::temp_dir().to_str().unwrap()),
+			unsafe { libc::getuid() }
+		));
 
 		remove_dir(tempdir.path()).unwrap_or_else(|e| {
 			panic!(
