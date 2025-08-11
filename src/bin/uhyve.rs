@@ -585,7 +585,7 @@ mod tests {
 			uhyve: UhyveArgs {
 				output: None,
 				stats: None,
-				file_mapping: vec![String::from_str("./host:/root/guest.txt").unwrap()],
+				file_mapping: vec![String::from("./host:/root/guest.txt")],
 				tempdir: None,
 				#[cfg(target_os = "linux")]
 				file_isolation: None,
@@ -608,7 +608,7 @@ mod tests {
 				pit: None,
 			},
 			guest: GuestArgs {
-				kernel: PathBuf::from_str("my_kernel.hermit").unwrap(),
+				kernel: PathBuf::from("my_kernel.hermit"),
 				kernel_args: Default::default(),
 				env_vars: Default::default(),
 			},
@@ -642,12 +642,12 @@ mod tests {
 
 		let cli_args_postmerge = Args {
 			uhyve: UhyveArgs {
-				output: Some(String::from_str("test.txt").unwrap()),
+				output: Some(String::from("test.txt")),
 				stats: Some(true),
-				file_mapping: vec![String::from_str("./host:/root/guest.txt").unwrap()],
-				tempdir: Some(String::from_str("/tmp/").unwrap()),
+				file_mapping: vec![String::from("./host:/root/guest.txt")],
+				tempdir: Some(String::from("/tmp/")),
 				#[cfg(target_os = "linux")]
-				file_isolation: Some(String::from_str("strict").unwrap()),
+				file_isolation: Some(String::from("strict")),
 				#[cfg(target_os = "linux")]
 				gdb_port: Some(1),
 				config: Some(PathBuf::from("config.txt")),
@@ -667,7 +667,7 @@ mod tests {
 				pit: Some(true),
 			},
 			guest: GuestArgs {
-				kernel: PathBuf::from_str("my_kernel.hermit").unwrap(),
+				kernel: PathBuf::from("my_kernel.hermit"),
 				kernel_args: Default::default(),
 				env_vars: vec![String::from("foo=bar")],
 			},
