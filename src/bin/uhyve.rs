@@ -205,6 +205,7 @@ struct CpuArgs {
 }
 
 impl CpuArgs {
+	#[cfg_attr(test, allow(unreachable_code))]
 	fn get_affinity(self, app: &mut Command) -> Option<Vec<CoreId>> {
 		self.affinity.map(|affinity| {
 			if let Err(e) = affinity.validate() {
@@ -213,18 +214,16 @@ impl CpuArgs {
 			let affinity_num_vals = affinity.0.len();
 			let cpus_num_vals = usize::try_from(self.cpu_count.unwrap_or_default().get()).unwrap();
 			if affinity_num_vals != cpus_num_vals {
-				let affinity_arg = app
-					.get_arguments()
-					.find(|arg| arg.get_id() == "affinity")
-					.unwrap();
-				let cpus_arg = app
-					.get_arguments()
-					.find(|arg| arg.get_id() == "cpus")
-					.unwrap();
 				let verb = if affinity_num_vals > 1 { "were" } else { "was" };
+				// NOTE: albeit one might ask `clap` to format the arguments `affinity` and `cpu_count`,
+				// this runs into an internal error in clap (panic in clap_builder::builder::arg::Arg::get_min_vals)
 				let message = format!(
-					"The argument '{affinity_arg}' requires {cpus_num_vals} values (matching '{cpus_arg}'), but {affinity_num_vals} {verb} provided",
+					"The argument '--affinity <CPUs>' requires {cpus_num_vals} values (matching '--cpu-count <CPU_COUNT>'), but {affinity_num_vals} {verb} provided",
 				);
+
+				#[cfg(test)]
+				panic!("{message}");
+
 				app.error(ErrorKind::WrongNumberOfValues, message).exit()
 			} else {
 				affinity.0
