@@ -15,7 +15,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -37,7 +37,7 @@ jobs:
           sudo apt-get update
           # libclang is required by virtio-bindings for bindgen
           sudo apt-get install -y --no-install-recommends gdb libclang-dev
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: mkroening/rust-toolchain-toml@main
         with:
@@ -57,7 +57,7 @@ jobs:
           sudo apt-get update
           # libclang is required by virtio-bindings for bindgen
           sudo apt-get install -y --no-install-recommends libclang-dev
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -86,7 +86,7 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # TODO: Remove this, once https://github.com/rust-lang/rustfmt/issues/4991 is resolved
       - uses: dtolnay/rust-toolchain@nightly
         with:
@@ -111,7 +111,7 @@ jobs:
             flags: --target aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.targets }}
@@ -127,7 +127,7 @@ jobs:
     name: Clippy test-kernels
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Install clippy for Test Kernels
         run: rustup component add clippy
@@ -149,7 +149,7 @@ jobs:
           sudo apt-get update
           # libclang is required by virtio-bindings for bindgen
           sudo apt-get install -y --no-install-recommends gdb libclang-dev
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: mkroening/rust-toolchain-toml@main
         with:
