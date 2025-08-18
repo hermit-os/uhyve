@@ -73,10 +73,10 @@ serde = { version = "1.0", features = ["derive"] }
 merge = { version = "0.2" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-kvm-bindings = "0.13"
-kvm-ioctls = "0.23"
+kvm-bindings = "0.14"
+kvm-ioctls = "0.24"
 landlock = "0.4.2"
-vmm-sys-util = "0.14"
+vmm-sys-util = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 xhypervisor = { version = "0.3.0", features = ["macos_15_0_0"] }
