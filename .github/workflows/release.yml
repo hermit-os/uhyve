@@ -18,7 +18,7 @@ jobs:
           - os: ubuntu-latest
             filename_suffix: "${{ github.ref_name }}-linux-amd64"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # Adapted from: https://github.com/mkroening/edu-sync/blob/main/.github/workflows/release.yml
       - run: gh release create ${{ github.ref }} --draft --title "Uhyve ${{ github.ref_name }}"
         if: startsWith(matrix.os, 'ubuntu')
