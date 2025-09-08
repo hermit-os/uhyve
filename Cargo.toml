@@ -67,7 +67,7 @@ shell-words = "1"
 sysinfo = { version = "0.37.0", default-features = false, features = ["system"] }
 vm-fdt = "0.3"
 tempfile = "3.21.0"
-uuid = { version = "1.18.0", features = ["fast-rng", "v4"]}
+uuid = { version = "1.18.1", features = ["fast-rng", "v4"]}
 toml = "0.9.5"
 serde = { version = "1.0", features = ["derive"] }
 merge = { version = "0.2" }
