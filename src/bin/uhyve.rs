@@ -448,30 +448,28 @@ fn read_toml_contents(toml_path: &PathBuf) -> Result<Args, Box<dyn std::error::E
 /// This overrides missing CLI configs (None) with configs obtained from config file.
 fn load_vm_config(args: &mut Args) {
 	// Tries to read arguments from a configuration file. If it doesn't exist or if
-	// parsing is not possible, continue using args as-is.
+	// parsing is not possible, panic.
 	if let Some(config_file) = args.get_config_file() {
-		let toml_args = read_toml_contents(config_file).unwrap();
-		args.merge(toml_args)
+		args.merge(read_toml_contents(config_file).unwrap());
 	} else if let Ok(cwd) = std::env::current_dir()
 		&& let cwd_config = [cwd, "uhyve.toml".into()].iter().collect::<PathBuf>()
 		&& cwd_config.exists()
 	{
 		info!("Using uhyve.toml config from current working directory.");
-		let toml_args = read_toml_contents(&cwd_config).unwrap();
-		args.merge(toml_args)
+		args.merge(read_toml_contents(&cwd_config).unwrap());
 	} else if let Ok(config_home) = std::env::var("XDG_CONFIG_HOME")
 		&& !config_home.is_empty()
-	{
-		let config_path = [
+		&& let config_path = [
 			PathBuf::from(config_home),
 			"uhyve".into(),
 			"uhyve.toml".into(),
 		]
 		.iter()
-		.collect::<PathBuf>();
-		let toml_args = read_toml_contents(&config_path).unwrap();
-		info!("Config loaded from {}.", config_path.display());
-		args.merge(toml_args)
+		.collect::<PathBuf>()
+		&& config_path.exists()
+	{
+		info!("Using config from {}.", config_path.display());
+		args.merge(read_toml_contents(&config_path).unwrap());
 	}
 }
 
