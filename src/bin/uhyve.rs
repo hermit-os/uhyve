@@ -443,27 +443,10 @@ fn read_toml_contents(toml_path: &PathBuf) -> Result<Args, Box<dyn std::error::E
 	Ok(args)
 }
 
-fn run_uhyve() -> i32 {
-	#[cfg(feature = "instrument")]
-	setup_trace();
-
-	/*
-	 * 1. CLI parameters are parsed into Args.
-	 * 2. Get config file location using the CLI parameters' config.
-	 * 3. Override missing CLI configs ("None") with configs obtained from config file.
-	 *
-	 * (Done wherever the user has not explicitly defined an option using the CLI)
-	 */
-
-	let mut env_builder = Builder::new();
-	env_builder.filter_level(LevelFilter::Warn);
-	env_builder.parse_env("RUST_LOG");
-	env_builder.format_timestamp(None);
-	env_builder.init();
-
-	let mut app = Args::command();
-	let mut args = Args::parse();
-
+/// Attempts machine image-specific config from clap, cwd or the config directory.
+///
+/// This overrides missing CLI configs (None) with configs obtained from config file.
+fn load_vm_config(args: &mut Args) {
 	// Tries to read arguments from a configuration file. If it doesn't exist or if
 	// parsing is not possible, continue using args as-is.
 	if let Some(config_file) = args.get_config_file() {
@@ -476,7 +459,7 @@ fn run_uhyve() -> i32 {
 		&& let cwd_config = [cwd, "uhyve.toml".into()].iter().collect::<PathBuf>()
 		&& let Ok(toml_args) = read_toml_contents(&cwd_config)
 	{
-		info!("Config loaded from current working directory.");
+		info!("Using uhyve.toml config from current working directory.");
 		args.merge(toml_args)
 	} else if let Ok(config_home) = std::env::var("XDG_CONFIG_HOME")
 		&& !config_home.is_empty()
@@ -489,9 +472,25 @@ fn run_uhyve() -> i32 {
 		.collect::<PathBuf>()
 		&& let Ok(toml_args) = read_toml_contents(&config_path)
 	{
-		info!("Config loaded from XDG_CONFIG_HOME.");
+		info!("Config loaded from {}.", config_path.display());
 		args.merge(toml_args)
 	}
+}
+
+fn run_uhyve() -> i32 {
+	#[cfg(feature = "instrument")]
+	setup_trace();
+
+	let mut env_builder = Builder::new();
+	env_builder.filter_level(LevelFilter::Warn);
+	env_builder.parse_env("RUST_LOG");
+	env_builder.format_timestamp(None);
+	env_builder.init();
+
+	let mut app = Args::command();
+	let mut args = Args::parse();
+
+	load_vm_config(&mut args);
 
 	let stats = args.uhyve.stats.unwrap_or_default();
 	let kernel_path = args.guest.kernel.clone();
