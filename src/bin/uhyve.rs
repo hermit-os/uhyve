@@ -1,8 +1,6 @@
 #![warn(rust_2018_idioms)]
 
-use std::{
-	fs, num::ParseIntError, path::PathBuf, process, str::FromStr,
-};
+use std::{fs, num::ParseIntError, path::PathBuf, process, str::FromStr};
 
 use clap::{Command, CommandFactory, Parser, error::ErrorKind};
 use core_affinity::CoreId;
