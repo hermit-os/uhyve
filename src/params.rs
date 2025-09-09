@@ -193,7 +193,10 @@ impl TryFrom<Byte> for GuestMemorySize {
 	fn try_from(value: Byte) -> Result<Self, Self::Error> {
 		if value < Self::minimum() {
 			Err(InvalidGuestMemorySizeError::MemoryTooSmall(value))
-		} else if value.as_u64() % Byte::from_u64_with_unit(2, Unit::MiB).unwrap().as_u64() != 0 {
+		} else if !value
+			.as_u64()
+			.is_multiple_of(Byte::from_u64_with_unit(2, Unit::MiB).unwrap().as_u64())
+		{
 			Err(InvalidGuestMemorySizeError::NotAHugepage(value))
 		} else {
 			Ok(Self(value))
