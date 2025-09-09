@@ -452,9 +452,11 @@ fn load_vm_config(args: &mut Args) {
 	if let Some(config_file) = args.get_config_file() {
 		let toml_args = read_toml_contents(config_file).unwrap();
 		args.merge(toml_args)
-	} else if let Ok(cwd) = std::env::current_dir() {
+	} else if let Ok(cwd) = std::env::current_dir()
+		&& let cwd_config = [cwd, "uhyve.toml".into()].iter().collect::<PathBuf>()
+		&& cwd_config.exists()
+	{
 		info!("Using uhyve.toml config from current working directory.");
-		let cwd_config = [cwd, "uhyve.toml".into()].iter().collect::<PathBuf>();
 		let toml_args = read_toml_contents(&cwd_config).unwrap();
 		args.merge(toml_args)
 	} else if let Ok(config_home) = std::env::var("XDG_CONFIG_HOME")
