@@ -15,10 +15,7 @@ use core_affinity::CoreId;
 use gdbstub::stub::{DisconnectReason, GdbStub};
 use kvm_ioctls::Kvm;
 use libc::{SIGRTMAX, SIGRTMIN};
-use nix::sys::{
-	pthread::{Pthread, pthread_kill},
-	signal::{SigHandler, Signal, signal},
-};
+use nix::sys::pthread::Pthread;
 
 use crate::{
 	linux::{
@@ -37,31 +34,34 @@ static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
 /// It is used to stop a vCPU from another thread.
 pub(crate) struct KickSignal;
 
+// TODO: nix::signal::Signal doesn't support real-time signals yet.
+// Start using the Signal type once this no longer is the case.
+//
+// See: https://github.com/nix-rust/nix/issues/495
 impl KickSignal {
 	const RTSIG_OFFSET: libc::c_int = 0;
 
-	fn get() -> Signal {
-		let kick_signal = SIGRTMIN() + Self::RTSIG_OFFSET;
+	fn get() -> libc::c_int {
+		let kick_signal: libc::c_int = SIGRTMIN() + Self::RTSIG_OFFSET;
 		assert!(kick_signal <= SIGRTMAX());
-		// TODO: Remove the transmute once realtime signals are properly supported by nix
-		// https://github.com/nix-rust/nix/issues/495
-		unsafe { std::mem::transmute(kick_signal) }
+		kick_signal
 	}
 
 	pub(crate) fn register_handler() -> nix::Result<()> {
 		extern "C" fn handle_signal(_signal: libc::c_int) {}
-		// SAFETY: We don't use the `signal`'s return value.
-		unsafe {
-			signal(Self::get(), SigHandler::Handler(handle_signal))?;
-		}
-		Ok(())
+		// SAFETY: We don't use the `signal`'s return value and use an empty handler.
+		// (Sidenote: SIG_DFL and SIG_IGN don't do the trick.)
+		let res = unsafe { libc::signal(Self::get(), handle_signal as libc::sighandler_t) };
+		nix::errno::Errno::result(res).map(drop)
 	}
 
 	/// Sends the kick signal to a thread.
 	///
 	/// [`KickSignal::register_handler`] should be called prior to this to avoid crashing the program with the default handler.
 	pub(crate) fn pthread_kill(pthread: Pthread) -> nix::Result<()> {
-		pthread_kill(pthread, Self::get())
+		// SAFETY: Trivially safe, as long as register_handler has been called.
+		let res = unsafe { libc::pthread_kill(pthread, Self::get()) };
+		nix::errno::Errno::result(res).map(drop)
 	}
 }
 
