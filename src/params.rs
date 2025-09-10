@@ -149,17 +149,13 @@ impl fmt::Display for GuestMemorySize {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Default)]
 pub enum Output {
+	#[default]
 	StdIo,
 	File(PathBuf),
 	Buffer,
 	None,
-}
-impl Default for Output {
-	fn default() -> Self {
-		Self::StdIo
-	}
 }
 impl FromStr for Output {
 	type Err = Infallible;
