@@ -8,9 +8,10 @@ use std::{
 use crate::{HypervisorResult, params};
 
 /// The destination of the kernels serial output.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Default)]
 pub enum Destination {
 	/// Same IO as the Uhyve process.
+	#[default]
 	StdIo,
 	/// Redirect output to a file.
 	File(Arc<Mutex<File>>),
@@ -18,11 +19,6 @@ pub enum Destination {
 	Buffer(Arc<Mutex<Vec<u8>>>),
 	/// Ignore all serial output.
 	None,
-}
-impl Default for Destination {
-	fn default() -> Self {
-		Self::StdIo
-	}
 }
 
 /// Handles serial output functionality.
