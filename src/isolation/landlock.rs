@@ -48,7 +48,7 @@ impl UhyveLandlockWrapper {
 	///   "read-only", as the given directories will also have removable files
 	///   and directories (but won't be readable). See [`Self::enforce_landlock`].
 	fn new(
-		sandbox_mode: FileSandboxMode,
+		sandbox_mode: &crate::params::FileSandboxMode,
 		rw_paths: Vec<PathBuf>,
 		ro_paths: Vec<PathBuf>,
 		ro_dirs: Vec<PathBuf>,
@@ -60,7 +60,7 @@ impl UhyveLandlockWrapper {
 			rw_paths,
 			ro_paths,
 			ro_dirs,
-			compat_level: Self::determine_compat_level(sandbox_mode),
+			compat_level: Self::determine_compat_level(*sandbox_mode),
 		}
 	}
 
@@ -272,8 +272,8 @@ fn is_file(rawfd: RawFd) -> bool {
 /// * `host_paths` - List of host paths derived from mappings by the user
 /// * `temp_dir` - Location of the temporary directory for unmapped files
 pub(crate) fn initialize<'hpi, HPI>(
-	sandbox_mode: FileSandboxMode,
-	kernel_path: String,
+	sandbox_mode: &crate::params::FileSandboxMode,
+	kernel_path: PathBuf,
 	output: &crate::params::Output,
 	host_paths: HPI,
 	temp_dir: PathBuf,
@@ -285,7 +285,7 @@ where
 	// enforce Landlock, such as the kernel path and a couple of paths useful for sysinfo.
 	// See: https://github.com/GuillaumeGomez/sysinfo/blob/8fd58b8/src/unix/linux/cpu.rs#L420
 	let uhyve_ro_paths = vec![
-		kernel_path.into(),
+		kernel_path,
 		PathBuf::from("/etc/"),
 		PathBuf::from("/sys/devices/system"),
 		PathBuf::from("/proc/cpuinfo"),
@@ -361,7 +361,7 @@ mod tests {
 	#[test]
 	fn test_landlock_strict_mode() {
 		let landlock = UhyveLandlockWrapper::new(
-			FileSandboxMode::Strict,
+			&FileSandboxMode::Strict,
 			vec![PathBuf::from("/dev/null")],
 			vec![PathBuf::from("/dev/zero")],
 			vec![PathBuf::from("/dev/")],
