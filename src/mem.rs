@@ -105,7 +105,7 @@ impl MmapMemory {
 	/// the returned slice, the memory must not be altered to prevent undfined
 	/// behaviour.
 	pub unsafe fn slice_at(&self, addr: GuestPhysAddr, len: usize) -> Result<&[u8], MemoryError> {
-		if addr.as_u64() as usize + len >= self.memory_size + self.guest_address.as_u64() as usize {
+		if addr.as_usize() + len >= self.memory_size + self.guest_address.as_usize() {
 			Err(MemoryError::BoundsViolation)
 		} else {
 			Ok(unsafe { std::slice::from_raw_parts(self.host_address(addr)?, len) })
@@ -136,7 +136,7 @@ impl MmapMemory {
 	/// memory, if the address is valid.
 	pub fn host_address(&self, addr: GuestPhysAddr) -> Result<*const u8, MemoryError> {
 		if addr < self.guest_address
-			|| addr.as_u64() as usize > self.guest_address.as_u64() as usize + self.memory_size
+			|| addr.as_usize() > self.guest_address.as_usize() + self.memory_size
 		{
 			return Err(MemoryError::WrongMemoryError);
 		}
