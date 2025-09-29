@@ -28,8 +28,11 @@ const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 const PCI_CONFIG_DATA_PORT: u16 = 0xCFC;
 const PCI_CONFIG_ADDRESS_PORT: u16 = 0xCF8;
 
+// First address that uses more than 32 bits.
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
-const KVM_32BIT_GAP_SIZE: usize = 768 << 20;
+// 1 GiB
+const KVM_32BIT_GAP_SIZE: usize = 1024 << 20;
+// 3 GiB, aka. 0xC000_0000
 const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
 
 pub struct KvmVm {
