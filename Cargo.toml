@@ -66,7 +66,7 @@ rand = { version = "0.9", optional = true }
 shell-words = "1"
 sysinfo = { version = "0.37.0", default-features = false, features = ["system"] }
 vm-fdt = "0.3"
-tempfile = "3.22.0"
+tempfile = "3.23.0"
 uuid = { version = "1.18.1", features = ["fast-rng", "v4"]}
 toml = "0.9.7"
 serde = { version = "1.0", features = ["derive"] }
