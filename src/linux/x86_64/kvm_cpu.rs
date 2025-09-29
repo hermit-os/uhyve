@@ -126,7 +126,7 @@ impl VirtualizationBackendInternal for KvmVm {
 
 		// currently, we support only system, which provides the
 		// cpu feature TSC_DEADLINE
-		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+		cap = kvm_bindings::kvm_enable_cap {
 			cap: KVM_CAP_TSC_DEADLINE_TIMER,
 			..Default::default()
 		};
@@ -134,14 +134,14 @@ impl VirtualizationBackendInternal for KvmVm {
 		vm.enable_cap(&cap)
 			.expect_err("Processor feature `tsc deadline` isn't supported!");
 
-		let cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+		cap = kvm_bindings::kvm_enable_cap {
 			cap: KVM_CAP_IRQFD,
 			..Default::default()
 		};
 		vm.enable_cap(&cap)
 			.expect_err("The support of KVM_CAP_IRQFD is currently required");
 
-		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+		cap = kvm_bindings::kvm_enable_cap {
 			cap: KVM_CAP_X86_DISABLE_EXITS,
 			flags: 0,
 			..Default::default()
