@@ -453,10 +453,11 @@ fn run_uhyve() -> i32 {
 	 */
 
 	let mut env_builder = Builder::new();
-	env_builder.filter_level(LevelFilter::Warn);
-	env_builder.parse_env("RUST_LOG");
-	env_builder.format_timestamp(None);
-	env_builder.init();
+	env_builder
+		.filter_level(LevelFilter::Warn)
+		.parse_env("RUST_LOG")
+		.format_timestamp(None)
+		.init();
 
 	let mut app = Args::command();
 	let mut args = Args::parse();
