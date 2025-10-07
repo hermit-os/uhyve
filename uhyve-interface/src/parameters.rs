@@ -161,4 +161,5 @@ pub const ALLOWED_OPEN_FLAGS: i32 =
 
 pub const ENOENT: i32 = 2;
 pub const EBADF: i32 = 9;
+pub const EFAULT: i32 = 14;
 pub const EINVAL: i32 = 22;

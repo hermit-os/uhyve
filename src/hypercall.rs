@@ -83,8 +83,8 @@ pub unsafe fn address_to_hypercall(
 /// file (that existed during initialization) called `log.txt` is unlinked, attempting to
 /// open `log.txt` again will result in an error.
 pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut UhyveFileMap) {
-	let requested_path = mem.host_address(sysunlink.name).unwrap() as *const i8;
-	let guest_path = unsafe { CStr::from_ptr(requested_path) };
+	let requested_path_ptr = mem.host_address(sysunlink.name).unwrap() as *const i8;
+	let guest_path = unsafe { CStr::from_ptr(requested_path_ptr) };
 	sysunlink.ret = if let Some(host_path) = file_map.get_host_path(guest_path) {
 		// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 		// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
@@ -163,18 +163,20 @@ pub fn read(
 	file_map: &mut UhyveFileMap,
 ) {
 	if file_map.fdmap.is_fd_present(sysread.fd.into_raw_fd()) {
-		unsafe {
-			let bytes_read = libc::read(
-				sysread.fd,
-				mem.host_address(virt_to_phys(sysread.buf, mem, root_pt).unwrap())
-					.unwrap() as *mut libc::c_void,
-				sysread.len,
-			);
+		let guest_phys_addr = virt_to_phys(sysread.buf, mem, root_pt);
+		if let Ok(guest_phys_addr) = guest_phys_addr
+			&& let Ok(host_address) = mem.host_address(guest_phys_addr)
+		{
+			let bytes_read =
+				unsafe { libc::read(sysread.fd, host_address as *mut libc::c_void, sysread.len) };
 			if bytes_read >= 0 {
 				sysread.ret = bytes_read;
 			} else {
 				sysread.ret = -1
 			}
+		} else {
+			warn!("Unable to get host address for read buffer");
+			sysread.ret = -EFAULT as isize;
 		}
 	} else {
 		sysread.ret = -EBADF as isize;
@@ -194,26 +196,29 @@ pub fn write(
 			syswrite.buf + bytes_written as u64,
 			&peripherals.mem,
 			root_pt,
-		)
-		.unwrap();
+		);
 
-		if syswrite.fd == 1 || syswrite.fd == 2 {
-			let bytes = unsafe {
-				peripherals
-					.mem
-					.slice_at(guest_phys_addr, syswrite.len)
-					.map_err(|e| {
-						io::Error::new(
-							io::ErrorKind::InvalidInput,
-							format!("invalid syswrite buffer: {e:?}"),
-						)
-					})?
-			};
-			return peripherals.serial.output(bytes);
-		} else if !file_map.fdmap.is_fd_present(syswrite.fd.into_raw_fd()) {
-			// We don't write anything if the file descriptor is not available,
-			// but this is OK for now, as we have no means of returning an error code
-			// and writes are not necessarily guaranteed to write anything.
+		if let Ok(guest_phys_addr) = guest_phys_addr {
+			if syswrite.fd == 1 || syswrite.fd == 2 {
+				let bytes = unsafe {
+					peripherals
+						.mem
+						.slice_at(guest_phys_addr, syswrite.len)
+						.map_err(|e| {
+							io::Error::new(
+								io::ErrorKind::InvalidInput,
+								format!("invalid syswrite buffer: {e:?}"),
+							)
+						})?
+				};
+				return peripherals.serial.output(bytes);
+			} else if !file_map.fdmap.is_fd_present(syswrite.fd.into_raw_fd()) {
+				// We don't write anything if the file descriptor is not available,
+				// but this is OK for now, as we have no means of returning an error code
+				// and writes are not necessarily guaranteed to write anything.
+				return Ok(());
+			}
+		} else {
 			return Ok(());
 		}
 
@@ -222,7 +227,7 @@ pub fn write(
 				syswrite.fd,
 				peripherals
 					.mem
-					.host_address(guest_phys_addr)
+					.host_address(guest_phys_addr.unwrap())
 					.map_err(|e| match e {
 						MemoryError::BoundsViolation => {
 							unreachable!("Bounds violation after host_address function")
