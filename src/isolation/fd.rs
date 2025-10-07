@@ -23,7 +23,7 @@ impl UhyveFileDescriptorLayer {
 	pub fn insert_fd(&mut self, fd: RawFd) {
 		// Don't insert standard streams (which "conflict" with Uhyve's).
 		if fd > 2 {
-			debug!("Adding fd {fd} to fdset: {:#?}", self.fdset);
+			debug!("Adding fd {fd} to fdset: {self}");
 			self.fdset.insert(fd);
 		} else {
 			warn!("Guest attempted to insert negative/standard stream {fd}, ignoring...")
@@ -37,7 +37,7 @@ impl UhyveFileDescriptorLayer {
 	///
 	/// * `fd` - The file descriptor of the file being removed.
 	pub fn remove_fd(&mut self, fd: RawFd) {
-		debug!("Trying to remove {fd} from fdset: {:#?}", &self.fdset);
+		debug!("Trying to remove {fd} from fdset: {self}");
 		// This is checked by [crate::hypercall::close].
 		if fd > 2 {
 			self.fdset.remove(&fd);
@@ -53,7 +53,7 @@ impl UhyveFileDescriptorLayer {
 	///
 	/// * `fd` - File descriptor of to-be-operated file.
 	pub fn is_fd_present(&self, fd: RawFd) -> bool {
-		debug!("Check if {fd} in fdset: {:#?}", &self.fdset);
+		debug!("Check if {fd} in fdset: {self}");
 		if (fd >= 0 && self.fdset.contains(&fd)) || (0..=2).contains(&fd) {
 			return true;
 		}
@@ -68,5 +68,21 @@ impl Drop for UhyveFileDescriptorLayer {
 			// We do this to close any files on the host that were not closed by the guest.
 			unsafe { OwnedFd::from_raw_fd(*fd) };
 		}
+	}
+}
+
+impl std::fmt::Display for UhyveFileDescriptorLayer {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		self.fdset
+			.iter()
+			.enumerate()
+			.into_iter()
+			.try_for_each(|(i, &fd)| {
+				if i > 0 {
+					write!(f, "{fd} ")
+				} else {
+					write!(f, "{fd}")
+				}
+			})
 	}
 }
