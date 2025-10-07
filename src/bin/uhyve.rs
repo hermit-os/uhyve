@@ -1,11 +1,11 @@
 #![warn(rust_2018_idioms)]
 
-use std::{num::ParseIntError, path::PathBuf, process, str::FromStr};
+use std::{fs, num::ParseIntError, path::PathBuf, process, str::FromStr};
 
 use clap::{Command, CommandFactory, Parser, error::ErrorKind};
 use core_affinity::CoreId;
 use env_logger::Builder;
-use log::LevelFilter;
+use log::{LevelFilter, info};
 use merge::Merge;
 use serde::Deserialize;
 use thiserror::Error;
@@ -440,17 +440,46 @@ impl From<Args> for Params {
 	}
 }
 
+/// Attempts to read config file and parse contents
+fn read_toml_contents(toml_path: &PathBuf) -> Result<Args, Box<dyn std::error::Error>> {
+	let contents = fs::read_to_string(toml_path)?;
+	let args = toml::from_str::<'_, Args>(&contents)?;
+	Ok(args)
+}
+
+/// Attempts machine image-specific config from clap, cwd or the config directory.
+///
+/// This overrides missing CLI configs (None) with configs obtained from config file.
+fn load_vm_config(args: &mut Args) {
+	// Tries to read arguments from a configuration file. If it doesn't exist or if
+	// parsing is not possible, panic.
+	if let Some(config_file) = args.get_config_file() {
+		args.merge(read_toml_contents(config_file).unwrap());
+	} else if let Ok(cwd) = std::env::current_dir()
+		&& let cwd_config = [cwd, "uhyve.toml".into()].iter().collect::<PathBuf>()
+		&& cwd_config.exists()
+	{
+		info!("Using uhyve.toml config from current working directory.");
+		args.merge(read_toml_contents(&cwd_config).unwrap());
+	} else if let Ok(config_home) = std::env::var("XDG_CONFIG_HOME")
+		&& !config_home.is_empty()
+		&& let config_path = [
+			PathBuf::from(config_home),
+			"uhyve".into(),
+			"uhyve.toml".into(),
+		]
+		.iter()
+		.collect::<PathBuf>()
+		&& config_path.exists()
+	{
+		info!("Using config from {}.", config_path.display());
+		args.merge(read_toml_contents(&config_path).unwrap());
+	}
+}
+
 fn run_uhyve() -> i32 {
 	#[cfg(feature = "instrument")]
 	setup_trace();
-
-	/*
-	 * 1. CLI parameters are parsed into Args.
-	 * 2. Get config file location using the CLI parameters' config.
-	 * 3. Override missing CLI configs ("None") with configs obtained from config file.
-	 *
-	 * (Done wherever the user has not explicitly defined an option using the CLI)
-	 */
 
 	let mut env_builder = Builder::new();
 	env_builder.filter_level(LevelFilter::Warn);
@@ -460,16 +489,8 @@ fn run_uhyve() -> i32 {
 
 	let mut app = Args::command();
 	let mut args = Args::parse();
-	// Tries to read arguments from a configuration file. If it doesn't exist or if
-	// parsing is not possible, continue using args as-is.
-	//
-	// TODO: Attempt to read configuration file from default locations (cwd, .config, etc.)
-	if let Some(config_file) = args.get_config_file()
-		&& let Ok(contents) = std::fs::read_to_string(config_file)
-		&& let Ok(toml_args) = toml::from_str::<'_, Args>(&contents)
-	{
-		args.merge(toml_args);
-	}
+
+	load_vm_config(&mut args);
 
 	let stats = args.uhyve.stats.unwrap_or_default();
 	let kernel_path = args.guest.kernel.clone();
@@ -492,6 +513,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+	use std::env;
+
+	use tempfile::tempdir;
+
 	use super::*;
 
 	/// Tests whether the input '0-1,2' for Affinity works like in the CLI.
@@ -681,5 +706,56 @@ mod tests {
 
 		cli_args.merge(config_file);
 		assert_eq!(cli_args, cli_args_postmerge);
+	}
+
+	#[test]
+	fn test_load_config_from_args_path() {
+		let mut expected_args = Args::default();
+		let config_path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "data/uhyve.toml"]
+			.iter()
+			.collect();
+		expected_args.merge(read_toml_contents(&config_path).unwrap());
+
+		let mut cwd_args = Args::default();
+		cwd_args.uhyve.config = Some(config_path);
+		load_vm_config(&mut cwd_args);
+		// load_vm_config doesn't modify the config field.
+		// We have to set it back to None.
+		cwd_args.uhyve.config = None;
+		assert_eq!(expected_args, cwd_args);
+	}
+
+	#[test]
+	fn test_load_config_from_cwd() {
+		let mut expected_args = Args::default();
+		let config_dir: PathBuf = [env!("CARGO_MANIFEST_DIR"), "data"].iter().collect();
+		let config_file: PathBuf = config_dir.join("uhyve.toml");
+		expected_args.merge(read_toml_contents(&config_file).unwrap());
+
+		env::set_current_dir(config_dir).unwrap();
+		let mut cwd_args = Args::default();
+		load_vm_config(&mut cwd_args);
+		assert_eq!(expected_args, cwd_args);
+	}
+
+	#[test]
+	fn test_load_config_from_config_dir() {
+		let mut expected_args = Args::default();
+		let sample_config_file: PathBuf = [env!("CARGO_MANIFEST_DIR"), "data", "uhyve.toml"]
+			.iter()
+			.collect();
+		expected_args.merge(read_toml_contents(&sample_config_file).unwrap());
+
+		// Create config directory and copy the sample config file to it.
+		let config_dir = tempdir().unwrap();
+		let uhyve_config_dir = config_dir.path().join("uhyve");
+		unsafe { env::set_var("XDG_CONFIG_HOME", config_dir.path().to_str().unwrap()) };
+		fs::create_dir(&uhyve_config_dir).unwrap();
+		let config_file = uhyve_config_dir.join("uhyve.toml");
+		fs::copy(sample_config_file, config_file).unwrap();
+
+		let mut cwd_args = Args::default();
+		load_vm_config(&mut cwd_args);
+		assert_eq!(expected_args, cwd_args);
 	}
 }
