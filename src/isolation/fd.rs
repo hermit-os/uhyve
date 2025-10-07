@@ -23,7 +23,7 @@ impl UhyveFileDescriptorLayer {
 	pub fn insert_fd(&mut self, fd: RawFd) {
 		// Don't insert standard streams (which "conflict" with Uhyve's).
 		if fd > 2 {
-			trace!("Adding fd {fd} to fdset...");
+			debug!("Adding fd {fd} to fdset: {:#?}", self.fdset);
 			self.fdset.insert(fd);
 		} else {
 			warn!("Guest attempted to insert negative/standard stream {fd}, ignoring...")
@@ -37,7 +37,7 @@ impl UhyveFileDescriptorLayer {
 	///
 	/// * `fd` - The file descriptor of the file being removed.
 	pub fn remove_fd(&mut self, fd: RawFd) {
-		trace!("remove_fd: {:#?}", &self.fdset);
+		debug!("Trying to remove {fd} from fdset: {:#?}", &self.fdset);
 		// This is checked by [crate::hypercall::close].
 		if fd > 2 {
 			self.fdset.remove(&fd);
@@ -53,7 +53,7 @@ impl UhyveFileDescriptorLayer {
 	///
 	/// * `fd` - File descriptor of to-be-operated file.
 	pub fn is_fd_present(&self, fd: RawFd) -> bool {
-		trace!("is_fd_present: {:#?}", &self.fdset);
+		debug!("Check if {fd} in fdset: {:#?}", &self.fdset);
 		if (fd >= 0 && self.fdset.contains(&fd)) || (0..=2).contains(&fd) {
 			return true;
 		}

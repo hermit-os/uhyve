@@ -291,7 +291,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			kernel_end_address - guest_address,
 			legacy_mapping,
 		);
-		debug!("VM initialization complete");
+		trace!("VM initialization complete");
 
 		Ok(Self {
 			peripherals,
@@ -303,7 +303,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	#[cfg(target_os = "linux")]
 	pub fn landlock_init(params: &Params, file_map: &UhyveFileMap, kernel_path: &str) {
 		if params.file_isolation != FileSandboxMode::None {
-			debug!("Attempting to initialize Landlock...");
+			trace!("Attempting to initialize Landlock...");
 			let host_paths = file_map.get_all_host_paths();
 			let temp_dir = file_map.get_temp_dir().to_owned();
 			let landlock = initialize(
@@ -323,7 +323,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		// After spinning up all vCPU threads, the main thread waits for any vCPU to end execution.
 		let barrier = Arc::new(Barrier::new(2));
 
-		debug!("Starting vCPUs");
+		trace!("Starting vCPUs");
 		let threads = self
 			.vcpus
 			.into_iter()
@@ -335,7 +335,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 					.and_then(|core_ids| core_ids.get(cpu_id).copied());
 
 				thread::spawn(move || {
-					debug!("Create thread for CPU {cpu_id}");
+					trace!("Create thread for CPU {cpu_id}");
 					match local_cpu_affinity {
 						Some(core_id) => {
 							debug!("Trying to pin thread {} to CPU {}", cpu_id, core_id.id);
@@ -366,11 +366,12 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 				})
 			})
 			.collect::<Vec<_>>();
-		debug!("Waiting for first CPU to finish");
+		trace!("Waiting for first CPU to finish");
 
 		// Wait for one vCPU to return with an exit code.
 		barrier.wait();
 
+		trace!("Killing all threads");
 		for thread in &threads {
 			KickSignal::pthread_kill(thread.as_pthread_t()).unwrap();
 		}
@@ -432,12 +433,12 @@ fn init_guest_mem(
 	memory_size: u64,
 	legacy_mapping: bool,
 ) {
-	debug!("Initialize guest memory");
+	trace!("Initialize guest memory");
 	crate::arch::init_guest_mem(mem, guest_addr, memory_size, legacy_mapping);
 }
 
 fn write_fdt_into_mem(mem: &MmapMemory, params: &Params, cpu_freq: Option<NonZeroU32>) {
-	debug!("Writing FDT in memory");
+	trace!("Writing FDT in memory");
 
 	let sep = params
 		.kernel_args

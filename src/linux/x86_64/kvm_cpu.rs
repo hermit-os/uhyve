@@ -104,7 +104,7 @@ impl VirtualizationBackendInternal for KvmVm {
 			unsafe { vm.set_user_memory_region(kvm_mem) }?;
 		}
 
-		debug!("Initialize interrupt controller");
+		trace!("Initialize interrupt controller");
 
 		// create basic interrupt controller
 		vm.create_irq_chip()?;
@@ -198,8 +198,6 @@ impl KvmCpu {
 	}
 
 	fn setup_cpuid(&self) -> Result<(), kvm_ioctls::Error> {
-		//debug!("Setup cpuid");
-
 		let mut kvm_cpuid = KVM.get_supported_cpuid(KVM_MAX_CPUID_ENTRIES)?;
 		let kvm_cpuid_entries = kvm_cpuid.as_mut_slice();
 		let i = kvm_cpuid_entries
@@ -276,8 +274,6 @@ impl KvmCpu {
 	}
 
 	fn setup_msrs(&self) -> Result<(), kvm_ioctls::Error> {
-		//debug!("Setup MSR");
-
 		let msr_list = KVM.get_msr_index_list()?;
 
 		let mut msr_entries = msr_list
@@ -310,8 +306,6 @@ impl KvmCpu {
 		guest_address: GuestPhysAddr,
 		cpu_id: u32,
 	) -> Result<(), kvm_ioctls::Error> {
-		//debug!("Setup long mode");
-
 		let mut sregs = self.vcpu.get_sregs()?;
 
 		let cr0 = Cr0Flags::PROTECTED_MODE_ENABLE
