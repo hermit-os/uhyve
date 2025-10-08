@@ -34,7 +34,10 @@ use crate::{
 	virtio::*,
 };
 #[cfg(target_os = "linux")]
-use crate::{isolation::landlock::initialize, params::FileSandboxMode};
+use crate::{
+	isolation::landlock::initialize,
+	params::{FileSandboxMode, Output},
+};
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
 
@@ -200,16 +203,20 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		let mut mem = MmapMemory::new(0, memory_size, guest_address, false, false);
 
 		// TODO: file_mapping not in kernel_info
-		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping, &params.tempdir));
+		let file_mapping = Mutex::new(UhyveFileMap::new(
+			&params.file_mapping,
+			params.tempdir.clone(),
+		));
 
 		let serial = UhyveSerial::from_params(&params.output)?;
 
 		// Takes place before the kernel is actually loaded.
 		#[cfg(target_os = "linux")]
 		Self::landlock_init(
-			&params,
+			&params.file_isolation,
 			&file_mapping.lock().unwrap(),
-			kernel_path.to_str().unwrap(),
+			&kernel_path,
+			&params.output,
 		);
 
 		let (
@@ -301,15 +308,20 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	}
 
 	#[cfg(target_os = "linux")]
-	pub fn landlock_init(params: &Params, file_map: &UhyveFileMap, kernel_path: &str) {
-		if params.file_isolation != FileSandboxMode::None {
-			trace!("Attempting to initialize Landlock...");
+	pub fn landlock_init(
+		file_sandbox_mode: &FileSandboxMode,
+		file_map: &UhyveFileMap,
+		kernel_path: &std::path::Path,
+		output: &Output,
+	) {
+		if file_sandbox_mode != &FileSandboxMode::None {
+			debug!("Attempting to initialize Landlock...");
 			let host_paths = file_map.get_all_host_paths();
 			let temp_dir = file_map.get_temp_dir().to_owned();
 			let landlock = initialize(
-				params.file_isolation,
-				kernel_path.to_owned(),
-				&params.output,
+				file_sandbox_mode,
+				kernel_path.into(),
+				output,
 				host_paths,
 				temp_dir,
 			);
