@@ -373,7 +373,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		trace!("Killing all threads");
 		for thread in &threads {
-			KickSignal::pthread_kill(thread.as_pthread_t()).unwrap();
+			KickSignal::pthread_kill(thread.as_pthread_t() as _).unwrap();
 		}
 
 		let cpu_results = threads
