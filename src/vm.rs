@@ -394,7 +394,11 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		trace!("Killing all threads");
 		for thread in &threads {
-			KickSignal::pthread_kill(thread.as_pthread_t()).unwrap();
+			// The following `as _` is necessary because on some platforms, the type (aliases)
+			// - std::os::unix::thread::RawPthread, and
+			// - libc::pthread_t
+			// can differ, and currently do so on x86_64-linux-musl.
+			KickSignal::pthread_kill(thread.as_pthread_t() as _).unwrap();
 		}
 
 		let cpu_results = threads

@@ -34,6 +34,23 @@ static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
 /// It is used to stop a vCPU from another thread.
 pub(crate) struct KickSignal;
 
+/// A way of sending pthread IDs reliably across threads.
+///
+/// # Platform-specific behavior
+///
+/// This is particularly necessary for musl, as `Pthread` is equal to `*mut c_void` there,
+/// which can't be passed to thread as easily
+///
+/// # Safety
+///
+/// This can be safely sent across threads because pthread IDs are just opaque identifiers
+/// and thread-safety is ensured by the pthread library.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PthreadWrapper(pub Pthread);
+
+unsafe impl Send for PthreadWrapper {}
+unsafe impl Sync for PthreadWrapper {}
+
 // TODO: nix::signal::Signal doesn't support real-time signals yet.
 // Start using the Signal type once this no longer is the case.
 //
