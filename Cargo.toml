@@ -68,7 +68,7 @@ sysinfo = { version = "0.37.2", default-features = false, features = ["system"] 
 vm-fdt = "0.3"
 tempfile = "3.23.0"
 uuid = { version = "1.18.1", features = ["fast-rng", "v4"]}
-toml = "0.9.7"
+toml = "0.9.8"
 serde = { version = "1.0", features = ["derive"] }
 merge = { version = "0.2" }
 
