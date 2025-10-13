@@ -30,7 +30,7 @@ impl UhyveFileMap {
 	/// * `mappings` - A list of host->guest path mappings with the format "./host_path.txt:guest.txt"
 	/// * `tempdir` - Path to create temporary directory on
 	pub fn new(mappings: &[String], tempdir: Option<PathBuf>) -> UhyveFileMap {
-		UhyveFileMap {
+		let fm = UhyveFileMap {
 			files: mappings
 				.iter()
 				.map(String::as_str)
@@ -39,7 +39,13 @@ impl UhyveFileMap {
 				.collect(),
 			tempdir: create_temp_dir(tempdir),
 			fdmap: UhyveFileDescriptorLayer::default(),
-		}
+		};
+		assert_eq!(
+			fm.files.len(),
+			mappings.len(),
+			"Error when creating filemap. Are duplicate paths present?"
+		);
+		fm
 	}
 
 	/// Returns the host_path on the host filesystem given a requested guest_path, if it exists.
