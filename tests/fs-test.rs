@@ -12,6 +12,7 @@ use common::{
 	build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists, run_vm_in_thread,
 };
 use rand::{Rng, distr::Alphanumeric};
+use tempfile::TempDir;
 use uhyvelib::{params::Params, vm::UhyveVm};
 
 /// Verifies successful file creation on the host OS and its contents.
@@ -39,11 +40,33 @@ impl AsStr for &str {
 
 /// Gets a "base" guest and host path, only useful for UhyveFileMap tests.
 fn get_default_paths() -> (PathBuf, PathBuf) {
-	let guest_dir_path: PathBuf = PathBuf::from("/root/");
+	let guest_dir_path: PathBuf = PathBuf::from("/uhyve_mount");
 	let mut host_dir_path = get_fs_fixture_path();
 	host_dir_path.push("ignore_everything_here");
 
 	(guest_dir_path, host_dir_path)
+}
+
+/// Creates a temporary directory for a uhyve mount and returns the path to it
+/// as well as the owning TempDir
+fn create_tmp_mount() -> (PathBuf, TempDir) {
+	let tempdir = TempDir::new().unwrap();
+	let host_path = tempdir.path().to_path_buf();
+	(host_path, tempdir)
+}
+
+/// creates a tempfile from the given filename and returns a filemap, the guest
+/// filepath and a directory handle to the tempdir.
+fn create_filemap(guest_filename: &str) -> (Vec<String>, PathBuf, TempDir) {
+	let guest_file_path = get_testname_derived_guest_path(guest_filename);
+	let (mut host_path, tmpdir) = create_tmp_mount();
+	host_path.push(guest_filename);
+	let filemap_str = format!(
+		"{}:{}",
+		host_path.as_os_str().display(),
+		guest_file_path.as_os_str().display()
+	);
+	(vec![filemap_str], guest_file_path, tmpdir)
 }
 
 /// Generates a filename in the format of prefixab1cD23.txt
@@ -64,7 +87,7 @@ fn generate_filename(prefix: &str) -> String {
 /// * `test_name` - Name of the test.
 fn get_testname_derived_guest_path(test_name: &str) -> PathBuf {
 	// Starting off with the "guest_dir_path".
-	let mut guest_file_path = PathBuf::from("/root/");
+	let mut guest_file_path = PathBuf::from("/uhyve_mount/");
 	guest_file_path.push(generate_filename(test_name));
 	guest_file_path
 }
@@ -272,8 +295,8 @@ fn fd_open_remove_close() {
 	env_logger::try_init().ok();
 
 	let test_name: &'static str = "fd_open_remove_close";
-	let guest_file_path = get_testname_derived_guest_path(test_name);
-	let params = generate_params(None, test_name, &guest_file_path);
+	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);
+	let params = generate_params(Some(filemap), test_name, &guest_file_path);
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
@@ -317,8 +340,8 @@ fn open_read_only_write() {
 	env_logger::try_init().ok();
 
 	let test_name: &'static str = "open_read_only_write";
-	let guest_file_path = get_testname_derived_guest_path(test_name);
-	let params = generate_params(None, test_name, &guest_file_path);
+	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);
+	let params = generate_params(Some(filemap), test_name, &guest_file_path);
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 
@@ -357,12 +380,54 @@ fn fd_write_to_fd() {
 }
 
 #[test]
+fn mounts_test() {
+	env_logger::try_init().ok();
+
+	let test_name: &'static str = "mounts_test";
+	let guest_dir_path: PathBuf = PathBuf::from("/");
+	let host_dir_path = get_fs_fixture_path();
+
+	let uhyvefilemap_params = vec![
+		format!(
+			"{}/testdir1:{}testdir1",
+			(&host_dir_path).as_str(),
+			(&guest_dir_path).as_str()
+		),
+		format!(
+			"{}/testdir2:{}testdir2",
+			(&host_dir_path).as_str(),
+			(&guest_dir_path).as_str()
+		),
+		format!(
+			"{}/testdir3:{}testdir3/subdir1/subdir2/subdir3",
+			(&host_dir_path).as_str(),
+			(&guest_dir_path).as_str()
+		),
+		format!(
+			"{}/testdir2:{}testdir4",
+			(&host_dir_path).as_str(),
+			(&guest_dir_path).as_str()
+		),
+		format!(
+			"{}/testdir1/testfile_a.txt:/anothermountpoint/test_a.txt",
+			(&host_dir_path).as_str(),
+		),
+	];
+	let guest_file_path = get_testname_derived_guest_path(test_name);
+	let params = generate_params(uhyvefilemap_params.into(), test_name, &guest_file_path);
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let res = run_vm_in_thread(bin_path, params);
+	check_result(&res);
+}
+
+#[test]
 fn lseek_test() {
 	env_logger::try_init().ok();
 
 	let test_name: &'static str = "lseek_file";
-	let guest_file_path = get_testname_derived_guest_path(test_name);
-	let params = generate_params(None, test_name, &guest_file_path);
+	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);
+	let params = generate_params(Some(filemap), test_name, &guest_file_path);
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);

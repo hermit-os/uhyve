@@ -1,11 +1,9 @@
-#[cfg(target_os = "linux")]
-use std::path::Path;
 use std::{
 	collections::HashMap,
 	ffi::{CStr, CString, OsStr, OsString},
-	fs::canonicalize,
+	fs::{canonicalize, metadata},
 	os::unix::ffi::OsStrExt,
-	path::PathBuf,
+	path::{Path, PathBuf},
 };
 
 use clean_path::clean;
@@ -94,6 +92,38 @@ impl UhyveFileMap {
 	#[cfg(target_os = "linux")]
 	pub(crate) fn get_all_host_paths(&self) -> impl Iterator<Item = &std::ffi::OsStr> {
 		self.files.values().map(|i| i.as_os_str())
+	}
+
+	/// Returns an iterator (non-unique) over all mountable guest directories.
+	pub(crate) fn get_all_guest_dirs(&self) -> impl Iterator<Item = &Path> {
+		self.files.iter().filter_map(|(gp, hp)| {
+			// We check the host_path filetype, and return the parent directory for everything non-file.
+			if let Ok(hp_metadata) = metadata(hp) {
+				if hp_metadata.is_dir() {
+					Some(gp.as_path())
+				} else if hp_metadata.is_file() {
+					Some(gp.as_path().parent().unwrap())
+				} else if hp_metadata.is_symlink() {
+					error!(
+						"{} is a symlink. This is not supported (yet?)",
+						hp.display()
+					);
+					None
+				} else {
+					Some(gp.as_path().parent().unwrap())
+				}
+			} else if let Some(parent_path) = hp.parent()
+				&& let Ok(parent_metadata) = metadata(parent_path)
+				&& parent_metadata.is_dir()
+			{
+				// Parent directory exists, so this is a mounted file
+				Some(gp.as_path().parent().unwrap())
+			} else {
+				error!("{} isn't a valid host path", hp.display());
+				// return Err(ErrorKind::InvalidFilename);
+				None
+			}
+		})
 	}
 
 	/// Returns the path to the temporary directory (for Landlock).

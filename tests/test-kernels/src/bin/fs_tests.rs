@@ -128,6 +128,34 @@ fn lseek_file(filename: &str) {
 	assert_eq!(buf, [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
 }
 
+fn mount_test() {
+	println!("Mounts Test");
+	let mut f = File::open("/testdir1/testfile_a.txt").unwrap();
+	let mut contents = String::new();
+	f.read_to_string(&mut contents).unwrap();
+	assert_eq!(contents, "12345");
+
+	let mut f = File::open("/testdir2/testfile_b.txt").unwrap();
+	let mut contents = String::new();
+	f.read_to_string(&mut contents).unwrap();
+	assert_eq!(contents, "abcde");
+
+	let mut f = File::open("/testdir3/subdir1/subdir2/subdir3/testfile_c.txt").unwrap();
+	let mut contents = String::new();
+	f.read_to_string(&mut contents).unwrap();
+	assert_eq!(contents, "a1b2c3");
+
+	let mut f = File::open("/testdir4/testfile_b.txt").unwrap();
+	let mut contents = String::new();
+	f.read_to_string(&mut contents).unwrap();
+	assert_eq!(contents, "abcde");
+
+	let mut f = File::open("/anothermountpoint/test_a.txt").unwrap();
+	let mut contents = String::new();
+	f.read_to_string(&mut contents).unwrap();
+	assert_eq!(contents, "12345");
+}
+
 fn main() {
 	let args: Vec<String> = env::args().collect();
 	let testname = &args[1].split('=').collect::<Vec<_>>()[1];
@@ -147,6 +175,7 @@ fn main() {
 		"fd_remove_twice_before_closing" => remove_twice_before_closing(filename),
 		"open_read_only_write" => open_read_only_write(filename),
 		"lseek_file" => lseek_file(filename),
+		"mounts_test" => mount_test(),
 		_ => panic!("test not found"),
 	}
 }
