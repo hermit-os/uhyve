@@ -92,6 +92,11 @@ impl UhyveFileMap {
 		self.files.values().map(|i| i.as_os_str())
 	}
 
+	/// Returns an array of all guest paths.
+	pub(crate) fn get_all_guest_paths(&self) -> impl Iterator<Item = &str> {
+		self.files.keys().map(|i| i.to_str().unwrap())
+	}
+
 	/// Returns the path to the temporary directory (for Landlock).
 	#[cfg(target_os = "linux")]
 	pub(crate) fn get_temp_dir(&self) -> &Path {

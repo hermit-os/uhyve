@@ -39,7 +39,7 @@ impl AsStr for &str {
 
 /// Gets a "base" guest and host path, only useful for UhyveFileMap tests.
 fn get_default_paths() -> (PathBuf, PathBuf) {
-	let guest_dir_path: PathBuf = PathBuf::from("/root/");
+	let guest_dir_path: PathBuf = PathBuf::from("/");
 	let mut host_dir_path = get_fs_fixture_path();
 	host_dir_path.push("ignore_everything_here");
 
@@ -332,6 +332,44 @@ fn fd_write_to_fd() {
 	};
 
 	let bin_path: PathBuf = build_hermit_bin("write_to_fd");
+	let res = run_vm_in_thread(bin_path, params);
+	check_result(&res);
+}
+
+#[test]
+fn mounts_test() {
+	env_logger::try_init().ok();
+
+	let test_name: &'static str = "mounts_test";
+	let guest_dir_path: PathBuf = PathBuf::from("/");
+	let host_dir_path = get_fs_fixture_path();
+
+	let uhyvefilemap_params = vec![
+		format!(
+			"{}/testdir1:{}testdir1",
+			(&host_dir_path).as_str(),
+			(&guest_dir_path).as_str()
+		),
+		format!(
+			"{}/testdir2:{}testdir2",
+			(&host_dir_path).as_str(),
+			(&guest_dir_path).as_str()
+		),
+		format!(
+			"{}/testdir3:{}testdir3/subdir1/subdir2/subdir3",
+			(&host_dir_path).as_str(),
+			(&guest_dir_path).as_str()
+		),
+		format!(
+			"{}/testdir2:{}testdir4",
+			(&host_dir_path).as_str(),
+			(&guest_dir_path).as_str()
+		),
+	];
+	let guest_file_path = get_testname_derived_guest_path(test_name);
+	let params = generate_params(uhyvefilemap_params.into(), test_name, &guest_file_path);
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 }
