@@ -208,6 +208,12 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			&params.file_mapping,
 			params.tempdir.clone(),
 		));
+		let mounts = file_mapping
+			.lock()
+			.unwrap()
+			.get_all_guest_paths()
+			.map(|s| s.to_str().unwrap().to_string())
+			.collect();
 
 		let serial = UhyveSerial::from_params(&params.output)?;
 
@@ -279,7 +285,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		let freq = vcpus[0].get_cpu_frequency();
 
-		write_fdt_into_mem(&peripherals.mem, &kernel_info.params, freq);
+		write_fdt_into_mem(&peripherals.mem, &kernel_info.params, freq, mounts);
 		write_boot_info_to_mem(&peripherals.mem, load_info, cpu_count as u64, freq);
 
 		let legacy_mapping = if let Some(version) = hermit_version {
@@ -445,7 +451,12 @@ fn init_guest_mem(
 	crate::arch::init_guest_mem(mem, guest_addr, memory_size, legacy_mapping);
 }
 
-fn write_fdt_into_mem(mem: &MmapMemory, params: &Params, cpu_freq: Option<NonZeroU32>) {
+fn write_fdt_into_mem(
+	mem: &MmapMemory,
+	params: &Params,
+	cpu_freq: Option<NonZeroU32>,
+	mounts: Vec<String>,
+) {
 	trace!("Writing FDT in memory");
 
 	let sep = params
@@ -467,6 +478,10 @@ fn write_fdt_into_mem(mem: &MmapMemory, params: &Params, cpu_freq: Option<NonZer
 		EnvVars::Host => fdt.envs(env::vars()),
 		EnvVars::Set(map) => fdt.envs(map.iter().map(|(a, b)| (a.as_str(), b.as_str()))),
 	};
+
+	if !mounts.is_empty() {
+		fdt = fdt.mounts(mounts).unwrap();
+	}
 
 	#[cfg(target_arch = "aarch64")]
 	{

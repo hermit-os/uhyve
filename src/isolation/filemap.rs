@@ -1,11 +1,9 @@
-#[cfg(target_os = "linux")]
-use std::path::Path;
 use std::{
 	collections::HashMap,
 	ffi::{CStr, CString, OsStr, OsString},
 	fs::canonicalize,
 	os::unix::ffi::OsStrExt,
-	path::PathBuf,
+	path::{Path, PathBuf},
 };
 
 use clean_path::clean;
@@ -94,6 +92,11 @@ impl UhyveFileMap {
 	#[cfg(target_os = "linux")]
 	pub(crate) fn get_all_host_paths(&self) -> impl Iterator<Item = &std::ffi::OsStr> {
 		self.files.values().map(|i| i.as_os_str())
+	}
+
+	/// Returns an array of all guest paths.
+	pub(crate) fn get_all_guest_paths(&self) -> impl Iterator<Item = &Path> {
+		self.files.keys().map(|p| p.as_ref())
 	}
 
 	/// Returns the path to the temporary directory (for Landlock).
