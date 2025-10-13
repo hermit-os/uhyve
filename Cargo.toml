@@ -98,4 +98,4 @@ memory_addresses = { version = "0.2.3", default-features = false, features = [
 [dev-dependencies]
 criterion = "0.7"
 home = "0.5"
-regex = { version = "1.11.3", default-features = false, features = ["unicode-perl"] }
+regex = { version = "1.12.1", default-features = false, features = ["unicode-perl"] }
