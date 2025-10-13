@@ -70,6 +70,15 @@ impl Fdt {
 		Ok(self)
 	}
 
+	/// Adds a `/uhyve,mounts` node to the FDT.
+	pub fn mounts(mut self, dirs: Vec<String>) -> FdtWriterResult<Self> {
+		let mounts_node = self.writer.begin_node("uhyve,mounts")?;
+		self.writer.property_string_list("mounts", dirs)?;
+		self.writer.end_node(mounts_node)?;
+
+		Ok(self)
+	}
+
 	#[cfg(target_arch = "aarch64")]
 	fn cpu(&mut self, id: u32) -> FdtWriterResult<()> {
 		let node_name = format!("cpu@{id}");
