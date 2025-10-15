@@ -22,9 +22,9 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Test
         run: |
-          cargo test --lib
-          cargo test --bins --examples
-          cargo test --doc
+          cargo test --lib --no-fail-fast
+          cargo test --bins --examples --no-fail-fast
+          cargo test --doc --no-fail-fast
     env:
       RUST_BACKTRACE: 1
 
@@ -46,7 +46,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Integration Tests
-        run: cargo test --test '*'
+        run: cargo test --test '*' --no-fail-fast
 
   run_images:
     name: Run images
