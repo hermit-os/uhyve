@@ -502,7 +502,7 @@ fn write_boot_info_to_mem(
 				)
 			)]
 			serial_port_base: SerialPortBase::new(
-				(uhyve_interface::HypercallAddress::Uart as u16).into(),
+				(uhyve_interface::v1::HypercallAddress::Uart as u16).into(),
 			),
 			device_tree: Some(
 				(mem.guest_address.as_u64() + FDT_OFFSET)

@@ -2,7 +2,10 @@ use std::{num::NonZeroU32, sync::Arc};
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
-use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress};
+use uhyve_interface::{
+	GuestPhysAddr,
+	v1::{Hypercall, HypercallAddress},
+};
 use vmm_sys_util::eventfd::EventFd;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
