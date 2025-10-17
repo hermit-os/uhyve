@@ -144,8 +144,10 @@ impl VirtualizationBackendInternal for KvmVm {
 		let mut disable_exits = KVM
 			.check_extension_raw(KVM_CAP_X86_DISABLE_EXITS.into())
 			.cast_unsigned();
-		disable_exits &=
-			KVM_X86_DISABLE_EXITS_PAUSE | KVM_X86_DISABLE_EXITS_MWAIT | KVM_X86_DISABLE_EXITS_HLT;
+		disable_exits &= KVM_X86_DISABLE_EXITS_MWAIT
+			| KVM_X86_DISABLE_EXITS_HLT
+			| KVM_X86_DISABLE_EXITS_PAUSE
+			| KVM_X86_DISABLE_EXITS_CSTATE;
 		cap = kvm_bindings::kvm_enable_cap {
 			cap: KVM_CAP_X86_DISABLE_EXITS,
 			flags: 0,
