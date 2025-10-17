@@ -218,7 +218,8 @@ impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 		static SPAWN_THREAD: Once = Once::new();
 
 		SPAWN_THREAD.call_once(|| {
-			let parent_thread = pthread_self();
+			// FIXME: Remove musl workaround (returns *mut c_void that can't be passed to thread as easily)
+			let parent_thread = pthread_self() as u64;
 			let mut conn_clone = conn.try_clone().unwrap();
 			thread::spawn(move || {
 				loop {
@@ -226,7 +227,7 @@ impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 					Read::read(&mut conn_clone, &mut []).unwrap();
 
 					// Kick VCPU out of KVM_RUN
-					KickSignal::pthread_kill(parent_thread).unwrap();
+					KickSignal::pthread_kill(parent_thread as _).unwrap();
 
 					// Wait for all inputs to be processed and for VCPU to be running again
 					thread::sleep(Duration::from_millis(20));
