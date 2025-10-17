@@ -133,14 +133,17 @@ impl VirtualizationBackendInternal for KvmVm {
 		vm.enable_cap(&cap)
 			.expect_err("The support of KVM_CAP_IRQFD is currently required");
 
+		let mut disable_exits = KVM
+			.check_extension_raw(KVM_CAP_X86_DISABLE_EXITS.into())
+			.cast_unsigned();
+		disable_exits &=
+			KVM_X86_DISABLE_EXITS_PAUSE | KVM_X86_DISABLE_EXITS_MWAIT | KVM_X86_DISABLE_EXITS_HLT;
 		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
 			cap: KVM_CAP_X86_DISABLE_EXITS,
 			flags: 0,
 			..Default::default()
 		};
-		cap.args[0] =
-			(KVM_X86_DISABLE_EXITS_PAUSE | KVM_X86_DISABLE_EXITS_MWAIT | KVM_X86_DISABLE_EXITS_HLT)
-				.into();
+		cap.args[0] = disable_exits.into();
 		if let Err(err) = vm.enable_cap(&cap) {
 			error!("kvm: cannot disable KVM exits: {err}");
 		}
