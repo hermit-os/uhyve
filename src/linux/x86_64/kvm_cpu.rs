@@ -149,8 +149,9 @@ impl VirtualizationBackendInternal for KvmVm {
 		cap.args[0] =
 			(KVM_X86_DISABLE_EXITS_PAUSE | KVM_X86_DISABLE_EXITS_MWAIT | KVM_X86_DISABLE_EXITS_HLT)
 				.into();
-		vm.enable_cap(&cap)
-			.expect("Unable to disable exists due pause instructions");
+		if let Err(err) = vm.enable_cap(&cap) {
+			error!("kvm: cannot disable KVM exits: {err}");
+		}
 
 		let evtfd = EventFd::new(0).unwrap();
 		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET)?;
