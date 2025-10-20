@@ -367,6 +367,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
+name = "compression"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a82b366ae14633c67a1cbb4aa3738210a23f77d2868a0fd50faa23a956f9ec4"
+dependencies = [
+ "cfg-if",
+ "lazy_static",
+ "log",
+ "num-traits",
+]
+
+[[package]]
 name = "const_parse"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -648,6 +660,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "hermit-image-reader"
+version = "0.1.0"
+source = "git+https://codeberg.org/hermit-os-contrib/hermit-image-reader.git#eed4f909d1c10aa83a081cf7bd271579df551917"
+dependencies = [
+ "byte-unit",
+ "compression",
+ "num-traits",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "home"
 version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -754,6 +778,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lazy_static"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+
+[[package]]
 name = "libc"
 version = "0.2.177"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -808,6 +838,15 @@ name = "memchr"
 version = "2.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
+
+[[package]]
+name = "memmap2"
+version = "0.9.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "843a98750cd611cc2965a8213b53b43e715f13c37a9e096c6408e69990961db7"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "memoffset"
@@ -1679,6 +1718,7 @@ dependencies = [
  "gdbstub",
  "gdbstub_arch",
  "hermit-entry",
+ "hermit-image-reader",
  "home",
  "kvm-bindings",
  "kvm-ioctls",
@@ -1686,6 +1726,7 @@ dependencies = [
  "libc",
  "log",
  "mac_address",
+ "memmap2",
  "memory_addresses",
  "merge",
  "nix 0.30.1",

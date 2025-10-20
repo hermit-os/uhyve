@@ -71,6 +71,10 @@ uuid = { version = "1.18.1", features = ["fast-rng", "v4"]}
 toml = "0.9.8"
 serde = { version = "1.0", features = ["derive"] }
 merge = { version = "0.2" }
+memmap2 = "0.9.8"
+
+[dependencies.hermit-image-reader]
+git = "https://codeberg.org/hermit-os-contrib/hermit-image-reader.git"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.14"

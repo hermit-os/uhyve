@@ -5,7 +5,7 @@ use std::{fs, num::ParseIntError, path::PathBuf, process, str::FromStr};
 use clap::{Command, CommandFactory, Parser, error::ErrorKind};
 use core_affinity::CoreId;
 use env_logger::Builder;
-use log::{LevelFilter, info};
+use log::{LevelFilter, info, warn};
 use merge::Merge;
 use serde::Deserialize;
 use thiserror::Error;
@@ -146,6 +146,17 @@ struct UhyveArgs {
 	#[serde(skip)]
 	#[merge(strategy = merge::option::overwrite_none)]
 	pub config: Option<PathBuf>,
+
+	/// Kernel image file
+	///
+	/// Reads configuration and associated data from a locally given path.
+	///
+	/// If `--config CONFIG_FILE` is given, the configurations are merged.
+	/// Also keep in mind that the configuration formats differ.
+	#[clap(long)]
+	#[serde(skip)]
+	#[merge(strategy = merge::option::overwrite_none)]
+	pub image: Option<PathBuf>,
 }
 
 /// Arguments for memory resources allocated to the guest (both guest and host).
@@ -382,6 +393,7 @@ impl From<Args> for Params {
 					#[cfg(target_os = "linux")]
 					gdb_port,
 					config: _,
+					image: _,
 				},
 			memory:
 				MemoryArgs {
@@ -451,6 +463,59 @@ fn read_toml_contents(toml_path: &PathBuf) -> Result<Args, Box<dyn std::error::E
 ///
 /// This overrides missing CLI configs (None) with configs obtained from config file.
 fn load_vm_config(args: &mut Args) {
+	// If there is an image given, try to find a config file in it, and load that
+	if let Some(image_file) = &args.uhyve.image {
+		// Unfortunately, we have to read the image twice (unless we figure out a way to cache it...)
+		let data = std::fs::read(image_file).expect("unable to read supplied hermit image file");
+		let decompressed = hermit_image_reader::decompress_image(&data[..])
+			.expect("unable to decompress supplied hermit image file");
+
+		let entry = hermit_image_reader::ImageParser::new(&decompressed[..])
+			.filter_map(|i| i.ok())
+			.filter(|i| {
+				if let Ok(name) = str::from_utf8(&i.name) {
+					name == hermit_image_reader::config::DEFAULT_CONFIG_NAME
+				} else {
+					false
+				}
+			})
+			// for `tar` and similar formats, duplicate entries are allowed,
+			// and the latest entry wins
+			.last();
+		if let Some(entry) = entry {
+			let mut config = hermit_image_reader::config::parse(entry.value)
+				.expect("unable to parse config of supplied hermit image file");
+
+			// .input
+			args.guest.kernel_args.append(&mut config.input.kernel_args);
+			if !config.input.app_args.is_empty() {
+				args.guest.kernel_args.push("--".to_string());
+				args.guest.kernel_args.append(&mut config.input.app_args);
+			}
+			args.guest.env_vars.append(&mut config.input.env_vars);
+			// don't pass privileged env-var commands through
+			args.guest.env_vars.retain(|i| i.contains('='));
+
+			// .requirements
+			// TODO: currently no corresponding options exist
+
+			let image_file_str = image_file.to_str().unwrap();
+
+			// .kernel
+			args.guest.kernel = format!("{}:{}", image_file_str, config.kernel).into();
+
+			// .file_mapping
+			// TODO: improve this
+			for (key, value) in config.file_mapping {
+				args.uhyve
+					.file_mapping
+					.push(format!("{}:{}:{}", image_file_str, key, value));
+			}
+		} else {
+			warn!("Supplied hermit image file doesn't contain a configuration file");
+		}
+	}
+
 	// Tries to read arguments from a configuration file. If it doesn't exist or if
 	// parsing is not possible, panic.
 	if let Some(config_file) = args.get_config_file() {
@@ -624,6 +689,7 @@ mod tests {
 				#[cfg(target_os = "linux")]
 				gdb_port: None,
 				config: Some(PathBuf::from("config.txt")),
+				image: None,
 			},
 			memory: MemoryArgs {
 				memory_size: None,
@@ -683,6 +749,7 @@ mod tests {
 				#[cfg(target_os = "linux")]
 				gdb_port: Some(1),
 				config: Some(PathBuf::from("config.txt")),
+				image: None,
 			},
 			memory: MemoryArgs {
 				memory_size: Some(GuestMemorySize::from_str("16MiB").unwrap()),
