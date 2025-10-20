@@ -99,6 +99,13 @@ fn open_read_only_write(filename: &str) {
 	}
 }
 
+fn open_read(filename: &str) {
+	let mut file = File::open(filename).unwrap();
+	let mut buf = Vec::new();
+	file.read_to_end(&mut buf).unwrap();
+	assert_eq!(buf, b"Hello, world!\n");
+}
+
 fn lseek_file(filename: &str) {
 	let mut buf: [u8; 10] = [0; 10];
 	println!("Initial Buffer: {buf:?}");
@@ -174,6 +181,7 @@ fn main() {
 		"fd_open_remove_before_and_after_closing" => open_remove_before_and_after_closing(filename),
 		"fd_remove_twice_before_closing" => remove_twice_before_closing(filename),
 		"open_read_only_write" => open_read_only_write(filename),
+		"open_read" => open_read(filename),
 		"lseek_file" => lseek_file(filename),
 		"mounts_test" => mount_test(),
 		_ => panic!("test not found"),
