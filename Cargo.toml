@@ -1,4 +1,5 @@
 [workspace]
+members = ["uhyve-interface"]
 exclude = ["tests/test-kernels", "hermit-rs", "hermit-rs/*", "kernel"]
 
 [package]
@@ -48,7 +49,6 @@ core_affinity = "0.8"
 env_logger = "0.11"
 gdbstub = "0.7"
 gdbstub_arch = "0.3"
-hermit-entry = { version = "0.10.5", features = ["loader"] }
 libc = "0.2"
 log = "0.4"
 mac_address = "1.1"
@@ -71,6 +71,12 @@ serde = { version = "1.0", features = ["derive"] }
 merge = "0.2"
 yoke = "0.8"
 nohash = "0.2"
+
+[dependencies.hermit-entry]
+version = "0.10.5"
+git = "https://github.com/fogti/hermit-entry"
+branch = "image-reader"
+features = ["loader", "std"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.14"

@@ -10,8 +10,9 @@ use std::{
 
 use core_affinity::CoreId;
 use hermit_entry::{
-	HermitVersion,
+	Format, HermitVersion,
 	boot_info::{BootInfo, HardwareInfo, LoadInfo, PlatformInfo, RawBootInfo, SerialPortBase},
+	config, detect_format,
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
 use internal::VirtualizationBackendInternal;
@@ -24,7 +25,7 @@ use crate::{
 	consts::*,
 	fdt::Fdt,
 	generate_address,
-	isolation::filemap::UhyveFileMap,
+	isolation::{filemap::UhyveFileMap, image::Cache as HermitImageCache},
 	mem::MmapMemory,
 	os::KickSignal,
 	params::{EnvVars, Params},
@@ -137,11 +138,99 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(crate) kernel_info: Arc<KernelInfo>,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
-	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
+	pub fn new(kernel_path: PathBuf, mut params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
+		let mut hermit_image_cache = HermitImageCache::default();
+
+		let mut kernel_data = fs::read(&kernel_path)
+			.map_err(|_e| HypervisorError::InvalidKernelPath(kernel_path.clone()))?;
+
+		// `kernel_data` might be an Hermit image
+		let elf = match detect_format(&kernel_data[..]) {
+			None => return Err(HypervisorError::InvalidKernelPath(kernel_path.clone())),
+			Some(Format::Elf) => kernel_data,
+			Some(Format::Gzip) => {
+				let image_tree = hermit_image_cache
+					.register_with_data(&kernel_path, |_| core::mem::take(&mut kernel_data));
+
+				// find + parse image configuration
+				let (config, kernel_slice) = match image_tree.get().handle_config() {
+					Ok((config, kernel_slice)) => (config, kernel_slice),
+					Err(e) => {
+						error!("Hermit image configuration error: {e}");
+						return Err(HypervisorError::ImageConfig(e));
+					}
+				};
+
+				match config {
+					config::Config::V1 {
+						mut input,
+						requirements: _,
+						kernel,
+					} => {
+						// handle image configuration
+
+						// .input
+						if params.kernel_args.is_empty() {
+							params.kernel_args.append(&mut input.kernel_args);
+							if !input.app_args.is_empty() {
+								params.kernel_args.push("--".to_string());
+								params.kernel_args.append(&mut input.app_args);
+							}
+						}
+
+						// don't pass privileged env-var commands through
+						input.env_vars.retain(|i| i.contains('='));
+
+						if let EnvVars::Set(env) = &mut params.env {
+							if let Ok(EnvVars::Set(prev_env_vars)) =
+								EnvVars::try_from(&input.env_vars[..])
+							{
+								// env vars from params take precedence
+								let new_env_vars = core::mem::take(env);
+								*env = prev_env_vars.into_iter().chain(new_env_vars).collect();
+							} else {
+								warn!("Unable to parse env vars from Hermit image configuration");
+							}
+						} else if !input.env_vars.is_empty() {
+							warn!("Ignoring Hermit image env vars due to `-e host`");
+						}
+
+						// .requirements
+						// TODO: implement this part
+
+						// Limitation of current implementation:
+						//   because we need to put the image path into the file map,
+						//   it needs to be valid UTF-8
+						let image_path_str = kernel_path
+							.to_str()
+							.expect("path to image must be valid UTF-8");
+
+						if let hermit_entry::ThinTree::Directory(iroot) = image_tree.get() {
+							for (k, v) in iroot {
+								if let hermit_entry::ThinTree::Directory(_) = v {
+									let k = core::str::from_utf8(k)
+										.expect("subdir path has to be valid UTF-8");
+									params
+										.file_mapping
+										.insert(0, format!("{}:{}:/{}", image_path_str, k, k));
+								}
+							}
+						} else {
+							return Err(HypervisorError::InvalidKernelPath(PathBuf::from(
+								format!("{}:{}", image_path_str, &kernel),
+							)));
+						}
+					}
+				}
+
+				// This copy is necessary to avoid a borrowing conflict
+				// with `hermit_image_cache`.
+				kernel_slice.to_vec()
+			}
+		};
+
 		let memory_size = params.memory_size.get();
 
-		let elf = fs::read(&kernel_path)
-			.map_err(|_e| HypervisorError::InvalidKernelPath(kernel_path.clone()))?;
 		let object: KernelObject<'_> =
 			KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
 
@@ -207,6 +296,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		let file_mapping = Mutex::new(UhyveFileMap::new(
 			&params.file_mapping,
 			params.tempdir.clone(),
+			&mut hermit_image_cache,
 		));
 		let mut mounts: Vec<_> = file_mapping
 			.lock()

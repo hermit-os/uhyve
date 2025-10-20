@@ -5,7 +5,7 @@ use std::{fs, num::ParseIntError, path::PathBuf, process, str::FromStr};
 use clap::{Command, CommandFactory, Parser, error::ErrorKind};
 use core_affinity::CoreId;
 use env_logger::Builder;
-use log::{LevelFilter, info};
+use log::{LevelFilter, info, warn};
 use merge::Merge;
 use serde::Deserialize;
 use thiserror::Error;
@@ -346,7 +346,7 @@ impl<'de> serde::de::Deserialize<'de> for Affinity {
 #[derive(Debug, Default, Deserialize, Merge, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 struct GuestArgs {
-	/// The kernel to execute
+	/// The kernel or image to execute
 	#[clap(value_parser)]
 	#[serde(skip)]
 	#[merge(skip)]
@@ -493,14 +493,14 @@ fn run_uhyve() -> i32 {
 
 	load_vm_config(&mut args);
 
-	let stats = args.uhyve.stats.unwrap_or_default();
 	let kernel_path = args.guest.kernel.clone();
+	let stats = args.uhyve.stats.unwrap_or_default();
 	let affinity = args.cpu.clone().get_affinity(&mut app);
 	let params = Params::from(args);
 
 	let vm = UhyveVm::new(kernel_path, params).unwrap_or_else(|e| panic!("Error: {e}"));
-
 	let res = vm.run(affinity);
+
 	if stats && let Some(stats) = res.stats {
 		println!("Run statistics:");
 		println!("{stats}");
@@ -514,7 +514,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-	use std::env;
+	use std::{env, path::Path};
 
 	use tempfile::tempdir;
 
@@ -605,9 +605,9 @@ mod tests {
 		)
 		.unwrap();
 
-		assert!(&config.uhyve.file_mapping.is_empty());
-		assert!(&config.uhyve.config.is_none());
-		assert!(&config.guest.kernel.to_str().unwrap().is_empty())
+		assert!(config.uhyve.file_mapping.is_empty());
+		assert!(config.uhyve.config.is_none());
+		assert!(config.guest.kernel == Path::new(""));
 	}
 
 	/// Tests whether TOML merge works as expected.
