@@ -8,7 +8,6 @@ use std::{
 	path::PathBuf,
 };
 
-use clean_path::clean;
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -46,9 +45,9 @@ impl UhyveFileMap {
 	///
 	/// * `guest_path` - The guest path that is to be looked up in the map.
 	pub fn get_host_path(&self, guest_path: &CStr) -> Option<OsString> {
-		// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
-		// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
-		let guest_pathbuf = clean(OsStr::from_bytes(guest_path.to_bytes()));
+		let guest_pathbuf: PathBuf = PathBuf::from(OsStr::from_bytes(guest_path.to_bytes()))
+			.normalize_lexically()
+			.ok()?;
 		if let Some(host_path) = self.files.get(&guest_pathbuf) {
 			let host_path = OsString::from(host_path);
 			trace!("get_host_path (host_path): {host_path:#?}");

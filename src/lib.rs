@@ -1,3 +1,4 @@
+#![feature(normalize_lexically)]
 #![warn(rust_2018_idioms)]
 
 use std::path::PathBuf;
