@@ -1,5 +1,5 @@
 use std::{
-	env, fmt, fs, io,
+	env, fmt, fs, io, mem,
 	num::NonZeroU32,
 	os::unix::prelude::JoinHandleExt,
 	path::PathBuf,
@@ -348,18 +348,27 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 					thread::sleep(std::time::Duration::from_millis(cpu_id as u64 * 50));
 
+					struct WaitOnDrop(Arc<Barrier>);
+
+					impl Drop for WaitOnDrop {
+						fn drop(&mut self) {
+							self.0.wait();
+						}
+					}
+
+					let _wait_on_drop = WaitOnDrop(barrier);
+
 					// jump into the VM and execute code of the guest
 					match cpu.run() {
 						Ok((code, stats)) => {
-							if code.is_some() {
-								// Let the main thread continue with kicking the other vCPUs
-								barrier.wait();
+							if code.is_none() {
+								// If we were kicked by the main thread, the main thread is not waiting for us.
+								mem::forget(_wait_on_drop);
 							}
 							(Ok(code), stats)
 						}
 						Err(err) => {
 							error!("CPU {cpu_id} crashed with {err:?}");
-							barrier.wait();
 							(Err(err), None)
 						}
 					}
