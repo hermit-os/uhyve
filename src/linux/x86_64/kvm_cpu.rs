@@ -1,4 +1,4 @@
-use std::{num::NonZeroU32, sync::Arc};
+use std::{io, num::NonZeroU32, sync::Arc};
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
@@ -596,6 +596,22 @@ impl VirtualCPU for KvmCpu {
 					VcpuExit::InternalError => {
 						self.print_registers();
 						panic!("{:?}", VcpuExit::InternalError)
+					}
+					VcpuExit::FailEntry(hardware_entry_failure_reason, cpu) => {
+						#[expect(dead_code)]
+						#[derive(Debug)]
+						struct VcpuExitFailEntry {
+							hardware_entry_failure_reason: u64,
+							cpu: u32,
+						}
+
+						let debug = VcpuExitFailEntry {
+							hardware_entry_failure_reason,
+							cpu,
+						};
+
+						let err = io::Error::other(format!("{debug:?}"));
+						return Err(err.into());
 					}
 					vcpu_exit => {
 						unimplemented!("{:?}", vcpu_exit)
