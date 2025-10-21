@@ -614,7 +614,8 @@ impl VirtualCPU for KvmCpu {
 						return Err(err.into());
 					}
 					vcpu_exit => {
-						unimplemented!("{:?}", vcpu_exit)
+						let err = io::Error::other(format!("not implemented: {vcpu_exit:?}"));
+						return Err(err.into());
 					}
 				},
 				Err(err) => match err.errno() {
