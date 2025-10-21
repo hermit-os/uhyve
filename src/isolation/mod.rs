@@ -21,10 +21,9 @@ fn split_guest_and_host_path(mapping: &str) -> Result<(PathBuf, PathBuf), ErrorK
 
 	// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
 	// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
-	let host_path = canonicalize(host_str).map_or_else(
-		|_| absolute(host_str).unwrap().normalize_lexically().unwrap(),
-		|path| Path::normalize_lexically(&path).unwrap(),
-	);
+	let host_path = canonicalize(host_str).or_else(
+		|_| absolute(host_str).unwrap(),
+	).normalize_lexically().unwrap();
 
 	// `.to_str().unwrap()` should never fail because `guest_str` is always valid UTF-8
 	let guest_path = PathBuf::from(guest_str).normalize_lexically().unwrap();
