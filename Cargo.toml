@@ -1,4 +1,5 @@
 [workspace]
+members = ["hermit-image-reader", "uhyve-interface"]
 exclude = ["tests/test-kernels", "hermit-rs", "hermit-rs/*", "kernel"]
 
 [package]
@@ -51,6 +52,7 @@ env_logger = "0.11"
 gdbstub = "0.7"
 gdbstub_arch = "0.3"
 hermit-entry = { version = "0.10.4", features = ["loader"] }
+hermit-image-reader = { version = "0.1", path = "hermit-image-reader" }
 libc = "0.2"
 log = "0.4"
 mac_address = "1.1"
@@ -72,9 +74,6 @@ toml = "0.9.8"
 serde = { version = "1.0", features = ["derive"] }
 merge = { version = "0.2" }
 memmap2 = "0.9.8"
-
-[dependencies.hermit-image-reader]
-git = "https://codeberg.org/hermit-os-contrib/hermit-image-reader.git"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.14"

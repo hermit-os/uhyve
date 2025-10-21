@@ -662,7 +662,6 @@ dependencies = [
 [[package]]
 name = "hermit-image-reader"
 version = "0.1.0"
-source = "git+https://codeberg.org/hermit-os-contrib/hermit-image-reader.git#eed4f909d1c10aa83a081cf7bd271579df551917"
 dependencies = [
  "byte-unit",
  "compression",
