@@ -10,6 +10,7 @@ use std::{
 };
 
 use clean_path::clean;
+pub use hermit_image_reader::thin_tree::ThinTree as HermitImageThinTree;
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -39,76 +40,12 @@ impl core::ops::Index<Range<usize>> for HermitImage {
 	}
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum HermitImageThinFile {
-	File(Range<usize>),
-	Directory(HashMap<String, HermitImageThinFile>),
-}
-
-impl HermitImageThinFile {
-	/// Populate a thin directory tree, with `entry` pointing to `r`
-	pub fn update(&mut self, entry: &[&str], r: Range<usize>) {
-		let mut this = self;
-		for i in entry {
-			let dir = match this {
-				Self::File(r) if r.start == r.end => {
-					*this = Self::Directory(HashMap::new());
-					if let Self::Directory(dir) = this {
-						dir
-					} else {
-						unreachable!()
-					}
-				}
-				Self::File(_) => panic!("file in hermit image got overridden"),
-				Self::Directory(dir) => dir,
-			};
-			this = dir
-				.entry(i.to_string())
-				.or_insert(HermitImageThinFile::File(0..0));
-		}
-		*this = Self::File(r);
-	}
-
-	/// Remove an entry from a thin directory tree
-	pub fn unlink(&mut self, entry: &[&str]) {
-		if entry.is_empty() {
-			// we can't remove ourselves.
-			return;
-		}
-		let (lead, to_remove) = entry.split_at(entry.len() - 1);
-		let this = self.resolve_mut(lead);
-		if let Some(Self::Directory(this)) = this {
-			this.remove(to_remove[0]);
-		}
-	}
-
-	pub fn resolve(&self, entry: &[&str]) -> Option<&HermitImageThinFile> {
-		entry.iter().try_fold(self, |this, &i| {
-			if let Self::Directory(dir) = this {
-				dir.get(i)
-			} else {
-				None
-			}
-		})
-	}
-
-	pub fn resolve_mut(&mut self, entry: &[&str]) -> Option<&mut HermitImageThinFile> {
-		entry.iter().try_fold(self, |this, &i| {
-			if let Self::Directory(dir) = this {
-				dir.get_mut(i)
-			} else {
-				None
-			}
-		})
-	}
-}
-
 #[derive(Clone, Debug)]
 pub enum MappedFile {
 	OnHost(PathBuf),
 	InImage {
 		image: Arc<HermitImage>,
-		thin: HermitImageThinFile,
+		thin: HermitImageThinTree,
 	},
 }
 
@@ -117,7 +54,7 @@ pub enum MappedFileMutRef<'a> {
 	OnHost(PathBuf),
 	InImage {
 		image: &'a Arc<HermitImage>,
-		thin: &'a mut HermitImageThinFile,
+		thin: &'a mut HermitImageThinTree,
 	},
 }
 
@@ -203,15 +140,8 @@ impl UhyveFileMap {
 					let mmap = unsafe { MmapOptions::new().map(tmpf.as_file()) }
 						.expect("unable to mmap decompressed hermit image file");
 
-					let mut content = HermitImageThinFile::File(0..0);
-					for i in hermit_image_reader::ImageParser::new(&mmap[..]) {
-						let i = i.expect("unable to read hermit image entry");
-						if let Ok(name) = str::from_utf8(&i.name) {
-							// multiple entries with the same name might exist,
-							// latest entry wins / overwrites existing ones
-							content.update(&name.split('/').collect::<Vec<_>>(), i.value_range);
-						}
-					}
+					let content = HermitImageThinTree::try_from_image(&mmap[..])
+						.expect("unable to parse hermit image file entry");
 
 					(
 						Arc::new(HermitImage {

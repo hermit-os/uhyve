@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Hermit contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use alloc::borrow::Cow;
+use alloc::{borrow::Cow, string::String, vec::Vec};
 use core::ops::Range;
 
 // taken from `tar-rs`
@@ -39,6 +39,8 @@ pub enum ImageParserError {
 	ParseInt(core::num::ParseIntError),
 	FromInt(core::num::TryFromIntError),
 	Utf8(core::str::Utf8Error),
+
+	FileOverridenWithDirectory(Vec<String>),
 }
 
 impl From<core::num::ParseIntError> for ImageParserError {

@@ -13,7 +13,7 @@ use clean_path::clean;
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*};
 
 use crate::{
-	isolation::filemap::{HermitImageThinFile, MappedFileMutRef, UhyveFileMap},
+	isolation::filemap::{HermitImageThinTree, MappedFileMutRef, UhyveFileMap},
 	mem::{MemoryError, MmapMemory},
 	params::EnvVars,
 	virt_to_phys,
@@ -167,7 +167,7 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 			}
 			MappedFileMutRef::InImage {
 				image,
-				thin: HermitImageThinFile::File(r),
+				thin: HermitImageThinTree::File(r),
 			} => {
 				// For simplicity, create a temporary files with these contents.
 				debug!("Attempting to open a temp file for unpacked {guest_path:#?}...");

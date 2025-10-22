@@ -21,3 +21,5 @@ mod tar_parser;
 pub use tar_parser::{ImageFile, ImageParser, ImageParserError};
 
 pub mod config;
+
+pub mod thin_tree;
