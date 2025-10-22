@@ -2,7 +2,7 @@
 
 use std::{fs, num::ParseIntError, path::PathBuf, process, str::FromStr};
 
-use clap::{Command, CommandFactory, Parser, error::ErrorKind};
+use clap::{Command, CommandFactory, Parser, Subcommand, error::ErrorKind};
 use core_affinity::CoreId;
 use env_logger::Builder;
 use log::{LevelFilter, info, warn};
@@ -146,17 +146,6 @@ struct UhyveArgs {
 	#[serde(skip)]
 	#[merge(strategy = merge::option::overwrite_none)]
 	pub config: Option<PathBuf>,
-
-	/// Kernel image file
-	///
-	/// Reads configuration and associated data from a locally given path.
-	///
-	/// If `--config CONFIG_FILE` is given, the configurations are merged.
-	/// Also keep in mind that the configuration formats differ.
-	#[clap(long)]
-	#[serde(skip)]
-	#[merge(strategy = merge::option::overwrite_none)]
-	pub image: Option<PathBuf>,
 }
 
 /// Arguments for memory resources allocated to the guest (both guest and host).
@@ -353,15 +342,38 @@ impl<'de> serde::de::Deserialize<'de> for Affinity {
 	}
 }
 
+#[derive(Clone, Debug, Subcommand)]
+#[cfg_attr(test, derive(PartialEq))]
+enum Guest {
+	/// The kernel to execute
+	Kernel {
+		#[clap(value_parser)]
+		kernel_path: PathBuf,
+	},
+
+	/// The image to execute
+	Image {
+		#[clap(value_parser)]
+		image_path: PathBuf,
+	},
+}
+
+impl Default for Guest {
+	fn default() -> Self {
+		Self::Kernel {
+			kernel_path: PathBuf::from(""),
+		}
+	}
+}
+
 /// Arguments for the guest OS and guest runtime-related configurations.
 #[derive(Debug, Default, Deserialize, Merge, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 struct GuestArgs {
-	/// The kernel to execute
-	#[clap(value_parser)]
+	#[clap(subcommand)]
 	#[serde(skip)]
 	#[merge(skip)]
-	kernel: PathBuf,
+	guest: Guest,
 
 	/// Arguments to forward to the kernel
 	#[serde(skip)]
@@ -393,7 +405,6 @@ impl From<Args> for Params {
 					#[cfg(target_os = "linux")]
 					gdb_port,
 					config: _,
-					image: _,
 				},
 			memory:
 				MemoryArgs {
@@ -412,7 +423,7 @@ impl From<Args> for Params {
 					affinity: _,
 				},
 			guest: GuestArgs {
-				kernel: _,
+				guest: _,
 				kernel_args,
 				env_vars,
 			},
@@ -463,59 +474,6 @@ fn read_toml_contents(toml_path: &PathBuf) -> Result<Args, Box<dyn std::error::E
 ///
 /// This overrides missing CLI configs (None) with configs obtained from config file.
 fn load_vm_config(args: &mut Args) {
-	// If there is an image given, try to find a config file in it, and load that
-	if let Some(image_file) = &args.uhyve.image {
-		// Unfortunately, we have to read the image twice (unless we figure out a way to cache it...)
-		let data = std::fs::read(image_file).expect("unable to read supplied hermit image file");
-		let decompressed = hermit_image_reader::decompress_image(&data[..])
-			.expect("unable to decompress supplied hermit image file");
-
-		let entry = hermit_image_reader::ImageParser::new(&decompressed[..])
-			.filter_map(|i| i.ok())
-			.filter(|i| {
-				if let Ok(name) = str::from_utf8(&i.name) {
-					name == hermit_image_reader::config::DEFAULT_CONFIG_NAME
-				} else {
-					false
-				}
-			})
-			// for `tar` and similar formats, duplicate entries are allowed,
-			// and the latest entry wins
-			.last();
-		if let Some(entry) = entry {
-			let mut config = hermit_image_reader::config::parse(entry.value)
-				.expect("unable to parse config of supplied hermit image file");
-
-			// .input
-			args.guest.kernel_args.append(&mut config.input.kernel_args);
-			if !config.input.app_args.is_empty() {
-				args.guest.kernel_args.push("--".to_string());
-				args.guest.kernel_args.append(&mut config.input.app_args);
-			}
-			args.guest.env_vars.append(&mut config.input.env_vars);
-			// don't pass privileged env-var commands through
-			args.guest.env_vars.retain(|i| i.contains('='));
-
-			// .requirements
-			// TODO: currently no corresponding options exist
-
-			let image_file_str = image_file.to_str().unwrap();
-
-			// .kernel
-			args.guest.kernel = format!("{}:{}", image_file_str, config.kernel).into();
-
-			// .file_mapping
-			// TODO: improve this
-			for (key, value) in config.file_mapping {
-				args.uhyve
-					.file_mapping
-					.push(format!("{}:{}:{}", image_file_str, key, value));
-			}
-		} else {
-			warn!("Supplied hermit image file doesn't contain a configuration file");
-		}
-	}
-
 	// Tries to read arguments from a configuration file. If it doesn't exist or if
 	// parsing is not possible, panic.
 	if let Some(config_file) = args.get_config_file() {
@@ -555,17 +513,83 @@ fn run_uhyve() -> i32 {
 
 	let mut app = Args::command();
 	let mut args = Args::parse();
+	let stats;
 
-	load_vm_config(&mut args);
+	let res = match args.guest.guest.clone() {
+		Guest::Kernel { kernel_path } => {
+			load_vm_config(&mut args);
 
-	let stats = args.uhyve.stats.unwrap_or_default();
-	let kernel_path = args.guest.kernel.clone();
-	let affinity = args.cpu.clone().get_affinity(&mut app);
-	let params = Params::from(args);
+			stats = args.uhyve.stats.unwrap_or_default();
+			let affinity = args.cpu.clone().get_affinity(&mut app);
+			let params = Params::from(args);
 
-	let vm = UhyveVm::new(kernel_path, params).unwrap_or_else(|e| panic!("Error: {e}"));
+			let vm = UhyveVm::new(kernel_path, params).unwrap_or_else(|e| panic!("Error: {e}"));
 
-	let res = vm.run(affinity);
+			vm.run(affinity)
+		}
+		Guest::Image { image_path } => {
+			// Unfortunately, we have to read the image twice (unless we figure out a way to cache it...)
+			let data =
+				std::fs::read(&image_path).expect("unable to read supplied hermit image file");
+			let decompressed = hermit_image_reader::decompress_image(&data[..])
+				.expect("unable to decompress supplied hermit image file");
+
+			let entry = hermit_image_reader::ImageParser::new(&decompressed[..])
+				.filter_map(|i| i.ok())
+				.filter(|i| {
+					if let Ok(name) = str::from_utf8(&i.name) {
+						name == hermit_image_reader::config::DEFAULT_CONFIG_NAME
+					} else {
+						false
+					}
+				})
+				// for `tar` and similar formats, duplicate entries are allowed,
+				// and the latest entry wins
+				.last()
+				.expect("Supplied hermit image file doesn't contain a configuration file");
+
+			let mut config = hermit_image_reader::config::parse(entry.value)
+				.expect("unable to parse config of supplied hermit image file");
+
+			// .input
+			args.guest.kernel_args.append(&mut config.input.kernel_args);
+			if !config.input.app_args.is_empty() {
+				args.guest.kernel_args.push("--".to_string());
+				args.guest.kernel_args.append(&mut config.input.app_args);
+			}
+			args.guest.env_vars.append(&mut config.input.env_vars);
+			// don't pass privileged env-var commands through
+			args.guest.env_vars.retain(|i| i.contains('='));
+
+			// .requirements
+			// TODO: currently no corresponding options exist
+
+			let image_path_str = image_path.to_str().unwrap();
+
+			// .kernel
+			// TODO: `UhyveVm` needs to be able to support this format
+			let kernel_path = format!("{}:{}", image_path_str, config.kernel).into();
+
+			// .file_mapping
+			// TODO: improve this
+			for (key, value) in config.file_mapping {
+				args.uhyve
+					.file_mapping
+					.push(format!("{}:{}:{}", image_path_str, key, value));
+			}
+
+			load_vm_config(&mut args);
+
+			stats = args.uhyve.stats.unwrap_or_default();
+			let affinity = args.cpu.clone().get_affinity(&mut app);
+			let params = Params::from(args);
+
+			let vm = UhyveVm::new(kernel_path, params).unwrap_or_else(|e| panic!("Error: {e}"));
+
+			vm.run(affinity)
+		}
+	};
+
 	if stats && let Some(stats) = res.stats {
 		println!("Run statistics:");
 		println!("{stats}");
@@ -664,15 +688,15 @@ mod tests {
 			file_mapping = ['foo:bar']
 			config = "/ilikerecursion"
 
-			[guest]
-			kernel = './data/x86_64/hello_c'
+			[guest.guest.kernel]
+			kernel_path = './data/x86_64/hello_c'
 		"#,
 		)
 		.unwrap();
 
-		assert!(&config.uhyve.file_mapping.is_empty());
-		assert!(&config.uhyve.config.is_none());
-		assert!(&config.guest.kernel.to_str().unwrap().is_empty())
+		assert!(config.uhyve.file_mapping.is_empty());
+		assert!(config.uhyve.config.is_none());
+		assert!(config.guest.guest == Guest::default());
 	}
 
 	/// Tests whether TOML merge works as expected.
@@ -689,7 +713,6 @@ mod tests {
 				#[cfg(target_os = "linux")]
 				gdb_port: None,
 				config: Some(PathBuf::from("config.txt")),
-				image: None,
 			},
 			memory: MemoryArgs {
 				memory_size: None,
@@ -706,7 +729,9 @@ mod tests {
 				pit: None,
 			},
 			guest: GuestArgs {
-				kernel: PathBuf::from("my_kernel.hermit"),
+				guest: Guest::Kernel {
+					kernel_path: PathBuf::from("my_kernel.hermit"),
+				},
 				kernel_args: Default::default(),
 				env_vars: Default::default(),
 			},
@@ -749,7 +774,6 @@ mod tests {
 				#[cfg(target_os = "linux")]
 				gdb_port: Some(1),
 				config: Some(PathBuf::from("config.txt")),
-				image: None,
 			},
 			memory: MemoryArgs {
 				memory_size: Some(GuestMemorySize::from_str("16MiB").unwrap()),
@@ -766,7 +790,9 @@ mod tests {
 				pit: Some(true),
 			},
 			guest: GuestArgs {
-				kernel: PathBuf::from("my_kernel.hermit"),
+				guest: Guest::Kernel {
+					kernel_path: PathBuf::from("my_kernel.hermit"),
+				},
 				kernel_args: Default::default(),
 				env_vars: vec![String::from("foo=bar")],
 			},

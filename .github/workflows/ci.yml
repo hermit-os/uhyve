@@ -66,21 +66,21 @@ jobs:
       - name: Run images (No sandboxing)
         timeout-minutes: 1
         run: |
-          cargo run data/x86_64/hello_world --stats --file-isolation none
-          cargo run data/x86_64/rusty_demo --stats --file-isolation none
-          cargo run data/x86_64/hello_c --stats --file-isolation none
+          cargo run -- --stats --file-isolation none kernel data/x86_64/hello_world
+          cargo run -- --stats --file-isolation none kernel data/x86_64/rusty_demo
+          cargo run -- --stats --file-isolation none kernel data/x86_64/hello_c
       - name: Run images (Default)
         timeout-minutes: 1
         run: |
-          cargo run data/x86_64/hello_world --stats
-          cargo run data/x86_64/rusty_demo --stats
-          cargo run data/x86_64/hello_c --stats
+          cargo run -- --stats kernel data/x86_64/hello_world
+          cargo run -- --stats kernel data/x86_64/rusty_demo
+          cargo run -- --stats kernel data/x86_64/hello_c
       - name: Run images (Strict sandboxing)
         timeout-minutes: 1
         run: |
-          cargo run data/x86_64/hello_world --stats --file-isolation strict
-          cargo run data/x86_64/rusty_demo --stats --file-isolation strict
-          cargo run data/x86_64/hello_c --stats --file-isolation strict
+          cargo run -- --stats --file-isolation strict kernel data/x86_64/hello_world
+          cargo run -- --stats --file-isolation strict kernel data/x86_64/rusty_demo
+          cargo run -- --stats --file-isolation strict kernel data/x86_64/hello_c
 
   fmt:
     name: Format
