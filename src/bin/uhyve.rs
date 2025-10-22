@@ -2,7 +2,7 @@
 
 use std::{fs, num::ParseIntError, path::PathBuf, process, str::FromStr};
 
-use clap::{Command, CommandFactory, Parser, Subcommand, error::ErrorKind};
+use clap::{Command, CommandFactory, Parser, error::ErrorKind};
 use core_affinity::CoreId;
 use env_logger::Builder;
 use log::{LevelFilter, info, warn};
@@ -342,38 +342,13 @@ impl<'de> serde::de::Deserialize<'de> for Affinity {
 	}
 }
 
-#[derive(Clone, Debug, Subcommand)]
-#[cfg_attr(test, derive(PartialEq))]
-enum Guest {
-	/// The kernel to execute
-	Kernel {
-		#[clap(value_parser)]
-		kernel_path: PathBuf,
-	},
-
-	/// The image to execute
-	Image {
-		#[clap(value_parser)]
-		image_path: PathBuf,
-	},
-}
-
-impl Default for Guest {
-	fn default() -> Self {
-		Self::Kernel {
-			kernel_path: PathBuf::from(""),
-		}
-	}
-}
-
 /// Arguments for the guest OS and guest runtime-related configurations.
 #[derive(Debug, Default, Deserialize, Merge, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 struct GuestArgs {
-	#[clap(subcommand)]
 	#[serde(skip)]
 	#[merge(skip)]
-	guest: Guest,
+	kernel: PathBuf,
 
 	/// Arguments to forward to the kernel
 	#[serde(skip)]
@@ -423,7 +398,7 @@ impl From<Args> for Params {
 					affinity: _,
 				},
 			guest: GuestArgs {
-				guest: _,
+				kernel: _,
 				kernel_args,
 				env_vars,
 			},
@@ -501,6 +476,8 @@ fn load_vm_config(args: &mut Args) {
 }
 
 fn run_uhyve() -> i32 {
+	use hermit_image_reader::Format;
+
 	#[cfg(feature = "instrument")]
 	setup_trace();
 
@@ -515,8 +492,19 @@ fn run_uhyve() -> i32 {
 	let mut args = Args::parse();
 	let stats;
 
-	let res = match args.guest.guest.clone() {
-		Guest::Kernel { kernel_path } => {
+	// detect guest kernel format
+	let kernel_path = args.guest.kernel.clone();
+	let format = {
+		use std::io::Read;
+		let mut fh = fs::File::open(&kernel_path).expect("unable to open guest kernel file");
+		let mut buf = [0u8; 8];
+		fh.read_exact(&mut buf)
+			.expect("unable to read first 8 bytes from guest kernel file");
+		hermit_image_reader::detect_format(&buf).expect("unable to detect guest kernel format")
+	};
+
+	let res = match format {
+		Format::ElfKernel => {
 			load_vm_config(&mut args);
 
 			stats = args.uhyve.stats.unwrap_or_default();
@@ -527,10 +515,10 @@ fn run_uhyve() -> i32 {
 
 			vm.run(affinity)
 		}
-		Guest::Image { image_path } => {
+		Format::Image => {
 			// Unfortunately, we have to read the image twice (unless we figure out a way to cache it...)
 			let data =
-				std::fs::read(&image_path).expect("unable to read supplied hermit image file");
+				std::fs::read(&kernel_path).expect("unable to read supplied hermit image file");
 			let decompressed = hermit_image_reader::decompress_image(&data[..])
 				.expect("unable to decompress supplied hermit image file");
 
@@ -564,18 +552,18 @@ fn run_uhyve() -> i32 {
 			// .requirements
 			// TODO: currently no corresponding options exist
 
-			let image_path_str = image_path.to_str().unwrap();
+			let kernel_path_str = kernel_path.to_str().unwrap();
 
 			// .kernel
 			// TODO: `UhyveVm` needs to be able to support this format
-			let kernel_path = format!("{}:{}", image_path_str, config.kernel).into();
+			let kernel_path = format!("{}:{}", kernel_path_str, config.kernel).into();
 
 			// .file_mapping
 			// TODO: improve this
 			for (key, value) in config.file_mapping {
 				args.uhyve
 					.file_mapping
-					.push(format!("{}:{}:{}", image_path_str, key, value));
+					.push(format!("{}:{}:{}", kernel_path_str, key, value));
 			}
 
 			load_vm_config(&mut args);
@@ -603,7 +591,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-	use std::env;
+	use std::{env, path::Path};
 
 	use tempfile::tempdir;
 
@@ -688,15 +676,15 @@ mod tests {
 			file_mapping = ['foo:bar']
 			config = "/ilikerecursion"
 
-			[guest.guest.kernel]
-			kernel_path = './data/x86_64/hello_c'
+			[guest]
+			kernel = './data/x86_64/hello_c'
 		"#,
 		)
 		.unwrap();
 
 		assert!(config.uhyve.file_mapping.is_empty());
 		assert!(config.uhyve.config.is_none());
-		assert!(config.guest.guest == Guest::default());
+		assert!(config.guest.kernel == Path::new(""));
 	}
 
 	/// Tests whether TOML merge works as expected.
@@ -729,9 +717,7 @@ mod tests {
 				pit: None,
 			},
 			guest: GuestArgs {
-				guest: Guest::Kernel {
-					kernel_path: PathBuf::from("my_kernel.hermit"),
-				},
+				kernel: PathBuf::from("my_kernel.hermit"),
 				kernel_args: Default::default(),
 				env_vars: Default::default(),
 			},
@@ -790,9 +776,7 @@ mod tests {
 				pit: Some(true),
 			},
 			guest: GuestArgs {
-				guest: Guest::Kernel {
-					kernel_path: PathBuf::from("my_kernel.hermit"),
-				},
+				kernel: PathBuf::from("my_kernel.hermit"),
 				kernel_args: Default::default(),
 				env_vars: vec![String::from("foo=bar")],
 			},

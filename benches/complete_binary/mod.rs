@@ -23,7 +23,7 @@ fn is_program_in_path(program: &str) -> bool {
 }
 
 pub fn run_hello_world(c: &mut Criterion) {
-	let uhyve_path = [env!("CARGO_MANIFEST_DIR"), "kernel", "target/release/uhyve"]
+	let uhyve_path = [env!("CARGO_MANIFEST_DIR"), "target/release/uhyve"]
 		.iter()
 		.collect::<PathBuf>();
 	assert!(
