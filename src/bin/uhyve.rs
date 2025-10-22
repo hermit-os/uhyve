@@ -558,13 +558,10 @@ fn run_uhyve() -> i32 {
 			// TODO: `UhyveVm` needs to be able to support this format
 			let kernel_path = format!("{}:{}", kernel_path_str, config.kernel).into();
 
-			// .file_mapping
-			// TODO: improve this
-			for (key, value) in config.file_mapping {
-				args.uhyve
-					.file_mapping
-					.push(format!("{}:{}:{}", kernel_path_str, key, value));
-			}
+			// .mount_point
+			args.uhyve
+				.file_mapping
+				.push(format!("{}::{}", kernel_path_str, config.mount_point));
 
 			load_vm_config(&mut args);
 

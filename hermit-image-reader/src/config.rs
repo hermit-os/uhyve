@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Hermit contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use alloc::{collections::btree_map as btm, string::String, vec::Vec};
+use alloc::{string::String, vec::Vec};
 
 pub const DEFAULT_CONFIG_NAME: &str = "hermit_config.toml";
 pub type ParserError = toml::de::Error;
@@ -15,7 +15,7 @@ pub struct Config {
 	pub requirements: Requirements,
 
 	pub kernel: String,
-	pub file_mapping: btm::BTreeMap<String, String>,
+	pub mount_point: String,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
