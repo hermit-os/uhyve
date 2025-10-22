@@ -1,6 +1,3 @@
-// Copyright (c) 2025 Hermit contributors
-// SPDX-License-Identifier: MIT OR Apache-2.0
-
 fn main() {
 	for f in std::env::args().skip(1) {
 		println!("# File {}:", f);

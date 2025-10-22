@@ -1,6 +1,3 @@
-// Copyright (c) 2025 Hermit contributors
-// SPDX-License-Identifier: MIT OR Apache-2.0
-
 use alloc::{
 	collections::btree_map::BTreeMap,
 	string::{String, ToString},

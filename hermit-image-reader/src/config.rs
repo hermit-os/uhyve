@@ -1,6 +1,3 @@
-// Copyright (c) 2025 Hermit contributors
-// SPDX-License-Identifier: MIT OR Apache-2.0
-
 use alloc::{string::String, vec::Vec};
 
 pub const DEFAULT_CONFIG_NAME: &str = "hermit_config.toml";
