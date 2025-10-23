@@ -7,7 +7,8 @@ fn main() {
 		for i in hermit_image_reader::ImageParser::new(&decompressed[..]) {
 			let i = i.expect("unable to read image entry");
 			print!("  Entry ");
-			if let Ok(name) = str::from_utf8(&*i.name) {
+			let maybe_name = i.name.try_as_str();
+			if let Some(name) = maybe_name {
 				print!("{:?}", name);
 			} else {
 				print!("{:?}", i.name);
@@ -24,8 +25,11 @@ fn main() {
 				println!("{:?}", value_start);
 			}
 
-			if let Ok(name) = str::from_utf8(&*i.name) {
-				if name == hermit_image_reader::config::DEFAULT_CONFIG_NAME {
+			if let Some(name) = maybe_name {
+				if name
+					== hermit_image_reader::StrFilename::One(
+						hermit_image_reader::config::DEFAULT_CONFIG_NAME,
+					) {
 					match hermit_image_reader::config::parse(i.value) {
 						Ok(config) => println!("parsed config ::\n{:#?}\n", config),
 						Err(e) => eprintln!("failed to parse config :: {}", e),

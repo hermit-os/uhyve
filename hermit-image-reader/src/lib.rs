@@ -15,7 +15,7 @@ pub fn decompress_image(data: &[u8]) -> Result<Vec<u8>, compression::prelude::Co
 }
 
 mod tar_parser;
-pub use tar_parser::{ImageFile, ImageParser, ImageParserError};
+pub use tar_parser::{Filename, ImageFile, ImageParser, ImageParserError, StrFilename};
 
 pub mod config;
 

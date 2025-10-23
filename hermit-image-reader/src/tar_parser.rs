@@ -1,5 +1,5 @@
-use alloc::{borrow::Cow, string::String, vec::Vec};
-use core::ops::Range;
+use alloc::vec::Vec;
+use core::{fmt, ops::Range};
 
 // taken from `tar-rs`
 fn truncate(slice: &[u8]) -> &[u8] {
@@ -22,48 +22,119 @@ impl<'a> ImageParser<'a> {
 	}
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Filename<'a> {
+	One(&'a [u8]),
+	Two(&'a [u8], &'a [u8]),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StrFilename<'a> {
+	One(&'a str),
+	Two(&'a str, &'a str),
+}
+
+impl<'a> Filename<'a> {
+	// NOTE: this doesn't return Result<_, core::str::FromUtf8Error> because we have no way
+	// of shifting an error by some amount of bytes (for the ::Two case).
+	pub fn try_as_str(&self) -> Option<StrFilename<'a>> {
+		Some(match self {
+			Filename::One(x) => StrFilename::One(str::from_utf8(x).ok()?),
+			Filename::Two(x, y) => {
+				StrFilename::Two(str::from_utf8(x).ok()?, str::from_utf8(y).ok()?)
+			}
+		})
+	}
+}
+
+impl fmt::Display for StrFilename<'_> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			Self::One(x) => f.write_str(x),
+			Self::Two(x, y) => {
+				f.write_str(x)?;
+				f.write_str("/")?;
+				f.write_str(y)
+			}
+		}
+	}
+}
+
+impl<'a> Iterator for StrFilename<'a> {
+	type Item = &'a str;
+
+	fn next(&mut self) -> Option<&'a str> {
+		match self {
+			Self::One(x) if x.is_empty() => None,
+			Self::One(x) => Some(match x.split_once('/') {
+				None => {
+					let ret = *x;
+					*x = "";
+					ret
+				}
+				Some((fi, rest)) => {
+					*x = rest;
+					fi
+				}
+			}),
+			Self::Two(x, y) => Some(match x.split_once('/') {
+				None => {
+					let ret = *x;
+					*self = Self::One(*y);
+					ret
+				}
+				Some((fi, rest)) => {
+					*x = rest;
+					fi
+				}
+			}),
+		}
+	}
+}
+
 #[derive(Clone, Debug)]
 pub struct ImageFile<'a> {
-	pub name: Cow<'a, [u8]>,
+	pub name: Filename<'a>,
 	pub is_exec: bool,
 	pub value_range: Range<usize>,
 	pub value: &'a [u8],
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ImageParserError {
+pub enum ImageParserError<'a> {
 	UnexpectedEof,
 	ParseInt(core::num::ParseIntError),
 	FromInt(core::num::TryFromIntError),
 	Utf8(core::str::Utf8Error),
+	Utf8Opaque,
 
-	FileOverridenWithDirectory(Vec<String>),
+	FileOverridenWithDirectory(Vec<&'a str>),
 }
 
-impl From<core::num::ParseIntError> for ImageParserError {
+impl<'a> From<core::num::ParseIntError> for ImageParserError<'a> {
 	#[inline(always)]
 	fn from(x: core::num::ParseIntError) -> Self {
 		Self::ParseInt(x)
 	}
 }
 
-impl From<core::num::TryFromIntError> for ImageParserError {
+impl<'a> From<core::num::TryFromIntError> for ImageParserError<'a> {
 	#[inline(always)]
 	fn from(x: core::num::TryFromIntError) -> Self {
 		Self::FromInt(x)
 	}
 }
 
-impl From<core::str::Utf8Error> for ImageParserError {
+impl<'a> From<core::str::Utf8Error> for ImageParserError<'a> {
 	#[inline(always)]
 	fn from(x: core::str::Utf8Error) -> Self {
 		Self::Utf8(x)
 	}
 }
 
-fn try_parse_octal<T: num_traits::Num>(s: &[u8]) -> Result<T, ImageParserError>
+fn try_parse_octal<'a, T: num_traits::Num>(s: &[u8]) -> Result<T, ImageParserError<'a>>
 where
-	T::FromStrRadixErr: Into<ImageParserError>,
+	T::FromStrRadixErr: Into<ImageParserError<'a>>,
 {
 	T::from_str_radix(str::from_utf8(truncate(s))?, 8).map_err(Into::into)
 }
@@ -72,14 +143,14 @@ const BLOCK_SIZE: usize = 512;
 const BLOCK_SIZE_2POW: u32 = 9;
 
 impl<'a> ImageParser<'a> {
-	fn next_intern(&mut self) -> Result<Option<ImageFile<'a>>, ImageParserError> {
+	fn next_intern(&mut self) -> Result<Option<ImageFile<'a>>, ImageParserError<'a>> {
 		while self.input.len() >= BLOCK_SIZE {
 			// `input` starts with a tar header, padded to 512 bytes (block size)
 			let offset = self.offset;
 			let (header, rest) = self.input.split_at(BLOCK_SIZE);
 
 			// note that integers are usually encoded as octal numbers
-			let name = &header[0..100];
+			let name = truncate(&header[0..100]);
 			if header.iter().take_while(|i| **i == 0).count() == BLOCK_SIZE {
 				// EOF marker
 				return Ok(None);
@@ -101,7 +172,7 @@ impl<'a> ImageParser<'a> {
 					// regular file
 					let value_offset = offset + BLOCK_SIZE;
 					Some(ImageFile {
-						name: Cow::Borrowed(truncate(name)),
+						name: Filename::One(name),
 						is_exec,
 						value_range: value_offset..(value_offset + size),
 						value: rest.get(..size).ok_or(ImageParserError::UnexpectedEof)?,
@@ -128,13 +199,11 @@ impl<'a> ImageParser<'a> {
 
 			if let Some(mut x) = ret {
 				// gather full file name (we might have to honor the ustar prefix)
-				if magic == b"ustar\0" && (prefix[0] != 0 || x.name.contains(&b'\\')) {
-					let mut actual_name = truncate(prefix).to_vec();
-					if !actual_name.is_empty() {
-						actual_name.push(b'/');
+				if magic == b"ustar\0" && (prefix[0] != 0 || name.contains(&b'\\')) {
+					let prefix = truncate(prefix);
+					if !prefix.is_empty() {
+						x.name = Filename::Two(prefix, name);
 					}
-					actual_name.extend_from_slice(&x.name[..]);
-					x.name = Cow::Owned(actual_name);
 				}
 				return Ok(Some(x));
 			}
@@ -148,9 +217,30 @@ impl<'a> ImageParser<'a> {
 }
 
 impl<'a> Iterator for ImageParser<'a> {
-	type Item = Result<ImageFile<'a>, ImageParserError>;
+	type Item = Result<ImageFile<'a>, ImageParserError<'a>>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.next_intern().transpose()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_filename_iter_one() {
+		assert_eq!(
+			StrFilename::One("aleph/beta/omicron").collect::<Vec<_>>(),
+			["aleph", "beta", "omicron"]
+		);
+	}
+
+	#[test]
+	fn test_filename_iter_two() {
+		assert_eq!(
+			StrFilename::Two("aleph/beta", "omicron/depth").collect::<Vec<_>>(),
+			["aleph", "beta", "omicron", "depth"]
+		);
 	}
 }

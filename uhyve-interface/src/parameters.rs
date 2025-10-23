@@ -163,3 +163,4 @@ pub const ENOENT: i32 = 2;
 pub const EBADF: i32 = 9;
 pub const EFAULT: i32 = 14;
 pub const EINVAL: i32 = 22;
+pub const EROFS: i32 = 30;

@@ -32,3 +32,8 @@ features = ["alloc", "derive"]
 version = "0.9"
 default-features = false
 features = ["parse", "serde"]
+
+[dependencies.yoke]
+version = "0.8"
+default-features = false
+features = ["derive"]

@@ -10,9 +10,10 @@ use std::{
 };
 
 use clean_path::clean;
-pub use hermit_image_reader::thin_tree::ThinTree as HermitImageThinTree;
+pub use hermit_image_reader::thin_tree::ThinTreeRef as HermitImageThinTree;
 use tempfile::TempDir;
 use uuid::Uuid;
+use yoke::Yoke;
 
 use crate::isolation::{
 	fd::UhyveFileDescriptorLayer, split_guest_and_host_path, tempdir::create_temp_dir,
@@ -43,22 +44,16 @@ impl core::ops::Index<Range<usize>> for HermitImage {
 #[derive(Clone, Debug)]
 pub enum MappedFile {
 	OnHost(PathBuf),
-	InImage {
-		image: Arc<HermitImage>,
-		thin: HermitImageThinTree,
-	},
+	InImage(Yoke<HermitImageThinTree<'static>, Arc<HermitImage>>),
 }
 
 #[derive(Debug)]
-pub enum MappedFileMutRef<'a> {
+pub enum MappedFileRef<'a> {
 	OnHost(PathBuf),
-	InImage {
-		image: &'a Arc<HermitImage>,
-		thin: &'a mut HermitImageThinTree,
-	},
+	InImage(&'a HermitImageThinTree<'a>),
 }
 
-impl MappedFileMutRef<'_> {
+impl MappedFileRef<'_> {
 	#[cfg(test)]
 	fn unwrap_on_host(self) -> PathBuf {
 		if let Self::OnHost(p) = self {
@@ -70,7 +65,7 @@ impl MappedFileMutRef<'_> {
 }
 
 impl MappedFile {
-	pub fn resolve_mut(&mut self, entry: &Path) -> Option<MappedFileMutRef<'_>> {
+	pub fn resolve(&self, entry: &Path) -> Option<MappedFileRef<'_>> {
 		match self {
 			MappedFile::OnHost(host_path) => {
 				let host_path = if Path::new("") == entry {
@@ -79,16 +74,17 @@ impl MappedFile {
 					host_path.join(entry)
 				};
 				// Handles symbolic links.
-				Some(MappedFileMutRef::OnHost(
+				Some(MappedFileRef::OnHost(
 					canonicalize(&host_path)
 						.map_or(host_path.into_os_string(), PathBuf::into_os_string)
 						.into(),
 				))
 			}
-			MappedFile::InImage { image, thin } => Some(MappedFileMutRef::InImage {
-				image,
-				thin: thin.resolve_mut(&entry.to_str()?.split('/').collect::<Vec<_>>())?,
-			}),
+			MappedFile::InImage(yoked) => {
+				Some(MappedFileRef::InImage(yoked.get().resolve(
+					&entry.to_str()?.split('/').collect::<Vec<_>>(),
+				)?))
+			}
 		}
 	}
 }
@@ -111,7 +107,7 @@ impl UhyveFileMap {
 		let tempdir = create_temp_dir(tempdir);
 
 		let mut files = HashMap::new();
-		let mut hermit_images = HashMap::new();
+		let mut hermit_images = HashMap::<PathBuf, Yoke<HermitImageThinTree<'static>, Arc<HermitImage>>>::new();
 
 		for i in mappings {
 			let (guest_path, maybe_in_image_str, host_path) = split_guest_and_host_path(i).unwrap();
@@ -140,28 +136,24 @@ impl UhyveFileMap {
 					let mmap = unsafe { MmapOptions::new().map(tmpf.as_file()) }
 						.expect("unable to mmap decompressed hermit image file");
 
-					let content = HermitImageThinTree::try_from_image(&mmap[..])
-						.expect("unable to parse hermit image file entry");
+					let image = Arc::new(HermitImage {
+						origin: host_path.clone(),
+						_file: tmpf.keep().unwrap().0,
+						mmap,
+					});
 
-					(
-						Arc::new(HermitImage {
-							origin: host_path.clone(),
-							_file: tmpf.keep().unwrap().0,
-							mmap,
-						}),
-						content,
-					)
+					Yoke::attach_to_cart(image, |image| {
+						HermitImageThinTree::try_from_image(&image.mmap[..])
+							.expect("unable to parse hermit image file entry")
+					})
 				});
 
 				// resolve file
-				if let Some(resolved) = image.1.resolve(&x.split('/').collect::<Vec<_>>()) {
-					files.insert(
-						guest_path,
-						MappedFile::InImage {
-							image: Arc::clone(&image.0),
-							thin: resolved.clone(),
-						},
-					);
+				if let Ok(resolved) = image.try_map_project_cloned(|yoked, _| {
+					let ret: Result<HermitImageThinTree<'_>, ()> = yoked.resolve(&x.split('/').collect::<Vec<_>>()).ok_or(()).cloned();
+					ret
+				}) {
+					files.insert(guest_path, MappedFile::InImage(resolved));
 				} else {
 					warn!(
 						"In hermit image {}: unable to find file {:?} -> {}",
@@ -185,7 +177,7 @@ impl UhyveFileMap {
 	/// Returns the host_path on the host filesystem given a requested guest_path, if it exists.
 	///
 	/// * `guest_path` - The guest path that is to be looked up in the map.
-	pub fn get_host_path(&mut self, guest_path: &CStr) -> Option<MappedFileMutRef<'_>> {
+	pub fn get_host_path(&self, guest_path: &CStr) -> Option<MappedFileRef<'_>> {
 		if self.files.is_empty() {
 			debug!("UhyveFileMap is empty, returning None...");
 			return None;
@@ -199,13 +191,10 @@ impl UhyveFileMap {
 			// If one of the guest paths' parent directories (parent_host) is mapped,
 			// use the mapped host path and push the "remainder" (the path's components
 			// that come after the mapped guest path) onto the host path.
-
-			// Work-around for infamous rust issue: https://github.com/rust-lang/rust/issues/54663
-			if self.files.contains_key(searched_parent_guest) {
-				let parent_host = self.files.get_mut(searched_parent_guest).unwrap();
+			if let Some(parent_host) = self.files.get(searched_parent_guest) {
 				let guest_path_remainder =
 					guest_pathbuf.strip_prefix(searched_parent_guest).unwrap();
-				return parent_host.resolve_mut(guest_path_remainder);
+				return parent_host.resolve(guest_path_remainder);
 			}
 		}
 		debug!("The file is not in a child directory, returning None...");

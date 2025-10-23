@@ -6,14 +6,12 @@ use std::{
 		fd::IntoRawFd,
 		unix::{ffi::OsStrExt, io::FromRawFd},
 	},
-	sync::Arc,
 };
 
-use clean_path::clean;
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*};
 
 use crate::{
-	isolation::filemap::{HermitImageThinTree, MappedFileMutRef, UhyveFileMap},
+	isolation::filemap::{HermitImageThinTree, MappedFileRef, UhyveFileMap},
 	mem::{MemoryError, MmapMemory},
 	params::EnvVars,
 	virt_to_phys,
@@ -95,41 +93,13 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 		// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 		// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 		match host_path {
-			MappedFileMutRef::OnHost(oh) => {
+			MappedFileRef::OnHost(oh) => {
 				let host_path_c_string = CString::new(oh.as_os_str().as_bytes()).unwrap();
 				unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) }
 			}
-			MappedFileMutRef::InImage { .. } => {
-				// we need to find the parent entry
-				// TODO: reject if the parent entry points to a different entry / image
-				let mut guest_pathbuf = clean(OsStr::from_bytes(guest_path.to_bytes()));
-				(|| {
-					let Some(file_name) = guest_pathbuf.file_name() else {
-						return -ENOENT;
-					};
-					let Ok(file_name) = str::from_utf8(file_name.as_bytes()) else {
-						return -ENOENT;
-					};
-					let file_name = file_name.to_string();
-					if !guest_pathbuf.pop() {
-						return -ENOENT;
-					}
-					let guest_path_c_string =
-						CString::new(guest_pathbuf.as_os_str().as_bytes()).unwrap();
-					if let Some(MappedFileMutRef::InImage { image: _, thin }) =
-						file_map.get_host_path(&guest_path_c_string)
-					{
-						// TODO: reject unlinking of directories
-						thin.unlink(&[&*file_name]);
-						0
-					} else {
-						// TODO: unmount entire image if we unlink the root?
-						error!(
-							"The kernel requested to unlink() an unknown path ({guest_path:?}): Rejecting..."
-						);
-						-ENOENT
-					}
-				})()
+			MappedFileRef::InImage(_) => {
+				error!("The kernel requested to unlink() a ROM path ({guest_path:?}): Rejecting...");
+				-EROFS
 			}
 		}
 	} else {
@@ -154,7 +124,7 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 	if let Some(guest_entry) = file_map.get_host_path(guest_path) {
 		debug!("{guest_path:#?} found in file map.");
 		match guest_entry {
-			MappedFileMutRef::OnHost(host_path) => {
+			MappedFileRef::OnHost(host_path) => {
 				// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 				// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 				let host_path_c_string = CString::new(host_path.as_os_str().as_bytes()).unwrap();
@@ -165,18 +135,13 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 
 				file_map.fdmap.insert_fd(sysopen.ret);
 			}
-			MappedFileMutRef::InImage {
-				image,
-				thin: HermitImageThinTree::File(r),
-			} => {
+			MappedFileRef::InImage(HermitImageThinTree::File(slc)) => {
 				// For simplicity, create a temporary files with these contents.
 				debug!("Attempting to open a temp file for unpacked {guest_path:#?}...");
 				// Existing files that already exist should be in the file map, not here.
 				// If a supposed attacker can predict where we open a file and its filename,
 				// this contigency, together with O_CREAT, will cause the write to fail.
 				flags |= O_EXCL;
-				let image = Arc::clone(image);
-				let r = r.clone();
 
 				let host_path_c_string = file_map.create_temporary_file(guest_path);
 				let new_host_path = host_path_c_string.as_c_str().as_ptr();
@@ -187,7 +152,7 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 					let mut fh = unsafe { File::from_raw_fd(raw_fd) };
 					// SAFETY (slice access): we assume that the image parsing was correct
 					// and that the temporary file wasn't modified after creation.
-					match fh.write_all(&image[r.clone()]) {
+					match fh.write_all(slc) {
 						Ok(_) => {
 							// don't destroy the file descriptor
 							core::mem::forget(fh);
