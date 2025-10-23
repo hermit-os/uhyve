@@ -58,8 +58,8 @@ impl ThinTree {
 		Ok(content)
 	}
 
-	pub fn resolve(&self, entry: &[&str]) -> Option<&Self> {
-		entry.iter().try_fold(self, move |this, &i| {
+	pub fn resolve(&self, mut entry: StrFilename<'_>) -> Option<&Self> {
+		entry.try_fold(self, move |this, i| {
 			if let Self::Directory(dir) = this {
 				dir.get(i)
 			} else {
@@ -68,8 +68,8 @@ impl ThinTree {
 		})
 	}
 
-	pub fn resolve_mut(&mut self, entry: &[&str]) -> Option<&mut Self> {
-		entry.iter().try_fold(self, move |this, &i| {
+	pub fn resolve_mut(&mut self, mut entry: StrFilename<'_>) -> Option<&mut Self> {
+		entry.try_fold(self, move |this, i| {
 			if let Self::Directory(dir) = this {
 				dir.get_mut(i)
 			} else {
@@ -131,8 +131,8 @@ impl<'a> ThinTreeRef<'a> {
 		Ok(content)
 	}
 
-	pub fn resolve(&self, entry: &[&str]) -> Option<&Self> {
-		entry.iter().try_fold(self, move |this, &i| {
+	pub fn resolve(&self, mut entry: StrFilename<'_>) -> Option<&Self> {
+		entry.try_fold(self, move |this, i| {
 			if let Self::Directory(dir) = this {
 				dir.get(i)
 			} else {
@@ -141,8 +141,8 @@ impl<'a> ThinTreeRef<'a> {
 		})
 	}
 
-	pub fn resolve_mut(&mut self, entry: &[&str]) -> Option<&mut Self> {
-		entry.iter().try_fold(self, move |this, &i| {
+	pub fn resolve_mut(&mut self, mut entry: StrFilename<'_>) -> Option<&mut Self> {
+		entry.try_fold(self, move |this, i| {
 			if let Self::Directory(dir) = this {
 				dir.get_mut(i)
 			} else {

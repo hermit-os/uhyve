@@ -62,7 +62,7 @@ impl MappedFile {
 			MappedFile::InImage(yoked) => Some(MappedFileRef::InImage(
 				yoked
 					.get()
-					.resolve(&entry.to_str()?.split('/').collect::<Vec<_>>())?,
+					.resolve(entry.to_str()?.into())?,
 			)),
 		}
 	}
@@ -111,7 +111,7 @@ impl UhyveFileMap {
 				// resolve file
 				if let Ok(resolved) = image.try_map_project_cloned(|yoked, _| {
 					let ret: Result<HermitImageThinTree<'_>, ()> = yoked
-						.resolve(&x.split('/').collect::<Vec<_>>())
+						.resolve((&*x).into())
 						.ok_or(())
 						.cloned();
 					ret
@@ -227,7 +227,7 @@ mod tests {
 			path_prefix.clone() + "/this_symlink_leads_to_a_file" + ":guest_file_symlink",
 		];
 
-		let mut map = UhyveFileMap::new(&map_parameters, &None);
+		let map = UhyveFileMap::new(&map_parameters, &None);
 
 		assert_eq!(
 			map.get_host_path(c"readme_file.md")
