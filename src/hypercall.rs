@@ -11,7 +11,10 @@ use std::{
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*};
 
 use crate::{
-	isolation::filemap::{HermitImageThinTree, MappedFileRef, UhyveFileMap},
+	isolation::{
+		filemap::UhyveFileMap,
+		image::{HermitImageThinTree, MappedFileRef},
+	},
 	mem::{MemoryError, MmapMemory},
 	params::EnvVars,
 	virt_to_phys,

@@ -1,72 +1,21 @@
 use std::{
 	collections::HashMap,
 	ffi::{CStr, CString, OsStr},
-	fs::canonicalize,
 	os::unix::ffi::OsStrExt,
 	path::{Path, PathBuf},
-	sync::Arc,
 };
 
 use clean_path::clean;
 pub use hermit_image_reader::thin_tree::ThinTreeRef as HermitImageThinTree;
 use tempfile::TempDir;
 use uuid::Uuid;
-use yoke::Yoke;
 
 use crate::isolation::{
-	fd::UhyveFileDescriptorLayer, split_guest_and_host_path, tempdir::create_temp_dir,
+	fd::UhyveFileDescriptorLayer,
+	image::{Cache, MappedFile, MappedFileRef},
+	split_guest_and_host_path,
+	tempdir::create_temp_dir,
 };
-
-/// A "mounted" hermit image, the decompressed contents of it are mmap'ed into this process
-pub type HermitImage = [u8];
-
-#[derive(Clone, Debug)]
-pub enum MappedFile {
-	OnHost(PathBuf),
-	InImage(Yoke<HermitImageThinTree<'static>, Arc<HermitImage>>),
-}
-
-#[derive(Debug)]
-pub enum MappedFileRef<'a> {
-	OnHost(PathBuf),
-	InImage(&'a HermitImageThinTree<'a>),
-}
-
-impl MappedFileRef<'_> {
-	#[cfg(test)]
-	fn unwrap_on_host(self) -> PathBuf {
-		if let Self::OnHost(p) = self {
-			p
-		} else {
-			panic!("unexpected mapped file ref: {:?}", self)
-		}
-	}
-}
-
-impl MappedFile {
-	pub fn resolve(&self, entry: &Path) -> Option<MappedFileRef<'_>> {
-		match self {
-			MappedFile::OnHost(host_path) => {
-				let host_path = if Path::new("") == entry {
-					host_path.clone()
-				} else {
-					host_path.join(entry)
-				};
-				// Handles symbolic links.
-				Some(MappedFileRef::OnHost(
-					canonicalize(&host_path)
-						.map_or(host_path.into_os_string(), PathBuf::into_os_string)
-						.into(),
-				))
-			}
-			MappedFile::InImage(yoked) => Some(MappedFileRef::InImage(
-				yoked
-					.get()
-					.resolve(entry.to_str()?.into())?,
-			)),
-		}
-	}
-}
 
 /// Wrapper around a `HashMap` to map guest paths to arbitrary host paths and track file descriptors.
 #[derive(Debug)]
@@ -82,38 +31,23 @@ impl UhyveFileMap {
 	/// * `mappings` - A list of host->guest path mappings with the format
 	///   "./host_path.txt:guest.txt" or "./hermit_image.hermit:contained.txt:guest.txt"
 	/// * `tempdir` - Path to create temporary directory on
-	pub fn new(mappings: &[String], tempdir: &Option<String>) -> UhyveFileMap {
+	pub fn new(
+		mappings: &[String],
+		tempdir: &Option<String>,
+		hermit_image_cache: &mut Cache,
+	) -> UhyveFileMap {
 		let tempdir = create_temp_dir(tempdir);
-
 		let mut files = HashMap::new();
-		let mut hermit_images =
-			HashMap::<PathBuf, Yoke<HermitImageThinTree<'static>, Arc<HermitImage>>>::new();
 
 		for i in mappings {
 			let (guest_path, maybe_in_image_str, host_path) = split_guest_and_host_path(i).unwrap();
 			if let Some(x) = maybe_in_image_str {
-				// TODO: panic error messages should mention the image file name
-
-				let image = hermit_images.entry(host_path.clone()).or_insert_with(|| {
-					// unpack archive
-					let data = std::fs::read(&host_path).expect("unable to read hermit image file");
-					let decompressed = hermit_image_reader::decompress_image(&data[..])
-						.expect("unable to decompress hermit image file");
-
-					let image: Arc<[u8]> = decompressed.into();
-
-					Yoke::attach_to_cart(image, |image| {
-						HermitImageThinTree::try_from_image(&image[..])
-							.expect("unable to parse hermit image file entry")
-					})
-				});
+				let image = hermit_image_cache.register(host_path.clone());
 
 				// resolve file
 				if let Ok(resolved) = image.try_map_project_cloned(|yoked, _| {
-					let ret: Result<HermitImageThinTree<'_>, ()> = yoked
-						.resolve((&*x).into())
-						.ok_or(())
-						.cloned();
+					let ret: Result<HermitImageThinTree<'_>, ()> =
+						yoked.resolve((&*x).into()).ok_or(()).cloned();
 					ret
 				}) {
 					files.insert(guest_path, MappedFile::InImage(resolved));

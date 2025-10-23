@@ -1,7 +1,10 @@
 pub mod fd;
 pub mod filemap;
+pub mod image;
+
 #[cfg(target_os = "linux")]
 pub mod landlock;
+
 pub mod tempdir;
 
 use std::{
