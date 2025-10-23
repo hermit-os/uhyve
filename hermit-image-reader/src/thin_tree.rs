@@ -47,10 +47,7 @@ impl ThinTree {
 		let mut content = Self::File(0..0);
 		for i in ImageParser::new(image) {
 			let i = i?;
-			let name = i
-				.name
-				.try_as_str()
-				.ok_or_else(|| ImageParserError::Utf8Opaque)?;
+			let name = i.name.try_as_str().ok_or(ImageParserError::Utf8Opaque)?;
 			// multiple entries with the same name might exist,
 			// latest entry wins / overwrites existing ones
 			content.update(name, i.value_range)?;
@@ -95,7 +92,7 @@ impl<'a> ThinTreeRef<'a> {
 		let mut this = self;
 		for (n, i) in entry.enumerate() {
 			let dir = match this {
-				Self::File(r) if r.is_empty() => {
+				Self::File([]) => {
 					*this = Self::Directory(BTreeMap::new());
 					if let Self::Directory(dir) = this {
 						dir
@@ -120,10 +117,7 @@ impl<'a> ThinTreeRef<'a> {
 		let mut content = Self::File(b"");
 		for i in ImageParser::new(image) {
 			let i = i?;
-			let name = i
-				.name
-				.try_as_str()
-				.ok_or_else(|| ImageParserError::Utf8Opaque)?;
+			let name = i.name.try_as_str().ok_or(ImageParserError::Utf8Opaque)?;
 			// multiple entries with the same name might exist,
 			// latest entry wins / overwrites existing ones
 			content.update(name, i.value)?;

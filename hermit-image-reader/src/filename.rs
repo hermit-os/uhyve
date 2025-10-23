@@ -60,7 +60,7 @@ impl<'a> Iterator for StrFilename<'a> {
 
 	fn next(&mut self) -> Option<&'a str> {
 		match self {
-			Self::One(x) if x.is_empty() => None,
+			Self::One("") => None,
 			Self::One(x) => Some(match x.split_once('/') {
 				None => {
 					let ret = *x;
@@ -75,7 +75,7 @@ impl<'a> Iterator for StrFilename<'a> {
 			Self::Two(x, y) => Some(match x.split_once('/') {
 				None => {
 					let ret = *x;
-					*self = Self::One(*y);
+					*self = Self::One(y);
 					ret
 				}
 				Some((fi, rest)) => {
