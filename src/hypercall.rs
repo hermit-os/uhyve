@@ -98,7 +98,9 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 				unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) }
 			}
 			MappedFileRef::InImage(_) => {
-				error!("The kernel requested to unlink() a ROM path ({guest_path:?}): Rejecting...");
+				error!(
+					"The kernel requested to unlink() a ROM path ({guest_path:?}): Rejecting..."
+				);
 				-EROFS
 			}
 		}

@@ -1,9 +1,7 @@
 use std::{
 	collections::HashMap,
 	ffi::{CStr, CString, OsStr},
-	fmt,
-	fs::{File, canonicalize},
-	ops::Range,
+	fs::canonicalize,
 	os::unix::ffi::OsStrExt,
 	path::{Path, PathBuf},
 	sync::Arc,
@@ -20,26 +18,7 @@ use crate::isolation::{
 };
 
 /// A "mounted" hermit image, the decompressed contents of it are mmap'ed into this process
-pub struct HermitImage {
-	origin: PathBuf,
-	_file: File,
-	mmap: memmap2::Mmap,
-}
-
-impl fmt::Debug for HermitImage {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "HermitImage({})", self.origin.display())
-	}
-}
-
-impl core::ops::Index<Range<usize>> for HermitImage {
-	type Output = [u8];
-
-	#[inline]
-	fn index(&self, index: Range<usize>) -> &[u8] {
-		&self.mmap[index]
-	}
-}
+pub type HermitImage = [u8];
 
 #[derive(Clone, Debug)]
 pub enum MappedFile {
@@ -80,11 +59,11 @@ impl MappedFile {
 						.into(),
 				))
 			}
-			MappedFile::InImage(yoked) => {
-				Some(MappedFileRef::InImage(yoked.get().resolve(
-					&entry.to_str()?.split('/').collect::<Vec<_>>(),
-				)?))
-			}
+			MappedFile::InImage(yoked) => Some(MappedFileRef::InImage(
+				yoked
+					.get()
+					.resolve(&entry.to_str()?.split('/').collect::<Vec<_>>())?,
+			)),
 		}
 	}
 }
@@ -107,14 +86,12 @@ impl UhyveFileMap {
 		let tempdir = create_temp_dir(tempdir);
 
 		let mut files = HashMap::new();
-		let mut hermit_images = HashMap::<PathBuf, Yoke<HermitImageThinTree<'static>, Arc<HermitImage>>>::new();
+		let mut hermit_images =
+			HashMap::<PathBuf, Yoke<HermitImageThinTree<'static>, Arc<HermitImage>>>::new();
 
 		for i in mappings {
 			let (guest_path, maybe_in_image_str, host_path) = split_guest_and_host_path(i).unwrap();
 			if let Some(x) = maybe_in_image_str {
-				use std::io::Write;
-
-				use memmap2::MmapOptions;
 				// TODO: panic error messages should mention the image file name
 
 				let image = hermit_images.entry(host_path.clone()).or_insert_with(|| {
@@ -122,35 +99,21 @@ impl UhyveFileMap {
 					let data = std::fs::read(&host_path).expect("unable to read hermit image file");
 					let decompressed = hermit_image_reader::decompress_image(&data[..])
 						.expect("unable to decompress hermit image file");
-					let mut tmpf = tempfile::Builder::new()
-						.disable_cleanup(true)
-						.suffix(".hermit.unpacked")
-						.tempfile_in(tempdir.path())
-						.expect(
-							"unable to create temporary file for hermit image decompression result",
-						);
-					tmpf.write_all(&decompressed[..])
-						.expect("unable to write decompressed hermit image file");
 
-					// create mmap of unpacked archive
-					let mmap = unsafe { MmapOptions::new().map(tmpf.as_file()) }
-						.expect("unable to mmap decompressed hermit image file");
-
-					let image = Arc::new(HermitImage {
-						origin: host_path.clone(),
-						_file: tmpf.keep().unwrap().0,
-						mmap,
-					});
+					let image: Arc<[u8]> = decompressed.into();
 
 					Yoke::attach_to_cart(image, |image| {
-						HermitImageThinTree::try_from_image(&image.mmap[..])
+						HermitImageThinTree::try_from_image(&image[..])
 							.expect("unable to parse hermit image file entry")
 					})
 				});
 
 				// resolve file
 				if let Ok(resolved) = image.try_map_project_cloned(|yoked, _| {
-					let ret: Result<HermitImageThinTree<'_>, ()> = yoked.resolve(&x.split('/').collect::<Vec<_>>()).ok_or(()).cloned();
+					let ret: Result<HermitImageThinTree<'_>, ()> = yoked
+						.resolve(&x.split('/').collect::<Vec<_>>())
+						.ok_or(())
+						.cloned();
 					ret
 				}) {
 					files.insert(guest_path, MappedFile::InImage(resolved));
