@@ -1,13 +1,20 @@
 use std::{
 	ffi::{CStr, CString, OsStr},
+	fs::File,
 	io::{self, Error, ErrorKind},
-	os::{fd::IntoRawFd, unix::ffi::OsStrExt},
+	os::{
+		fd::IntoRawFd,
+		unix::{ffi::OsStrExt, io::FromRawFd},
+	},
 };
 
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*};
 
 use crate::{
-	isolation::filemap::UhyveFileMap,
+	isolation::{
+		filemap::UhyveFileMap,
+		image::{HermitImageThinTree, MappedFileRef},
+	},
 	mem::{MemoryError, MmapMemory},
 	params::EnvVars,
 	virt_to_phys,
@@ -88,8 +95,18 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 	sysunlink.ret = if let Some(host_path) = file_map.get_host_path(guest_path) {
 		// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 		// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
-		let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
-		unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) }
+		match host_path {
+			MappedFileRef::OnHost(oh) => {
+				let host_path_c_string = CString::new(oh.as_os_str().as_bytes()).unwrap();
+				unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) }
+			}
+			MappedFileRef::InImage(_) => {
+				error!(
+					"The kernel requested to unlink() a ROM path ({guest_path:?}): Rejecting..."
+				);
+				-EROFS
+			}
+		}
 	} else {
 		error!("The kernel requested to unlink() an unknown path ({guest_path:?}): Rejecting...");
 		-ENOENT
@@ -109,16 +126,58 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 		return;
 	}
 
-	if let Some(host_path) = file_map.get_host_path(guest_path) {
+	if let Some(guest_entry) = file_map.get_host_path(guest_path) {
 		debug!("{guest_path:#?} found in file map.");
-		// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
-		// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
-		let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
+		match guest_entry {
+			MappedFileRef::OnHost(host_path) => {
+				// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
+				// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
+				let host_path_c_string = CString::new(host_path.as_os_str().as_bytes()).unwrap();
 
-		sysopen.ret =
-			unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode) };
+				sysopen.ret = unsafe {
+					libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode)
+				};
 
-		file_map.fdmap.insert_fd(sysopen.ret);
+				file_map.fdmap.insert_fd(sysopen.ret);
+			}
+			MappedFileRef::InImage(HermitImageThinTree::File(slc)) => {
+				// For simplicity, create a temporary files with these contents.
+				debug!("Attempting to open a temp file for unpacked {guest_path:#?}...");
+				// Existing files that already exist should be in the file map, not here.
+				// If a supposed attacker can predict where we open a file and its filename,
+				// this contigency, together with O_CREAT, will cause the write to fail.
+				flags |= O_EXCL;
+
+				let host_path_c_string = file_map.create_temporary_file(guest_path);
+				let new_host_path = host_path_c_string.as_c_str().as_ptr();
+				sysopen.ret = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
+				if sysopen.ret >= 0 {
+					use std::io::Write;
+					let raw_fd = sysopen.ret.into_raw_fd();
+					let mut fh = unsafe { File::from_raw_fd(raw_fd) };
+					// SAFETY (slice access): we assume that the image parsing was correct
+					// and that the temporary file wasn't modified after creation.
+					match fh.write_all(slc) {
+						Ok(_) => {
+							// don't destroy the file descriptor
+							core::mem::forget(fh);
+							file_map.fdmap.insert_fd(sysopen.ret.into_raw_fd());
+						}
+
+						Err(_) => {
+							// TODO: what's the correct error code for this?
+							sysopen.ret = -ENOENT;
+
+							unsafe { libc::unlink(new_host_path) };
+						}
+					}
+				}
+			}
+			_ => {
+				debug!("Returning -ENOENT for {guest_path:#?}");
+				sysopen.ret = -ENOENT;
+			}
+		};
 	} else {
 		debug!("{guest_path:#?} not found in file map.");
 		if (flags & O_CREAT) == O_CREAT {

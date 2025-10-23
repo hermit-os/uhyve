@@ -24,7 +24,7 @@ use crate::{
 	consts::*,
 	fdt::Fdt,
 	generate_address,
-	isolation::filemap::UhyveFileMap,
+	isolation::{filemap::UhyveFileMap, image::Cache as HermitImageCache},
 	mem::MmapMemory,
 	os::KickSignal,
 	params::{EnvVars, Params},
@@ -136,6 +136,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
 		let memory_size = params.memory_size.get();
 
+		let mut hermit_image_cache = HermitImageCache::default();
+
 		let elf = fs::read(&kernel_path)
 			.map_err(|_e| HypervisorError::InvalidKernelPath(kernel_path.clone()))?;
 		let object: KernelObject<'_> =
@@ -200,7 +202,11 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		let mut mem = MmapMemory::new(0, memory_size, guest_address, false, false);
 
 		// TODO: file_mapping not in kernel_info
-		let file_mapping = Mutex::new(UhyveFileMap::new(&params.file_mapping, &params.tempdir));
+		let file_mapping = Mutex::new(UhyveFileMap::new(
+			&params.file_mapping,
+			&params.tempdir,
+			&mut hermit_image_cache,
+		));
 
 		let serial = UhyveSerial::from_params(&params.output)?;
 

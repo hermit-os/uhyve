@@ -5,7 +5,7 @@ use std::{fs, num::ParseIntError, path::PathBuf, process, str::FromStr};
 use clap::{Command, CommandFactory, Parser, error::ErrorKind};
 use core_affinity::CoreId;
 use env_logger::Builder;
-use log::{LevelFilter, info};
+use log::{LevelFilter, info, warn};
 use merge::Merge;
 use serde::Deserialize;
 use thiserror::Error;
@@ -346,8 +346,6 @@ impl<'de> serde::de::Deserialize<'de> for Affinity {
 #[derive(Debug, Default, Deserialize, Merge, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 struct GuestArgs {
-	/// The kernel to execute
-	#[clap(value_parser)]
 	#[serde(skip)]
 	#[merge(skip)]
 	kernel: PathBuf,
@@ -478,6 +476,8 @@ fn load_vm_config(args: &mut Args) {
 }
 
 fn run_uhyve() -> i32 {
+	use hermit_image_reader::Format;
+
 	#[cfg(feature = "instrument")]
 	setup_trace();
 
@@ -490,17 +490,91 @@ fn run_uhyve() -> i32 {
 
 	let mut app = Args::command();
 	let mut args = Args::parse();
+	let stats;
 
-	load_vm_config(&mut args);
-
-	let stats = args.uhyve.stats.unwrap_or_default();
+	// detect guest kernel format
 	let kernel_path = args.guest.kernel.clone();
-	let affinity = args.cpu.clone().get_affinity(&mut app);
-	let params = Params::from(args);
+	let format = {
+		use std::io::Read;
+		let mut fh = fs::File::open(&kernel_path).expect("unable to open guest kernel file");
+		let mut buf = [0u8; 8];
+		fh.read_exact(&mut buf)
+			.expect("unable to read first 8 bytes from guest kernel file");
+		hermit_image_reader::detect_format(&buf).expect("unable to detect guest kernel format")
+	};
 
-	let vm = UhyveVm::new(kernel_path, params).unwrap_or_else(|e| panic!("Error: {e}"));
+	let res = match format {
+		Format::ElfKernel => {
+			load_vm_config(&mut args);
 
-	let res = vm.run(affinity);
+			stats = args.uhyve.stats.unwrap_or_default();
+			let affinity = args.cpu.clone().get_affinity(&mut app);
+			let params = Params::from(args);
+
+			let vm = UhyveVm::new(kernel_path, params).unwrap_or_else(|e| panic!("Error: {e}"));
+
+			vm.run(affinity)
+		}
+		Format::Image => {
+			// Unfortunately, we have to read the image twice (unless we figure out a way to cache it...)
+			let data =
+				std::fs::read(&kernel_path).expect("unable to read supplied hermit image file");
+			let decompressed = hermit_image_reader::decompress_image(&data[..])
+				.expect("unable to decompress supplied hermit image file");
+
+			let entry = hermit_image_reader::ImageParser::new(&decompressed[..])
+				.filter_map(|i| i.ok())
+				.filter(|i| {
+					if let Ok(name) = str::from_utf8(&i.name) {
+						name == hermit_image_reader::config::DEFAULT_CONFIG_NAME
+					} else {
+						false
+					}
+				})
+				// for `tar` and similar formats, duplicate entries are allowed,
+				// and the latest entry wins
+				.last()
+				.expect("Supplied hermit image file doesn't contain a configuration file");
+
+			let mut config = hermit_image_reader::config::parse(entry.value)
+				.expect("unable to parse config of supplied hermit image file");
+
+			// .input
+			args.guest.kernel_args.append(&mut config.input.kernel_args);
+			if !config.input.app_args.is_empty() {
+				args.guest.kernel_args.push("--".to_string());
+				args.guest.kernel_args.append(&mut config.input.app_args);
+			}
+			args.guest.env_vars.append(&mut config.input.env_vars);
+			// don't pass privileged env-var commands through
+			args.guest.env_vars.retain(|i| i.contains('='));
+
+			// .requirements
+			// TODO: currently no corresponding options exist
+
+			let kernel_path_str = kernel_path.to_str().unwrap();
+
+			// .kernel
+			// TODO: `UhyveVm` needs to be able to support this format
+			let kernel_path = format!("{}:{}", kernel_path_str, config.kernel).into();
+
+			// .mount_point
+			args.uhyve
+				.file_mapping
+				.push(format!("{}::{}", kernel_path_str, config.mount_point));
+
+			load_vm_config(&mut args);
+
+			stats = args.uhyve.stats.unwrap_or_default();
+			let affinity = args.cpu.clone().get_affinity(&mut app);
+			let params = Params::from(args);
+
+			let vm = UhyveVm::new(kernel_path, params).unwrap_or_else(|e| panic!("Error: {e}"));
+
+			vm.run(affinity)
+		}
+	};
+
 	if stats && let Some(stats) = res.stats {
 		println!("Run statistics:");
 		println!("{stats}");
@@ -514,7 +588,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-	use std::env;
+	use std::{env, path::Path};
 
 	use tempfile::tempdir;
 
@@ -605,9 +679,9 @@ mod tests {
 		)
 		.unwrap();
 
-		assert!(&config.uhyve.file_mapping.is_empty());
-		assert!(&config.uhyve.config.is_none());
-		assert!(&config.guest.kernel.to_str().unwrap().is_empty())
+		assert!(config.uhyve.file_mapping.is_empty());
+		assert!(config.uhyve.config.is_none());
+		assert!(config.guest.kernel == Path::new(""));
 	}
 
 	/// Tests whether TOML merge works as expected.
