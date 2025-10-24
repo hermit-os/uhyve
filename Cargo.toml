@@ -66,11 +66,14 @@ rand = { version = "0.9", optional = true }
 shell-words = "1"
 sysinfo = { version = "0.37.2", default-features = false, features = ["system"] }
 vm-fdt = "0.3"
-tempfile = "3.23.0"
+tempfile = "3.23"
 uuid = { version = "1.18.1", features = ["fast-rng", "v4"]}
 toml = "0.9.8"
 serde = { version = "1.0", features = ["derive"] }
 merge = { version = "0.2" }
+yoke = "0.8"
+slab = { version = "0.4", optional = true }
+nohash = "0.2.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.14"
