@@ -1,3 +1,4 @@
+use core::cmp;
 use std::{
 	ffi::{CStr, CString, OsStr},
 	io::{self, Error, ErrorKind},
@@ -7,7 +8,10 @@ use std::{
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*};
 
 use crate::{
-	isolation::filemap::UhyveFileMap,
+	isolation::{
+		fd::{FdData, GuestFd},
+		filemap::UhyveFileMap,
+	},
 	mem::{MemoryError, MmapMemory},
 	params::EnvVars,
 	virt_to_phys,
@@ -109,16 +113,21 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 		return;
 	}
 
-	if let Some(host_path) = file_map.get_host_path(guest_path) {
+	sysopen.ret = if let Some(host_path) = file_map.get_host_path(guest_path) {
 		debug!("{guest_path:#?} found in file map.");
 		// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 		// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 		let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
 
-		sysopen.ret =
+		let host_fd =
 			unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode) };
-
-		file_map.fdmap.insert_fd(sysopen.ret);
+		if let Some(guest_fd) = file_map.fdmap.insert(FdData::Raw(host_fd)) {
+			guest_fd.0
+		} else if host_fd < 0 {
+			host_fd
+		} else {
+			-ENOENT
+		}
 	} else {
 		debug!("{guest_path:#?} not found in file map.");
 		if (flags & O_CREAT) == O_CREAT {
@@ -130,29 +139,35 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 
 			let host_path_c_string = file_map.create_temporary_file(guest_path);
 			let new_host_path = host_path_c_string.as_c_str().as_ptr();
-			sysopen.ret = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
-			file_map.fdmap.insert_fd(sysopen.ret.into_raw_fd());
+			let host_fd = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
+			if let Some(guest_fd) = file_map.fdmap.insert(FdData::Raw(host_fd)) {
+				guest_fd.0
+			} else if host_fd < 0 {
+				host_fd
+			} else {
+				-ENOENT
+			}
 		} else {
 			debug!("Returning -ENOENT for {guest_path:#?}");
-			sysopen.ret = -ENOENT;
+			-ENOENT
 		}
 	}
 }
 
 /// Handles an close syscall by closing the file on the host.
 pub fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
-	if file_map.fdmap.is_fd_present(sysclose.fd.into_raw_fd()) {
-		if sysclose.fd > 2 {
-			unsafe { sysclose.ret = libc::close(sysclose.fd) }
-			file_map.fdmap.remove_fd(sysclose.fd)
-		} else {
-			// Ignore closes of stdin, stdout and stderr that would
-			// otherwise affect Uhyve
-			sysclose.ret = 0
+	sysclose.ret = if file_map
+		.fdmap
+		.is_fd_present(GuestFd(sysclose.fd.into_raw_fd()))
+	{
+		match file_map.fdmap.remove(GuestFd(sysclose.fd)) {
+			Some(FdData::Raw(fd)) => unsafe { libc::close(fd) },
+			// ignore other closures (fdmap's remove already handles stdio)
+			_ => 0,
 		}
 	} else {
-		sysclose.ret = -EBADF
-	}
+		-EBADF
+	};
 }
 
 /// Handles a read syscall on the host.
@@ -162,25 +177,45 @@ pub fn read(
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
 ) {
-	if file_map.fdmap.is_fd_present(sysread.fd.into_raw_fd()) {
+	sysread.ret = if let Some(fdata) = file_map.fdmap.get_mut(GuestFd(sysread.fd.into_raw_fd())) {
 		let guest_phys_addr = virt_to_phys(sysread.buf, mem, root_pt);
 		if let Ok(guest_phys_addr) = guest_phys_addr
 			&& let Ok(host_address) = mem.host_address(guest_phys_addr)
 		{
-			let bytes_read =
-				unsafe { libc::read(sysread.fd, host_address as *mut libc::c_void, sysread.len) };
-			if bytes_read >= 0 {
-				sysread.ret = bytes_read;
-			} else {
-				sysread.ret = -1
+			match fdata {
+				FdData::Raw(rfd) => {
+					let bytes_read =
+						unsafe { libc::read(*rfd, host_address as *mut libc::c_void, sysread.len) };
+					if bytes_read >= 0 { bytes_read } else { -1 }
+				}
+				FdData::Virtual { data, offset } => {
+					let data: &[u8] = data.get();
+					let remaining = {
+						let pos = cmp::min(*offset, data.len() as u64);
+						&data[pos as usize..]
+					};
+					let amt = cmp::min(remaining.len() as u64, sysread.len as u64) as usize;
+					assert!(amt <= isize::MAX as usize);
+
+					// SAFETY: the input slices can't overlap, as `host_address` is owned by the guest
+					// and `data` is owned by the host.
+					unsafe {
+						core::ptr::copy_nonoverlapping(
+							remaining.as_ptr(),
+							host_address as *mut u8,
+							amt,
+						)
+					};
+					amt as isize
+				}
 			}
 		} else {
 			warn!("Unable to get host address for read buffer");
-			sysread.ret = -EFAULT as isize;
+			-EFAULT as isize
 		}
 	} else {
-		sysread.ret = -EBADF as isize;
-	}
+		-EBADF as isize
+	};
 }
 
 /// Handles an write syscall on the host.
@@ -191,12 +226,21 @@ pub fn write(
 	file_map: &mut UhyveFileMap,
 ) -> io::Result<()> {
 	let mut bytes_written: usize = 0;
+	let gfd = GuestFd(syswrite.fd.into_raw_fd());
+	if !file_map.fdmap.is_fd_present(gfd) {
+		// We don't write anything if the file descriptor is not available,
+		// but this is OK for now, as we have no means of returning an error code
+		// and writes are not necessarily guaranteed to write anything.
+		return Ok(());
+	}
+
 	while bytes_written != syswrite.len {
 		let guest_phys_addr = virt_to_phys(
 			syswrite.buf + bytes_written as u64,
 			&peripherals.mem,
 			root_pt,
 		);
+		let guest_phys_len = syswrite.len - bytes_written;
 
 		if let Ok(guest_phys_addr) = guest_phys_addr {
 			if syswrite.fd == 1 || syswrite.fd == 2 {
@@ -212,36 +256,38 @@ pub fn write(
 						})?
 				};
 				return peripherals.serial.output(bytes);
-			} else if !file_map.fdmap.is_fd_present(syswrite.fd.into_raw_fd()) {
-				// We don't write anything if the file descriptor is not available,
-				// but this is OK for now, as we have no means of returning an error code
-				// and writes are not necessarily guaranteed to write anything.
-				return Ok(());
 			}
 		} else {
 			return Ok(());
 		}
 
-		unsafe {
-			let step = libc::write(
-				syswrite.fd,
-				peripherals
-					.mem
-					.host_address(guest_phys_addr.unwrap())
-					.map_err(|e| match e {
-						MemoryError::BoundsViolation => {
-							unreachable!("Bounds violation after host_address function")
-						}
-						MemoryError::WrongMemoryError => {
-							Error::new(ErrorKind::AddrNotAvailable, e.to_string())
-						}
-					})? as *const libc::c_void,
-				syswrite.len - bytes_written,
-			);
-			if step >= 0 {
-				bytes_written += step as usize;
-			} else {
-				return Err(io::Error::last_os_error());
+		let host_address = peripherals
+			.mem
+			.host_address(guest_phys_addr.unwrap())
+			.map_err(|e| match e {
+				MemoryError::BoundsViolation => {
+					unreachable!("Bounds violation after host_address function")
+				}
+				MemoryError::WrongMemoryError => {
+					Error::new(ErrorKind::AddrNotAvailable, e.to_string())
+				}
+			})?;
+
+		match file_map.fdmap.get_mut(gfd).unwrap() {
+			FdData::Raw(r) => unsafe {
+				let step = libc::write(*r, host_address as *const libc::c_void, guest_phys_len);
+				if step >= 0 {
+					bytes_written += step as usize;
+				} else {
+					return Err(io::Error::last_os_error());
+				}
+			},
+			FdData::Virtual { .. } => {
+				// virtual fds are read-only
+				return Err(io::Error::new(
+					io::ErrorKind::ReadOnlyFilesystem,
+					format!("Unable to write to virtual file {gfd}"),
+				));
 			}
 		}
 	}
@@ -251,16 +297,36 @@ pub fn write(
 
 /// Handles an lseek syscall on the host.
 pub fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
-	if file_map.fdmap.is_fd_present(syslseek.fd.into_raw_fd()) {
-		unsafe {
-			syslseek.offset =
-				libc::lseek(syslseek.fd, syslseek.offset as i64, syslseek.whence) as isize;
+	syslseek.offset = match file_map.fdmap.get_mut(GuestFd(syslseek.fd.into_raw_fd())) {
+		Some(FdData::Raw(r)) => unsafe {
+			libc::lseek(*r, syslseek.offset as i64, syslseek.whence) as isize
+		},
+		Some(FdData::Virtual { data, offset }) => {
+			let tmp = match syslseek.whence {
+				SEEK_SET => 0,
+				SEEK_CUR => *offset as isize,
+				SEEK_END => data.get().len() as isize,
+				_ => -1,
+			};
+			if tmp >= 0 {
+				let tmp2 = (tmp as i64) + (syslseek.offset as i64);
+				match tmp2.try_into() {
+					Ok(tmp3) => {
+						*offset = tmp3;
+						tmp2 as isize
+					}
+					_ => -1,
+				}
+			} else {
+				tmp
+			}
 		}
-	} else {
-		// TODO: Return -EBADF to the ret field, as soon as it is implemented for LseekParams
-		warn!("lseek attempted to use an unknown file descriptor");
-		syslseek.offset = -1
-	}
+		None => {
+			// TODO: Return -EBADF to the ret field, as soon as it is implemented for LseekParams
+			warn!("lseek attempted to use an unknown file descriptor");
+			-1
+		}
+	};
 }
 
 /// Copies the arguments of the application into the VM's memory to the destinations specified in `syscmdval`.

@@ -1,33 +1,165 @@
+#[cfg(not(feature = "slab"))]
+use std::{collections::HashMap, hash::BuildHasherDefault};
 use std::{
-	collections::HashSet,
+	fmt,
 	os::fd::{FromRawFd, OwnedFd, RawFd},
 };
 
-#[derive(Default, Debug)]
+#[cfg(not(feature = "slab"))]
+use nohash::NoHashHasher;
+#[cfg(feature = "slab")]
+use slab::Slab;
+use yoke::{Yoke, erased::ErasedArcCart};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct GuestFd(pub i32);
+
+impl fmt::Display for GuestFd {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "GuestFd({})", self.0)
+	}
+}
+
+#[cfg(feature = "slab")]
+impl From<usize> for GuestFd {
+	fn from(x: usize) -> Self {
+		// The following should never panic unless someone allocates more than i32::MAX file descriptors
+		Self(x.try_into().unwrap())
+	}
+}
+
+impl From<u32> for GuestFd {
+	fn from(x: u32) -> Self {
+		// The following should never panic unless someone allocates more than i32::MAX file descriptors
+		Self(x.try_into().unwrap())
+	}
+}
+
+impl From<&u32> for GuestFd {
+	fn from(x: &u32) -> Self {
+		// The following should never panic unless someone allocates more than i32::MAX file descriptors
+		Self((*x).try_into().unwrap())
+	}
+}
+
+impl GuestFd {
+	fn is_standard(self) -> bool {
+		self.0 < 3
+	}
+
+	#[cfg(feature = "slab")]
+	fn get(self) -> usize {
+		self.0.try_into().unwrap()
+	}
+
+	#[cfg(not(feature = "slab"))]
+	fn get(self) -> u32 {
+		self.0.try_into().unwrap()
+	}
+}
+
+/// Description of what this guest file descriptor wraps:
+#[derive(Clone)]
+pub enum FdData {
+	/// A host file descriptor
+	Raw(RawFd),
+
+	#[allow(dead_code)]
+	/// An in-memory slice (possibly mmap-ed)
+	///
+	/// SAFETY: It is not allowed for `data` to point into guest memory.
+	Virtual {
+		data: Yoke<&'static [u8], ErasedArcCart>,
+		offset: u64,
+	},
+}
+
+impl fmt::Debug for FdData {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			FdData::Raw(r) => write!(f, "Raw({})", r),
+			FdData::Virtual { data, offset } => {
+				let data = data.get();
+				let data_snip = &data[..core::cmp::min(10, data.len())];
+				write!(f, "Virtual({:?} @ {})", data_snip, offset)
+			}
+		}
+	}
+}
+
+impl FromRawFd for FdData {
+	#[inline(always)]
+	unsafe fn from_raw_fd(fd: RawFd) -> Self {
+		Self::Raw(fd)
+	}
+}
+
+#[derive(Debug)]
 pub struct UhyveFileDescriptorLayer {
-	fdset: HashSet<RawFd>,
+	#[cfg(feature = "slab")]
+	fds: Slab<FdData>,
+
+	#[cfg(not(feature = "slab"))]
+	fds: HashMap<u32, FdData, BuildHasherDefault<NoHashHasher<u32>>>,
+
+	#[cfg(not(feature = "slab"))]
+	next_fd: u32,
+}
+
+impl Default for UhyveFileDescriptorLayer {
+	#[cfg(feature = "slab")]
+	fn default() -> Self {
+		let mut fds = Slab::new();
+		// fill the first 3 fds (0, 1, 2) = the standard streams to avoid weird effects
+		fds.insert(FdData::Raw(0));
+		fds.insert(FdData::Raw(1));
+		fds.insert(FdData::Raw(2));
+		Self { fds }
+	}
+
+	#[cfg(not(feature = "slab"))]
+	fn default() -> Self {
+		let mut fds = HashMap::with_capacity_and_hasher(3, BuildHasherDefault::default());
+		// fill the first 3 fds (0, 1, 2) = the standard streams to avoid weird effects
+		fds.insert(0, FdData::Raw(0));
+		fds.insert(1, FdData::Raw(1));
+		fds.insert(2, FdData::Raw(2));
+		Self { fds, next_fd: 3 }
+	}
 }
 
 impl UhyveFileDescriptorLayer {
-	/// Returns all present file descriptors.
-	pub(crate) fn get_fds(&self) -> Vec<&i32> {
-		self.fdset.iter().collect::<Vec<_>>()
-	}
-
 	/// Inserts a file descriptor. Invoked by [crate::hypercall::open].
 	///
 	/// Only positive numbers (negative numbers are errors) above
 	/// 2 (0, 1, 2 are standard streams) are accepted.
-	///
-	/// * `fd` - The opened guest path's file descriptor.
-	pub fn insert_fd(&mut self, fd: RawFd) {
+	pub fn insert(&mut self, data: FdData) -> Option<GuestFd> {
 		// Don't insert standard streams (which "conflict" with Uhyve's).
-		if fd > 2 {
-			debug!("Adding fd {fd} to fdset: {self}");
-			self.fdset.insert(fd);
-		} else {
-			warn!("Guest attempted to insert negative/standard stream {fd}, ignoring...")
+		if let FdData::Raw(r) = data
+			&& r < 3
+		{
+			warn!("Guest attempted to insert negative/standard stream {r}, ignoring...");
+			return None;
 		}
+
+		debug!("Adding fd {data:?} to fdset: {self}");
+		let ret = {
+			#[cfg(feature = "slab")]
+			{
+				self.fds.insert(data)
+			}
+
+			#[cfg(not(feature = "slab"))]
+			{
+				let ret = self.next_fd;
+				assert!(self.fds.insert(ret, data).is_none());
+				self.next_fd = ret.checked_add(1).unwrap();
+				ret
+			}
+		}
+		.into();
+		debug!("=> {}", ret);
+		Some(ret)
 	}
 
 	/// Removes a file descriptor. Invoked by [crate::hypercall::close].
@@ -36,13 +168,37 @@ impl UhyveFileDescriptorLayer {
 	/// 2 (0, 1, 2 are standard streams) are accepted.
 	///
 	/// * `fd` - The file descriptor of the file being removed.
-	pub fn remove_fd(&mut self, fd: RawFd) {
+	pub fn remove(&mut self, fd: GuestFd) -> Option<FdData> {
 		debug!("Trying to remove {fd} from fdset: {self}");
 		// This is checked by [crate::hypercall::close].
-		if fd > 2 {
-			self.fdset.remove(&fd);
+		let ret = if fd.is_standard() {
+			None
 		} else {
-			warn!("Guest attempted to remove negative/standard stream {fd}, ignoring...")
+			#[cfg(feature = "slab")]
+			{
+				self.fds.try_remove(fd.get())
+			}
+
+			#[cfg(not(feature = "slab"))]
+			{
+				self.fds.remove(&fd.get())
+			}
+		};
+		if ret.is_none() {
+			warn!("Guest attempted to remove invalid {fd}, ignoring...")
+		}
+		ret
+	}
+
+	pub fn get_mut(&mut self, fd: GuestFd) -> Option<&mut FdData> {
+		#[cfg(feature = "slab")]
+		{
+			self.fds.get_mut(fd.get())
+		}
+
+		#[cfg(not(feature = "slab"))]
+		{
+			self.fds.get_mut(&fd.get())
 		}
 	}
 
@@ -52,37 +208,36 @@ impl UhyveFileDescriptorLayer {
 	//// are always considered to be present and return `true`.
 	///
 	/// * `fd` - File descriptor of to-be-operated file.
-	pub fn is_fd_present(&self, fd: RawFd) -> bool {
+	pub fn is_fd_present(&self, fd: GuestFd) -> bool {
 		debug!("Check if {fd} in fdset: {self}");
-		if (fd >= 0 && self.fdset.contains(&fd)) || (0..=2).contains(&fd) {
-			return true;
+		#[cfg(feature = "slab")]
+		{
+			self.fds.contains(fd.get())
 		}
-		false
+
+		#[cfg(not(feature = "slab"))]
+		{
+			self.fds.contains_key(&fd.get())
+		}
 	}
 }
 
 impl Drop for UhyveFileDescriptorLayer {
 	fn drop(&mut self) {
-		for fd in self.get_fds() {
-			// This creates an OwnedFd instance, the RAII variant of RawFd.
-			// We do this to close any files on the host that were not closed by the guest.
-			unsafe { OwnedFd::from_raw_fd(*fd) };
+		for (fd, fdata) in self.fds.iter() {
+			if !GuestFd::from(fd).is_standard()
+				&& let FdData::Raw(rfd) = fdata
+			{
+				// This creates an OwnedFd instance, the RAII variant of RawFd.
+				// We do this to close any files on the host that were not closed by the guest.
+				unsafe { OwnedFd::from_raw_fd(*rfd) };
+			}
 		}
 	}
 }
 
-impl std::fmt::Display for UhyveFileDescriptorLayer {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		self.fdset
-			.iter()
-			.enumerate()
-			.into_iter()
-			.try_for_each(|(i, &fd)| {
-				if i > 0 {
-					write!(f, "{fd} ")
-				} else {
-					write!(f, "{fd}")
-				}
-			})
+impl fmt::Display for UhyveFileDescriptorLayer {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		f.debug_map().entries(self.fds.iter()).finish()
 	}
 }
