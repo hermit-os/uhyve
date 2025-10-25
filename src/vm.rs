@@ -100,7 +100,7 @@ pub struct VmResult {
 
 /// mutable devices that a vCPU interacts with
 #[derive(Debug)]
-pub(crate) struct VmPeripherals {
+pub struct VmPeripherals {
 	pub file_mapping: Mutex<UhyveFileMap>,
 	pub mem: MmapMemory,
 	pub(crate) serial: UhyveSerial,
@@ -129,7 +129,8 @@ pub(crate) struct KernelInfo {
 
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(crate) vcpus: Vec<<VirtBackend::BACKEND as VirtualizationBackendInternal>::VCPU>,
-	pub(crate) peripherals: Arc<VmPeripherals>,
+	#[doc(hidden)]
+	pub peripherals: Arc<VmPeripherals>,
 	pub(crate) kernel_info: Arc<KernelInfo>,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
