@@ -6,9 +6,16 @@ use hermit as _;
 /// Read from a file descriptor and make sure the content matches
 fn read_expect(fd: i32, data: &str) {
 	let mut file = unsafe { File::from_raw_fd(fd) };
-	let mut buf = Vec::new();
-	file.read_to_end(&mut buf).unwrap();
-	assert_eq!(buf, data.as_bytes());
+	let mut buf = Vec::with_capacity(data.len());
+	match file.read_exact(&mut buf[..]) {
+		Ok(_) => {
+			assert_eq!(buf, data.as_bytes());
+		}
+		Err(e) => {
+			eprintln!("Got Error: {:?}", e.raw_os_error());
+			panic!("{:?}", e);
+		}
+	}
 }
 
 fn main() {

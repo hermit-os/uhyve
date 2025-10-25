@@ -31,6 +31,7 @@ pub unsafe fn address_to_hypercall(
 	data: GuestPhysAddr,
 ) -> Option<Hypercall<'_>> {
 	if let Ok(hypercall_port) = HypercallAddress::try_from(addr) {
+		debug!("Got hypercall {hypercall_port:?}!");
 		Some(match hypercall_port {
 			HypercallAddress::FileClose => {
 				let sysclose = unsafe { mem.get_ref_mut::<CloseParams>(data).unwrap() };
@@ -177,11 +178,14 @@ pub fn read(
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
 ) {
-	sysread.ret = if let Some(fdata) = file_map.fdmap.get_mut(GuestFd(sysread.fd.into_raw_fd())) {
+	let gfd = GuestFd(sysread.fd.into_raw_fd());
+	debug!("Got read hypercall on {gfd}");
+	sysread.ret = if let Some(fdata) = file_map.fdmap.get_mut(gfd) {
 		let guest_phys_addr = virt_to_phys(sysread.buf, mem, root_pt);
 		if let Ok(guest_phys_addr) = guest_phys_addr
 			&& let Ok(host_address) = mem.host_address(guest_phys_addr)
 		{
+			debug!("Got read hypercall on {fdata:?}");
 			match fdata {
 				FdData::Raw(rfd) => {
 					let bytes_read =
@@ -206,6 +210,7 @@ pub fn read(
 							amt,
 						)
 					};
+					debug!("Read of virtual FD successful with {amt} -> offset={offset}");
 					amt as isize
 				}
 			}
@@ -214,6 +219,7 @@ pub fn read(
 			-EFAULT as isize
 		}
 	} else {
+		warn!("Read hypercall got passed invalid FD");
 		-EBADF as isize
 	};
 }
