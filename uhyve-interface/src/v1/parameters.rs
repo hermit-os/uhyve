@@ -141,7 +141,9 @@ pub struct LseekParams {
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct SerialWriteBufferParams {
+	/// Address of the buffer to be printed.
 	pub buf: GuestPhysAddr,
+	/// Length of the buffer.
 	pub len: usize,
 }
 

@@ -4,97 +4,11 @@ use core::num::NonZeroU16;
 
 use bitflags::bitflags;
 
-use crate::{GuestPhysAddr, GuestVirtAddr};
-
-/// Parameters for a [`Exit`](crate::v2::Hypercall::Exit) hypercall.
-#[repr(C, packed)]
-#[derive(Debug, Copy, Clone)]
-pub struct ExitParams {
-	/// The return code of the guest.
-	pub arg: i32,
-}
-
-/// Parameters for a [`FileUnlink`](crate::v2::Hypercall::FileUnlink) hypercall.
-#[repr(C, packed)]
-#[derive(Debug, Copy, Clone)]
-pub struct UnlinkParams {
-	/// Address of the file that should be unlinked.
-	pub name: GuestPhysAddr,
-	/// On success, `0` is returned.  On error, `-1` is returned.
-	pub ret: i32,
-}
-
-/// Parameters for a [`FileWrite`](crate::v2::Hypercall::FileWrite) hypercall.
-#[repr(C, packed)]
-#[derive(Debug, Copy, Clone)]
-pub struct WriteParams {
-	/// File descriptor of the file.
-	pub fd: i32,
-	/// Buffer to be written into the file.
-	pub buf: GuestVirtAddr,
-	/// Number of bytes in the buffer to be written.
-	pub len: usize,
-}
-
-/// Parameters for a [`FileRead`](crate::v2::Hypercall::FileRead) hypercall.
-#[repr(C, packed)]
-#[derive(Debug, Copy, Clone)]
-pub struct ReadParams {
-	/// File descriptor of the file.
-	pub fd: i32,
-	/// Buffer to read the file into.
-	pub buf: GuestVirtAddr,
-	/// Number of bytes to read into the buffer.
-	pub len: usize,
-	/// Number of bytes read on success. `-1` on failure.
-	pub ret: isize,
-}
-
-/// Parameters for a [`FileClose`](crate::v2::Hypercall::FileClose) hypercall.
-#[repr(C, packed)]
-#[derive(Debug, Copy, Clone)]
-pub struct CloseParams {
-	/// File descriptor of the file.
-	pub fd: i32,
-	/// Zero on success, `-1` on failure.
-	pub ret: i32,
-}
-
-/// Parameters for a [`FileOpen`](crate::v2::Hypercall::FileOpen) hypercall.
-#[repr(C, packed)]
-#[derive(Debug, Copy, Clone)]
-pub struct OpenParams {
-	/// Pathname of the file to be opened.
-	pub name: GuestPhysAddr,
-	/// Posix file access mode flags.
-	pub flags: i32,
-	/// Access permissions upon opening/creating a file.
-	pub mode: i32,
-	/// File descriptor upon successful opening or `-1` upon failure.
-	pub ret: i32,
-}
-
-/// Parameters for a [`FileLseek`](crate::v2::Hypercall::FileLseek) hypercall
-#[repr(C, packed)]
-#[derive(Debug, Copy, Clone)]
-pub struct LseekParams {
-	/// File descriptor of the file.
-	pub fd: i32,
-	/// Offset in the file.
-	pub offset: isize,
-	/// `whence` value of the lseek call.
-	pub whence: i32,
-}
-
-/// Parameters for a [`SerialWriteBuffer`](crate::v2::Hypercall::SerialWriteBuffer) hypercall.
-#[repr(C, packed)]
-#[derive(Debug, Copy, Clone)]
-pub struct SerialWriteBufferParams {
-	/// Address of the buffer to be printed.
-	pub buf: GuestPhysAddr,
-	/// Length of the buffer.
-	pub len: usize,
-}
+use crate::GuestPhysAddr;
+pub use crate::v1::parameters::{
+	CloseParams, ExitParams, LseekParams, OpenParams, ReadParams, SerialWriteBufferParams,
+	UnlinkParams, WriteParams,
+};
 
 /// Parameters for a [`SerialReadBuffer`](crate::v2::Hypercall::SerialReadBuffer) hypercall.
 #[repr(C, packed)]
