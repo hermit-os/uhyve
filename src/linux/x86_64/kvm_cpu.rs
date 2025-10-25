@@ -11,6 +11,7 @@ use crate::{
 	consts::*,
 	hypercall,
 	linux::KVM,
+	mem::MmapMemory,
 	params::Params,
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
@@ -34,6 +35,34 @@ const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
 const KVM_32BIT_GAP_SIZE: usize = 1024 << 20;
 // 3 GiB, aka. 0xC000_0000
 const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
+
+impl From<&MmapMemory> for Vec<kvm_userspace_memory_region> {
+	fn from(mem: &MmapMemory) -> Self {
+		let sz = std::cmp::min(mem.memory_size, KVM_32BIT_GAP_START);
+		let mut regions = vec![kvm_userspace_memory_region {
+			slot: 0,
+			flags: mem.flags,
+			memory_size: sz as u64,
+			guest_phys_addr: mem.guest_address.as_u64(),
+			userspace_addr: mem.host_address as u64,
+		}];
+
+		if mem.memory_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
+			regions.push(kvm_userspace_memory_region {
+				slot: 1,
+				flags: mem.flags,
+				memory_size: (mem.memory_size - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE) as u64,
+				guest_phys_addr: mem.guest_address.as_u64()
+					+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
+				userspace_addr: (mem.host_address as usize
+					+ KVM_32BIT_GAP_START
+					+ KVM_32BIT_GAP_SIZE) as u64,
+			});
+		}
+
+		regions
+	}
+}
 
 pub struct KvmVm {
 	vm_fd: VmFd,
@@ -75,35 +104,9 @@ impl VirtualizationBackendInternal for KvmVm {
 	) -> HypervisorResult<Self> {
 		let vm = KVM.create_vm().unwrap();
 
-		let sz = std::cmp::min(peripherals.mem.memory_size, KVM_32BIT_GAP_START);
-
-		let kvm_mem = kvm_userspace_memory_region {
-			slot: 0,
-			flags: peripherals.mem.flags,
-			memory_size: sz as u64,
-			guest_phys_addr: peripherals.mem.guest_address.as_u64(),
-			userspace_addr: peripherals.mem.host_address as u64,
-		};
-
-		unsafe { vm.set_user_memory_region(kvm_mem) }?;
-
-		if peripherals.mem.memory_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
-			let kvm_mem = kvm_userspace_memory_region {
-				slot: 1,
-				flags: peripherals.mem.flags,
-				memory_size: (peripherals.mem.memory_size
-					- KVM_32BIT_GAP_START
-					- KVM_32BIT_GAP_SIZE) as u64,
-				guest_phys_addr: peripherals.mem.guest_address.as_u64()
-					+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
-				userspace_addr: (peripherals.mem.host_address as usize
-					+ KVM_32BIT_GAP_START
-					+ KVM_32BIT_GAP_SIZE) as u64,
-			};
-
-			unsafe { vm.set_user_memory_region(kvm_mem) }?;
-		}
-
+		Vec::<kvm_userspace_memory_region>::from(&peripherals.mem)
+			.into_iter()
+			.try_for_each(|kvm_mem| unsafe { vm.set_user_memory_region(kvm_mem) })?;
 		trace!("Initialize interrupt controller");
 
 		// create basic interrupt controller
