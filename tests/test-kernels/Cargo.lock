@@ -145,6 +145,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hermit-abi"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
+
+[[package]]
 name = "home"
 version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -403,6 +409,7 @@ name = "uhyve-interface"
 version = "0.1.3"
 dependencies = [
  "aarch64",
+ "hermit-abi",
  "memory_addresses",
  "num_enum",
  "x86_64",
