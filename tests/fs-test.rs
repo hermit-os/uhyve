@@ -12,7 +12,7 @@ use common::{
 	build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists, run_vm_in_thread,
 };
 use rand::{Rng, distr::Alphanumeric};
-use uhyvelib::params::Params;
+use uhyvelib::{params::Params, vm::UhyveVm};
 
 /// Verifies successful file creation on the host OS and its contents.
 pub fn verify_file_equals(testfile: &PathBuf, contents: &str) {
@@ -308,6 +308,26 @@ fn fd_remove_twice_before_closing() {
 	let bin_path: PathBuf = build_hermit_bin("fs_tests");
 	let res = run_vm_in_thread(bin_path, params);
 	assert_ne!(res.code, 0);
+}
+
+/// write hypercall test: Opens a file on the host as read-only,
+/// then tries to write to it.
+#[test]
+fn open_read_only_write() {
+	env_logger::try_init().ok();
+
+	let test_name: &'static str = "open_read_only_write";
+	let guest_file_path = get_testname_derived_guest_path(test_name);
+	let params = generate_params(None, test_name, &guest_file_path);
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+
+	std::thread::spawn(move || {
+		let vm = UhyveVm::new(bin_path, params).unwrap();
+		vm.run(None)
+	})
+	.join()
+	.expect_err("Uhyve should've crashed on write");
 }
 
 /// Tests file descriptor sandbox, particularly whether...
