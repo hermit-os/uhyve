@@ -6,7 +6,8 @@ use std::{
 
 use uhyve_interface::{
 	GuestPhysAddr,
-	v1::{Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*},
+	v1::{self, MAX_ARGC_ENVC},
+	v2::{self, parameters::*}
 };
 
 use crate::{
@@ -24,11 +25,12 @@ use crate::{
 ///
 /// - The return value is only valid, as long as the guest is halted.
 /// - This fn must not be called multiple times on the same data, to avoid creating mutable aliasing.
-pub unsafe fn address_to_hypercall(
+pub unsafe fn address_to_hypercall_v1(
 	mem: &MmapMemory,
 	addr: u16,
 	data: GuestPhysAddr,
-) -> Option<Hypercall<'_>> {
+) -> Option<v1::Hypercall<'_>> {
+	use v1::{Hypercall, HypercallAddress, parameters::*};
 	if let Ok(hypercall_port) = HypercallAddress::try_from(addr) {
 		Some(match hypercall_port {
 			HypercallAddress::FileClose => {
@@ -72,6 +74,68 @@ pub unsafe fn address_to_hypercall(
 			HypercallAddress::SerialBufferWrite => {
 				let sysserialwrite = unsafe { mem.get_ref_mut(data).unwrap() };
 				Hypercall::SerialWriteBuffer(sysserialwrite)
+			}
+			_ => unimplemented!(),
+		})
+	} else {
+		None
+	}
+}
+
+/// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
+/// parameter that was send to that address by the guest.
+///
+/// # Safety
+///
+/// - The return value is only valid, as long as the guest is halted.
+/// - This fn must not be called multiple times on the same data, to avoid creating mutable aliasing.
+pub unsafe fn address_to_hypercall_v2(
+	mem: &MmapMemory,
+	addr: u16,
+	data: GuestPhysAddr,
+) -> Option<v2::Hypercall<'_>> {
+	use v2::{Hypercall, HypercallAddress, parameters::*};
+	if let Ok(hypercall_port) = HypercallAddress::try_from(addr as u64) {
+		Some(match hypercall_port {
+			HypercallAddress::FileClose => {
+				let sysclose = unsafe { mem.get_ref_mut::<CloseParams>(data).unwrap() };
+				// let sysclose = unsafe { &mut *(self.host_address(data) as *mut CloseParams) };
+				Hypercall::FileClose(sysclose)
+			}
+			HypercallAddress::FileLseek => {
+				let syslseek = unsafe { mem.get_ref_mut::<LseekParams>(data).unwrap() };
+				Hypercall::FileLseek(syslseek)
+			}
+			HypercallAddress::FileOpen => {
+				let sysopen = unsafe { mem.get_ref_mut::<OpenParams>(data).unwrap() };
+				Hypercall::FileOpen(sysopen)
+			}
+			HypercallAddress::FileRead => {
+				let sysread = unsafe { mem.get_ref_mut::<ReadParams>(data).unwrap() };
+				Hypercall::FileRead(sysread)
+			}
+			HypercallAddress::FileWrite => {
+				let syswrite = unsafe { mem.get_ref_mut(data).unwrap() };
+				Hypercall::FileWrite(syswrite)
+			}
+			HypercallAddress::FileUnlink => {
+				let sysunlink = unsafe { mem.get_ref_mut(data).unwrap() };
+				Hypercall::FileUnlink(sysunlink)
+			}
+			HypercallAddress::Exit => {
+				Hypercall::Exit(data.as_u64() as i32)
+			}
+			HypercallAddress::SerialReadBuffer => {
+				let serialreadbuffer = unsafe { mem.get_ref_mut(data).unwrap() };
+				Hypercall::SerialReadBuffer(serialreadbuffer)
+			}
+			HypercallAddress::SerialWriteBuffer => {
+				let serialwritebuffer = unsafe { mem.get_ref_mut(data).unwrap() };
+				Hypercall::SerialWriteBuffer(serialwritebuffer)
+			}
+			HypercallAddress::SerialWriteByte => {
+				let serialwritebyte = unsafe { mem.get_ref_mut(data).unwrap() };
+				Hypercall::SerialWriteBuffer(serialwritebyte)
 			}
 			_ => unimplemented!(),
 		})
