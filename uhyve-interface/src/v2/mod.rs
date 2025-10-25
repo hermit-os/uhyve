@@ -56,6 +56,27 @@ impl From<Hypercall<'_>> for HypercallAddress {
 		}
 	}
 }
+impl From<&Hypercall<'_>> for HypercallAddress {
+	fn from(value: &Hypercall) -> Self {
+		match value {
+			Hypercall::Exit(_) => Self::Exit,
+			Hypercall::FileClose(_) => Self::FileClose,
+			Hypercall::FileLseek(_) => Self::FileLseek,
+			Hypercall::FileOpen(_) => Self::FileOpen,
+			Hypercall::FileRead(_) => Self::FileRead,
+			Hypercall::FileUnlink(_) => Self::FileUnlink,
+			Hypercall::FileWrite(_) => Self::FileWrite,
+			Hypercall::GetTime(_) => Self::GetTime,
+			Hypercall::SerialReadBuffer(_) => Self::SerialReadBuffer,
+			Hypercall::SerialReadByte => Self::SerialReadByte,
+			Hypercall::SerialWriteBuffer(_) => Self::SerialWriteBuffer,
+			Hypercall::SerialWriteByte(_) => Self::SerialWriteByte,
+			Hypercall::Sleep(_) => Self::Sleep,
+			Hypercall::SharedMemOpen(_) => Self::SharedMemOpen,
+			Hypercall::SharedMemClose(_) => Self::SharedMemClose,
+		}
+	}
+}
 
 /// Hypervisor calls available in Uhyve with their respective parameters. See the [module level documentation](crate) on how to invoke them.
 #[non_exhaustive]
