@@ -147,9 +147,8 @@ pub struct SerialWriteBufferParams {
 
 // File operations supported by Hermit and Uhyve
 pub use hermit_abi::{O_APPEND, O_CREAT, O_DIRECTORY, O_EXCL, O_RDONLY, O_RDWR, O_TRUNC, O_WRONLY};
-pub const O_DIRECT: i32 = 0o40000;
 
 pub const ALLOWED_OPEN_FLAGS: i32 =
-	O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC | O_APPEND | O_DIRECT | O_DIRECTORY;
+	O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC | O_APPEND | O_DIRECTORY;
 
 pub use hermit_abi::errno::{EBADF, EFAULT, EINVAL, ENOENT};
