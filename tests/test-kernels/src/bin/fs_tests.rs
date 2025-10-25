@@ -85,6 +85,20 @@ fn remove_twice_before_closing(filename: &str) {
 	}
 }
 
+fn open_read_only_write(filename: &str) {
+	{
+		let mut file = File::create(filename).unwrap();
+		file.write_all(b"Hello, world!").unwrap();
+		file.flush().unwrap();
+	}
+
+	{
+		let mut file = File::open(filename).unwrap();
+		// This is expected to crash.
+		let _ = file.write_all(b"No more.");
+	}
+}
+
 fn lseek_file(filename: &str) {
 	let mut buf: [u8; 10] = [0; 10];
 	println!("Initial Buffer: {buf:?}");
@@ -131,6 +145,7 @@ fn main() {
 		"fd_open_remove_close" => open_remove_before_closing(filename),
 		"fd_open_remove_before_and_after_closing" => open_remove_before_and_after_closing(filename),
 		"fd_remove_twice_before_closing" => remove_twice_before_closing(filename),
+		"open_read_only_write" => open_read_only_write(filename),
 		"lseek_file" => lseek_file(filename),
 		_ => panic!("test not found"),
 	}
