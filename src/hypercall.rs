@@ -7,7 +7,7 @@ use std::{
 use uhyve_interface::{
 	GuestPhysAddr,
 	v1::{self, MAX_ARGC_ENVC},
-	v2::{self, parameters::*}
+	v2::{self, parameters::*},
 };
 
 use crate::{
@@ -122,9 +122,7 @@ pub unsafe fn address_to_hypercall_v2(
 				let sysunlink = unsafe { mem.get_ref_mut(data).unwrap() };
 				Hypercall::FileUnlink(sysunlink)
 			}
-			HypercallAddress::Exit => {
-				Hypercall::Exit(data.as_u64() as i32)
-			}
+			HypercallAddress::Exit => Hypercall::Exit(data.as_u64() as i32),
 			HypercallAddress::SerialReadBuffer => {
 				let serialreadbuffer = unsafe { mem.get_ref_mut(data).unwrap() };
 				Hypercall::SerialReadBuffer(serialreadbuffer)
@@ -331,7 +329,12 @@ pub fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 }
 
 /// Copies the arguments of the application into the VM's memory to the destinations specified in `syscmdval`.
-pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &MmapMemory) {
+pub fn copy_argv(
+	path: &OsStr,
+	argv: &[String],
+	syscmdval: &v1::parameters::CmdvalParams,
+	mem: &MmapMemory,
+) {
 	// copy kernel path as first argument
 	let argvp = mem
 		.host_address(syscmdval.argv)
@@ -363,7 +366,7 @@ pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &
 }
 
 /// Copies the environment variables into the VM's memory to the destinations specified in `syscmdval`.
-pub fn copy_env(env: &EnvVars, syscmdval: &CmdvalParams, mem: &MmapMemory) {
+pub fn copy_env(env: &EnvVars, syscmdval: &v1::parameters::CmdvalParams, mem: &MmapMemory) {
 	let envp = mem
 		.host_address(syscmdval.envp)
 		.expect("Systemcall parameters for Cmdval are invalid") as *const GuestPhysAddr;

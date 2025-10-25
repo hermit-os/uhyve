@@ -2,10 +2,7 @@ use std::{io, num::NonZeroU32, sync::Arc};
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
-use uhyve_interface::{
-	GuestPhysAddr,
-	v1, v2,
-};
+use uhyve_interface::{GuestPhysAddr, v1, v2};
 use vmm_sys_util::eventfd::EventFd;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
@@ -454,7 +451,11 @@ impl VirtualCPU for KvmCpu {
 						let data_addr =
 							GuestPhysAddr::new(unsafe { (*(addr.as_ptr() as *const u32)) as u64 });
 						if let Some(hypercall) = unsafe {
-							hypercall::address_to_hypercall_v1(&self.peripherals.mem, port, data_addr)
+							hypercall::address_to_hypercall_v1(
+								&self.peripherals.mem,
+								port,
+								data_addr,
+							)
 						} {
 							if let Some(s) = self.stats.as_mut() {
 								s.increment_val(VmExit::Hypercall(v1::HypercallAddress::from(
