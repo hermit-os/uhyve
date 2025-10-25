@@ -5,7 +5,7 @@ use std::{path::PathBuf, sync::Arc, thread};
 use byte_unit::{Byte, Unit};
 #[cfg(target_os = "linux")]
 use common::strict_sandbox;
-use common::{build_hermit_bin, check_result};
+use common::{build_hermit_bin, check_result, remove_file_if_exists};
 use rand::{Rng, distr::Alphanumeric};
 use uhyvelib::{isolation::fd::FdData, params::Params, vm::UhyveVm};
 
@@ -93,14 +93,11 @@ fn generate_params(
 	}
 }
 
-/// Checks whether guests can create, then use files on the host.
-/// (The file is present in a mapped parent directory.)
 #[test]
 fn read_expect() {
 	env_logger::try_init().ok();
 
 	let test_name: &'static str = "read_expect";
-	let file_name = generate_filename(test_name);
 
 	const FD: i32 = 3;
 	const DATA: &str = "HelloWorld!";
@@ -129,5 +126,51 @@ fn read_expect() {
 	})
 	.join()
 	.expect("Uhyve thread panicked.");
+	check_result(&res);
+}
+
+#[test]
+fn read_expect_normal() {
+	env_logger::try_init().ok();
+
+	let test_name: &'static str = "read_expect";
+	let file_name = PathBuf::from(generate_filename(test_name));
+
+	const FD: i32 = 3;
+	const DATA: &str = "HelloWorld!";
+
+	use std::{
+		io::{Seek, SeekFrom, Write},
+		os::fd::IntoRawFd,
+	};
+
+	let mut file = std::fs::File::create(&file_name).unwrap();
+	file.write_all(DATA.as_bytes()).unwrap();
+	file.flush().unwrap();
+	file.seek(SeekFrom::Start(0)).unwrap();
+
+	let params = generate_params(None, test_name, FD, DATA);
+
+	let bin_path: PathBuf = build_hermit_bin("virtual_fd_tests");
+	let res = thread::spawn(move || {
+		let vm = UhyveVm::new(bin_path, params).unwrap();
+		{
+			let mut filemap = vm.peripherals.file_mapping.lock().unwrap();
+			assert_eq!(
+				filemap
+					.fdmap
+					.insert(FdData::Raw(file.into_raw_fd()))
+					.unwrap()
+					.0,
+				FD
+			);
+		}
+		vm.run(None)
+	})
+	.join()
+	.expect("Uhyve thread panicked.");
+
+	remove_file_if_exists(&file_name);
+
 	check_result(&res);
 }
