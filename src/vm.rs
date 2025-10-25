@@ -1,6 +1,6 @@
 use std::{
 	env, fmt, fs, io,
-	num::NonZeroU32,
+	num::{NonZeroU16, NonZeroU32},
 	os::unix::prelude::JoinHandleExt,
 	path::PathBuf,
 	sync::{Arc, Mutex},
@@ -10,7 +10,7 @@ use std::{
 
 use core_affinity::CoreId;
 use hermit_entry::{
-	HermitVersion,
+	HermitVersion, UhyveIfVersion,
 	boot_info::{BootInfo, HardwareInfo, LoadInfo, PlatformInfo, RawBootInfo, SerialPortBase},
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
@@ -278,9 +278,28 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			.collect();
 
 		let freq = vcpus[0].get_cpu_frequency();
+		// Kernels with different Uhyve interface versions may have differing addresses for the
+		// serial port. As we begun embedding the uhyve-interface version in unikernel images
+		// much later than v1, but before v2, we assume that all images that don't have a version
+		// embedded must be v1.
+		let serial_port = SerialPortBase::new(match object.uhyve_interface_version() {
+			None | Some(UhyveIfVersion(1)) => uhyve_interface::v1::HypercallAddress::Uart as u16,
+			Some(UhyveIfVersion(2)) => {
+				uhyve_interface::v2::HypercallAddress::SerialWriteBuffer as u16
+			}
+			_ => {
+				unimplemented!("Kernel uses unsupported uhyve-interface version. Is Uhyve too old?")
+			}
+		});
 
 		write_fdt_into_mem(&peripherals.mem, &kernel_info.params, freq);
-		write_boot_info_to_mem(&peripherals.mem, load_info, cpu_count as u64, freq);
+		write_boot_info_to_mem(
+			&peripherals.mem,
+			load_info,
+			cpu_count as u64,
+			freq,
+			serial_port,
+		);
 
 		let legacy_mapping = if let Some(version) = hermit_version {
 			// actually, all versions that have the tag in the elf are valid, but an explicit check doesn't hurt
@@ -493,6 +512,7 @@ fn write_boot_info_to_mem(
 	load_info: LoadInfo,
 	num_cpus: u64,
 	cpu_freq: Option<NonZeroU32>,
+	serial_port: Option<NonZeroU16>,
 ) {
 	debug!(
 		"Writing BootInfo to {:?}",
@@ -509,9 +529,7 @@ fn write_boot_info_to_mem(
 					reason = "aarch64 uses 64-bit SerialPortBase, x86_64 uses 16 bit"
 				)
 			)]
-			serial_port_base: SerialPortBase::new(
-				(uhyve_interface::v1::HypercallAddress::Uart as u16).into(),
-			),
+			serial_port_base: serial_port.into(),
 			device_tree: Some(
 				(mem.guest_address.as_u64() + FDT_OFFSET)
 					.try_into()
