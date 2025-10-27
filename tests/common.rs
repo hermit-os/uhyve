@@ -4,10 +4,12 @@
 )]
 
 use std::{
+	collections::HashMap,
 	env,
 	fs::remove_file,
 	path::{Path, PathBuf},
 	process::Command,
+	sync::{Mutex, OnceLock},
 	thread,
 };
 
@@ -22,24 +24,38 @@ use uhyvelib::{
 
 /// Uses Cargo to build a kernel in the `tests/test-kernels` directory.
 /// Returns a path to the build binary.
-pub fn build_hermit_bin(kernel: impl AsRef<Path> + std::fmt::Display) -> PathBuf {
-	info!("Building kernel {kernel}");
+pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
+	// Build hermit binaries sequentially
+	// and avoid invoking cargo twice for the same kernel
+	// if we already know it is up-to-date.
+	static BUILT_HERMIT_BINS: OnceLock<Mutex<HashMap<PathBuf, ()>>> = OnceLock::new();
+
 	let kernel = kernel.as_ref();
 	let kernel_src_path = Path::new("tests/test-kernels");
-	println!("Building test kernel: {}", kernel.display());
 
-	let cmd = cargo()
-		.arg("build")
-		.arg("-Zbuild-std=std,panic_abort")
-		.arg("--target=x86_64-unknown-hermit")
-		.arg("--bin")
-		.arg(kernel)
-		.env("HERMIT_LOG_LEVEL_FILTER", "Debug")
-		.current_dir(kernel_src_path)
-		.status()
-		.expect("failed to execute `cargo build`");
+	BUILT_HERMIT_BINS
+		.get_or_init(|| Mutex::new(HashMap::new()))
+		.lock()
+		.unwrap()
+		.entry(kernel.to_path_buf())
+		.or_insert_with(|| {
+			info!("Building kernel {kernel:?}");
+			println!("Building test kernel: {}", kernel.display());
 
-	assert!(cmd.success(), "Test binaries could not be built.");
+			let cmd = cargo()
+				.arg("build")
+				.arg("-Zbuild-std=std,panic_abort")
+				.arg("--target=x86_64-unknown-hermit")
+				.arg("--bin")
+				.arg(kernel)
+				.env("HERMIT_LOG_LEVEL_FILTER", "Debug")
+				.current_dir(kernel_src_path)
+				.status()
+				.expect("failed to execute `cargo build`");
+
+			assert!(cmd.success(), "Test binaries could not be built.");
+		});
+
 	[
 		kernel_src_path,
 		Path::new("target/x86_64-unknown-hermit/debug"),
