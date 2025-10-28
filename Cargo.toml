@@ -50,7 +50,7 @@ core_affinity = "0.8"
 env_logger = "0.11"
 gdbstub = "0.7"
 gdbstub_arch = "0.3"
-hermit-entry = { version = "0.10.4", features = ["loader"] }
+hermit-entry = { version = "0.10.5", features = ["loader"] }
 libc = "0.2"
 log = "0.4"
 mac_address = "1.1"
