@@ -4,7 +4,6 @@ use std::{
 	os::{fd::IntoRawFd, unix::ffi::OsStrExt},
 };
 
-use thiserror::Error;
 use uhyve_interface::{
 	GuestPhysAddr,
 	v1::{self, MAX_ARGC_ENVC},
@@ -14,7 +13,6 @@ use uhyve_interface::{
 use crate::{
 	isolation::filemap::UhyveFileMap,
 	mem::{MemoryError, MmapMemory},
-	paging,
 	params::EnvVars,
 	virt_to_phys,
 	vm::VmPeripherals,
@@ -144,71 +142,6 @@ pub unsafe fn address_to_hypercall_v2(
 	}
 }
 
-/// Errors that may occur when converting the hypercall parameters of one version to
-/// a newer version (to reduce code duplication).
-#[derive(Error, Debug)]
-pub(crate) enum UpgradeParamsError {
-	#[error("The accessed virtual address is not mapped")]
-	PagetableError(#[from] paging::PagetableError),
-}
-
-/// Upgrade the parameter foramt from an older uhyve-interface version to a newer one.
-trait UpgradeParams<T> {
-	type Err;
-
-	fn upgrade_params<F, R, E>(self, mem: &MmapMemory, root_pt: GuestPhysAddr, f: F) -> Result<R, Self::Err>
-	where
-		F: FnOnce(&mut T) -> Result<R, E>,
-		Self::Err: From<UpgradeParamsError> + From<E>;
-}
-impl UpgradeParams<v2::parameters::ReadParams> for &mut v1::parameters::ReadParams {
-	type Err = ();
-
-	fn upgrade_params<F, R, E>(
-		self,
-		mem: &MmapMemory,
-		root_pt: GuestPhysAddr,
-		f: F,
-	) -> Result<v2::parameters::ReadParams, UpgradeParamsError>
-		where
-		F: FnOnce(&mut v2::parameters::ReadParams) -> Result<R, E>,
-		Self::Err: From<UpgradeParamsError> + From<E>,
-	{
-		let guest_phys_addr = virt_to_phys(self.buf, mem, root_pt)?;
-		let mut tmp = v2::parameters::ReadParams {
-			fd: self.fd,
-			buf: guest_phys_addr,
-			len: self.len,
-			ret: self.ret,
-		};
-		let fin_ret = f(&mut tmp);
-		self.ret = tmp.ret;
-		fin_ret.map_err(Into::into)
-	}
-}
-impl UpgradeParams<v2::parameters::WriteParams> for &v1::parameters::WriteParams {
-	type Err = ();
-
-	fn upgrade_params<F, R, E>(
-		self,
-		mem: &MmapMemory,
-		root_pt: GuestPhysAddr,
-		f: F,
-	) -> Result<v2::parameters::WriteParams, UpgradeParamsError>
-		where
-		F: FnOnce(&mut v2::parameters::WriteParams) -> Result<R, E>,
-		Self::Err: From<UpgradeParamsError> + From<E>,
-{
-		let guest_phys_addr = virt_to_phys(self.buf, mem, root_pt)?;
-		let mut tmp = v2::parameters::WriteParams {
-			fd: self.fd,
-			buf: guest_phys_addr,
-			len: self.len,
-		};
-		f(&mut tmp).map_err(Into::into)
-	}
-}
-
 /// unlink deletes a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
 ///
 /// Note for when using Landlock: Unlinking files results in them being veiled. If a text
@@ -295,7 +228,17 @@ pub fn read_v1(
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
 ) {
-	if let Err(_) = UpgradeParams::upgrade_params(sysread, mem, root_pt, |sysread_v2| { read(mem, &mut sysread_v2, file_map); Ok(()) }) {
+	if let Ok(guest_phys_addr) = virt_to_phys(sysread.buf, mem, root_pt) {
+		let mut tmp = v2::parameters::ReadParams {
+			fd: sysread.fd,
+			buf: guest_phys_addr,
+			len: sysread.len,
+			ret: sysread.ret,
+		};
+		read(mem, &mut tmp, file_map);
+		sysread.ret = tmp.ret;
+	}
+	{
 		warn!("Unable to convert guest virtual address into guest physical address");
 		sysread.ret = -EFAULT as isize;
 	}
@@ -333,11 +276,17 @@ pub fn write_v1(
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
 ) -> io::Result<()> {
-	if let Err(e) = UpgradeParams::upgrade_params(syswrite, &peripherals.mem, root_pt, |syswrite_v2| write(peripherals, &syswrite_v2, file_map)) {
-		// TODO: check what error we got here.
+	if let Ok(guest_phys_addr) = virt_to_phys(syswrite.buf, &peripherals.mem, root_pt) {
+		let tmp = v2::parameters::WriteParams {
+			fd: syswrite.fd,
+			buf: guest_phys_addr,
+			len: syswrite.len,
+		};
+		write(peripherals, &tmp, file_map)
+	} else {
 		warn!("Unable to convert guest virtual address into guest physical address");
+		Ok(())
 	}
-	Ok(())
 }
 /// Handles an write syscall on the host.
 pub fn write(
