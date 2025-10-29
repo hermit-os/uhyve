@@ -153,35 +153,35 @@ pub(crate) enum UpgradeParamsError {
 }
 
 /// Upgrade the parameter foramt from an older uhyve-interface version to a newer one.
-trait UpgradeParams<T: std::fmt::Debug + Copy + Clone, Rhs = Result<T, UpgradeParamsError>> {
-	fn upgrade_params(params: &Self, mem: &MmapMemory, root_pt: GuestPhysAddr) -> Rhs;
+trait UpgradeParams<T> {
+	fn upgrade_params(&self, mem: &MmapMemory, root_pt: GuestPhysAddr) -> Result<T, UpgradeParamsError>;
 }
 impl UpgradeParams<v2::parameters::ReadParams> for v1::parameters::ReadParams {
 	fn upgrade_params(
-		read_params: &Self,
+		&self,
 		mem: &MmapMemory,
 		root_pt: GuestPhysAddr,
 	) -> Result<v2::parameters::ReadParams, UpgradeParamsError> {
-		let guest_phys_addr = virt_to_phys(read_params.buf, mem, root_pt)?;
+		let guest_phys_addr = virt_to_phys(self.buf, mem, root_pt)?;
 		Ok(v2::parameters::ReadParams {
-			fd: read_params.fd,
+			fd: self.fd,
 			buf: guest_phys_addr,
-			len: read_params.len,
-			ret: read_params.ret,
+			len: self.len,
+			ret: self.ret,
 		})
 	}
 }
 impl UpgradeParams<v2::parameters::WriteParams> for v1::parameters::WriteParams {
 	fn upgrade_params(
-		write_params: &Self,
+		&self,
 		mem: &MmapMemory,
 		root_pt: GuestPhysAddr,
 	) -> Result<v2::parameters::WriteParams, UpgradeParamsError> {
-		let guest_phys_addr = virt_to_phys(write_params.buf, mem, root_pt)?;
+		let guest_phys_addr = virt_to_phys(self.buf, mem, root_pt)?;
 		Ok(v2::parameters::WriteParams {
-			fd: write_params.fd,
+			fd: self.fd,
 			buf: guest_phys_addr,
-			len: write_params.len,
+			len: self.len,
 		})
 	}
 }
