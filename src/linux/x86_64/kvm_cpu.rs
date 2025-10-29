@@ -87,23 +87,41 @@ impl VirtualizationBackendInternal for KvmVm {
 
 		unsafe { vm.set_user_memory_region(kvm_mem) }?;
 
-		if peripherals.mem.memory_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
+		// PCI hole
+		if peripherals.mem.memory_size > KVM_32BIT_GAP_START {
+			let gap_size = std::cmp::min(
+				peripherals.mem.memory_size - sz,
+				KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_START,
+			);
 			let kvm_mem = kvm_userspace_memory_region {
 				slot: 1,
 				flags: peripherals.mem.flags,
-				memory_size: (peripherals.mem.memory_size
-					- KVM_32BIT_GAP_START
-					- KVM_32BIT_GAP_SIZE) as u64,
+				memory_size: gap_size as u64,
 				guest_phys_addr: peripherals.mem.guest_address.as_u64()
-					+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
-				userspace_addr: (peripherals.mem.host_address as usize
-					+ KVM_32BIT_GAP_START
-					+ KVM_32BIT_GAP_SIZE) as u64,
+					+ (KVM_32BIT_GAP_START) as u64,
+				userspace_addr: (peripherals.mem.host_address as usize + KVM_32BIT_GAP_START)
+					as u64,
 			};
 
 			unsafe { vm.set_user_memory_region(kvm_mem) }?;
-		}
 
+			// Allocate usable memory beyond gap (or 1 << 33).
+			// TODO: Refactor this to avoid if/else nested blocks.
+			if peripherals.mem.memory_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
+				let kvm_mem = kvm_userspace_memory_region {
+					slot: 2,
+					flags: peripherals.mem.flags,
+					memory_size: (peripherals.mem.memory_size - sz - gap_size) as u64,
+					guest_phys_addr: peripherals.mem.guest_address.as_u64()
+						+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
+					userspace_addr: (peripherals.mem.host_address as usize
+						+ KVM_32BIT_GAP_START
+						+ KVM_32BIT_GAP_SIZE) as u64,
+				};
+
+				unsafe { vm.set_user_memory_region(kvm_mem) }?;
+			}
+		}
 		trace!("Initialize interrupt controller");
 
 		// create basic interrupt controller
