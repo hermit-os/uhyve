@@ -3,7 +3,7 @@ use std::{
 	num::NonZeroU32,
 	os::unix::prelude::JoinHandleExt,
 	path::PathBuf,
-	sync::{Arc, Barrier, Mutex},
+	sync::{Arc, Mutex},
 	thread,
 	time::SystemTime,
 };
@@ -28,6 +28,7 @@ use crate::{
 	mem::MmapMemory,
 	os::KickSignal,
 	params::{EnvVars, Params},
+	parking::Parker,
 	serial::{Destination, UhyveSerial},
 	stats::{CpuStats, VmStats},
 	vcpu::VirtualCPU,
@@ -333,7 +334,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		KickSignal::register_handler().unwrap();
 
 		// After spinning up all vCPU threads, the main thread waits for any vCPU to end execution.
-		let barrier = Arc::new(Barrier::new(2));
+		let main_parker = Parker::current();
 
 		trace!("Starting vCPUs");
 		let threads = self
@@ -341,7 +342,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			.into_iter()
 			.enumerate()
 			.map(|(cpu_id, mut cpu)| {
-				let barrier = barrier.clone();
+				let main_parker = main_parker.clone();
 				let local_cpu_affinity = cpu_affinity
 					.as_ref()
 					.and_then(|core_ids| core_ids.get(cpu_id).copied());
@@ -360,22 +361,22 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 					thread::sleep(std::time::Duration::from_millis(cpu_id as u64 * 50));
 
-					struct WaitOnDrop(Arc<Barrier>);
+					struct UnparkOnDrop(Parker);
 
-					impl Drop for WaitOnDrop {
+					impl Drop for UnparkOnDrop {
 						fn drop(&mut self) {
-							self.0.wait();
+							self.0.unpark();
 						}
 					}
 
-					let _wait_on_drop = WaitOnDrop(barrier);
+					let unpark_on_drop = UnparkOnDrop(main_parker);
 
 					// jump into the VM and execute code of the guest
 					match cpu.run() {
 						Ok((code, stats)) => {
 							if code.is_none() {
 								// If we were kicked by the main thread, the main thread is not waiting for us.
-								mem::forget(_wait_on_drop);
+								mem::forget(unpark_on_drop);
 							}
 							(Ok(code), stats)
 						}
@@ -390,7 +391,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		trace!("Waiting for first CPU to finish");
 
 		// Wait for one vCPU to return with an exit code.
-		barrier.wait();
+		main_parker.park();
 
 		trace!("Killing all threads");
 		for thread in &threads {
