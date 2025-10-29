@@ -1,5 +1,5 @@
 use std::{
-	env, fmt, fs, io, mem,
+	env, fmt, fs, io,
 	num::NonZeroU32,
 	os::unix::prelude::JoinHandleExt,
 	path::PathBuf,
@@ -341,17 +341,11 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 						}
 					}
 
-					let unpark_on_drop = UnparkOnDrop(main_parker);
+					let _unpark_on_drop = UnparkOnDrop(main_parker);
 
 					// jump into the VM and execute code of the guest
 					match cpu.run() {
-						Ok((code, stats)) => {
-							if code.is_none() {
-								// If we were kicked by the main thread, the main thread is not waiting for us.
-								mem::forget(unpark_on_drop);
-							}
-							(Ok(code), stats)
-						}
+						Ok((code, stats)) => (Ok(code), stats),
 						Err(err) => {
 							error!("CPU {} crashed with {:?}", cpu_id, err);
 							(Err(err), None)
