@@ -497,13 +497,13 @@ impl VirtualCPU for KvmCpu {
 									sysopen,
 									&mut self.peripherals.file_mapping.lock().unwrap(),
 								),
-								v1::Hypercall::FileRead(sysread) => hypercall::read(
+								v1::Hypercall::FileRead(sysread) => hypercall::read_v1(
 									&self.peripherals.mem,
 									sysread,
 									self.get_root_pagetable(),
 									&mut self.peripherals.file_mapping.lock().unwrap(),
 								),
-								v1::Hypercall::FileWrite(syswrite) => hypercall::write(
+								v1::Hypercall::FileWrite(syswrite) => hypercall::write_v1(
 									&self.peripherals,
 									syswrite,
 									self.get_root_pagetable(),
@@ -663,13 +663,11 @@ impl VirtualCPU for KvmCpu {
 									v2::Hypercall::FileRead(sysread) => hypercall::read(
 										&self.peripherals.mem,
 										sysread,
-										self.get_root_pagetable(),
 										&mut self.peripherals.file_mapping.lock().unwrap(),
 									),
 									v2::Hypercall::FileWrite(syswrite) => hypercall::write(
 										&self.peripherals,
 										syswrite,
-										self.get_root_pagetable(),
 										&mut self.peripherals.file_mapping.lock().unwrap(),
 									)?,
 									v2::Hypercall::FileUnlink(sysunlink) => hypercall::unlink(

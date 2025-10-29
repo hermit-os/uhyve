@@ -9,8 +9,34 @@ use crate::GuestPhysAddr;
 pub use crate::v1::parameters::{
 	ALLOWED_OPEN_FLAGS, CloseParams, EBADF, EFAULT, EINVAL, ENOENT, ExitParams, LseekParams,
 	O_APPEND, O_CREAT, O_DIRECTORY, O_EXCL, O_RDONLY, O_RDWR, O_TRUNC, O_WRONLY, OpenParams,
-	ReadParams, SerialWriteBufferParams, UnlinkParams, WriteParams,
+	SerialWriteBufferParams, UnlinkParams,
 };
+
+/// Parameters for a [`FileWrite`](crate::v1::Hypercall::FileWrite) hypercall.
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct WriteParams {
+	/// File descriptor of the file.
+	pub fd: i32,
+	/// Buffer to be written into the file.
+	pub buf: GuestPhysAddr,
+	/// Number of bytes in the buffer to be written.
+	pub len: usize,
+}
+
+/// Parameters for a [`FileRead`](crate::v1::Hypercall::FileRead) hypercall.
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ReadParams {
+	/// File descriptor of the file.
+	pub fd: i32,
+	/// Buffer to read the file into.
+	pub buf: GuestPhysAddr,
+	/// Number of bytes to read into the buffer.
+	pub len: usize,
+	/// Number of bytes read on success. `-1` on failure.
+	pub ret: isize,
+}
 
 /// Parameters for a [`SerialReadBuffer`](crate::v2::Hypercall::SerialReadBuffer) hypercall.
 #[repr(C, packed)]
