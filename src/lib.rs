@@ -27,6 +27,7 @@ mod isolation;
 pub mod mem;
 pub(crate) mod paging;
 pub mod params;
+mod parking;
 mod serial;
 pub mod stats;
 mod vcpu;
