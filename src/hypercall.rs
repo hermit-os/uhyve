@@ -154,35 +154,58 @@ pub(crate) enum UpgradeParamsError {
 
 /// Upgrade the parameter foramt from an older uhyve-interface version to a newer one.
 trait UpgradeParams<T> {
-	fn upgrade_params(&self, mem: &MmapMemory, root_pt: GuestPhysAddr) -> Result<T, UpgradeParamsError>;
+	type Err;
+
+	fn upgrade_params<F, R, E>(self, mem: &MmapMemory, root_pt: GuestPhysAddr, f: F) -> Result<R, Self::Err>
+	where
+		F: FnOnce(&mut T) -> Result<R, E>,
+		Self::Err: From<UpgradeParamsError> + From<E>;
 }
-impl UpgradeParams<v2::parameters::ReadParams> for v1::parameters::ReadParams {
-	fn upgrade_params(
-		&self,
+impl UpgradeParams<v2::parameters::ReadParams> for &mut v1::parameters::ReadParams {
+	type Err = ();
+
+	fn upgrade_params<F, R, E>(
+		self,
 		mem: &MmapMemory,
 		root_pt: GuestPhysAddr,
-	) -> Result<v2::parameters::ReadParams, UpgradeParamsError> {
+		f: F,
+	) -> Result<v2::parameters::ReadParams, UpgradeParamsError>
+		where
+		F: FnOnce(&mut v2::parameters::ReadParams) -> Result<R, E>,
+		Self::Err: From<UpgradeParamsError> + From<E>,
+	{
 		let guest_phys_addr = virt_to_phys(self.buf, mem, root_pt)?;
-		Ok(v2::parameters::ReadParams {
+		let mut tmp = v2::parameters::ReadParams {
 			fd: self.fd,
 			buf: guest_phys_addr,
 			len: self.len,
 			ret: self.ret,
-		})
+		};
+		let fin_ret = f(&mut tmp);
+		self.ret = tmp.ret;
+		fin_ret.map_err(Into::into)
 	}
 }
-impl UpgradeParams<v2::parameters::WriteParams> for v1::parameters::WriteParams {
-	fn upgrade_params(
-		&self,
+impl UpgradeParams<v2::parameters::WriteParams> for &v1::parameters::WriteParams {
+	type Err = ();
+
+	fn upgrade_params<F, R, E>(
+		self,
 		mem: &MmapMemory,
 		root_pt: GuestPhysAddr,
-	) -> Result<v2::parameters::WriteParams, UpgradeParamsError> {
+		f: F,
+	) -> Result<v2::parameters::WriteParams, UpgradeParamsError>
+		where
+		F: FnOnce(&mut v2::parameters::WriteParams) -> Result<R, E>,
+		Self::Err: From<UpgradeParamsError> + From<E>,
+{
 		let guest_phys_addr = virt_to_phys(self.buf, mem, root_pt)?;
-		Ok(v2::parameters::WriteParams {
+		let mut tmp = v2::parameters::WriteParams {
 			fd: self.fd,
 			buf: guest_phys_addr,
 			len: self.len,
-		})
+		};
+		f(&mut tmp).map_err(Into::into)
 	}
 }
 
@@ -272,9 +295,7 @@ pub fn read_v1(
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
 ) {
-	if let Ok(mut sysread_v2) = UpgradeParams::upgrade_params(sysread, mem, root_pt) {
-		read(mem, &mut sysread_v2, file_map);
-	} else {
+	if let Err(_) = UpgradeParams::upgrade_params(sysread, mem, root_pt, |sysread_v2| { read(mem, &mut sysread_v2, file_map); Ok(()) }) {
 		warn!("Unable to convert guest virtual address into guest physical address");
 		sysread.ret = -EFAULT as isize;
 	}
@@ -312,12 +333,11 @@ pub fn write_v1(
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
 ) -> io::Result<()> {
-	if let Ok(syswrite_v2) = UpgradeParams::upgrade_params(syswrite, &peripherals.mem, root_pt) {
-		write(peripherals, &syswrite_v2, file_map)
-	} else {
+	if let Err(e) = UpgradeParams::upgrade_params(syswrite, &peripherals.mem, root_pt, |syswrite_v2| write(peripherals, &syswrite_v2, file_map)) {
+		// TODO: check what error we got here.
 		warn!("Unable to convert guest virtual address into guest physical address");
-		Ok(())
 	}
+	Ok(())
 }
 /// Handles an write syscall on the host.
 pub fn write(
