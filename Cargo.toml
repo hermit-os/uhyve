@@ -72,8 +72,7 @@ toml = "0.9.8"
 serde = { version = "1.0", features = ["derive"] }
 merge = { version = "0.2" }
 yoke = "0.8"
-slab = { version = "0.4", optional = true }
-nohash = "0.2.0"
+nohash = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.14"

@@ -1,14 +1,11 @@
-#[cfg(not(feature = "slab"))]
-use std::{collections::HashMap, hash::BuildHasherDefault};
 use std::{
+	collections::HashMap,
 	fmt,
+	hash::BuildHasherDefault,
 	os::fd::{FromRawFd, OwnedFd, RawFd},
 };
 
-#[cfg(not(feature = "slab"))]
 use nohash::NoHashHasher;
-#[cfg(feature = "slab")]
-use slab::Slab;
 use yoke::{Yoke, erased::ErasedArcCart};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -17,14 +14,6 @@ pub struct GuestFd(pub i32);
 impl fmt::Display for GuestFd {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(f, "GuestFd({})", self.0)
-	}
-}
-
-#[cfg(feature = "slab")]
-impl From<usize> for GuestFd {
-	fn from(x: usize) -> Self {
-		// The following should never panic unless someone allocates more than i32::MAX file descriptors
-		Self(x.try_into().unwrap())
 	}
 }
 
@@ -47,12 +36,6 @@ impl GuestFd {
 		self.0 < 3
 	}
 
-	#[cfg(feature = "slab")]
-	fn get(self) -> usize {
-		self.0.try_into().unwrap()
-	}
-
-	#[cfg(not(feature = "slab"))]
 	fn get(self) -> u32 {
 		self.0.try_into().unwrap()
 	}
@@ -96,28 +79,11 @@ impl FromRawFd for FdData {
 
 #[derive(Debug)]
 pub struct UhyveFileDescriptorLayer {
-	#[cfg(feature = "slab")]
-	fds: Slab<FdData>,
-
-	#[cfg(not(feature = "slab"))]
 	fds: HashMap<u32, FdData, BuildHasherDefault<NoHashHasher<u32>>>,
-
-	#[cfg(not(feature = "slab"))]
 	next_fd: u32,
 }
 
 impl Default for UhyveFileDescriptorLayer {
-	#[cfg(feature = "slab")]
-	fn default() -> Self {
-		let mut fds = Slab::new();
-		// fill the first 3 fds (0, 1, 2) = the standard streams to avoid weird effects
-		fds.insert(FdData::Raw(0));
-		fds.insert(FdData::Raw(1));
-		fds.insert(FdData::Raw(2));
-		Self { fds }
-	}
-
-	#[cfg(not(feature = "slab"))]
 	fn default() -> Self {
 		let mut fds = HashMap::with_capacity_and_hasher(3, BuildHasherDefault::default());
 		// fill the first 3 fds (0, 1, 2) = the standard streams to avoid weird effects
@@ -143,23 +109,11 @@ impl UhyveFileDescriptorLayer {
 		}
 
 		debug!("Adding fd {data:?} to fdset: {self}");
-		let ret = {
-			#[cfg(feature = "slab")]
-			{
-				self.fds.insert(data)
-			}
-
-			#[cfg(not(feature = "slab"))]
-			{
-				let ret = self.next_fd;
-				assert!(self.fds.insert(ret, data).is_none());
-				self.next_fd = ret.checked_add(1).unwrap();
-				ret
-			}
-		}
-		.into();
+		let ret = self.next_fd;
+		assert!(self.fds.insert(ret, data).is_none());
+		self.next_fd = ret.checked_add(1).unwrap();
 		debug!("=> {}", ret);
-		Some(ret)
+		Some(ret.into())
 	}
 
 	/// Removes a file descriptor. Invoked by [crate::hypercall::close].
@@ -174,15 +128,7 @@ impl UhyveFileDescriptorLayer {
 		let ret = if fd.is_standard() {
 			None
 		} else {
-			#[cfg(feature = "slab")]
-			{
-				self.fds.try_remove(fd.get())
-			}
-
-			#[cfg(not(feature = "slab"))]
-			{
-				self.fds.remove(&fd.get())
-			}
+			self.fds.remove(&fd.get())
 		};
 		if ret.is_none() {
 			warn!("Guest attempted to remove invalid {fd}, ignoring...")
@@ -191,15 +137,7 @@ impl UhyveFileDescriptorLayer {
 	}
 
 	pub fn get_mut(&mut self, fd: GuestFd) -> Option<&mut FdData> {
-		#[cfg(feature = "slab")]
-		{
-			self.fds.get_mut(fd.get())
-		}
-
-		#[cfg(not(feature = "slab"))]
-		{
-			self.fds.get_mut(&fd.get())
-		}
+		self.fds.get_mut(&fd.get())
 	}
 
 	/// Checks whether an fd exists in this structure, i.e. whether the guest
@@ -210,15 +148,7 @@ impl UhyveFileDescriptorLayer {
 	/// * `fd` - File descriptor of to-be-operated file.
 	pub fn is_fd_present(&self, fd: GuestFd) -> bool {
 		debug!("Check if {fd} in fdset: {self}");
-		#[cfg(feature = "slab")]
-		{
-			self.fds.contains(fd.get())
-		}
-
-		#[cfg(not(feature = "slab"))]
-		{
-			self.fds.contains_key(&fd.get())
-		}
+		self.fds.contains_key(&fd.get())
 	}
 }
 
