@@ -7,6 +7,9 @@ on:
   pull_request:
   merge_group:
 
+env:
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: 'sudo -E'
+
 jobs:
   test:
     name: Test
@@ -30,7 +33,7 @@ jobs:
 
   integration-tests:
     name: Integration Tests
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest
     steps:
       - name: Install gdb, libclang
         run: |
@@ -50,7 +53,7 @@ jobs:
 
   run_images:
     name: Run images
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest
     steps:
       - name: Install libclang
         run: |
@@ -142,7 +145,7 @@ jobs:
 
   coverage:
     name: Coverage
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest
     steps:
       - name: Install gdb, libclang
         run: |
