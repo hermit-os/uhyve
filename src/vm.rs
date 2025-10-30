@@ -359,8 +359,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 					cpu.thread_local_init().expect("Unable to initialize vCPU");
 
-					thread::sleep(std::time::Duration::from_millis(cpu_id as u64 * 50));
-
 					struct UnparkOnDrop(Parker);
 
 					impl Drop for UnparkOnDrop {
