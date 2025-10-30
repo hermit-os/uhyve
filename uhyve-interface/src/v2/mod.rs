@@ -35,45 +35,25 @@ pub enum HypercallAddress {
 	SharedMemOpen = 0x1200,
 	SharedMemClose = 0x1210,
 }
-impl From<Hypercall<'_>> for HypercallAddress {
-	fn from(value: Hypercall) -> Self {
-		match value {
-			Hypercall::Exit(_) => Self::Exit,
-			Hypercall::FileClose(_) => Self::FileClose,
-			Hypercall::FileLseek(_) => Self::FileLseek,
-			Hypercall::FileOpen(_) => Self::FileOpen,
-			Hypercall::FileRead(_) => Self::FileRead,
-			Hypercall::FileUnlink(_) => Self::FileUnlink,
-			Hypercall::FileWrite(_) => Self::FileWrite,
-			Hypercall::GetTime(_) => Self::GetTime,
-			Hypercall::SerialReadBuffer(_) => Self::SerialReadBuffer,
-			Hypercall::SerialReadByte => Self::SerialReadByte,
-			Hypercall::SerialWriteBuffer(_) => Self::SerialWriteBuffer,
-			Hypercall::SerialWriteByte(_) => Self::SerialWriteByte,
-			Hypercall::Sleep(_) => Self::Sleep,
-			Hypercall::SharedMemOpen(_) => Self::SharedMemOpen,
-			Hypercall::SharedMemClose(_) => Self::SharedMemClose,
-		}
-	}
-}
-impl From<&Hypercall<'_>> for HypercallAddress {
-	fn from(value: &Hypercall) -> Self {
-		match value {
-			Hypercall::Exit(_) => Self::Exit,
-			Hypercall::FileClose(_) => Self::FileClose,
-			Hypercall::FileLseek(_) => Self::FileLseek,
-			Hypercall::FileOpen(_) => Self::FileOpen,
-			Hypercall::FileRead(_) => Self::FileRead,
-			Hypercall::FileUnlink(_) => Self::FileUnlink,
-			Hypercall::FileWrite(_) => Self::FileWrite,
-			Hypercall::GetTime(_) => Self::GetTime,
-			Hypercall::SerialReadBuffer(_) => Self::SerialReadBuffer,
-			Hypercall::SerialReadByte => Self::SerialReadByte,
-			Hypercall::SerialWriteBuffer(_) => Self::SerialWriteBuffer,
-			Hypercall::SerialWriteByte(_) => Self::SerialWriteByte,
-			Hypercall::Sleep(_) => Self::Sleep,
-			Hypercall::SharedMemOpen(_) => Self::SharedMemOpen,
-			Hypercall::SharedMemClose(_) => Self::SharedMemClose,
+
+into_hypercall_addresses! {
+	impl From<Hypercall> for HypercallAddress {
+		match {
+			Exit,
+			FileClose,
+			FileLseek,
+			FileOpen,
+			FileRead,
+			FileUnlink,
+			FileWrite,
+			GetTime,
+			SerialReadBuffer,
+			SerialReadByte,
+			SerialWriteBuffer,
+			SerialWriteByte,
+			Sleep,
+			SharedMemOpen,
+			SharedMemClose,
 		}
 	}
 }
