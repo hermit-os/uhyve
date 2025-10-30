@@ -9,3 +9,6 @@ lcov.info
 hermit-loader-x86-64
 
 .vscode
+
+# gdb
+.gdbinit
