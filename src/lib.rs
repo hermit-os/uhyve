@@ -49,6 +49,9 @@ pub enum HypervisorError {
 	#[error("Invalid kernel path ({0})")]
 	InvalidKernelPath(PathBuf),
 
+	#[error("Image configuration parsing failed: {0}")]
+	ImageConfigParserError(#[from] hermit_image_reader::config::ParserError),
+
 	#[error("Kernel Loading Error: {0}")]
 	LoadedKernelError(#[from] vm::LoadKernelError),
 }
