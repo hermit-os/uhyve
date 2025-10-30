@@ -396,16 +396,10 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			.into_iter()
 			.map(|thread| thread.join().unwrap())
 			.collect::<Vec<_>>();
-		let code = match cpu_results
+		let code = cpu_results
 			.iter()
-			.filter_map(|(ret, _stats)| ret.as_ref().ok())
-			.filter_map(|ret| *ret)
-			.count()
-		{
-			0 => panic!("No return code from any CPU? Maybe all have been kicked?"),
-			1 => cpu_results[0].0.as_ref().unwrap().unwrap(),
-			_ => panic!("more than one thread finished with an exit code (code: {cpu_results:?})"),
-		};
+			.find_map(|(ret, _stats)| ret.as_ref().ok().copied().flatten())
+			.unwrap();
 
 		let stats: Vec<CpuStats> = cpu_results
 			.iter()
