@@ -1,6 +1,6 @@
 use uhyve_interface::GuestPhysAddr;
 use x86_64::{
-	VirtAddr,
+	PhysAddr, VirtAddr,
 	structures::paging::{
 		FrameAllocator, MappedPageTable, Mapper, Page, PageSize, PageTable, PageTableFlags,
 		PageTableIndex, PhysFrame, Size2MiB, Size4KiB, mapper::PageTableFrameMapping,
@@ -131,6 +131,18 @@ pub fn initialize_pagetables(
 				.unwrap()
 		};
 	}
+
+	// SAFETY: Should be fine, as long as the RAM start does not explicitly conflict with this.
+	// Used for MmioWrite-based hypercalls.
+	//
+	// FIXME: Only map this page if the uhyve-interface version is at least higher than 2.
+	let _ = unsafe {
+		pagetable_mapping.identity_map(
+			PhysFrame::<Size2MiB>::from_start_address(PhysAddr::new(0)).unwrap(),
+			PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::HUGE_PAGE,
+			&mut boot_frame_allocator,
+		)
+	};
 }
 
 /// Helper fn for debugging pagetables

@@ -4,7 +4,11 @@ use std::{
 	os::{fd::IntoRawFd, unix::ffi::OsStrExt},
 };
 
-use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*};
+use uhyve_interface::{
+	GuestPhysAddr,
+	v1::{self, MAX_ARGC_ENVC},
+	v2::{self, parameters::*},
+};
 
 use crate::{
 	isolation::filemap::UhyveFileMap,
@@ -21,11 +25,12 @@ use crate::{
 ///
 /// - The return value is only valid, as long as the guest is halted.
 /// - This fn must not be called multiple times on the same data, to avoid creating mutable aliasing.
-pub unsafe fn address_to_hypercall(
+pub unsafe fn address_to_hypercall_v1(
 	mem: &MmapMemory,
 	addr: u16,
 	data: GuestPhysAddr,
-) -> Option<Hypercall<'_>> {
+) -> Option<v1::Hypercall<'_>> {
+	use v1::{Hypercall, HypercallAddress, parameters::*};
 	if let Ok(hypercall_port) = HypercallAddress::try_from(addr) {
 		Some(match hypercall_port {
 			HypercallAddress::FileClose => {
@@ -69,6 +74,66 @@ pub unsafe fn address_to_hypercall(
 			HypercallAddress::SerialBufferWrite => {
 				let sysserialwrite = unsafe { mem.get_ref_mut(data).unwrap() };
 				Hypercall::SerialWriteBuffer(sysserialwrite)
+			}
+			_ => unimplemented!(),
+		})
+	} else {
+		None
+	}
+}
+
+/// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
+/// parameter that was send to that address by the guest.
+///
+/// # Safety
+///
+/// - The return value is only valid, as long as the guest is halted.
+/// - This fn must not be called multiple times on the same data, to avoid creating mutable aliasing.
+pub unsafe fn address_to_hypercall_v2(
+	mem: &MmapMemory,
+	addr: u16,
+	data: GuestPhysAddr,
+) -> Option<v2::Hypercall<'_>> {
+	use v2::{Hypercall, HypercallAddress, parameters::*};
+	if let Ok(hypercall_port) = HypercallAddress::try_from(addr as u64) {
+		Some(match hypercall_port {
+			HypercallAddress::FileClose => {
+				let sysclose = unsafe { mem.get_ref_mut::<CloseParams>(data).unwrap() };
+				// let sysclose = unsafe { &mut *(self.host_address(data) as *mut CloseParams) };
+				Hypercall::FileClose(sysclose)
+			}
+			HypercallAddress::FileLseek => {
+				let syslseek = unsafe { mem.get_ref_mut::<LseekParams>(data).unwrap() };
+				Hypercall::FileLseek(syslseek)
+			}
+			HypercallAddress::FileOpen => {
+				let sysopen = unsafe { mem.get_ref_mut::<OpenParams>(data).unwrap() };
+				Hypercall::FileOpen(sysopen)
+			}
+			HypercallAddress::FileRead => {
+				let sysread = unsafe { mem.get_ref_mut::<ReadParams>(data).unwrap() };
+				Hypercall::FileRead(sysread)
+			}
+			HypercallAddress::FileWrite => {
+				let syswrite = unsafe { mem.get_ref_mut(data).unwrap() };
+				Hypercall::FileWrite(syswrite)
+			}
+			HypercallAddress::FileUnlink => {
+				let sysunlink = unsafe { mem.get_ref_mut(data).unwrap() };
+				Hypercall::FileUnlink(sysunlink)
+			}
+			HypercallAddress::Exit => Hypercall::Exit(data.as_u64() as i32),
+			HypercallAddress::SerialReadBuffer => {
+				let serialreadbuffer = unsafe { mem.get_ref_mut(data).unwrap() };
+				Hypercall::SerialReadBuffer(serialreadbuffer)
+			}
+			HypercallAddress::SerialWriteBuffer => {
+				let serialwritebuffer = unsafe { mem.get_ref_mut(data).unwrap() };
+				Hypercall::SerialWriteBuffer(serialwritebuffer)
+			}
+			HypercallAddress::SerialWriteByte => {
+				let serialwritebyte = unsafe { mem.get_ref_mut(data).unwrap() };
+				Hypercall::SerialWriteBuffer(serialwritebyte)
 			}
 			_ => unimplemented!(),
 		})
@@ -155,18 +220,37 @@ pub fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
 	}
 }
 
-/// Handles a read syscall on the host.
-pub fn read(
+/// Handles a v1 read hypercall (for which a guest-provided guest virtual address must be
+/// converted to a guest physical address by the host).
+pub fn read_v1(
 	mem: &MmapMemory,
-	sysread: &mut ReadParams,
+	sysread: &mut v1::parameters::ReadParams,
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
 ) {
+	if let Ok(guest_phys_addr) = virt_to_phys(sysread.buf, mem, root_pt) {
+		let mut tmp = v2::parameters::ReadParams {
+			fd: sysread.fd,
+			buf: guest_phys_addr,
+			len: sysread.len,
+			ret: sysread.ret,
+		};
+		read(mem, &mut tmp, file_map);
+		sysread.ret = tmp.ret;
+	} else {
+		warn!("Unable to convert guest virtual address into guest physical address");
+		sysread.ret = -EFAULT as isize;
+	}
+}
+
+/// Handles a read syscall on the host.
+pub fn read(
+	mem: &MmapMemory,
+	sysread: &mut v2::parameters::ReadParams,
+	file_map: &mut UhyveFileMap,
+) {
 	if file_map.fdmap.is_fd_present(sysread.fd.into_raw_fd()) {
-		let guest_phys_addr = virt_to_phys(sysread.buf, mem, root_pt);
-		if let Ok(guest_phys_addr) = guest_phys_addr
-			&& let Ok(host_address) = mem.host_address(guest_phys_addr)
-		{
+		if let Ok(host_address) = mem.host_address(sysread.buf) {
 			let bytes_read =
 				unsafe { libc::read(sysread.fd, host_address as *mut libc::c_void, sysread.len) };
 			if bytes_read >= 0 {
@@ -183,42 +267,53 @@ pub fn read(
 	}
 }
 
+/// Handles a v1 write hypercall (for which a guest-provided guest virtual address must be
+/// converted to a guest physical address by the host).
+pub fn write_v1(
+	peripherals: &VmPeripherals,
+	syswrite: &v1::parameters::WriteParams,
+	root_pt: GuestPhysAddr,
+	file_map: &mut UhyveFileMap,
+) -> io::Result<()> {
+	if let Ok(guest_phys_addr) = virt_to_phys(syswrite.buf, &peripherals.mem, root_pt) {
+		let tmp = v2::parameters::WriteParams {
+			fd: syswrite.fd,
+			buf: guest_phys_addr,
+			len: syswrite.len,
+		};
+		write(peripherals, &tmp, file_map)
+	} else {
+		warn!("Unable to convert guest virtual address into guest physical address");
+		Ok(())
+	}
+}
 /// Handles an write syscall on the host.
 pub fn write(
 	peripherals: &VmPeripherals,
-	syswrite: &WriteParams,
-	root_pt: GuestPhysAddr,
+	syswrite: &v2::parameters::WriteParams,
 	file_map: &mut UhyveFileMap,
 ) -> io::Result<()> {
 	let mut bytes_written: usize = 0;
 	while bytes_written != syswrite.len {
-		let guest_phys_addr = virt_to_phys(
-			syswrite.buf + bytes_written as u64,
-			&peripherals.mem,
-			root_pt,
-		);
+		let guest_phys_addr = syswrite.buf + bytes_written as u64;
 
-		if let Ok(guest_phys_addr) = guest_phys_addr {
-			if syswrite.fd == 1 || syswrite.fd == 2 {
-				let bytes = unsafe {
-					peripherals
-						.mem
-						.slice_at(guest_phys_addr, syswrite.len)
-						.map_err(|e| {
-							io::Error::new(
-								io::ErrorKind::InvalidInput,
-								format!("invalid syswrite buffer: {e:?}"),
-							)
-						})?
-				};
-				return peripherals.serial.output(bytes);
-			} else if !file_map.fdmap.is_fd_present(syswrite.fd.into_raw_fd()) {
-				// We don't write anything if the file descriptor is not available,
-				// but this is OK for now, as we have no means of returning an error code
-				// and writes are not necessarily guaranteed to write anything.
-				return Ok(());
-			}
-		} else {
+		if syswrite.fd == 1 || syswrite.fd == 2 {
+			let bytes = unsafe {
+				peripherals
+					.mem
+					.slice_at(guest_phys_addr, syswrite.len)
+					.map_err(|e| {
+						io::Error::new(
+							io::ErrorKind::InvalidInput,
+							format!("invalid syswrite buffer: {e:?}"),
+						)
+					})?
+			};
+			return peripherals.serial.output(bytes);
+		} else if !file_map.fdmap.is_fd_present(syswrite.fd.into_raw_fd()) {
+			// We don't write anything if the file descriptor is not available,
+			// but this is OK for now, as we have no means of returning an error code
+			// and writes are not necessarily guaranteed to write anything.
 			return Ok(());
 		}
 
@@ -227,7 +322,7 @@ pub fn write(
 				syswrite.fd,
 				peripherals
 					.mem
-					.host_address(guest_phys_addr.unwrap())
+					.host_address(guest_phys_addr)
 					.map_err(|e| match e {
 						MemoryError::BoundsViolation => {
 							unreachable!("Bounds violation after host_address function")
@@ -245,7 +340,6 @@ pub fn write(
 			}
 		}
 	}
-
 	Ok(())
 }
 
@@ -264,7 +358,12 @@ pub fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 }
 
 /// Copies the arguments of the application into the VM's memory to the destinations specified in `syscmdval`.
-pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &MmapMemory) {
+pub fn copy_argv(
+	path: &OsStr,
+	argv: &[String],
+	syscmdval: &v1::parameters::CmdvalParams,
+	mem: &MmapMemory,
+) {
 	// copy kernel path as first argument
 	let argvp = mem
 		.host_address(syscmdval.argv)
@@ -296,7 +395,7 @@ pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &
 }
 
 /// Copies the environment variables into the VM's memory to the destinations specified in `syscmdval`.
-pub fn copy_env(env: &EnvVars, syscmdval: &CmdvalParams, mem: &MmapMemory) {
+pub fn copy_env(env: &EnvVars, syscmdval: &v1::parameters::CmdvalParams, mem: &MmapMemory) {
 	let envp = mem
 		.host_address(syscmdval.envp)
 		.expect("Systemcall parameters for Cmdval are invalid") as *const GuestPhysAddr;
