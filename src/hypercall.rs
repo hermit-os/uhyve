@@ -237,8 +237,7 @@ pub fn read_v1(
 		};
 		read(mem, &mut tmp, file_map);
 		sysread.ret = tmp.ret;
-	}
-	{
+	} else {
 		warn!("Unable to convert guest virtual address into guest physical address");
 		sysread.ret = -EFAULT as isize;
 	}
