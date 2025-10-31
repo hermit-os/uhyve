@@ -1,11 +1,9 @@
-#[cfg(target_os = "linux")]
-use std::path::Path;
 use std::{
 	collections::HashMap,
 	ffi::{CStr, CString, OsStr, OsString},
 	fs::canonicalize,
 	os::unix::ffi::OsStrExt,
-	path::PathBuf,
+	path::{Path, PathBuf},
 };
 
 use clean_path::clean;
@@ -30,7 +28,7 @@ impl UhyveFileMap {
 	/// * `mappings` - A list of host->guest path mappings with the format "./host_path.txt:guest.txt"
 	/// * `tempdir` - Path to create temporary directory on
 	pub fn new(mappings: &[String], tempdir: Option<PathBuf>) -> UhyveFileMap {
-		UhyveFileMap {
+		let fm = UhyveFileMap {
 			files: mappings
 				.iter()
 				.map(String::as_str)
@@ -39,7 +37,13 @@ impl UhyveFileMap {
 				.collect(),
 			tempdir: create_temp_dir(tempdir),
 			fdmap: UhyveFileDescriptorLayer::default(),
-		}
+		};
+		assert_eq!(
+			fm.files.len(),
+			mappings.len(),
+			"Error when creating filemap. Are duplicate paths present?"
+		);
+		fm
 	}
 
 	/// Returns the host_path on the host filesystem given a requested guest_path, if it exists.
@@ -88,6 +92,11 @@ impl UhyveFileMap {
 	#[cfg(target_os = "linux")]
 	pub(crate) fn get_all_host_paths(&self) -> impl Iterator<Item = &std::ffi::OsStr> {
 		self.files.values().map(|i| i.as_os_str())
+	}
+
+	/// Returns an array of all guest paths.
+	pub(crate) fn get_all_guest_paths(&self) -> impl Iterator<Item = &Path> {
+		self.files.keys().map(|p| p.as_ref())
 	}
 
 	/// Returns the path to the temporary directory (for Landlock).
