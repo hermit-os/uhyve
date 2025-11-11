@@ -74,7 +74,7 @@ pub unsafe fn address_to_hypercall(
 				let sysserialwrite = unsafe { mem.get_ref_mut(data).unwrap() };
 				Hypercall::SerialWriteBuffer(sysserialwrite)
 			}
-			_ => unimplemented!(),
+			_ => return None,
 		})
 	} else {
 		None
