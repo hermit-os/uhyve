@@ -68,7 +68,12 @@ impl KickSignal {
 		extern "C" fn handle_signal(_signal: libc::c_int) {}
 		// SAFETY: We don't use the `signal`'s return value and use an empty handler.
 		// (Sidenote: SIG_DFL and SIG_IGN don't do the trick.)
-		let res = unsafe { libc::signal(Self::get(), handle_signal as libc::sighandler_t) };
+		let res = unsafe {
+			libc::signal(
+				Self::get(),
+				handle_signal as *const () as libc::sighandler_t,
+			)
+		};
 		nix::errno::Errno::result(res).map(drop)
 	}
 
