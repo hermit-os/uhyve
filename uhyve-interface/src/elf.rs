@@ -8,7 +8,7 @@
 macro_rules! define_uhyve_interface_version {
 	() => {
 		#[used]
-		#[link_section = ".note.hermit.uhyve-interface-version"]
+		#[unsafe(link_section = ".note.hermit.uhyve-interface-version")]
 		static INTERFACE_VERSION: $crate::elf::Note = $crate::elf::Note::uhyveif_version();
 	};
 }
