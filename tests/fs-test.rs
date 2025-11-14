@@ -353,6 +353,28 @@ fn open_read_only_write() {
 	.expect_err("Uhyve should've crashed on write");
 }
 
+/// Hermit Image test: Opens+reads a file inside of a hermit image
+#[test]
+fn image_open_read() {
+	env_logger::try_init().ok();
+
+	let guest_file_path = get_testname_derived_guest_path("image_open_read");
+	let params = generate_params(
+		Some(vec![format!(
+			"{}/hello_world.hermit:hello_world.txt:{}",
+			get_fs_fixture_path().to_str().unwrap(),
+			guest_file_path.to_str().unwrap(),
+		)]),
+		"open_read",
+		&guest_file_path,
+	);
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+
+	let res = run_vm_in_thread(bin_path, params);
+	assert_eq!(res.code, 0);
+}
+
 /// Tests file descriptor sandbox, particularly whether...
 /// - the guest can make a File out of fd 1 (stdout) and write to it.
 /// - the guest can make a File out of fd 2 (stderr) and write to it.
