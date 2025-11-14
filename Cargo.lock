@@ -665,7 +665,7 @@ dependencies = [
  "log",
  "plain",
  "time",
- "uhyve-interface 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "uhyve-interface 0.1.3",
 ]
 
 [[package]]
@@ -1742,7 +1742,7 @@ dependencies = [
  "time",
  "toml",
  "tun-tap",
- "uhyve-interface 0.1.3",
+ "uhyve-interface 0.2.0",
  "uuid",
  "virtio-bindings",
  "vm-fdt",
@@ -1755,10 +1755,10 @@ dependencies = [
 [[package]]
 name = "uhyve-interface"
 version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7390116b0481b52dbc7d979f858dcc426494714a3ba03e9534d26c8ea41b899e"
 dependencies = [
- "aarch64 0.0.14",
- "hermit-abi",
- "log",
+ "aarch64 0.0.13",
  "memory_addresses",
  "num_enum",
  "x86_64",
@@ -1766,11 +1766,12 @@ dependencies = [
 
 [[package]]
 name = "uhyve-interface"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7390116b0481b52dbc7d979f858dcc426494714a3ba03e9534d26c8ea41b899e"
+version = "0.2.0"
 dependencies = [
- "aarch64 0.0.13",
+ "aarch64 0.0.14",
+ "bitflags 2.10.0",
+ "hermit-abi",
+ "log",
  "memory_addresses",
  "num_enum",
  "x86_64",

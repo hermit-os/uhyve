@@ -1,9 +1,10 @@
 [package]
 name = "uhyve-test-kernels"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
   "Jonathan Klimt <jonathan.klimt@eonerc.rwth-aachen.de>",
   'Panagiotis "Ivory" Vasilopoulos <git@n0toose.net>',
+  "Ellen Emilia Anna Zscheile <fogti+devel@ytrizja.de>",
 ]
 edition = "2024"
 publish = false
@@ -18,3 +19,9 @@ x86_64 = { version = "0.15", default-features = false, features = [
 
 [dependencies]
 uhyve-interface = { path = "../../uhyve-interface" }
+
+[patch.crates-io]
+# temporary, as the kernel (which is automatically fetched and compile by
+# the hermit wrapper crate) cannot be patched directly, as it is not seen
+# by cargo. use https://github.com/hermit-os/kernel/pull/2013
+hermit = { path = "../../../hermit-rs/hermit" }
