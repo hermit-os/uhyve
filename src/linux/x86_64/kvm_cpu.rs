@@ -2,10 +2,7 @@ use std::{io, num::NonZero, sync::Arc};
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
-use uhyve_interface::{
-	GuestPhysAddr,
-	v1::{Hypercall, HypercallAddress},
-};
+use uhyve_interface::{GuestPhysAddr, v1, v2};
 use vmm_sys_util::eventfd::EventFd;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
@@ -456,20 +453,22 @@ impl VirtualCPU for KvmCpu {
 						let data_addr =
 							GuestPhysAddr::new(unsafe { (*(addr.as_ptr() as *const u32)) as u64 });
 						if let Some(hypercall) = unsafe {
-							hypercall::address_to_hypercall(&self.peripherals.mem, port, data_addr)
+							hypercall::address_to_hypercall_v1(
+								&self.peripherals.mem,
+								port,
+								data_addr,
+							)
 						} {
 							if let Some(s) = self.stats.as_mut() {
-								s.increment_val(VmExit::Hypercall(HypercallAddress::from(
-									&hypercall,
-								)))
+								s.increment_val((&hypercall).into())
 							}
 
 							match hypercall {
-								Hypercall::Cmdsize(syssize) => syssize.update(
+								v1::Hypercall::Cmdsize(syssize) => syssize.update(
 									&self.kernel_info.path,
 									&self.kernel_info.params.kernel_args,
 								),
-								Hypercall::Cmdval(syscmdval) => {
+								v1::Hypercall::Cmdval(syscmdval) => {
 									hypercall::copy_argv(
 										self.kernel_info.path.as_os_str(),
 										&self.kernel_info.params.kernel_args,
@@ -482,46 +481,46 @@ impl VirtualCPU for KvmCpu {
 										&self.peripherals.mem,
 									);
 								}
-								Hypercall::Exit(sysexit) => {
+								v1::Hypercall::Exit(sysexit) => {
 									return Ok(VcpuStopReason::Exit(sysexit.arg));
 								}
-								Hypercall::FileClose(sysclose) => hypercall::close(
+								v1::Hypercall::FileClose(sysclose) => hypercall::close(
 									sysclose,
 									&mut self.peripherals.file_mapping.lock().unwrap(),
 								),
-								Hypercall::FileLseek(syslseek) => hypercall::lseek(
+								v1::Hypercall::FileLseek(syslseek) => hypercall::lseek(
 									syslseek,
 									&mut self.peripherals.file_mapping.lock().unwrap(),
 								),
-								Hypercall::FileOpen(sysopen) => hypercall::open(
+								v1::Hypercall::FileOpen(sysopen) => hypercall::open(
 									&self.peripherals.mem,
 									sysopen,
 									&mut self.peripherals.file_mapping.lock().unwrap(),
 								),
-								Hypercall::FileRead(sysread) => hypercall::read(
+								v1::Hypercall::FileRead(sysread) => hypercall::read_v1(
 									&self.peripherals.mem,
 									sysread,
 									self.get_root_pagetable(),
 									&mut self.peripherals.file_mapping.lock().unwrap(),
 								),
-								Hypercall::FileWrite(syswrite) => hypercall::write(
+								v1::Hypercall::FileWrite(syswrite) => hypercall::write_v1(
 									&self.peripherals,
 									syswrite,
 									self.get_root_pagetable(),
 									&mut self.peripherals.file_mapping.lock().unwrap(),
 								)?,
-								Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
+								v1::Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
 									&self.peripherals.mem,
 									sysunlink,
 									&mut self.peripherals.file_mapping.lock().unwrap(),
 								),
-								Hypercall::SerialWriteByte(buf) => self
+								v1::Hypercall::SerialWriteByte(buf) => self
 									.peripherals
 									.serial
 									.output(&[buf])
 									.unwrap_or_else(|e| error!("{e:?}")),
-								Hypercall::SerialWriteBuffer(sysserialwrite) => {
-									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
+								v1::Hypercall::SerialWriteBuffer(sysserialwrite) => {
+									// SAFETY: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 									let buf = unsafe {
 										self
 											.peripherals
@@ -540,7 +539,7 @@ impl VirtualCPU for KvmCpu {
 										.unwrap_or_else(|e| error!("{e:?}"))
 								}
 								_ => panic!("Got unknown hypercall {hypercall:?}"),
-							};
+							}
 						} else {
 							if let Some(s) = self.stats.as_mut() {
 								s.increment_val(VmExit::PCIWrite)
@@ -599,9 +598,81 @@ impl VirtualCPU for KvmCpu {
 							}
 						}
 					}
-					VcpuExit::MmioWrite(addr, _targ) => {
-						self.print_registers();
-						panic!("undefined mmio write to {addr:#x}");
+					VcpuExit::MmioWrite(addr, data) => {
+						{
+							let data_addr: GuestPhysAddr =
+								GuestPhysAddr::new(unsafe { *(data.as_ptr() as *const u64) });
+							if let Some(hypercall) = unsafe {
+								hypercall::address_to_hypercall_v2(
+									&self.peripherals.mem,
+									addr as u16,
+									data_addr,
+								)
+							} {
+								if let Some(s) = self.stats.as_mut() {
+									s.increment_val((&hypercall).into())
+								}
+
+								match hypercall {
+									v2::Hypercall::Exit(sysexit) => {
+										return Ok(VcpuStopReason::Exit(sysexit));
+									}
+									v2::Hypercall::FileClose(sysclose) => hypercall::close(
+										sysclose,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
+									v2::Hypercall::FileLseek(syslseek) => hypercall::lseek(
+										syslseek,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
+									v2::Hypercall::FileOpen(sysopen) => hypercall::open(
+										&self.peripherals.mem,
+										sysopen,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
+									v2::Hypercall::FileRead(sysread) => hypercall::read(
+										&self.peripherals.mem,
+										sysread,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
+									v2::Hypercall::FileWrite(syswrite) => hypercall::write(
+										&self.peripherals,
+										syswrite,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									)?,
+									v2::Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
+										&self.peripherals.mem,
+										sysunlink,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
+									v2::Hypercall::SerialWriteByte(buf) => self
+										.peripherals
+										.serial
+										.output(&[buf])
+										.unwrap_or_else(|e| error!("{e:?}")),
+									v2::Hypercall::SerialWriteBuffer(sysserialwrite) => {
+										// SAFETY: as this buffer is only read and not used afterwards, we don't create multiple aliasing
+										let buf = unsafe {
+											self
+													.peripherals
+													.mem
+													.slice_at(sysserialwrite.buf, sysserialwrite.len)
+													.unwrap_or_else(|e| {
+														panic!(
+															"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
+														)
+													})
+										};
+
+										self.peripherals
+											.serial
+											.output(buf)
+											.unwrap_or_else(|e| error!("{e:?}"))
+									}
+									_ => panic!("Got unknown hypercall {hypercall:?}"),
+								}
+							}
+						}
 					}
 					VcpuExit::Debug(debug) => {
 						if let Some(s) = self.stats.as_mut() {

@@ -2,6 +2,7 @@ mod paging;
 pub(crate) mod registers;
 
 use align_address::Align;
+use hermit_entry::UhyveIfVersion;
 use paging::initialize_pagetables;
 use rand::Rng;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
@@ -74,9 +75,16 @@ pub fn init_guest_mem(
 	guest_address: GuestPhysAddr,
 	length: u64,
 	legacy_mapping: bool,
+	uhyve_interface_version: Option<UhyveIfVersion>,
 ) {
 	// TODO: we should maybe return an error on failure (e.g., the memory is too small)
-	initialize_pagetables(mem, guest_address, length, legacy_mapping);
+	initialize_pagetables(
+		mem,
+		guest_address,
+		length,
+		legacy_mapping,
+		uhyve_interface_version,
+	);
 }
 
 #[cfg(test)]
@@ -103,6 +111,7 @@ mod tests {
 			guest_address,
 			MIN_PHYSMEM_SIZE as u64 * 2,
 			false,
+			Some(UhyveIfVersion(1)),
 		);
 
 		// Get the address of the first entry in PML4 (the address of the PML4 itself)

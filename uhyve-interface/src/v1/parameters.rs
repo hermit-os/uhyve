@@ -1,5 +1,6 @@
 //! Parameters for hypercalls.
 
+pub use crate::parameters::*;
 use crate::{GuestPhysAddr, GuestVirtAddr, v1::MAX_ARGC_ENVC};
 
 /// Parameters for a [`Cmdsize`](crate::v1::Hypercall::Cmdsize) hypercall which provides the lengths of the items in the argument end environment vector.
@@ -141,16 +142,8 @@ pub struct LseekParams {
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct SerialWriteBufferParams {
+	/// Address of the buffer to be printed.
 	pub buf: GuestPhysAddr,
+	/// Length of the buffer.
 	pub len: usize,
 }
-
-pub use hermit_abi::{
-	O_APPEND, O_CREAT, O_DIRECTORY, O_EXCL, O_RDONLY, O_RDWR, O_TRUNC, O_WRONLY, SEEK_CUR,
-	SEEK_END, SEEK_SET,
-	errno::{EBADF, EFAULT, EINVAL, ENOENT, EROFS},
-};
-
-// File operations supported by Hermit and Uhyve
-pub const ALLOWED_OPEN_FLAGS: i32 =
-	O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC | O_APPEND | O_DIRECTORY;

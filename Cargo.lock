@@ -1793,9 +1793,10 @@ dependencies = [
 
 [[package]]
 name = "uhyve-interface"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "aarch64",
+ "bitflags 2.10.0",
  "hermit-abi",
  "log",
  "memory_addresses",

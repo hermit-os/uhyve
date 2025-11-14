@@ -2,8 +2,42 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+macro_rules! into_hypercall_addresses {
+	(@internal $Self:ty; $name1:ident => $name2:ident) => { <$Self>::$name2 };
+	(@internal $Self:ty; $name1:ident) => { <$Self>::$name1 };
+
+	(
+	impl From<$hc:ident> for $hca:ty {
+		match {
+			$( $name1:ident $(=> $name2:ident)? ),*
+			$(,)?
+		}
+	}
+	) => {
+		impl From<$hc<'_>> for $hca {
+			fn from(value: $hc<'_>) -> Self {
+				match value {
+					$($hc::$name1 { .. } => into_hypercall_addresses!(@internal Self; $name1 $(=> $name2)?)),*
+				}
+			}
+		}
+		impl From<&$hc<'_>> for $hca {
+			fn from(value: &$hc<'_>) -> Self {
+				match value {
+					$($hc::$name1 { .. } => into_hypercall_addresses!(@internal Self; $name1 $(=> $name2)?)),*
+				}
+			}
+		}
+	}
+}
+
+/// Common parameters for versions 1 and 2 of the Hypercall Interface
+mod parameters;
+
 /// Version 1 of the Hypercall Interface
 pub mod v1;
+/// Version 2 of the Hypercall Interface
+pub mod v2;
 
 pub use memory_addresses::{PhysAddr as GuestPhysAddr, VirtAddr as GuestVirtAddr};
 

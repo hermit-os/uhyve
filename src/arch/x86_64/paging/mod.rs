@@ -1,6 +1,7 @@
+use hermit_entry::UhyveIfVersion;
 use uhyve_interface::GuestPhysAddr;
 use x86_64::{
-	VirtAddr,
+	PhysAddr, VirtAddr,
 	structures::paging::{
 		FrameAllocator, MappedPageTable, Mapper, Page, PageSize, PageTable, PageTableFlags,
 		PageTableIndex, PhysFrame, Size2MiB, Size4KiB, mapper::PageTableFrameMapping,
@@ -55,6 +56,7 @@ pub fn initialize_pagetables(
 	length: u64,
 	// TODO: deprecate the legacy_mapping option once hermit pre 0.10.0 isn't a thing anymore.
 	legacy_mapping: bool,
+	uhyve_interface_version: Option<UhyveIfVersion>,
 ) {
 	assert!(mem.len() >= MIN_PHYSMEM_SIZE);
 	let mem_addr = std::ptr::addr_of_mut!(mem[0]);
@@ -131,6 +133,20 @@ pub fn initialize_pagetables(
 				.unwrap()
 		};
 	}
+
+	// SAFETY: Should be fine, as long as the RAM start does not explicitly conflict with this.
+	// Used for MmioWrite-based hypercalls.
+	if let Some(interface_version) = uhyve_interface_version
+		&& interface_version >= UhyveIfVersion(2)
+	{
+		let _ = unsafe {
+			pagetable_mapping.identity_map(
+				PhysFrame::<Size2MiB>::from_start_address(PhysAddr::new(0)).unwrap(),
+				PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::HUGE_PAGE,
+				&mut boot_frame_allocator,
+			)
+		};
+	}
 }
 
 /// Helper fn for debugging pagetables
@@ -195,6 +211,7 @@ mod tests {
 				guest_address,
 				0x20_0000 * 4,
 				false,
+				Some(UhyveIfVersion(1)),
 			);
 
 			/// Checks if `address` is in the pagetables.
