@@ -12,7 +12,6 @@
 // TODO: Throw this out, once https://github.com/rust-lang/rfcs/issues/2783 or https://github.com/rust-lang/rust/issues/86772 is resolved
 use num_enum::TryFromPrimitive;
 
-pub mod elf;
 pub mod parameters;
 
 pub use memory_addresses::{PhysAddr as GuestPhysAddr, VirtAddr as GuestVirtAddr};
