@@ -302,6 +302,7 @@ pub fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 			libc::lseek(*r, syslseek.offset as i64, syslseek.whence) as isize
 		},
 		Some(FdData::Virtual { data, offset }) => {
+			#[forbid(unused_variables, unreachable_patterns)]
 			let tmp = match syslseek.whence {
 				SEEK_SET => 0,
 				SEEK_CUR => *offset as isize,
