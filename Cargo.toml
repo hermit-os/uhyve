@@ -75,7 +75,7 @@ nohash = "0.2"
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.14"
 kvm-ioctls = "0.24"
-landlock = "0.4.3"
+landlock = "0.4.4"
 vmm-sys-util = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
