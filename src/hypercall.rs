@@ -11,6 +11,7 @@ use crate::{
 	isolation::{
 		fd::{FdData, GuestFd},
 		filemap::UhyveFileMap,
+		image::MappedFile,
 	},
 	mem::{MemoryError, MmapMemory},
 	params::EnvVars,
@@ -92,8 +93,18 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 	sysunlink.ret = if let Some(host_path) = file_map.get_host_path(guest_path) {
 		// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 		// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
-		let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
-		unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) }
+		match host_path {
+			MappedFile::OnHost(oh) => {
+				let host_path_c_string = CString::new(oh.as_os_str().as_bytes()).unwrap();
+				unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) }
+			}
+			MappedFile::InImage(_) => {
+				error!(
+					"The kernel requested to unlink() a ROM path ({guest_path:?}): Rejecting..."
+				);
+				-EROFS
+			}
+		}
 	} else {
 		error!("The kernel requested to unlink() an unknown path ({guest_path:?}): Rejecting...");
 		-ENOENT
@@ -113,20 +124,49 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 		return;
 	}
 
-	sysopen.ret = if let Some(host_path) = file_map.get_host_path(guest_path) {
+	sysopen.ret = if let Some(guest_entry) = file_map.get_host_path(guest_path) {
 		debug!("{guest_path:#?} found in file map.");
-		// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
-		// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
-		let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
+		match guest_entry {
+			MappedFile::OnHost(host_path) => {
+				// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
+				// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
+				let host_path_c_string = CString::new(host_path.as_os_str().as_bytes()).unwrap();
 
-		let host_fd =
-			unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode) };
-		if let Some(guest_fd) = file_map.fdmap.insert(FdData::Raw(host_fd)) {
-			guest_fd.0
-		} else if host_fd < 0 {
-			host_fd
-		} else {
-			-ENOENT
+				let host_fd = unsafe {
+					libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode)
+				};
+				if let Some(guest_fd) = file_map.fdmap.insert(FdData::Raw(host_fd)) {
+					guest_fd.0
+				} else if host_fd < 0 {
+					host_fd
+				} else {
+					-ENOENT
+				}
+			}
+			MappedFile::InImage(yk) => {
+				match yk.try_map_project(move |data, _| {
+					if let hermit_entry::ThinTree::File { content, .. } = data {
+						Ok(content)
+					} else {
+						Err(())
+					}
+				}) {
+					Ok(data) => {
+						file_map
+							.fdmap
+							.insert(FdData::Virtual {
+								data: data.erase_arc_cart(),
+								offset: 0,
+							})
+							.expect("virtual file fdmapping should never fail")
+							.0
+					}
+					Err(()) => {
+						debug!("Returning -EISDIR for {guest_path:#?}");
+						-EISDIR
+					}
+				}
+			}
 		}
 	} else {
 		debug!("{guest_path:#?} not found in file map.");
@@ -206,6 +246,7 @@ pub fn read(
 							amt,
 						)
 					};
+					*offset += u64::try_from(amt).unwrap();
 					amt as isize
 				}
 			}

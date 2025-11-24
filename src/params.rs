@@ -38,6 +38,7 @@ pub struct Params {
 	pub kernel_args: Vec<String>,
 
 	/// Mapped paths between the guest and host OS
+	// TODO: use more fine-grained format (see also `EnvVars`)
 	pub file_mapping: Vec<String>,
 
 	/// Path to create temporary directory on

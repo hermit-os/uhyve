@@ -49,6 +49,9 @@ pub enum HypervisorError {
 	#[error("Invalid kernel path ({0})")]
 	InvalidKernelPath(PathBuf),
 
+	#[error("Image configuration error: {0}")]
+	ImageConfig(#[from] hermit_entry::config::HandleConfigError),
+
 	#[error("Kernel Loading Error: {0}")]
 	LoadedKernelError(#[from] vm::LoadKernelError),
 }
