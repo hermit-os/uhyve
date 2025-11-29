@@ -1,4 +1,4 @@
-use std::{num::NonZeroU32, sync::Arc};
+use std::{num::NonZero, sync::Arc};
 
 use log::debug;
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress};
@@ -381,7 +381,7 @@ impl VirtualCPU for XhyveCpu {
 		}
 	}
 
-	fn get_cpu_frequency(&self) -> Option<NonZeroU32> {
+	fn get_cpu_frequency(&self) -> Option<NonZero<u32>> {
 		warn!("CPU base frequency detection not implemented!");
 		None
 	}

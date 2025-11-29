@@ -1,6 +1,6 @@
 use std::{
 	env, fmt, fs, io,
-	num::NonZeroU32,
+	num::NonZero,
 	os::unix::prelude::JoinHandleExt,
 	path::PathBuf,
 	sync::{Arc, Mutex},
@@ -459,7 +459,7 @@ fn init_guest_mem(
 fn write_fdt_into_mem(
 	mem: &MmapMemory,
 	params: &Params,
-	cpu_freq: Option<NonZeroU32>,
+	cpu_freq: Option<NonZero<u32>>,
 	mounts: Vec<String>,
 ) {
 	trace!("Writing FDT in memory");
@@ -512,7 +512,7 @@ fn write_boot_info_to_mem(
 	mem: &MmapMemory,
 	load_info: LoadInfo,
 	num_cpus: u64,
-	cpu_freq: Option<NonZeroU32>,
+	cpu_freq: Option<NonZero<u32>>,
 ) {
 	debug!(
 		"Writing BootInfo to {:?}",

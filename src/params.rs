@@ -2,7 +2,7 @@ use std::{
 	collections::HashMap,
 	convert::Infallible,
 	fmt,
-	num::{NonZeroU32, ParseIntError, TryFromIntError},
+	num::{NonZero, ParseIntError, TryFromIntError},
 	path::PathBuf,
 	str::FromStr,
 };
@@ -86,7 +86,7 @@ impl Default for Params {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
-pub struct CpuCount(NonZeroU32);
+pub struct CpuCount(NonZero<u32>);
 
 impl CpuCount {
 	pub fn get(self) -> u32 {
