@@ -55,28 +55,29 @@ pub unsafe fn address_to_hypercall_v1(
 				Hypercall::FileRead(sysread)
 			}
 			HypercallAddress::FileWrite => {
-				let syswrite = unsafe { mem.get_ref_mut(data).unwrap() };
+				let syswrite = unsafe { mem.get_ref_mut::<WriteParams>(data).unwrap() };
 				Hypercall::FileWrite(syswrite)
 			}
 			HypercallAddress::FileUnlink => {
-				let sysunlink = unsafe { mem.get_ref_mut(data).unwrap() };
+				let sysunlink = unsafe { mem.get_ref_mut::<UnlinkParams>(data).unwrap() };
 				Hypercall::FileUnlink(sysunlink)
 			}
 			HypercallAddress::Exit => {
-				let sysexit = unsafe { mem.get_ref_mut(data).unwrap() };
+				let sysexit = unsafe { mem.get_ref_mut::<ExitParams>(data).unwrap() };
 				Hypercall::Exit(sysexit)
 			}
 			HypercallAddress::Cmdsize => {
-				let syssize = unsafe { mem.get_ref_mut(data).unwrap() };
+				let syssize = unsafe { mem.get_ref_mut::<CmdsizeParams>(data).unwrap() };
 				Hypercall::Cmdsize(syssize)
 			}
 			HypercallAddress::Cmdval => {
-				let syscmdval = unsafe { mem.get_ref_mut(data).unwrap() };
+				let syscmdval = unsafe { mem.get_ref_mut::<CmdvalParams>(data).unwrap() };
 				Hypercall::Cmdval(syscmdval)
 			}
 			HypercallAddress::Uart => Hypercall::SerialWriteByte(data.as_u64() as u8),
 			HypercallAddress::SerialBufferWrite => {
-				let sysserialwrite = unsafe { mem.get_ref_mut(data).unwrap() };
+				let sysserialwrite =
+					unsafe { mem.get_ref_mut::<SerialWriteBufferParams>(data).unwrap() };
 				Hypercall::SerialWriteBuffer(sysserialwrite)
 			}
 			_ => return None,
@@ -98,7 +99,7 @@ pub unsafe fn address_to_hypercall_v2(
 	addr: u16,
 	data: GuestPhysAddr,
 ) -> Option<v2::Hypercall<'_>> {
-	use v2::{Hypercall, HypercallAddress, parameters::*};
+	use v2::{Hypercall, HypercallAddress};
 	if let Ok(hypercall_port) = HypercallAddress::try_from(addr as u64) {
 		Some(match hypercall_port {
 			HypercallAddress::FileClose => {
@@ -119,24 +120,27 @@ pub unsafe fn address_to_hypercall_v2(
 				Hypercall::FileRead(sysread)
 			}
 			HypercallAddress::FileWrite => {
-				let syswrite = unsafe { mem.get_ref_mut(data).unwrap() };
+				let syswrite = unsafe { mem.get_ref_mut::<WriteParams>(data).unwrap() };
 				Hypercall::FileWrite(syswrite)
 			}
 			HypercallAddress::FileUnlink => {
-				let sysunlink = unsafe { mem.get_ref_mut(data).unwrap() };
+				let sysunlink = unsafe { mem.get_ref_mut::<UnlinkParams>(data).unwrap() };
 				Hypercall::FileUnlink(sysunlink)
 			}
 			HypercallAddress::Exit => Hypercall::Exit(data.as_u64() as i32),
 			HypercallAddress::SerialReadBuffer => {
-				let serialreadbuffer = unsafe { mem.get_ref_mut(data).unwrap() };
+				let serialreadbuffer =
+					unsafe { mem.get_ref_mut::<SerialReadBufferParams>(data).unwrap() };
 				Hypercall::SerialReadBuffer(serialreadbuffer)
 			}
 			HypercallAddress::SerialWriteBuffer => {
-				let serialwritebuffer = unsafe { mem.get_ref_mut(data).unwrap() };
+				let serialwritebuffer =
+					unsafe { mem.get_ref_mut::<SerialWriteBufferParams>(data).unwrap() };
 				Hypercall::SerialWriteBuffer(serialwritebuffer)
 			}
 			HypercallAddress::SerialWriteByte => {
-				let serialwritebyte = unsafe { mem.get_ref_mut(data).unwrap() };
+				let serialwritebyte =
+					unsafe { mem.get_ref_mut::<SerialWriteBufferParams>(data).unwrap() };
 				Hypercall::SerialWriteBuffer(serialwritebyte)
 			}
 			_ => return None,
