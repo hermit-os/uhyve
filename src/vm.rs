@@ -1,10 +1,6 @@
-#[cfg(target_arch = "x86_64")]
-use std::num::NonZeroU16;
-#[cfg(target_arch = "aarch64")]
-use std::num::NonZeroU64;
 use std::{
 	env, fmt, fs, io,
-	num::NonZeroU32,
+	num::{NonZero, NonZeroU32},
 	os::unix::prelude::JoinHandleExt,
 	path::PathBuf,
 	sync::{Arc, Mutex},
@@ -551,8 +547,8 @@ fn write_boot_info_to_mem(
 	load_info: LoadInfo,
 	num_cpus: u64,
 	cpu_freq: Option<NonZeroU32>,
-	#[cfg(target_arch = "x86_64")] serial_port: Option<NonZeroU16>,
-	#[cfg(target_arch = "aarch64")] serial_port: Option<NonZeroU64>,
+	#[cfg(target_arch = "x86_64")] serial_port: Option<NonZero<u16>>,
+	#[cfg(target_arch = "aarch64")] serial_port: Option<NonZero<u64>>,
 ) {
 	debug!(
 		"Writing BootInfo to {:?}",
