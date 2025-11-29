@@ -234,6 +234,31 @@ pub fn write(
 		return Ok(());
 	}
 
+	// Handles to standard outputs differs to that of e.g. files.
+	if syswrite.fd == 1 || syswrite.fd == 2 {
+		let guest_phys_addr = virt_to_phys(
+			syswrite.buf + bytes_written as u64,
+			&peripherals.mem,
+			root_pt,
+		);
+		return if let Ok(guest_phys_addr) = guest_phys_addr {
+			let bytes = unsafe {
+				peripherals
+					.mem
+					.slice_at(guest_phys_addr, syswrite.len)
+					.map_err(|e| {
+						io::Error::new(
+							io::ErrorKind::InvalidInput,
+							format!("invalid syswrite buffer: {e:?}"),
+						)
+					})?
+			};
+			peripherals.serial.output(bytes)
+		} else {
+			Ok(())
+		};
+	}
+
 	while bytes_written != syswrite.len {
 		let guest_phys_addr = virt_to_phys(
 			syswrite.buf + bytes_written as u64,
@@ -241,25 +266,6 @@ pub fn write(
 			root_pt,
 		);
 		let guest_phys_len = syswrite.len - bytes_written;
-
-		if let Ok(guest_phys_addr) = guest_phys_addr {
-			if syswrite.fd == 1 || syswrite.fd == 2 {
-				let bytes = unsafe {
-					peripherals
-						.mem
-						.slice_at(guest_phys_addr, syswrite.len)
-						.map_err(|e| {
-							io::Error::new(
-								io::ErrorKind::InvalidInput,
-								format!("invalid syswrite buffer: {e:?}"),
-							)
-						})?
-				};
-				return peripherals.serial.output(bytes);
-			}
-		} else {
-			return Ok(());
-		}
 
 		let host_address = peripherals
 			.mem
