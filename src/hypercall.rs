@@ -247,11 +247,11 @@ pub fn read_v1(
 		let mut tmp = v2::parameters::ReadParams {
 			fd: sysread.fd,
 			buf: guest_phys_addr,
-			len: sysread.len,
-			ret: sysread.ret,
+			len: sysread.len as u64,
+			ret: sysread.ret as i64,
 		};
 		read(mem, &mut tmp, file_map);
-		sysread.ret = tmp.ret;
+		sysread.ret = tmp.ret as isize;
 	} else {
 		warn!("Unable to convert guest virtual address into guest physical address");
 		sysread.ret = -EFAULT as isize;
@@ -268,9 +268,18 @@ pub fn read(
 		if let Ok(host_address) = mem.host_address(sysread.buf) {
 			match fdata {
 				FdData::Raw(rfd) => {
-					let bytes_read =
-						unsafe { libc::read(*rfd, host_address as *mut libc::c_void, sysread.len) };
-					if bytes_read >= 0 { bytes_read } else { -1 }
+					let bytes_read = unsafe {
+						libc::read(
+							*rfd,
+							host_address as *mut libc::c_void,
+							sysread.len as usize,
+						)
+					};
+					if bytes_read >= 0 {
+						bytes_read as i64
+					} else {
+						-1
+					}
 				}
 				FdData::Virtual { data, offset } => {
 					let data: &[u8] = data.get();
@@ -278,7 +287,7 @@ pub fn read(
 						let pos = cmp::min(*offset, data.len() as u64);
 						&data[pos as usize..]
 					};
-					let amt = cmp::min(remaining.len() as u64, sysread.len as u64) as usize;
+					let amt = cmp::min(remaining.len() as u64, sysread.len) as usize;
 					assert!(amt <= isize::MAX as usize);
 
 					// SAFETY: the input slices can't overlap, as `host_address` is owned by the guest
@@ -290,15 +299,15 @@ pub fn read(
 							amt,
 						)
 					};
-					amt as isize
+					amt as i64
 				}
 			}
 		} else {
 			warn!("Unable to get host address for read buffer");
-			-EFAULT as isize
+			-EFAULT as i64
 		}
 	} else {
-		-EBADF as isize
+		-EBADF as i64
 	};
 }
 
@@ -314,7 +323,7 @@ pub fn write_v1(
 		let tmp = v2::parameters::WriteParams {
 			fd: syswrite.fd,
 			buf: guest_phys_addr,
-			len: syswrite.len,
+			len: syswrite.len as u64,
 		};
 		write(peripherals, &tmp, file_map)
 	} else {
@@ -338,14 +347,14 @@ pub fn write(
 		return Ok(());
 	}
 
-	while bytes_written != syswrite.len {
-		let guest_phys_len = syswrite.len - bytes_written;
+	while bytes_written != syswrite.len as usize {
+		let guest_phys_len = syswrite.len as usize - bytes_written;
 
 		if syswrite.fd == 1 || syswrite.fd == 2 {
 			let bytes = unsafe {
 				peripherals
 					.mem
-					.slice_at(syswrite.buf, syswrite.len)
+					.slice_at(syswrite.buf, syswrite.len as usize)
 					.map_err(|e| {
 						io::Error::new(
 							io::ErrorKind::InvalidInput,

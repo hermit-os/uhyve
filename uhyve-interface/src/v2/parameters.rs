@@ -18,7 +18,7 @@ pub struct WriteParams {
 	/// Buffer to be written into the file.
 	pub buf: GuestPhysAddr,
 	/// Number of bytes in the buffer to be written.
-	pub len: usize,
+	pub len: u64,
 }
 
 /// Parameters for a [`FileRead`](crate::v2::Hypercall::FileRead) hypercall.
@@ -30,9 +30,9 @@ pub struct ReadParams {
 	/// Buffer to read the file into.
 	pub buf: GuestPhysAddr,
 	/// Number of bytes to read into the buffer.
-	pub len: usize,
+	pub len: u64,
 	/// Number of bytes read on success. `-1` on failure.
-	pub ret: isize,
+	pub ret: i64,
 }
 
 /// Parameters for a [`SerialReadBuffer`](crate::v2::Hypercall::SerialReadBuffer) hypercall.
@@ -42,9 +42,9 @@ pub struct SerialReadBufferParams {
 	/// Address to write to.
 	pub buf: GuestPhysAddr,
 	/// length of `buf`.
-	pub maxlen: usize,
+	pub maxlen: u64,
 	/// Amount of bytes acutally written.
-	pub len: usize,
+	pub len: u64,
 }
 
 #[repr(u8)]
