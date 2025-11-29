@@ -28,27 +28,27 @@ pub enum VmExit {
 	Hypercall(HypercallAddresses),
 }
 
-impl From<v1::HypercallAddress> for VmExit {
-	fn from(item: v1::HypercallAddress) -> Self {
+impl From<AddressV1> for VmExit {
+	fn from(item: AddressV1) -> Self {
 		VmExit::Hypercall(HypercallAddresses::V1(item))
 	}
 }
 
 impl<'a> From<&v1::Hypercall<'a>> for VmExit {
 	fn from(item: &v1::Hypercall<'a>) -> Self {
-		v1::HypercallAddress::from(item).into()
+		AddressV1::from(item).into()
 	}
 }
 
-impl From<v2::HypercallAddress> for VmExit {
-	fn from(item: v2::HypercallAddress) -> Self {
+impl From<AddressV2> for VmExit {
+	fn from(item: AddressV2) -> Self {
 		VmExit::Hypercall(HypercallAddresses::V2(item))
 	}
 }
 
 impl<'a> From<&v2::Hypercall<'a>> for VmExit {
 	fn from(item: &v2::Hypercall<'a>) -> Self {
-		v2::HypercallAddress::from(item).into()
+		AddressV2::from(item).into()
 	}
 }
 
