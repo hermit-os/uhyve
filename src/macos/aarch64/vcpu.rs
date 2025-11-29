@@ -288,7 +288,7 @@ impl VirtualCPU for XhyveCpu {
 										.output(&[buf])
 										.unwrap_or_else(|e| error!("{e:?}")),
 									v2::Hypercall::SerialWriteBuffer(sysserialwrite) => {
-										// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
+										// SAFETY: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 										let buf = unsafe {
 											self
 												.peripherals
