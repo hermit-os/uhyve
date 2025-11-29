@@ -4,7 +4,7 @@ use crate::GuestPhysAddr;
 /// Re-export of all unchanged parameters and flags from v1.
 pub use crate::parameters::*;
 pub use crate::v1::parameters::{
-	CloseParams, ExitParams, LseekParams, OpenParams, SerialWriteBufferParams, UnlinkParams,
+	CloseParams, LseekParams, OpenParams, SerialWriteBufferParams, UnlinkParams,
 };
 
 /// Parameters for a [`FileWrite`](crate::v2::Hypercall::FileWrite) hypercall.
