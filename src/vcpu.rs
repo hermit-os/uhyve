@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::NonZero;
 
 use crate::stats::CpuStats;
 /// The trait and fns that a virtual cpu requires
@@ -32,7 +32,7 @@ pub trait VirtualCPU: Sized + Send {
 	fn print_registers(&self);
 
 	/// Queries the CPUs base frequency in kHz
-	fn get_cpu_frequency(&self) -> Option<NonZeroU32>;
+	fn get_cpu_frequency(&self) -> Option<NonZero<u32>>;
 
 	/// Perform thread-local initializations for this vcpu
 	fn thread_local_init(&mut self) -> HypervisorResult<()>;
