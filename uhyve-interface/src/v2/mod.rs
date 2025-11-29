@@ -45,8 +45,6 @@ into_hypercall_addresses! {
 			SerialReadByte,
 			SerialWriteBuffer,
 			SerialWriteByte,
-			SharedMemOpen,
-			SharedMemClose,
 		}
 	}
 }
@@ -71,8 +69,6 @@ pub enum Hypercall<'a> {
 	SerialReadByte,
 	/// Read a buffer from the terminal
 	SerialReadBuffer(&'a SerialReadBufferParams),
-	SharedMemOpen(&'a SharedMemOpenParams),
-	SharedMemClose(&'a SharedMemCloseParams),
 }
 impl<'a> Hypercall<'a> {
 	/// Get a hypercall's port address.
