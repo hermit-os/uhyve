@@ -2,6 +2,7 @@ use std::mem::size_of;
 
 use align_address::Align;
 use bitflags::bitflags;
+use hermit_entry::UhyveIfVersion;
 use rand::Rng;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 
@@ -183,6 +184,7 @@ pub fn init_guest_mem(
 	guest_address: GuestPhysAddr,
 	length: u64,
 	_legacy_mapping: bool,
+	_uhyve_interface_version: Option<UhyveIfVersion>,
 ) {
 	let mem_addr = std::ptr::addr_of_mut!(mem[0]);
 

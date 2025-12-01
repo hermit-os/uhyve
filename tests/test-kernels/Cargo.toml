@@ -18,3 +18,9 @@ x86_64 = { version = "0.15", default-features = false, features = [
 
 [dependencies]
 uhyve-interface = { path = "../../uhyve-interface" }
+
+[patch.crates-io]
+# temporary, as the kernel (which is automatically fetched and compile by
+# the hermit wrapper crate) cannot be patched directly, as it is not seen
+# by cargo. use https://github.com/hermit-os/kernel/pull/2013
+hermit = { path = "../../../hermit-rs/hermit" }
