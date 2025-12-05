@@ -7,7 +7,7 @@ authors = [
   "Stefan Lankes <slankes@eonerc.rwth-aachen.de>",
 ]
 description = "The interface between uhyve and a guest VM"
-repository = "https://github.com/hermitcore/uhyve"
+repository = "https://github.com/hermit-os/uhyve"
 license = "MIT OR Apache-2.0"
 keywords = ["hypervisor", "unikernel", "hermit"]
 categories = ["os"]
