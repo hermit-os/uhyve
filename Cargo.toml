@@ -9,6 +9,7 @@ authors = [
     "Martin Kröning <mkroening@posteo.net>",
     "Jonathan Klimt <jonathan.klimt@eonerc.rwth-aachen.de>",
     "Jens Breitbart <jbreitbart@gmail.com>",
+    "Ellen Emilia Anna Zscheile <fogti@ytrizja.de>",
 ]
 edition = "2024"
 description = "A specialized hypervisor for Hermit"
