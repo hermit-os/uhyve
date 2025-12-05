@@ -16,6 +16,9 @@ authors:
   given-names: "Jens"
 - family-names: "Schwender"
   given-names: "Jonathan"
+- family-names: "Zscheile"
+  given-names: "Ellen Emilia Anna"
+  orcid: 'https://orcid.org/0009-0005-9419-8568'
 - name: "The Hermit Project Contributors"
 
 title: "Uhyve - A specialized hypervisor for Hermit"
