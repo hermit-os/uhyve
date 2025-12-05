@@ -2,11 +2,7 @@
 name = "uhyve-interface"
 version = "0.1.4"
 edition = "2024"
-authors = [
-  "Jonathan Klimt <jonathan.klimt@eonerc.rwth-aachen.de>",
-  "Stefan Lankes <slankes@eonerc.rwth-aachen.de>",
-  "Ellen Emilia Anna Zscheile <fogti@ytrizja.de>",
-]
+authors = ["The Hermit Project Developers"]
 description = "The interface between uhyve and a guest VM"
 repository = "https://github.com/hermit-os/uhyve"
 license = "MIT OR Apache-2.0"

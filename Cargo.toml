@@ -4,13 +4,7 @@ exclude = ["tests/test-kernels", "hermit-rs", "hermit-rs/*", "kernel"]
 [package]
 name = "uhyve"
 version = "0.6.0"
-authors = [
-    "Stefan Lankes <slankes@eonerc.rwth-aachen.de>",
-    "Martin Kröning <mkroening@posteo.net>",
-    "Jonathan Klimt <jonathan.klimt@eonerc.rwth-aachen.de>",
-    "Jens Breitbart <jbreitbart@gmail.com>",
-    "Ellen Emilia Anna Zscheile <fogti@ytrizja.de>",
-]
+authors = ["The Hermit Project Developers"]
 edition = "2024"
 description = "A specialized hypervisor for Hermit"
 repository = "https://github.com/hermit-os/uhyve"
