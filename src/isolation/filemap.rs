@@ -7,6 +7,8 @@ use std::{
 };
 
 use clean_path::clean;
+#[cfg(target_os = "linux")]
+use libc::{O_DIRECT, O_SYNC};
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -14,12 +16,50 @@ use crate::isolation::{
 	fd::UhyveFileDescriptorLayer, split_guest_and_host_path, tempdir::create_temp_dir,
 };
 
+/// Defines cache-related behaviors that will be forced upon [`crate::hypercall::open`],
+/// primarily useful for e.g. I/O benchmarking.
+#[cfg(target_os = "linux")]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct UhyveIoMode {
+	/// Append the O_DIRECT flag to bypass the host's page cache.
+	direct: bool,
+	/// Append the O_DIRECT flag to bypass the host's page cache and block until writes are finished on the host.
+	sync: bool,
+}
+
+#[cfg(target_os = "linux")]
+impl From<Option<String>> for UhyveIoMode {
+	fn from(s: Option<String>) -> Self {
+		let (prefix, flags) = s
+			.unwrap_or_default()
+			.to_lowercase()
+			.split_once("=")
+			.map(|(prefix, flags)| (prefix.to_string(), flags.to_string()))
+			.unwrap_or_default();
+		let flags: Vec<_> = flags.split(',').collect();
+		match prefix.as_str() {
+			"host" => {
+				let direct = flags.contains(&"direct");
+				let sync = flags.contains(&"sync");
+				UhyveIoMode { direct, sync }
+			}
+			"" => UhyveIoMode {
+				direct: false,
+				sync: false,
+			},
+			_ => unimplemented!(),
+		}
+	}
+}
+
 /// Wrapper around a `HashMap` to map guest paths to arbitrary host paths and track file descriptors.
 #[derive(Debug)]
 pub struct UhyveFileMap {
 	files: HashMap<PathBuf, PathBuf>,
 	tempdir: TempDir,
 	pub fdmap: UhyveFileDescriptorLayer,
+	#[cfg(target_os = "linux")]
+	iomode: UhyveIoMode,
 }
 
 impl UhyveFileMap {
@@ -27,7 +67,11 @@ impl UhyveFileMap {
 	///
 	/// * `mappings` - A list of host->guest path mappings with the format "./host_path.txt:guest.txt"
 	/// * `tempdir` - Path to create temporary directory on
-	pub fn new(mappings: &[String], tempdir: Option<PathBuf>) -> UhyveFileMap {
+	pub fn new(
+		mappings: &[String],
+		tempdir: Option<PathBuf>,
+		#[cfg(target_os = "linux")] iomode: UhyveIoMode,
+	) -> UhyveFileMap {
 		let fm = UhyveFileMap {
 			files: mappings
 				.iter()
@@ -37,6 +81,8 @@ impl UhyveFileMap {
 				.collect(),
 			tempdir: create_temp_dir(tempdir),
 			fdmap: UhyveFileDescriptorLayer::default(),
+			#[cfg(target_os = "linux")]
+			iomode,
 		};
 		assert_eq!(
 			fm.files.len(),
@@ -126,6 +172,21 @@ impl UhyveFileMap {
 		})
 	}
 
+	/// Get flags that should be appended to [`crate::hypercall::open`]
+	/// as per the structure's defined I/O mode.
+	#[inline]
+	#[cfg(target_os = "linux")]
+	pub(crate) fn get_io_mode_flags(&self) -> i32 {
+		let mut flags: i32 = 0;
+		if self.iomode.sync {
+			flags |= O_SYNC;
+		}
+		if self.iomode.direct {
+			flags |= O_DIRECT;
+		}
+		flags
+	}
+
 	/// Returns the path to the temporary directory (for Landlock).
 	#[cfg(target_os = "linux")]
 	pub(crate) fn get_temp_dir(&self) -> &Path {
@@ -180,7 +241,15 @@ mod tests {
 			path_prefix.clone() + "/this_symlink_leads_to_a_file" + ":guest_file_symlink",
 		];
 
-		let map = UhyveFileMap::new(&map_parameters, None);
+		let map = UhyveFileMap::new(
+			&map_parameters,
+			None,
+			#[cfg(target_os = "linux")]
+			UhyveIoMode {
+				direct: false,
+				sync: false,
+			},
+		);
 
 		assert_eq!(
 			map.get_host_path(c"readme_file.md").unwrap(),
@@ -232,7 +301,15 @@ mod tests {
 			host_path_map.to_str().unwrap(),
 			guest_path_map.to_str().unwrap()
 		)];
-		let mut map = UhyveFileMap::new(&uhyvefilemap_params, None);
+		let mut map = UhyveFileMap::new(
+			&uhyvefilemap_params,
+			None,
+			#[cfg(target_os = "linux")]
+			UhyveIoMode {
+				direct: false,
+				sync: false,
+			},
+		);
 
 		let mut found_host_path = map.get_host_path(
 			CString::new(target_guest_path.as_os_str().as_bytes())
@@ -271,7 +348,15 @@ mod tests {
 			guest_path_map.to_str().unwrap()
 		)];
 
-		map = UhyveFileMap::new(&uhyvefilemap_params, None);
+		map = UhyveFileMap::new(
+			&uhyvefilemap_params,
+			None,
+			#[cfg(target_os = "linux")]
+			UhyveIoMode {
+				direct: false,
+				sync: false,
+			},
+		);
 
 		target_guest_path = PathBuf::from("/root/this_symlink_leads_to_a_file");
 		target_host_path = fixture_path.clone();
@@ -288,12 +373,68 @@ mod tests {
 
 		// Tests directory traversal with no maps
 		let empty_array: [String; 0] = [];
-		map = UhyveFileMap::new(&empty_array, None);
+		map = UhyveFileMap::new(
+			&empty_array,
+			None,
+			#[cfg(target_os = "linux")]
+			UhyveIoMode {
+				direct: false,
+				sync: false,
+			},
+		);
 		found_host_path = map.get_host_path(
 			CString::new(target_guest_path.as_os_str().as_bytes())
 				.unwrap()
 				.as_c_str(),
 		);
 		assert!(found_host_path.is_none());
+	}
+
+	#[test]
+	#[cfg(target_os = "linux")]
+	fn test_uhyveiomode_input() {
+		let io_mode_str = |x: &str| UhyveIoMode::from(Some(String::from(x)));
+		assert_eq!(
+			io_mode_str(""),
+			UhyveIoMode {
+				direct: false,
+				sync: false
+			}
+		);
+		assert_eq!(
+			io_mode_str("host=direct"),
+			UhyveIoMode {
+				direct: true,
+				sync: false
+			}
+		);
+		assert_eq!(
+			io_mode_str("host=direct"),
+			UhyveIoMode {
+				direct: true,
+				sync: false
+			}
+		);
+		assert_eq!(
+			io_mode_str("host=direct"),
+			UhyveIoMode {
+				direct: true,
+				sync: false
+			}
+		);
+		assert_eq!(
+			io_mode_str("host=direct,sync"),
+			UhyveIoMode {
+				direct: true,
+				sync: true
+			}
+		);
+		assert_eq!(
+			io_mode_str("host=sync,direct"),
+			UhyveIoMode {
+				direct: true,
+				sync: true
+			}
+		);
 	}
 }

@@ -11,6 +11,9 @@ use byte_unit::{Byte, Unit};
 use serde::Deserialize;
 use thiserror::Error;
 
+#[cfg(target_os = "linux")]
+pub use crate::isolation::filemap::UhyveIoMode;
+
 #[derive(Debug, Clone)]
 pub struct Params {
 	/// Guest RAM size
@@ -55,6 +58,10 @@ pub struct Params {
 	#[cfg(target_os = "linux")]
 	pub file_isolation: FileSandboxMode,
 
+	/// I/O mode for processing files files on the host
+	#[cfg(target_os = "linux")]
+	pub io_mode: UhyveIoMode,
+
 	/// Kernel output handling
 	pub output: Output,
 
@@ -86,6 +93,8 @@ impl Default for Params {
 			tempdir: Default::default(),
 			#[cfg(target_os = "linux")]
 			file_isolation: FileSandboxMode::default(),
+			#[cfg(target_os = "linux")]
+			io_mode: Default::default(),
 			kernel_args: Default::default(),
 			output: Default::default(),
 			stats: false,
