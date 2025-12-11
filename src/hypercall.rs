@@ -136,6 +136,10 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 			// If a supposed attacker can predict where we open a file and its filename,
 			// this contigency, together with O_CREAT, will cause the write to fail.
 			flags |= O_EXCL;
+			#[cfg(target_os = "linux")]
+			{
+				flags |= file_map.get_io_mode_flags();
+			}
 
 			let host_path_c_string = file_map.create_temporary_file(guest_path);
 			let new_host_path = host_path_c_string.as_c_str().as_ptr();
