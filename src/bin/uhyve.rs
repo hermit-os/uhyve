@@ -128,6 +128,30 @@ struct UhyveArgs {
 	#[cfg(target_os = "linux")]
 	file_isolation: Option<String>,
 
+	/// I/O mode (default, hostdirect, hostdirectsync)
+	///
+	/// Sets an I/O mode that enforces certain flags to open hypercalls, which
+	/// influence I/O operations to the host filesystem (i.e. write, read).
+	/// This is intended to be useful for benchmarking.
+	///
+	/// - `default`: No extra flags will be appended.
+	///
+	/// - `host-direct`: Appends the O_DIRECT flag to ensure that file
+	///   operations do not go through the host page cache.
+	///
+	/// - `host-directsync`: Appends the flags O_DIRECT and O_SYNC to ensure
+	///   that file operations do not go through the host page cache and will also only
+	///   return once the host OS "confirms" that all data has been written to the disk.
+	///   This is useful when wanting to bypass the host page cache and ensure that e.g.
+	///   write operations continue blocking until the device controller informs the
+	///   host OS that all data has been written to the storage.
+	///   This should be the slowest option.
+	#[clap(long)]
+	#[serde(default)]
+	#[merge(strategy = merge::option::overwrite_none)]
+	#[cfg(target_os = "linux")]
+	io_mode: Option<String>,
+
 	/// GDB server port
 	///
 	/// Starts a GDB server on the provided port and waits for a connection.
@@ -380,6 +404,8 @@ impl From<Args> for Params {
 					#[cfg(target_os = "linux")]
 					file_isolation,
 					#[cfg(target_os = "linux")]
+					io_mode,
+					#[cfg(target_os = "linux")]
 					gdb_port,
 					config: _,
 				},
@@ -428,6 +454,8 @@ impl From<Args> for Params {
 			} else {
 				FileSandboxMode::default()
 			},
+			#[cfg(target_os = "linux")]
+			io_mode: io_mode.into(),
 			// TODO
 			output: if let Some(outp) = output {
 				Output::from_str(&outp).unwrap()
@@ -622,6 +650,8 @@ mod tests {
 				#[cfg(target_os = "linux")]
 				file_isolation: None,
 				#[cfg(target_os = "linux")]
+				io_mode: None,
+				#[cfg(target_os = "linux")]
 				gdb_port: None,
 				config: Some(PathBuf::from("config.txt")),
 			},
@@ -653,6 +683,7 @@ mod tests {
 			stats = true
 			tempdir = '/tmp/'
 			file_isolation = 'strict'
+			io_mode = 'direct'
 			gdb_port = 1
 
 			[memory]
@@ -680,6 +711,8 @@ mod tests {
 				tempdir: Some(PathBuf::from("/tmp/")),
 				#[cfg(target_os = "linux")]
 				file_isolation: Some(String::from("strict")),
+				#[cfg(target_os = "linux")]
+				io_mode: Some(String::from("direct")),
 				#[cfg(target_os = "linux")]
 				gdb_port: Some(1),
 				config: Some(PathBuf::from("config.txt")),
