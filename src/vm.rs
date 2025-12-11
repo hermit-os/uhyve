@@ -207,6 +207,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		let file_mapping = Mutex::new(UhyveFileMap::new(
 			&params.file_mapping,
 			params.tempdir.clone(),
+			#[cfg(target_os = "linux")]
+			params.io_mode,
 		));
 		let mut mounts: Vec<_> = file_mapping
 			.lock()
