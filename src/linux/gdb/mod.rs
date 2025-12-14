@@ -5,10 +5,10 @@ mod section_offsets;
 use std::{io::Read, net::TcpStream, sync::Once, thread, time::Duration};
 
 use gdbstub::{
-	common::Signal,
+	common::{Signal, Tid},
 	conn::{Connection, ConnectionExt},
-	stub::{SingleThreadStopReason, run_blocking},
-	target::{self, Target, TargetError, TargetResult, ext::base::singlethread::SingleThreadBase},
+	stub::{MultiThreadStopReason, run_blocking},
+	target::{self, Target, TargetError, TargetResult, ext::base::multithread::MultiThreadBase},
 };
 use gdbstub_arch::x86::reg::X86_64CoreRegs;
 use kvm_bindings::{
@@ -56,7 +56,7 @@ impl Target for GdbUhyve {
 
 	#[inline(always)]
 	fn base_ops(&mut self) -> target::ext::base::BaseOps<'_, Self::Arch, Self::Error> {
-		target::ext::base::BaseOps::SingleThread(self)
+		target::ext::base::BaseOps::MultiThread(self)
 	}
 
 	#[inline(always)]
@@ -74,8 +74,18 @@ impl Target for GdbUhyve {
 	}
 }
 
+#[inline(always)]
+fn tid_from_cpuid(cpu_id: usize) -> Tid {
+	Tid::new(cpu_id + 1).unwrap()
+}
+
+#[inline(always)]
+fn cpuid_from_tid(tid: Tid) -> usize {
+	tid.get() - 1
+}
+
 impl GdbUhyve {
-	fn apply_guest_debug(&mut self, step: bool) -> HypervisorResult<()> {
+	fn apply_guest_debug(&mut self, id: usize, step: bool) -> HypervisorResult<()> {
 		let debugreg = self.hw_breakpoints.registers();
 		let mut control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_SW_BP | KVM_GUESTDBG_USE_HW_BP;
 		if step {
@@ -87,43 +97,63 @@ impl GdbUhyve {
 			arch: kvm_guest_debug_arch { debugreg },
 		};
 
-		self.vm.vcpus[0]
+		self.vm.vcpus[id]
 			.get_vcpu()
 			.set_guest_debug(&debug_struct)
 			.map_err(HypervisorError::from)
 	}
 
-	pub fn run(&mut self) -> HypervisorResult<SingleThreadStopReason<u64>> {
-		let stop_reason = match self.vm.vcpus[0].r#continue()? {
+	pub fn run(&mut self) -> HypervisorResult<MultiThreadStopReason<u64>> {
+		// FIXME: Apply this to all cores.
+		let cpu_id: usize = 0;
+		let stop_reason = match self.vm.vcpus[cpu_id].r#continue()? {
 			VcpuStopReason::Debug(debug) => match debug.exception {
 				DB_VECTOR => {
 					let dr6 = Dr6Flags::from_bits_truncate(debug.dr6);
-					self.hw_breakpoints.stop_reason(dr6)
+					// FIXME: I think we're supposed to use the reason somehow.
+					self.hw_breakpoints.stop_reason(dr6);
+					MultiThreadStopReason::HwBreak(tid_from_cpuid(cpu_id))
 				}
-				BP_VECTOR => SingleThreadStopReason::SwBreak(()),
+				BP_VECTOR => MultiThreadStopReason::SwBreak(tid_from_cpuid(cpu_id)),
 				vector => unreachable!("unknown KVM exception vector: {}", vector),
 			},
-			VcpuStopReason::Exit(code) => SingleThreadStopReason::Exited(code.try_into().unwrap()),
-			VcpuStopReason::Kick => SingleThreadStopReason::Signal(Signal::SIGINT),
+			VcpuStopReason::Exit(code) => MultiThreadStopReason::Exited(code.try_into().unwrap()),
+			VcpuStopReason::Kick => MultiThreadStopReason::Signal(Signal::SIGINT),
 		};
 		Ok(stop_reason)
 	}
+
+	#[inline(always)]
+	fn halt(&mut self) {
+		for vcpu_id in 0..self.vm.vcpus.len() {
+			let _ = self.apply_guest_debug(vcpu_id, true);
+		}
+	}
 }
 
-impl SingleThreadBase for GdbUhyve {
-	fn read_registers(&mut self, regs: &mut X86_64CoreRegs) -> TargetResult<(), Self> {
-		regs::read(self.vm.vcpus[0].get_vcpu(), regs)
+impl MultiThreadBase for GdbUhyve {
+	#[inline(always)]
+	fn read_registers(&mut self, regs: &mut X86_64CoreRegs, tid: Tid) -> TargetResult<(), Self> {
+		regs::read(self.vm.vcpus[cpuid_from_tid(tid)].get_vcpu(), regs)
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))
 	}
 
-	fn write_registers(&mut self, regs: &X86_64CoreRegs) -> TargetResult<(), Self> {
-		regs::write(regs, self.vm.vcpus[0].get_vcpu())
+	#[inline(always)]
+	fn write_registers(&mut self, regs: &X86_64CoreRegs, tid: Tid) -> TargetResult<(), Self> {
+		regs::write(regs, self.vm.vcpus[cpuid_from_tid(tid)].get_vcpu())
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))
 	}
 
-	fn read_addrs(&mut self, start_addr: u64, data: &mut [u8]) -> TargetResult<usize, Self> {
+	#[inline(always)]
+	fn read_addrs(
+		&mut self,
+		start_addr: <Self::Arch as gdbstub::arch::Arch>::Usize,
+		data: &mut [u8],
+		_tid: Tid, // Assumption: All cores share the same memory.
+	) -> TargetResult<usize, Self> {
 		let guest_addr = GuestVirtAddr::try_new(start_addr).map_err(|_e| TargetError::NonFatal)?;
-		// Safety: mem is copied to data before mem can be modified.
+		// SAFETY: mem is copied to data before mem can be modified.
+		// SAFETY: vCPU 0 presumed to have same memory as all other vCPUs.
 		let src = unsafe {
 			self.vm.peripherals.mem.slice_at(
 				virt_to_phys(
@@ -140,8 +170,10 @@ impl SingleThreadBase for GdbUhyve {
 		Ok(data.len())
 	}
 
-	fn write_addrs(&mut self, start_addr: u64, data: &[u8]) -> TargetResult<(), Self> {
-		// Safety: self.vm.mem is not altered during the lifetime of mem.
+	#[inline(always)]
+	fn write_addrs(&mut self, start_addr: u64, data: &[u8], _tid: Tid) -> TargetResult<(), Self> {
+		// SAFETY: self.vm.mem is not altered during the lifetime of mem.
+		// SAFETY: vCPU 0 presumed to have same memory as all other vCPUs.
 		let mem = unsafe {
 			self.vm.peripherals.mem.slice_at_mut(
 				virt_to_phys(
@@ -160,39 +192,78 @@ impl SingleThreadBase for GdbUhyve {
 	}
 
 	#[inline(always)]
+	fn list_active_threads(
+		&mut self,
+		thread_is_active: &mut dyn FnMut(Tid),
+	) -> Result<(), Self::Error> {
+		for vcpu_id in 0..self.vm.vcpus.len() {
+			thread_is_active(tid_from_cpuid(vcpu_id));
+		}
+		Ok(())
+	}
+
+	#[inline(always)]
 	fn support_resume(
 		&mut self,
-	) -> Option<target::ext::base::singlethread::SingleThreadResumeOps<'_, Self>> {
+	) -> Option<target::ext::base::multithread::MultiThreadResumeOps<'_, Self>> {
 		Some(self)
 	}
 }
 
-impl target::ext::base::singlethread::SingleThreadResume for GdbUhyve {
-	fn resume(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
+impl target::ext::base::multithread::MultiThreadResume for GdbUhyve {
+	#[inline(always)]
+	fn set_resume_action_continue(
+		&mut self,
+		tid: Tid,
+		signal: Option<Signal>,
+	) -> Result<(), Self::Error> {
 		if signal.is_some() {
 			// cannot resume with signal
 			return Err(kvm_ioctls::Error::new(EINVAL).into());
 		}
 
-		self.apply_guest_debug(false)
+		let _ = self.apply_guest_debug(cpuid_from_tid(tid), false);
+		Ok(())
+	}
+
+	/// Handled by clear_resume_actions and set_resume_action_XXX.
+	#[inline(always)]
+	fn resume(&mut self) -> Result<(), Self::Error> {
+		Ok(())
+	}
+
+	/// Called before resume and set_resume_action_step.
+	#[inline(always)]
+	fn clear_resume_actions(&mut self) -> Result<(), Self::Error> {
+		for vcpu_id in 0..self.vm.vcpus.len() {
+			let _ = self.apply_guest_debug(vcpu_id, false);
+		}
+		Ok(())
 	}
 
 	#[inline(always)]
 	fn support_single_step(
 		&mut self,
-	) -> Option<target::ext::base::singlethread::SingleThreadSingleStepOps<'_, Self>> {
+	) -> Option<target::ext::base::multithread::MultiThreadSingleStepOps<'_, Self>> {
 		Some(self)
 	}
 }
 
-impl target::ext::base::singlethread::SingleThreadSingleStep for GdbUhyve {
-	fn step(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
+impl target::ext::base::multithread::MultiThreadSingleStep for GdbUhyve {
+	/// Called before resume and after clear_resume_actions.
+	#[inline(always)]
+	fn set_resume_action_step(
+		&mut self,
+		tid: Tid,
+		signal: Option<Signal>,
+	) -> Result<(), Self::Error> {
 		if signal.is_some() {
 			// cannot step with signal
 			return Err(kvm_ioctls::Error::new(EINVAL).into());
 		}
 
-		self.apply_guest_debug(true)
+		let _ = self.apply_guest_debug(cpuid_from_tid(tid), true);
+		Ok(())
 	}
 }
 
@@ -201,13 +272,13 @@ pub(crate) enum UhyveGdbEventLoop {}
 impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 	type Target = GdbUhyve;
 	type Connection = TcpStream;
-	type StopReason = SingleThreadStopReason<u64>;
+	type StopReason = MultiThreadStopReason<u64>;
 
 	fn wait_for_stop_reason(
 		target: &mut Self::Target,
 		conn: &mut Self::Connection,
 	) -> Result<
-		run_blocking::Event<SingleThreadStopReason<u64>>,
+		run_blocking::Event<MultiThreadStopReason<u64>>,
 		run_blocking::WaitForStopReasonError<
 			<Self::Target as Target>::Error,
 			<Self::Connection as Connection>::Error,
@@ -237,7 +308,7 @@ impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 		let stop_reason = target.run().map_err(WaitForStopReasonError::Target)?;
 
 		let event = match stop_reason {
-			SingleThreadStopReason::Signal(Signal::SIGINT) => {
+			MultiThreadStopReason::Signal(Signal::SIGINT) => {
 				assert!(
 					conn.peek()
 						.map_err(WaitForStopReasonError::Connection)?
@@ -254,8 +325,10 @@ impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
 	}
 
 	fn on_interrupt(
-		_target: &mut Self::Target,
-	) -> Result<Option<SingleThreadStopReason<u64>>, <Self::Target as Target>::Error> {
-		Ok(Some(SingleThreadStopReason::Signal(Signal::SIGINT)))
+		target: &mut Self::Target,
+	) -> Result<Option<MultiThreadStopReason<u64>>, <Self::Target as Target>::Error> {
+		// TODO: Reevaluate usefulness.
+		target.halt();
+		Ok(Some(MultiThreadStopReason::Signal(Signal::SIGINT)))
 	}
 }
