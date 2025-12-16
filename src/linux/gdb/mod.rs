@@ -110,9 +110,7 @@ impl GdbUhyve {
 			VcpuStopReason::Debug(debug) => match debug.exception {
 				DB_VECTOR => {
 					let dr6 = Dr6Flags::from_bits_truncate(debug.dr6);
-					MultiThreadStopReason::from(
-						self.hw_breakpoints.stop_reason(tid_from_cpuid(cpu_id), dr6),
-					)
+					self.hw_breakpoints.stop_reason(tid_from_cpuid(cpu_id), dr6)
 				}
 				BP_VECTOR => MultiThreadStopReason::SwBreak(tid_from_cpuid(cpu_id)),
 				vector => unreachable!("unknown KVM exception vector: {}", vector),
