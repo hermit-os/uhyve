@@ -21,6 +21,7 @@ use crate::{
 	consts::{UHYVE_IRQ_NET_LINE, UHYVE_IRQ_NET_PIN, UHYVE_NET_MTU, UHYVE_NET_READ_TIMEOUT},
 	mem::MmapMemory,
 	net::{NetworkInterface, NetworkInterfaceRX, NetworkInterfaceTX, UHYVE_QUEUE_SIZE, tap::Tap},
+	params::NetworkMode,
 	pci::{MemoryBar64, PciConfigurationAddress, PciDevice},
 	virtio::{
 		DeviceStatus, IOBASE, NET_DEVICE_ID, QUEUE_LIMIT,
@@ -81,6 +82,7 @@ pub(crate) struct VirtioNetPciDevice {
 	/// Store all negotiated feature sets. Chapter 2.2 virtio v1.2
 	feature_set: u64,
 	config_generation: (bool, u8), // changed & counter
+	interface_cfg: NetworkMode,
 	rx_thread: Option<JoinHandle<()>>,
 	tx_thread: Option<JoinHandle<()>>,
 	thread_start_channels: (Sender<ThreadStartMsg>, Sender<ThreadStartMsg>),
@@ -98,7 +100,7 @@ impl fmt::Debug for VirtioNetPciDevice {
 }
 
 impl VirtioNetPciDevice {
-	pub fn new(guest_mmap: Arc<MmapMemory>) -> VirtioNetPciDevice {
+	pub fn new(interface_cfg: NetworkMode, guest_mmap: Arc<MmapMemory>) -> VirtioNetPciDevice {
 		let mut header_caps = HeaderConf::new();
 		header_caps.pci_config_hdr.device_id = NET_DEVICE_ID;
 		header_caps.pci_config_hdr.base_address_registers[0] = MemoryBar64::new(IOBASE as u64);
@@ -135,6 +137,7 @@ impl VirtioNetPciDevice {
 			thread_start_channels: (tx_sender, rx_sender),
 			rx_thread_start_channel_receiver: Some(rx_receiver),
 			tx_thread_start_channel_receiver: Some(tx_receiver),
+			interface_cfg,
 			stop_threads: Arc::new(AtomicBool::new(false)),
 		}
 	}
@@ -267,9 +270,11 @@ impl VirtioNetPciDevice {
 		rx_notifier: RXNOTIFIER,
 		interrupter: INTERRUPTER,
 	) {
-		// Create a TAP device without packet info headers.
-		// TODO: Create network dynamically
-		let iface = Tap::new().expect("Could not create TAP device");
+		let iface = match &self.interface_cfg {
+			NetworkMode::Tap { name } => {
+				Box::new(Tap::new(name).expect("Could not create Tap device"))
+			}
+		};
 
 		// store the interfaces MAC address
 		self.header_caps.dev.mac = iface.mac_address_as_bytes();
