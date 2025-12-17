@@ -31,7 +31,7 @@ use crate::{
 	mem::MmapMemory,
 	net::NetworkBackend,
 	os::KickSignal,
-	params::{EnvVars, Params},
+	params::{EnvVars, NetworkMode, Params},
 	parking::Parker,
 	serial::{Destination, UhyveSerial},
 	stats::{CpuStats, VmStats},
@@ -81,7 +81,7 @@ pub(crate) trait VirtualizationBackendInternal: Sized {
 		params: &Params,
 	) -> HypervisorResult<Self>;
 
-	fn virtio_net_device(mmap: Arc<MmapMemory>) -> Self::VirtioNetImpl;
+	fn virtio_net_device(mode: NetworkMode, mmap: Arc<MmapMemory>) -> Self::VirtioNetImpl;
 }
 
 #[derive(Debug, Clone)]
@@ -97,7 +97,7 @@ pub(crate) struct VmPeripherals<VirtioNetImpl: NetworkBackend> {
 	pub file_mapping: Mutex<UhyveFileMap>,
 	pub mem: Arc<MmapMemory>,
 	pub(crate) serial: UhyveSerial,
-	pub virtio_device: Mutex<VirtioNetImpl>,
+	pub virtio_device: Option<Mutex<VirtioNetImpl>>,
 }
 
 // This uses the "private sealed supertrait pattern".
@@ -433,7 +433,11 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 
 		// create virtio interface
 		let mem = Arc::new(mem);
-		let virtio_device = Mutex::new(VirtBackend::virtio_net_device(mem.clone()));
+		let virtio_device = kernel_info
+			.params
+			.network
+			.as_ref()
+			.map(|mode| Mutex::new(VirtBackend::virtio_net_device(mode.clone(), mem.clone())));
 
 		let peripherals = Arc::new(VmPeripherals {
 			mem,
