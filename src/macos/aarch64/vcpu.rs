@@ -18,7 +18,7 @@ use crate::{
 	},
 	hypercall,
 	mem::MmapMemory,
-	params::Params,
+	params::{NetworkMode, Params},
 	stats::CpuStats,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::{
@@ -78,7 +78,7 @@ impl VirtualizationBackendInternal for XhyveVm {
 		Ok(Self { peripherals, gic })
 	}
 
-	fn virtio_net_device(_memory: Arc<MmapMemory>) -> Self::VirtioNetImpl {
+	fn virtio_net_device(_mode: NetworkMode, _memory: Arc<MmapMemory>) -> Self::VirtioNetImpl {
 		unimplemented!();
 	}
 }

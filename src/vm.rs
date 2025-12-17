@@ -67,6 +67,7 @@ pub(crate) mod internal {
 	use crate::{
 		HypervisorResult,
 		mem::MmapMemory,
+		params::NetworkMode,
 		vcpu::VirtualCPU,
 		vm::{KernelInfo, Params, VmPeripherals},
 	};
@@ -87,7 +88,7 @@ pub(crate) mod internal {
 
 		fn new(peripherals: Arc<VmPeripherals<Self>>, params: &Params) -> HypervisorResult<Self>;
 
-		fn virtio_net_device(mmap: Arc<MmapMemory>) -> Self::VirtioNetImpl;
+		fn virtio_net_device(mode: NetworkMode, mmap: Arc<MmapMemory>) -> Self::VirtioNetImpl;
 	}
 }
 
@@ -108,7 +109,7 @@ pub(crate) struct VmPeripherals<VirtBackend: VirtualizationBackendInternal> {
 	pub file_mapping: Mutex<UhyveFileMap>,
 	pub mem: Arc<MmapMemory>,
 	pub(crate) serial: UhyveSerial,
-	pub virtio_device: Mutex<VirtBackend::VirtioNetImpl>,
+	pub virtio_device: Option<Mutex<VirtBackend::VirtioNetImpl>>,
 }
 
 // TODO: Investigate soundness
@@ -431,7 +432,12 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		// create virtio interface
 		let mem = Arc::new(mem);
-		let virtio_device = Mutex::new(VirtBackend::BACKEND::virtio_net_device(mem.clone()));
+		let virtio_device = kernel_info.params.network.as_ref().map(|mode| {
+			Mutex::new(VirtBackend::BACKEND::virtio_net_device(
+				mode.clone(),
+				mem.clone(),
+			))
+		});
 
 		let peripherals = Arc::new(VmPeripherals {
 			mem,
