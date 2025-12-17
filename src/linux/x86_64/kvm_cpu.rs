@@ -428,9 +428,12 @@ impl VirtualCPU for KvmCpu {
 								if let Some(pci_addr) = self.pci_addr
 									&& pci_addr & 0x1ff800 == 0
 								{
-									let virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.handle_read(pci_addr & 0x3ff, addr);
+									if let Some(virtio_device) = &self.peripherals.virtio_device {
+										virtio_device
+											.lock()
+											.unwrap()
+											.handle_read(pci_addr & 0x3ff, addr);
+									}
 								} else {
 									unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
 								}
@@ -540,11 +543,13 @@ impl VirtualCPU for KvmCpu {
 								PCI_CONFIG_DATA_PORT => {
 									if let Some(pci_addr) = self.pci_addr
 										&& pci_addr & 0x1ff800 == 0
-									{
-										let mut virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										virtio_device.handle_write(pci_addr & 0x3ff, addr);
-									}
+										&& let Some(virtio_device) = &self.peripherals.virtio_device
+										{
+											virtio_device
+												.lock()
+												.unwrap()
+												.handle_write(pci_addr & 0x3ff, addr);
+										}
 								}
 								PCI_CONFIG_ADDRESS_PORT => {
 									self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
@@ -559,37 +564,42 @@ impl VirtualCPU for KvmCpu {
 						match addr {
 							0x9_F000..0xA_0000 | 0xF_0000..0x10_0000 => {} // Search for MP floating table
 							_ => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								let conf_addr = ConfigAddress::from_guest_address(addr).unwrap();
-								match conf_addr.0 {
-									IsrStatus::ISR_FLAGS => virtio_device.read_isr_notify(data),
-									ComCfg::DEVICE_STATUS => {
-										data[0] = virtio_device.read_status_reg()
-									}
-									ComCfg::DEVICE_FEATURE => {
-										virtio_device.read_host_features(data)
-									}
-									ComCfg::CONFIG_GENERATION => virtio_device
-										.read_config_generation(data.try_into().unwrap()),
-									ComCfg::QUEUE_SIZE => virtio_device.read_queue_size(data),
-									ComCfg::QUEUE_NOTIFY_OFFSET => {
-										virtio_device.read_queue_notify_offset(data)
-									}
-									NetDevCfg::MAC_ADDRESS..NetDevCfg::MAC_ADDRESS_END => {
-										let offs = conf_addr.0 - NetDevCfg::MAC_ADDRESS;
-										virtio_device.read_mac_address_bytes(offs as usize, data);
-									}
-									NetDevCfg::NET_STATUS => virtio_device.read_net_status(data),
-									NetDevCfg::MTU => virtio_device.read_mtu(data),
-									ComCfg::QUEUE_RESET => virtio_device.read_queue_reset(data),
-									_ => {
-										let l = data.len();
-										self.print_registers();
-										panic!(
-											"undefined mmio read of {l} bytes to {addr:#x?} (ConfigAddress {:x?})",
-											ConfigAddress::from_guest_address(addr)
-										);
+								if let Some(virtio_device) = &self.peripherals.virtio_device {
+									let mut virtio_device = virtio_device.lock().unwrap();
+									let conf_addr =
+										ConfigAddress::from_guest_address(addr).unwrap();
+									match conf_addr.0 {
+										IsrStatus::ISR_FLAGS => virtio_device.read_isr_notify(data),
+										ComCfg::DEVICE_STATUS => {
+											data[0] = virtio_device.read_status_reg()
+										}
+										ComCfg::DEVICE_FEATURE => {
+											virtio_device.read_host_features(data)
+										}
+										ComCfg::CONFIG_GENERATION => virtio_device
+											.read_config_generation(data.try_into().unwrap()),
+										ComCfg::QUEUE_SIZE => virtio_device.read_queue_size(data),
+										ComCfg::QUEUE_NOTIFY_OFFSET => {
+											virtio_device.read_queue_notify_offset(data)
+										}
+										NetDevCfg::MAC_ADDRESS..NetDevCfg::MAC_ADDRESS_END => {
+											let offs = conf_addr.0 - NetDevCfg::MAC_ADDRESS;
+											virtio_device
+												.read_mac_address_bytes(offs as usize, data);
+										}
+										NetDevCfg::NET_STATUS => {
+											virtio_device.read_net_status(data)
+										}
+										NetDevCfg::MTU => virtio_device.read_mtu(data),
+										ComCfg::QUEUE_RESET => virtio_device.read_queue_reset(data),
+										_ => {
+											let l = data.len();
+											self.print_registers();
+											panic!(
+												"undefined mmio read of {l} bytes to {addr:#x?} (ConfigAddress {:x?})",
+												ConfigAddress::from_guest_address(addr)
+											);
+										}
 									}
 								}
 							}
@@ -623,49 +633,53 @@ impl VirtualCPU for KvmCpu {
 						return Err(err.into());
 					}
 					VcpuExit::MmioWrite(addr, data) => {
-						let mut virtio_device = self.peripherals.virtio_device.lock().unwrap();
-						match ConfigAddress::from_guest_address(addr).unwrap().0 {
-							ComCfg::DEVICE_STATUS => virtio_device.write_status(data),
-							ComCfg::DRIVER_FEATURE_SELECT => {
-								virtio_device.write_driver_feature_select(data)
-							}
-							ComCfg::DEVICE_FEATURE_SELECT => {
-								virtio_device.write_device_feature_select(data)
-							}
-							ComCfg::DRIVER_FEATURE => virtio_device.write_requested_features(data),
-							ComCfg::QUEUE_SELECT => virtio_device.write_selected_queue(data),
-							ComCfg::QUEUE_DESC_LOW => {
-								virtio_device.update_queue_addr(Area::DescLow, data)
-							}
-							ComCfg::QUEUE_DESC_HIGH => {
-								virtio_device.update_queue_addr(Area::DescHigh, data)
-							}
-							ComCfg::QUEUE_ENABLE => virtio_device.queue_enable(data),
-							ComCfg::QUEUE_DRIVER_LOW => {
-								virtio_device.update_queue_addr(Area::DriverLow, data)
-							}
-							ComCfg::QUEUE_DRIVER_HIGH => {
-								virtio_device.update_queue_addr(Area::DriverHigh, data)
-							}
-							ComCfg::QUEUE_DEVICE_LOW => {
-								virtio_device.update_queue_addr(Area::DeviceLow, data)
-							}
-							ComCfg::QUEUE_DEVICE_HIGH => {
-								virtio_device.update_queue_addr(Area::DeviceHigh, data)
-							}
-							ComCfg::QUEUE_RESET => virtio_device.write_reset_queue(),
-							IsrStatus::ISR_FLAGS => {
-								panic!("Guest should not write to ISR!")
-							}
-							MEM_NOTIFY_TX | MEM_NOTIFY_RX => {
-								panic!(
-									"Writing to MemNotify address! Is IOEventFD correctly configured?"
-								)
-							}
-							_ => {
-								let l = data.len();
-								self.print_registers();
-								panic!("undefined mmio write of {l} bytes to {addr:#x?}");
+						if let Some(virtio_device) = &self.peripherals.virtio_device {
+							let mut virtio_device = virtio_device.lock().unwrap();
+							match ConfigAddress::from_guest_address(addr).unwrap().0 {
+								ComCfg::DEVICE_STATUS => virtio_device.write_status(data),
+								ComCfg::DRIVER_FEATURE_SELECT => {
+									virtio_device.write_driver_feature_select(data)
+								}
+								ComCfg::DEVICE_FEATURE_SELECT => {
+									virtio_device.write_device_feature_select(data)
+								}
+								ComCfg::DRIVER_FEATURE => {
+									virtio_device.write_requested_features(data)
+								}
+								ComCfg::QUEUE_SELECT => virtio_device.write_selected_queue(data),
+								ComCfg::QUEUE_DESC_LOW => {
+									virtio_device.update_queue_addr(Area::DescLow, data)
+								}
+								ComCfg::QUEUE_DESC_HIGH => {
+									virtio_device.update_queue_addr(Area::DescHigh, data)
+								}
+								ComCfg::QUEUE_ENABLE => virtio_device.queue_enable(data),
+								ComCfg::QUEUE_DRIVER_LOW => {
+									virtio_device.update_queue_addr(Area::DriverLow, data)
+								}
+								ComCfg::QUEUE_DRIVER_HIGH => {
+									virtio_device.update_queue_addr(Area::DriverHigh, data)
+								}
+								ComCfg::QUEUE_DEVICE_LOW => {
+									virtio_device.update_queue_addr(Area::DeviceLow, data)
+								}
+								ComCfg::QUEUE_DEVICE_HIGH => {
+									virtio_device.update_queue_addr(Area::DeviceHigh, data)
+								}
+								ComCfg::QUEUE_RESET => virtio_device.write_reset_queue(),
+								IsrStatus::ISR_FLAGS => {
+									panic!("Guest should not write to ISR!")
+								}
+								MEM_NOTIFY_TX | MEM_NOTIFY_RX => {
+									panic!(
+										"Writing to MemNotify address! Is IOEventFD correctly configured?"
+									)
+								}
+								_ => {
+									let l = data.len();
+									self.print_registers();
+									panic!("undefined mmio write of {l} bytes to {addr:#x?}");
+								}
 							}
 						}
 					}
