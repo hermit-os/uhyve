@@ -12,7 +12,7 @@ use crate::{
 	hypercall,
 	linux::{KVM, x86_64::virtio_device::KvmVirtioNetDevice},
 	mem::mem_as_slice,
-	params::Params,
+	params::{NetworkMode, Params},
 	pci::{IOBASE_U64, IOEND_U64, PciConfigurationAddress, PciDevice},
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
@@ -170,7 +170,9 @@ impl VirtualizationBackendInternal for KvmVm {
 			error!("kvm: cannot disable KVM exits: {err}");
 		}
 
-		peripherals.virtio_device.lock().unwrap().setup(&vm);
+		if let Some(virtiodevice) = &peripherals.virtio_device {
+			virtiodevice.lock().unwrap().setup(&vm);
+		}
 
 		Ok(Self {
 			vm_fd: vm,
@@ -178,8 +180,8 @@ impl VirtualizationBackendInternal for KvmVm {
 		})
 	}
 
-	fn virtio_net_device(memory: Arc<GuestMemoryMmap>) -> Self::VirtioNetImpl {
-		KvmVirtioNetDevice::new(VirtioNetPciDevice::new(memory))
+	fn virtio_net_device(mode: NetworkMode, memory: Arc<GuestMemoryMmap>) -> Self::VirtioNetImpl {
+		KvmVirtioNetDevice::new(VirtioNetPciDevice::new(mode, memory))
 	}
 }
 
@@ -423,15 +425,12 @@ impl VirtualCPU for KvmCpu {
 								if let Some(pci_addr) = self.pci_addr
 									&& pci_addr & 0x1ff800 == 0
 								{
-									self.peripherals
-										.virtio_device
-										.lock()
-										.unwrap()
-										.virtio
-										.handle_read(
+									if let Some(virtio_device) = &self.peripherals.virtio_device {
+										virtio_device.lock().unwrap().virtio.handle_read(
 											PciConfigurationAddress(pci_addr & 0x3ff),
 											addr,
 										);
+									}
 								} else {
 									unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
 								}
@@ -540,17 +539,13 @@ impl VirtualCPU for KvmCpu {
 								// Legacy PCI addressing method
 								PCI_CONFIG_DATA_PORT => {
 									if let Some(pci_addr) = self.pci_addr
-										&& pci_addr & 0x1ff800 == 0
+										&& pci_addr & 0x1ff800 == 0 && let Some(virtio_device) =
+										&self.peripherals.virtio_device
 									{
-										self.peripherals
-											.virtio_device
-											.lock()
-											.unwrap()
-											.virtio
-											.handle_write(
-												PciConfigurationAddress(pci_addr & 0x3ff),
-												addr,
-											);
+										virtio_device.lock().unwrap().virtio.handle_write(
+											PciConfigurationAddress(pci_addr & 0x3ff),
+											addr,
+										);
 									}
 								}
 								PCI_CONFIG_ADDRESS_PORT => {
@@ -565,13 +560,15 @@ impl VirtualCPU for KvmCpu {
 					VcpuExit::MmioRead(addr, data) => {
 						match addr {
 							0x9_F000..0xA_0000 | 0xF_0000..0x10_0000 => {} // Search for MP floating table
-							IOBASE_U64..IOEND_U64 => self
-								.peripherals
-								.virtio_device
-								.lock()
-								.unwrap()
-								.virtio
-								.handle_read(PciConfigurationAddress(addr as u32), data),
+							IOBASE_U64..IOEND_U64 => {
+								if let Some(virtio_device) = &self.peripherals.virtio_device {
+									virtio_device
+										.lock()
+										.unwrap()
+										.virtio
+										.handle_read(PciConfigurationAddress(addr as u32), data)
+								}
+							}
 							_ => {
 								let l = data.len();
 								self.print_registers();
@@ -610,13 +607,15 @@ impl VirtualCPU for KvmCpu {
 						return Err(err.into());
 					}
 					VcpuExit::MmioWrite(addr, data) => match addr {
-						IOBASE_U64..IOEND_U64 => self
-							.peripherals
-							.virtio_device
-							.lock()
-							.unwrap()
-							.virtio
-							.handle_write(PciConfigurationAddress(addr as u32), data),
+						IOBASE_U64..IOEND_U64 => {
+							if let Some(virtio_device) = &self.peripherals.virtio_device {
+								virtio_device
+									.lock()
+									.unwrap()
+									.virtio
+									.handle_write(PciConfigurationAddress(addr as u32), data)
+							}
+						}
 						_ => {
 							let l = data.len();
 							self.print_registers();

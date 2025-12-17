@@ -21,8 +21,7 @@ pub struct Tap {
 }
 
 impl Tap {
-	pub fn new() -> io::Result<Self> {
-		let iface_name = std::env::var("TAP").unwrap_or("tap10".to_owned());
+	pub fn new(iface_name: &str) -> io::Result<Self> {
 		if iface_name.len() > 16 {
 			return Err(Error::other("Interface name must not exceed 16 bytes"));
 		}
@@ -70,7 +69,7 @@ impl Tap {
 
 		Ok(Self {
 			fd,
-			name: iface_name,
+			name: iface_name.to_string(),
 			mac: mac_addr.expect("TAP device without MAC address?"),
 		})
 	}
