@@ -58,6 +58,9 @@ pub struct Params {
 
 	/// Load the kernel to a random address
 	pub aslr: bool,
+
+	/// Networking configuration
+	pub network: Option<NetworkMode>,
 }
 
 impl Default for Params {
@@ -81,6 +84,7 @@ impl Default for Params {
 			stats: false,
 			env: EnvVars::default(),
 			aslr: true,
+			network: None,
 		}
 	}
 }
@@ -258,6 +262,44 @@ impl<S: AsRef<str> + std::fmt::Debug + PartialEq<S> + From<&'static str>> TryFro
 				}
 			},
 		)?))
+	}
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum NetworkMode {
+	Tap { name: String },
+}
+impl TryFrom<String> for NetworkMode {
+	type Error = &'static str;
+
+	fn try_from(netmode: String) -> Result<Self, Self::Error> {
+		netmode_try_from(netmode)
+	}
+}
+impl TryFrom<&str> for NetworkMode {
+	type Error = &'static str;
+
+	fn try_from(netmode: &str) -> Result<Self, Self::Error> {
+		netmode_try_from(netmode)
+	}
+}
+
+fn netmode_try_from<S: AsRef<str>>(netmode: S) -> Result<NetworkMode, &'static str> {
+	if netmode.as_ref() == "tap" {
+		return Ok(NetworkMode::Tap {
+			name: "tap10".to_string(),
+		});
+	}
+
+	let (mode, device) = netmode
+		.as_ref()
+		.split_once(':')
+		.ok_or("invalid netmode string. Must be mode:devicename")?;
+	match mode {
+		"tap" => Ok(NetworkMode::Tap {
+			name: device.to_string(),
+		}),
+		_ => Err("invalid networking mode"),
 	}
 }
 

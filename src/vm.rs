@@ -116,7 +116,7 @@ pub(crate) struct VmPeripherals {
 	pub file_mapping: Mutex<UhyveFileMap>,
 	pub mem: Arc<GuestMemoryMmap>,
 	pub(crate) serial: UhyveSerial,
-	pub virtio_device: Mutex<VirtioNetPciDevice>,
+	pub virtio_device: Option<Mutex<VirtioNetPciDevice>>,
 }
 
 // TODO: Investigate soundness
@@ -266,7 +266,11 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		});
 
 		// create virtio interface
-		let virtio_device = Mutex::new(VirtioNetPciDevice::new(mem.clone()));
+		let virtio_device = kernel_info
+			.params
+			.network
+			.as_ref()
+			.map(|mode| Mutex::new(VirtioNetPciDevice::new(mode.clone(), mem.clone())));
 
 		let peripherals = Arc::new(VmPeripherals {
 			mem,
@@ -278,7 +282,9 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		let virt_backend =
 			VirtBackend::BACKEND::new(peripherals.clone(), &kernel_info.params, guest_address)?;
 
-		virt_backend.register_virtio_device(&mut (peripherals.virtio_device.lock().unwrap()));
+		if let Some(virtio_device) = peripherals.virtio_device.as_ref() {
+			virt_backend.register_virtio_device(&mut (virtio_device.lock().unwrap()));
+		}
 
 		let cpu_count = kernel_info.params.cpu_count.get();
 
