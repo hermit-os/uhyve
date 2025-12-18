@@ -46,7 +46,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Integration Tests
-        run: cargo test --test '*' --no-fail-fast
+        run: timeout 15m cargo test --test '*' --no-fail-fast
 
   run_images:
     name: Run images
