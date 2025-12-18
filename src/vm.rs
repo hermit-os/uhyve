@@ -37,7 +37,6 @@ use crate::{
 	serial::{Destination, UhyveSerial},
 	stats::{CpuStats, VmStats},
 	vcpu::VirtualCPU,
-	virtio::*,
 };
 #[cfg(target_os = "linux")]
 use crate::{
@@ -65,9 +64,10 @@ pub type DefaultBackend = crate::linux::x86_64::kvm_cpu::KvmVm;
 pub type DefaultBackend = crate::macos::XhyveVm;
 
 pub(crate) mod internal {
-	use std::sync::Arc;
+	use std::{fmt::Debug, sync::Arc};
 
 	use uhyve_interface::GuestPhysAddr;
+	use vm_memory::GuestMemoryMmap;
 
 	use crate::{
 		HypervisorResult,
@@ -78,6 +78,7 @@ pub(crate) mod internal {
 	/// Trait marking a interface for creating (accelerated) VMs.
 	pub trait VirtualizationBackendInternal: Sized {
 		type VCPU: 'static + VirtualCPU;
+		type VirtioNetImpl: Debug;
 		const NAME: &str;
 
 		/// Create a new CPU object
@@ -89,10 +90,12 @@ pub(crate) mod internal {
 		) -> HypervisorResult<Self::VCPU>;
 
 		fn new(
-			peripherals: Arc<VmPeripherals>,
+			peripherals: Arc<VmPeripherals<Self>>,
 			params: &Params,
 			guest_addr: GuestPhysAddr,
 		) -> HypervisorResult<Self>;
+
+		fn virtio_net_device(mmap: Arc<GuestMemoryMmap>) -> Self::VirtioNetImpl;
 	}
 }
 
@@ -109,17 +112,17 @@ pub struct VmResult {
 
 /// mutable devices that a vCPU interacts with
 #[derive(Debug)]
-pub(crate) struct VmPeripherals {
+pub(crate) struct VmPeripherals<VirtBackend: VirtualizationBackendInternal> {
 	pub file_mapping: Mutex<UhyveFileMap>,
 	pub mem: Arc<GuestMemoryMmap>,
 	pub(crate) serial: UhyveSerial,
-	pub virtio_device: Mutex<VirtioNetPciDevice>,
+	pub virtio_device: Mutex<VirtBackend::VirtioNetImpl>,
 }
 
 // TODO: Investigate soundness
 // https://github.com/hermitcore/uhyve/issues/229
-unsafe impl Send for VmPeripherals {}
-unsafe impl Sync for VmPeripherals {}
+unsafe impl<B: VirtualizationBackendInternal> Send for VmPeripherals<B> {}
+unsafe impl<B: VirtualizationBackendInternal> Sync for VmPeripherals<B> {}
 
 /// static information that does not change during execution
 #[derive(Debug)]
@@ -138,7 +141,7 @@ pub(crate) struct KernelInfo {
 
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(crate) vcpus: Vec<<VirtBackend::BACKEND as VirtualizationBackendInternal>::VCPU>,
-	pub(crate) peripherals: Arc<VmPeripherals>,
+	pub(crate) peripherals: Arc<VmPeripherals<VirtBackend::BACKEND>>,
 	pub(crate) kernel_info: Arc<KernelInfo>,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
@@ -263,7 +266,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		});
 
 		// create virtio interface
-		let virtio_device = Mutex::new(VirtioNetPciDevice::new());
+		let virtio_device = Mutex::new(VirtBackend::BACKEND::virtio_net_device(mem.clone()));
 
 		let peripherals = Arc::new(VmPeripherals {
 			mem,
