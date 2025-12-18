@@ -296,6 +296,8 @@ where
 
 	let mut uhyve_rw_paths: Vec<PathBuf> = vec![
 		PathBuf::from("/dev/kvm"),
+		#[cfg(target_os = "linux")]
+		PathBuf::from("/dev/net/tun"),
 		#[cfg(feature = "instrument")]
 		PathBuf::from("./uhyve_trace"),
 	];
