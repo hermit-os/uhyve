@@ -13,7 +13,7 @@ use landlock::{
 };
 use thiserror::Error;
 
-use crate::params::FileSandboxMode;
+use crate::{net::tap::TUN_PATH, params::FileSandboxMode};
 
 /// Makes Uhyve aware of an already-existing Landlock policy previously enforced by Uhyve.
 static LANDLOCK_ENABLED: Mutex<bool> = Mutex::new(false);
@@ -294,7 +294,7 @@ where
 		PathBuf::from("/proc/stat"),
 	];
 
-	let mut uhyve_rw_paths: Vec<PathBuf> = vec![PathBuf::from("/dev/kvm")];
+	let mut uhyve_rw_paths: Vec<PathBuf> = vec![PathBuf::from("/dev/kvm"), PathBuf::from(TUN_PATH)];
 	#[cfg(feature = "instrument")]
 	if let Some(trace) = trace {
 		uhyve_ro_paths.push(PathBuf::from("/proc/self/maps"));

@@ -1,4 +1,5 @@
 #![warn(rust_2018_idioms)]
+#![allow(clippy::useless_conversion)]
 
 use std::path::PathBuf;
 
@@ -27,8 +28,6 @@ mod parking;
 mod serial;
 pub mod stats;
 mod vcpu;
-mod virtio;
-mod virtqueue;
 pub mod vm;
 
 pub use arch::*;
@@ -89,3 +88,7 @@ impl HypervisorError {
 }
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
+
+pub mod net;
+mod pci;
+mod virtio;

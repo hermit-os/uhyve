@@ -1040,6 +1040,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "libc",
+ "memoffset",
 ]
 
 [[package]]
@@ -1947,11 +1948,13 @@ dependencies = [
  "uhyve-interface",
  "uuid",
  "virtio-bindings",
+ "virtio-queue",
  "vm-fdt",
- "vm-memory",
+ "vm-memory 0.18.0",
  "vmm-sys-util",
  "x86_64",
  "xhypervisor",
+ "zerocopy",
 ]
 
 [[package]]
@@ -2015,10 +2018,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "091f1f09cfbf2a78563b562e7a949465cce1aef63b6065645188d995162f8868"
 
 [[package]]
+name = "virtio-queue"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e358084f32ed165fddb41d98ff1b7ff3c08b9611d8d6114a1b422e2e85688baf"
+dependencies = [
+ "libc",
+ "log",
+ "virtio-bindings",
+ "vm-memory 0.17.2",
+ "vmm-sys-util",
+]
+
+[[package]]
 name = "vm-fdt"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e21282841a059bb62627ce8441c491f09603622cd5a21c43bfedc85a2952f23"
+
+[[package]]
+name = "vm-memory"
+version = "0.17.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e201ed63fdaba7bdafd07176f2060ffa6949aa05559acbc3f5189824bb285428"
+dependencies = [
+ "vm-memory 0.18.0",
+]
 
 [[package]]
 name = "vm-memory"

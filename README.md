@@ -125,6 +125,31 @@ For more options, the default values, and the corresponding environment variable
 uhyve --help
 ```
 
+### Networking
+
+> [!NOTE]
+> TAP network support is currently only available on Linux.
+
+To use tap networking, you need to create a tap device first and connect it to a suitable network interface (needs root). The following script creates a tap device and bridge interface for guest-host networking:
+
+```sh
+ip link add bridge0 type bridge
+ip link set bridge0 up
+ip addr add 10.0.5.2/24 brd + dev bridge0
+ip tuntap add tap10 mode tap one_queue
+ip link set dev tap10 up
+ip link set tap10 master bridge0
+```
+
+Configure the IP address and gateway of your Hermit image via `HERMIT_IP=10.0.5.3` and `HERMIT_GATEWAY=10.0.5.2`. Run the image via:
+
+```sh
+uhyve --net=tap:tap10 path/to/image
+```
+
+The guest can reach the host at `10.0.5.2` and the guest is available on `10.0.5.3`
+
+
 ### Contributing
 
 If you are interested in contributing to Uhyve, make sure to check out the [Uhyve wiki][uhyve-wiki]!
