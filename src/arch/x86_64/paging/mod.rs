@@ -56,7 +56,10 @@ pub fn initialize_pagetables(
 	// TODO: deprecate the legacy_mapping option once hermit pre 0.10.0 isn't a thing anymore.
 	legacy_mapping: bool,
 ) {
-	assert!(mem.len() >= MIN_PHYSMEM_SIZE);
+	assert!(
+		mem.len() >= PAGETABLES_OFFSET as usize + 2 * PAGE_SIZE,
+		"Insufficient memory for at least a single three-level pagetable mapping"
+	);
 	let mem_addr = std::ptr::addr_of_mut!(mem[0]);
 
 	let (gdt_entry, pml4);
