@@ -24,10 +24,12 @@ pub const EFER_LMA: u64 = 1 << 10; /* Long mode active (read-only) */
 pub const EFER_NXE: u64 = 1 << 11; /* PTE No-Execute bit enable */
 pub const KERNEL_STACK_SIZE: u64 = 0x8000;
 pub const UHYVE_NET_MTU: usize = 1500;
-pub const UHYVE_IRQ_NET: u32 = 11;
+pub const UHYVE_NET_READ_TIMEOUT: u16 = 250; // maximum blocking time for a network read
 pub const GICD_BASE_ADDRESS: u64 = 0x800_0000;
 pub const GICD_SIZE: usize = 0x10000;
 pub const GICR_BASE_ADDRESS: u64 = 0x80A_0000;
 pub const GICR_SIZE: usize = 0xf60000;
 pub const MSI_BASE_ADDRESS: u64 = 0x808_0000;
 pub const MSI_SIZE: usize = 0x20000;
+
+pub const GUEST_PAGE_SIZE: u64 = 0x200000; /* 2 MB pages in guest */

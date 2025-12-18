@@ -21,7 +21,7 @@ pub enum MemoryError {
 /// Uses `GuestMemoryMmap` under the hood.
 #[derive(Debug)]
 pub(crate) struct MmapMemory {
-	mem: GuestMemoryMmap,
+	pub(crate) mem: GuestMemoryMmap,
 }
 impl MmapMemory {
 	pub fn new(
