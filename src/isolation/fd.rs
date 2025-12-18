@@ -60,11 +60,11 @@ pub enum FdData {
 impl fmt::Debug for FdData {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			FdData::Raw(r) => write!(f, "Raw({})", r),
+			FdData::Raw(r) => write!(f, "Raw({r})"),
 			FdData::Virtual { data, offset } => {
 				let data = data.get();
 				let data_snip = &data[..core::cmp::min(10, data.len())];
-				write!(f, "Virtual({:?} @ {})", data_snip, offset)
+				write!(f, "Virtual({data_snip:?} @ {offset})")
 			}
 		}
 	}
@@ -112,7 +112,7 @@ impl UhyveFileDescriptorLayer {
 		let ret = self.next_fd;
 		assert!(self.fds.insert(ret, data).is_none());
 		self.next_fd = ret.checked_add(1).unwrap();
-		debug!("=> {}", ret);
+		debug!("=> {ret}");
 		Some(ret.into())
 	}
 
