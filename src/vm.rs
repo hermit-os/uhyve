@@ -37,7 +37,7 @@ use crate::{
 	serial::{Destination, UhyveSerial},
 	stats::{CpuStats, VmStats},
 	vcpu::VirtualCPU,
-	virtio::*,
+	virtio::net::VirtioNetPciDevice,
 };
 #[cfg(target_os = "linux")]
 use crate::{
@@ -72,6 +72,7 @@ pub(crate) mod internal {
 	use crate::{
 		HypervisorResult,
 		vcpu::VirtualCPU,
+		virtio::net::VirtioNetPciDevice,
 		vm::{KernelInfo, Params, VmPeripherals},
 	};
 
@@ -93,6 +94,8 @@ pub(crate) mod internal {
 			params: &Params,
 			guest_addr: GuestPhysAddr,
 		) -> HypervisorResult<Self>;
+
+		fn register_virtio_device(&self, device: &mut VirtioNetPciDevice);
 	}
 }
 
@@ -263,7 +266,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		});
 
 		// create virtio interface
-		let virtio_device = Mutex::new(VirtioNetPciDevice::new());
+		let virtio_device = Mutex::new(VirtioNetPciDevice::new(mem.clone()));
 
 		let peripherals = Arc::new(VmPeripherals {
 			mem,
@@ -274,6 +277,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		let virt_backend =
 			VirtBackend::BACKEND::new(peripherals.clone(), &kernel_info.params, guest_address)?;
+
+		virt_backend.register_virtio_device(&mut (peripherals.virtio_device.lock().unwrap()));
 
 		let cpu_count = kernel_info.params.cpu_count.get();
 

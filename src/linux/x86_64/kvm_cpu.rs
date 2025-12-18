@@ -14,9 +14,10 @@ use crate::{
 	linux::KVM,
 	mem::mem_as_slice,
 	params::Params,
+	pci::{IOBASE_U64, IOEND_U64, PciConfigurationAddress, PciDevice},
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
-	virtio::*,
+	virtio::net::VirtioNetPciDevice,
 	vm::{
 		KernelInfo, VirtualizationBackend, VmPeripherals, internal::VirtualizationBackendInternal,
 	},
@@ -170,12 +171,16 @@ impl VirtualizationBackendInternal for KvmVm {
 		}
 
 		let evtfd = EventFd::new(0).unwrap();
-		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET)?;
+		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET_LINE as u32)?;
 
 		Ok(Self {
 			vm_fd: vm,
 			peripherals,
 		})
+	}
+
+	fn register_virtio_device(&self, device: &mut VirtioNetPciDevice) {
+		device.setup(&self.vm_fd);
 	}
 }
 
@@ -419,40 +424,15 @@ impl VirtualCPU for KvmCpu {
 								if let Some(pci_addr) = self.pci_addr
 									&& pci_addr & 0x1ff800 == 0
 								{
-									let virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.handle_read(pci_addr & 0x3ff, addr);
+									self.peripherals.virtio_device.lock().unwrap().handle_read(
+										PciConfigurationAddress(pci_addr & 0x3ff),
+										addr,
+									);
 								} else {
 									unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
 								}
 							}
 							PCI_CONFIG_ADDRESS_PORT => {}
-							VIRTIO_PCI_STATUS => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_status(addr);
-							}
-							VIRTIO_PCI_HOST_FEATURES => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_host_features(addr);
-							}
-							VIRTIO_PCI_GUEST_FEATURES => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_requested_features(addr);
-							}
-							VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device
-									.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_OFF);
-							}
-							VIRTIO_PCI_ISR => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.reset_interrupt()
-							}
-							VIRTIO_PCI_LINK_STATUS_MSIX_OFF => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_link_status(addr);
-							}
 							port => {
 								warn!("guest read from unknown I/O port {port:#x}");
 							}
@@ -553,43 +533,23 @@ impl VirtualCPU for KvmCpu {
 								s.increment_val(VmExit::PCIWrite)
 							}
 							match port {
-								//TODO:
+								// Legacy PCI addressing method
 								PCI_CONFIG_DATA_PORT => {
 									if let Some(pci_addr) = self.pci_addr
 										&& pci_addr & 0x1ff800 == 0
 									{
-										let mut virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										virtio_device.handle_write(pci_addr & 0x3ff, addr);
+										self.peripherals
+											.virtio_device
+											.lock()
+											.unwrap()
+											.handle_write(
+												PciConfigurationAddress(pci_addr & 0x3ff),
+												addr,
+											);
 									}
 								}
 								PCI_CONFIG_ADDRESS_PORT => {
 									self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
-								}
-								VIRTIO_PCI_STATUS => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_status(addr);
-								}
-								VIRTIO_PCI_GUEST_FEATURES => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_requested_features(addr);
-								}
-								VIRTIO_PCI_QUEUE_NOTIFY => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.handle_notify_output(addr, &self.peripherals.mem);
-								}
-								VIRTIO_PCI_QUEUE_SEL => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_selected_queue(addr);
-								}
-								VIRTIO_PCI_QUEUE_PFN => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_pfn(addr, &self.peripherals.mem);
 								}
 								port => {
 									warn!("guest wrote to unknown I/O port {port:#x}");
@@ -597,18 +557,24 @@ impl VirtualCPU for KvmCpu {
 							}
 						}
 					}
-					VcpuExit::MmioRead(addr, _targ) => {
+					VcpuExit::MmioRead(addr, data) => {
 						match addr {
 							0x9_F000..0xA_0000 | 0xF_0000..0x10_0000 => {} // Search for MP floating table
+							IOBASE_U64..IOEND_U64 => self
+								.peripherals
+								.virtio_device
+								.lock()
+								.unwrap()
+								.handle_read(PciConfigurationAddress(addr as u32), data),
 							_ => {
+								let l = data.len();
 								self.print_registers();
-								panic!("mmio read to {addr:#x}");
+								panic!(
+									"undefined mmio read of {l} bytes to {addr:#x?} (ConfigAddress {:x?})",
+									PciConfigurationAddress::from_guest_address(addr.into())
+								);
 							}
 						}
-					}
-					VcpuExit::MmioWrite(addr, _targ) => {
-						self.print_registers();
-						panic!("undefined mmio write to {addr:#x}");
 					}
 					VcpuExit::Debug(debug) => {
 						if let Some(s) = self.stats.as_mut() {
@@ -637,6 +603,19 @@ impl VirtualCPU for KvmCpu {
 						let err = io::Error::other(format!("{debug:?}"));
 						return Err(err.into());
 					}
+					VcpuExit::MmioWrite(addr, data) => match addr {
+						IOBASE_U64..IOEND_U64 => self
+							.peripherals
+							.virtio_device
+							.lock()
+							.unwrap()
+							.handle_write(PciConfigurationAddress(addr as u32), data),
+						_ => {
+							let l = data.len();
+							self.print_registers();
+							panic!("undefined mmio write of {l} bytes to {addr:#x?}");
+						}
+					},
 					vcpu_exit => {
 						let err = io::Error::other(format!("not implemented: {vcpu_exit:?}"));
 						return Err(err.into());
