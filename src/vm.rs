@@ -271,10 +271,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			kernel_info.params.gdb_port.is_none() || cfg!(target_os = "linux"),
 			"gdb is only supported on linux (yet)"
 		);
-		assert!(
-			kernel_info.params.gdb_port.is_none() || cpu_count == 1,
-			"gdbstub is only supported with one CPU"
-		);
 
 		let vcpus: Vec<_> = (0..cpu_count)
 			.map(|cpu_id| {
