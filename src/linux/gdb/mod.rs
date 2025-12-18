@@ -40,7 +40,7 @@ use crate::{
 		x86_64::kvm_cpu::{KvmCpu, KvmVm},
 	},
 	vcpu::{VcpuStopReason, VirtualCPU},
-	vm::{KernelInfo, UhyveVm, VmPeripherals},
+	vm::{KernelInfo, UhyveVm, VirtualizationBackendInternal, VmPeripherals},
 };
 
 pub(crate) struct VcpuWrapperShared {
@@ -62,9 +62,9 @@ pub(crate) struct VcpuWrapper {
 }
 
 #[derive(Clone)]
-pub(crate) struct GdbVcpuManager {
+pub(crate) struct GdbVcpuManager<VirtBackend: VirtualizationBackendInternal> {
 	breakpoints: Arc<RwLock<AllBreakpoints>>,
-	pub(crate) peripherals: Arc<VmPeripherals>,
+	pub(crate) peripherals: Arc<VmPeripherals<VirtBackend>>,
 	kernel_info: Arc<KernelInfo>,
 	pub(crate) stops: async_channel::Receiver<MultiThreadStopReason<u64>>,
 	pub(crate) vcpus: Vec<VcpuWrapper>,
@@ -89,7 +89,7 @@ impl UhyveVm<KvmVm> {
 	pub(crate) fn spawn_cpu_manager_for_gdb(
 		self,
 		cpu_affinity: Option<Vec<CoreId>>,
-	) -> GdbVcpuManager {
+	) -> GdbVcpuManager<KvmVm> {
 		use std::os::unix::thread::JoinHandleExt;
 
 		let (stops_s, stops_r) = async_channel::unbounded();
@@ -227,7 +227,7 @@ impl UhyveVm<KvmVm> {
 	}
 }
 
-impl GdbVcpuManager {
+impl<VirtBackend: VirtualizationBackendInternal> GdbVcpuManager<VirtBackend> {
 	/// Resolves a [`Tid`] from GDB to the associated [`VcpuWrapper`].
 	fn get_vcpu_wrapper(&self, tid: Tid) -> &VcpuWrapper {
 		match self.tid_to_vcpu.get(&(tid.try_into().unwrap())) {
@@ -250,7 +250,7 @@ impl GdbVcpuManager {
 	}
 }
 
-impl Target for GdbVcpuManager {
+impl<VirtBackend: VirtualizationBackendInternal> Target for GdbVcpuManager<VirtBackend> {
 	type Arch = gdbstub_arch::x86::X86_64_SSE;
 	type Error = HypervisorError;
 
@@ -279,7 +279,9 @@ impl Target for GdbVcpuManager {
 	}
 }
 
-impl target_multithread::MultiThreadBase for GdbVcpuManager {
+impl<VirtBackend: VirtualizationBackendInternal> target_multithread::MultiThreadBase
+	for GdbVcpuManager<VirtBackend>
+{
 	fn read_registers(&mut self, regs: &mut X86_64CoreRegs, tid: Tid) -> TargetResult<(), Self> {
 		regs::read(self.get_vm_cpu(tid).read().unwrap().get_vcpu(), regs)
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))

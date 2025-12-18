@@ -7,7 +7,9 @@ use gdbstub::{
 };
 
 use super::{GdbVcpuManager, VcpuWrapper, VcpuWrapperShared, breakpoints::AllBreakpoints};
-use crate::{HypervisorError, HypervisorResult, linux::KickSignal};
+use crate::{
+	HypervisorError, HypervisorResult, linux::KickSignal, vm::VirtualizationBackendInternal,
+};
 
 pub(super) struct ResumeMarker {
 	pub(super) mode: AtomicU8,
@@ -25,7 +27,7 @@ pub enum ResumeMode {
 	FreeWheeling,
 }
 
-impl GdbVcpuManager {
+impl<VirtBackend: VirtualizationBackendInternal> GdbVcpuManager<VirtBackend> {
 	/// Signal to the vCPU manager that the `gdbstub` finished initializing,
 	/// i.e. exited the `Idle` state and entered the `Running` state.
 	pub fn set_finished_initializing(&mut self) {
@@ -108,7 +110,9 @@ impl VcpuWrapperShared {
 	}
 }
 
-impl target_multithread::MultiThreadResume for GdbVcpuManager {
+impl<VirtBackend: VirtualizationBackendInternal> target_multithread::MultiThreadResume
+	for GdbVcpuManager<VirtBackend>
+{
 	fn clear_resume_actions(&mut self) -> Result<(), Self::Error> {
 		self.vcpus
 			.iter_mut()
@@ -155,7 +159,9 @@ impl target_multithread::MultiThreadResume for GdbVcpuManager {
 	}
 }
 
-impl target_multithread::MultiThreadSingleStep for GdbVcpuManager {
+impl<VirtBackend: VirtualizationBackendInternal> target_multithread::MultiThreadSingleStep
+	for GdbVcpuManager<VirtBackend>
+{
 	fn set_resume_action_step(
 		&mut self,
 		tid: Tid,
@@ -171,7 +177,9 @@ impl target_multithread::MultiThreadSingleStep for GdbVcpuManager {
 	}
 }
 
-impl target_multithread::MultiThreadSchedulerLocking for GdbVcpuManager {
+impl<VirtBackend: VirtualizationBackendInternal> target_multithread::MultiThreadSchedulerLocking
+	for GdbVcpuManager<VirtBackend>
+{
 	fn set_resume_action_scheduler_lock(&mut self) -> Result<(), Self::Error> {
 		self.default_resume_mode = ResumeMode::Stopped;
 		Ok(())
