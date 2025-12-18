@@ -4,7 +4,7 @@ use gdbstub::target::{self, TargetResult, ext::breakpoints::WatchKind};
 use uhyve_interface::GuestVirtAddr;
 
 use super::GdbUhyve;
-use crate::arch::x86_64::{registers, virt_to_phys};
+use crate::{arch::x86_64::registers, mem::mem_as_slice_virt};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SwBreakpoint {
 	addr: u64,
@@ -51,17 +51,14 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 		if let Entry::Vacant(entry) = self.sw_breakpoints.entry(sw_breakpoint) {
 			// Safety: mem is not altered during the lifetime of `instructions`
 			let instructions = unsafe {
-				self.vm.peripherals.mem.slice_at_mut(
-					virt_to_phys(
-						GuestVirtAddr::new(addr),
-						&self.vm.peripherals.mem,
-						self.vm.vcpus[0].get_root_pagetable(),
-					)
-					.map_err(|_err| ())?,
+				mem_as_slice_virt(
+					&self.vm.peripherals.mem,
+					GuestVirtAddr::new(addr),
 					kind,
+					self.vm.vcpus[0].get_root_pagetable(),
 				)
-			}
-			.unwrap();
+				.map_err(|_| ())?
+			};
 			entry.insert(instructions.into());
 			instructions.fill(SwBreakpoint::OPCODE);
 			Ok(true)
@@ -76,17 +73,14 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 		if let Entry::Occupied(entry) = self.sw_breakpoints.entry(sw_breakpoint) {
 			// Safety: mem is not altered during the lifetime of `instructions`
 			let instructions = unsafe {
-				self.vm.peripherals.mem.slice_at_mut(
-					virt_to_phys(
-						GuestVirtAddr::new(addr),
-						&self.vm.peripherals.mem,
-						self.vm.vcpus[0].get_root_pagetable(),
-					)
-					.map_err(|_err| ())?,
+				mem_as_slice_virt(
+					&self.vm.peripherals.mem,
+					GuestVirtAddr::new(addr),
 					kind,
+					self.vm.vcpus[0].get_root_pagetable(),
 				)
-			}
-			.unwrap();
+				.map_err(|_| ())?
+			};
 			instructions.copy_from_slice(&entry.remove());
 			Ok(true)
 		} else {

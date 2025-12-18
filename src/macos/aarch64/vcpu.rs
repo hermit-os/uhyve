@@ -17,6 +17,7 @@ use crate::{
 		BOOT_INFO_OFFSET, GICD_BASE_ADDRESS, GICR_BASE_ADDRESS, MSI_BASE_ADDRESS, PGT_OFFSET,
 	},
 	hypercall::{self, copy_argv, copy_env},
+	mem::mem_as_slice,
 	params::Params,
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
@@ -58,7 +59,7 @@ impl VirtualizationBackendInternal for XhyveVm {
 
 	fn new(
 		peripherals: Arc<VmPeripherals>,
-		_params: &Params,
+		params: &Params,
 		guest_addr: GuestPhysAddr,
 	) -> HypervisorResult<Self> {
 		trace!("Create VM...");
@@ -66,7 +67,9 @@ impl VirtualizationBackendInternal for XhyveVm {
 
 		trace!("Map guest memory...");
 		map_mem(
-			unsafe { peripherals.mem.as_slice_mut() },
+			unsafe {
+				mem_as_slice(&peripherals.mem, guest_addr, params.memory_size.get()).unwrap()
+			},
 			guest_addr.as_u64(),
 			MemPerm::ExecReadWrite,
 		)?;
@@ -262,12 +265,14 @@ impl VirtualCPU for XhyveCpu {
 									Hypercall::SerialWriteBuffer(sysserialwrite) => {
 										// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 										let buf = unsafe {
-											self.peripherals
-												.mem
-												.slice_at(sysserialwrite.buf, sysserialwrite.len)
-												.expect(
-													"Systemcall parameters for SerialWriteBuffer are invalid",
-												)
+											mem_as_slice(
+												&self.peripherals.mem,
+												sysserialwrite.buf,
+												sysserialwrite.len,
+											)
+											.expect(
+												"Systemcall parameters for SerialWriteBuffer are invalid",
+											)
 										};
 
 										self.peripherals
