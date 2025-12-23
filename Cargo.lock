@@ -774,7 +774,7 @@ checksum = "49fefd6652c57d68aaa32544a4c0e642929725bdc1fd929367cdeb673ab81088"
 dependencies = [
  "enumflags2",
  "libc",
- "thiserror",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -1609,11 +1609,31 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
+version = "1.0.69"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
+dependencies = [
+ "thiserror-impl 1.0.69",
+]
+
+[[package]]
+name = "thiserror"
 version = "2.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f63587ca0f12b72a0600bcba1d40081f830876000bb46dd2337a3051618f4fc8"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 2.0.17",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.69"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
 ]
 
 [[package]]
@@ -1777,7 +1797,7 @@ dependencies = [
  "shell-words",
  "sysinfo",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.17",
  "time",
  "toml",
  "tun-tap",
@@ -1785,6 +1805,7 @@ dependencies = [
  "uuid",
  "virtio-bindings",
  "vm-fdt",
+ "vm-memory",
  "vmm-sys-util",
  "x86_64",
  "xhypervisor",
@@ -1853,6 +1874,17 @@ name = "vm-fdt"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e21282841a059bb62627ce8441c491f09603622cd5a21c43bfedc85a2952f23"
+
+[[package]]
+name = "vm-memory"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c3aba5064cc5f6f7740cddc8dae34d2d9a311cac69b60d942af7f3ab8fc49f4"
+dependencies = [
+ "libc",
+ "thiserror 1.0.69",
+ "winapi",
+]
 
 [[package]]
 name = "vmm-sys-util"
@@ -2325,7 +2357,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fab4e3dfc581f52efdf5784a1562164ae66bcce33c04df6e2ac676955ff883d9"
 dependencies = [
  "libc",
- "thiserror",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
