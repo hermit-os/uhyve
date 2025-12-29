@@ -23,8 +23,9 @@ use x86_64::registers::debug::Dr6Flags;
 use self::breakpoints::SwBreakpoints;
 use crate::{
 	HypervisorError, HypervisorResult,
-	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
+	arch::x86_64::registers::debug::HwBreakpoints,
 	linux::{KickSignal, PthreadWrapper, x86_64::kvm_cpu::KvmVm},
+	mem::mem_as_slice_virt,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::UhyveVm,
 };
@@ -125,35 +126,30 @@ impl SingleThreadBase for GdbUhyve {
 		let guest_addr = GuestVirtAddr::try_new(start_addr).map_err(|_e| TargetError::NonFatal)?;
 		// Safety: mem is copied to data before mem can be modified.
 		let src = unsafe {
-			self.vm.peripherals.mem.slice_at(
-				virt_to_phys(
-					guest_addr,
-					&self.vm.peripherals.mem,
-					self.vm.vcpus[0].get_root_pagetable(),
-				)
-				.map_err(|_err| ())?,
+			mem_as_slice_virt(
+				&self.vm.peripherals.mem,
+				guest_addr,
 				data.len(),
+				self.vm.vcpus[0].get_root_pagetable(),
 			)
-		}
-		.map_err(|_e| TargetError::NonFatal)?;
+			.map_err(|_| TargetError::NonFatal)?
+		};
 		data.copy_from_slice(src);
 		Ok(data.len())
 	}
 
 	fn write_addrs(&mut self, start_addr: u64, data: &[u8]) -> TargetResult<(), Self> {
+		let start_addr = GuestVirtAddr::try_new(start_addr).map_err(|_e| TargetError::NonFatal)?;
 		// Safety: self.vm.mem is not altered during the lifetime of mem.
 		let mem = unsafe {
-			self.vm.peripherals.mem.slice_at_mut(
-				virt_to_phys(
-					GuestVirtAddr::new(start_addr),
-					&self.vm.peripherals.mem,
-					self.vm.vcpus[0].get_root_pagetable(),
-				)
-				.map_err(|_err| ())?,
+			mem_as_slice_virt(
+				&self.vm.peripherals.mem,
+				start_addr,
 				data.len(),
+				self.vm.vcpus[0].get_root_pagetable(),
 			)
-		}
-		.unwrap();
+			.map_err(|_| TargetError::NonFatal)?
+		};
 
 		mem.copy_from_slice(data);
 		Ok(())

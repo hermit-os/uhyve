@@ -56,7 +56,7 @@ pub fn initialize_pagetables(
 	// TODO: deprecate the legacy_mapping option once hermit pre 0.10.0 isn't a thing anymore.
 	legacy_mapping: bool,
 ) {
-	assert!(mem.len() >= MIN_PHYSMEM_SIZE);
+	assert!(mem.len() >= PAGETABLES_OFFSET as usize + 3 * PAGE_SIZE);
 	let mem_addr = std::ptr::addr_of_mut!(mem[0]);
 
 	let (gdt_entry, pml4);
@@ -163,11 +163,12 @@ fn pretty_print_pagetable(pt: &PageTable) {
 #[cfg(test)]
 mod tests {
 	use uhyve_interface::GuestVirtAddr;
+	use vm_memory::{Address, GuestAddress, GuestMemoryMmap, GuestRegionMmap, MmapRegion};
 
 	use super::*;
 	use crate::{
 		consts::{GDT_OFFSET, PAGETABLES_END, PAGETABLES_OFFSET, PML4_OFFSET},
-		mem::MmapMemory,
+		mem::{mem_as_slice, mem_get_ref},
 	};
 
 	#[test]
@@ -178,21 +179,32 @@ mod tests {
 			.try_init();
 
 		let gaddrs = [
-			GuestPhysAddr::new(0x0),
-			GuestPhysAddr::new(0x11120000),
-			GuestPhysAddr::new(0x111ff000),
-			GuestPhysAddr::new(0xe1120000),
+			GuestAddress::new(0x0),
+			GuestAddress::new(0x11120000),
+			GuestAddress::new(0x111ff000),
+			GuestAddress::new(0xe1120000),
 		];
 		for &guest_address in gaddrs.iter() {
 			println!("\n\n---------------------------------------");
 			println!("testing guest address {guest_address:?}");
-			let mem = MmapMemory::new(0, MIN_PHYSMEM_SIZE * 2, guest_address, true, true);
+
+			let regionmap = GuestRegionMmap::<()>::new(
+				MmapRegion::new(MIN_PHYSMEM_SIZE * 2).unwrap(),
+				guest_address,
+			)
+			.unwrap();
+
+			let mem = GuestMemoryMmap::from_regions(vec![regionmap]).unwrap();
 			initialize_pagetables(
 				unsafe {
-					mem.slice_at_mut(guest_address, MIN_PHYSMEM_SIZE * 2)
-						.unwrap()
+					mem_as_slice(
+						&mem,
+						GuestPhysAddr::new(guest_address.0),
+						MIN_PHYSMEM_SIZE * 2,
+					)
+					.unwrap()
 				},
-				guest_address,
+				GuestPhysAddr::new(guest_address.0),
 				0x20_0000 * 4,
 				false,
 			);
@@ -200,8 +212,8 @@ mod tests {
 			/// Checks if `address` is in the pagetables.
 			fn check_and_print(
 				address: GuestVirtAddr,
-				phys_addr_offset: GuestPhysAddr,
-				mem: &MmapMemory,
+				phys_addr_offset: GuestAddress,
+				mem: &GuestMemoryMmap,
 			) {
 				let idx4 = address.p4_index();
 				let idx3 = address.p3_index();
@@ -212,45 +224,40 @@ mod tests {
 					u16::from(idx3),
 					u16::from(idx2)
 				);
-				let pml4 = unsafe { mem.get_ref(phys_addr_offset + PML4_OFFSET).unwrap() };
+				let pml4 =
+					unsafe { mem_get_ref(mem, (phys_addr_offset.0 + PML4_OFFSET).into()).unwrap() };
 				pretty_print_pagetable(pml4);
 
 				// Check PDPTE address
 				let addr_pdpte = &pml4[idx4];
 				debug!("addr_ptpde: {addr_pdpte:?}");
-				assert!(
-					addr_pdpte.addr().as_u64() - phys_addr_offset.as_u64() >= PAGETABLES_OFFSET
-				);
-				assert!(addr_pdpte.addr().as_u64() - phys_addr_offset.as_u64() <= PAGETABLES_END);
+				assert!(addr_pdpte.addr().as_u64() - phys_addr_offset.0 >= PAGETABLES_OFFSET);
+				assert!(addr_pdpte.addr().as_u64() - phys_addr_offset.0 <= PAGETABLES_END);
 				assert!(
 					addr_pdpte
 						.flags()
 						.contains(PageTableFlags::PRESENT | PageTableFlags::WRITABLE)
 				);
 
-				let pdpte = unsafe { mem.get_ref(addr_pdpte.addr().into()).unwrap() };
+				let pdpte = unsafe { mem_get_ref(mem, addr_pdpte.addr().into()).unwrap() };
 				pretty_print_pagetable(pdpte);
 				let addr_pde = &pdpte[idx3];
-				assert!(addr_pde.addr().as_u64() - phys_addr_offset.as_u64() >= PAGETABLES_OFFSET);
-				assert!(addr_pde.addr().as_u64() - phys_addr_offset.as_u64() <= PAGETABLES_END);
+				assert!(addr_pde.addr().as_u64() - phys_addr_offset.0 >= PAGETABLES_OFFSET);
+				assert!(addr_pde.addr().as_u64() - phys_addr_offset.0 <= PAGETABLES_END);
 				assert!(
 					addr_pde
 						.flags()
 						.contains(PageTableFlags::PRESENT | PageTableFlags::WRITABLE)
 				);
 
-				let pde = unsafe { mem.get_ref(addr_pde.addr().into()).unwrap() };
+				let pde = unsafe { mem_get_ref(mem, addr_pde.addr().into()).unwrap() };
 				pretty_print_pagetable(pde);
 				assert_eq!(pde[idx2].addr().as_u64(), address.as_u64());
 			}
 
+			check_and_print(GuestVirtAddr::new(guest_address.0), guest_address, &mem);
 			check_and_print(
-				GuestVirtAddr::new(guest_address.as_u64()),
-				guest_address,
-				&mem,
-			);
-			check_and_print(
-				GuestVirtAddr::new(guest_address.as_u64() + 3 * 0x20_0000),
+				GuestVirtAddr::new(guest_address.0 + 3 * 0x20_0000),
 				guest_address,
 				&mem,
 			);
@@ -258,9 +265,12 @@ mod tests {
 			// Test GDT
 			let gdt_results = [0x0, 0xAF9B000000FFFF, 0xCF93000000FFFF];
 			for (i, res) in gdt_results.iter().enumerate() {
-				let gdt_addr = guest_address + GDT_OFFSET as usize + i * 8;
+				let gdt_addr = guest_address.0 + GDT_OFFSET + i as u64 * 8;
 				let gdt_entry = u64::from_le_bytes(unsafe {
-					mem.slice_at(gdt_addr, 8).unwrap().try_into().unwrap()
+					mem_as_slice(&mem, gdt_addr.into(), 8)
+						.unwrap()
+						.try_into()
+						.unwrap()
 				});
 				assert_eq!(*res, gdt_entry);
 			}
