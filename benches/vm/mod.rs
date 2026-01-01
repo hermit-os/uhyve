@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use byte_unit::Byte;
 use criterion::{Criterion, criterion_group};
+#[cfg(target_os = "linux")]
+use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
 	params::{Output, Params},
 	vm::{DefaultBackend, UhyveVm},
@@ -14,6 +16,9 @@ pub fn load_vm_hello_world(c: &mut Criterion) {
 	let params = Params {
 		memory_size: Byte::from_u64(1024 * 4096 * 500).try_into().unwrap(),
 		output: Output::None,
+		#[cfg(target_os = "linux")]
+		file_isolation: FileSandboxMode::None,
+		aslr: false,
 		..Default::default()
 	};
 
