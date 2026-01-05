@@ -27,6 +27,14 @@ pub struct Params {
 	/// Number of guest CPUs
 	pub cpu_count: CpuCount,
 
+	/// Allows the guest to manage host CPU power state.
+	///
+	/// This decreases the latency for the guest, but increases latency for other processes on the same host CPU.
+	/// This works best when the host CPUs are not overcommitted.
+	/// The host estimates incorrect CPU usage, due to not knowing about guest idle time.
+	#[cfg(target_os = "linux")]
+	pub cpu_pm: bool,
+
 	/// Create a PIT
 	#[cfg(target_os = "linux")]
 	pub pit: bool,
@@ -71,6 +79,8 @@ impl Default for Params {
 			#[cfg(target_os = "linux")]
 			pit: false,
 			cpu_count: Default::default(),
+			#[cfg(target_os = "linux")]
+			cpu_pm: false,
 			gdb_port: Default::default(),
 			file_mapping: Default::default(),
 			tempdir: Default::default(),
