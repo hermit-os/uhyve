@@ -191,6 +191,15 @@ struct CpuArgs {
 	#[clap(short, long, env = "HERMIT_CPU_COUNT")]
 	cpu_count: Option<CpuCount>,
 
+	/// Allows the guest to manage host CPU power state.
+	///
+	/// This decreases the latency for the guest, but increases latency for other processes on the same host CPU.
+	/// This works best when the host CPUs are not overcommitted.
+	/// The host estimates incorrect CPU usage, due to not knowing about guest idle time.
+	#[clap(long, action = clap::ArgAction::SetTrue)]
+	#[cfg(target_os = "linux")]
+	cpu_pm: Option<bool>,
+
 	/// Create a PIT
 	#[clap(long, action = clap::ArgAction::SetTrue)]
 	#[cfg(target_os = "linux")]
@@ -396,6 +405,8 @@ impl From<Args> for Params {
 				CpuArgs {
 					cpu_count,
 					#[cfg(target_os = "linux")]
+					cpu_pm,
+					#[cfg(target_os = "linux")]
 					pit,
 					affinity: _,
 				},
@@ -413,6 +424,8 @@ impl From<Args> for Params {
 			ksm: ksm.unwrap_or_default(),
 			aslr: !no_aslr.unwrap_or_default(),
 			cpu_count: cpu_count.unwrap_or_default(),
+			#[cfg(target_os = "linux")]
+			cpu_pm: cpu_pm.unwrap_or_default(),
 			#[cfg(target_os = "linux")]
 			pit: pit.unwrap_or_default(),
 			file_mapping,
@@ -635,6 +648,8 @@ mod tests {
 			},
 			cpu: CpuArgs {
 				cpu_count: None,
+				#[cfg(target_os = "linux")]
+				cpu_pm: None,
 				affinity: None,
 				#[cfg(target_os = "linux")]
 				pit: None,
@@ -663,6 +678,7 @@ mod tests {
 
 			[cpu]
 			cpu_count = 4
+			cpu_pm = true
 			affinity = [0,1,2]
 			pit = true
 
@@ -694,6 +710,8 @@ mod tests {
 			},
 			cpu: CpuArgs {
 				cpu_count: Some(CpuCount::from_str("4").unwrap()),
+				#[cfg(target_os = "linux")]
+				cpu_pm: Some(true),
 				affinity: Some(Affinity::from_str("0,1,2").unwrap()),
 				#[cfg(target_os = "linux")]
 				pit: Some(true),
