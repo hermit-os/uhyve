@@ -6,13 +6,14 @@ use std::{
 };
 
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC, parameters::*};
+use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryError, GuestMemoryMmap};
 
 use crate::{
 	isolation::{
 		fd::{FdData, GuestFd},
 		filemap::UhyveFileMap,
 	},
-	mem::{MemoryError, MmapMemory},
+	mem::{mem_as_slice, mem_get_ref_mut},
 	params::EnvVars,
 	virt_to_phys,
 	vm::VmPeripherals,
@@ -26,52 +27,51 @@ use crate::{
 /// - The return value is only valid, as long as the guest is halted.
 /// - This fn must not be called multiple times on the same data, to avoid creating mutable aliasing.
 pub unsafe fn address_to_hypercall(
-	mem: &MmapMemory,
+	mem: &GuestMemoryMmap,
 	addr: u16,
 	data: GuestPhysAddr,
 ) -> Option<Hypercall<'_>> {
 	if let Ok(hypercall_port) = HypercallAddress::try_from(addr) {
 		Some(match hypercall_port {
 			HypercallAddress::FileClose => {
-				let sysclose = unsafe { mem.get_ref_mut::<CloseParams>(data).unwrap() };
-				// let sysclose = unsafe { &mut *(self.host_address(data) as *mut CloseParams) };
+				let sysclose = unsafe { mem_get_ref_mut::<CloseParams>(mem, data) }.unwrap();
 				Hypercall::FileClose(sysclose)
 			}
 			HypercallAddress::FileLseek => {
-				let syslseek = unsafe { mem.get_ref_mut::<LseekParams>(data).unwrap() };
+				let syslseek = unsafe { mem_get_ref_mut::<LseekParams>(mem, data) }.unwrap();
 				Hypercall::FileLseek(syslseek)
 			}
 			HypercallAddress::FileOpen => {
-				let sysopen = unsafe { mem.get_ref_mut::<OpenParams>(data).unwrap() };
+				let sysopen = unsafe { mem_get_ref_mut::<OpenParams>(mem, data) }.unwrap();
 				Hypercall::FileOpen(sysopen)
 			}
 			HypercallAddress::FileRead => {
-				let sysread = unsafe { mem.get_ref_mut::<ReadParams>(data).unwrap() };
+				let sysread = unsafe { mem_get_ref_mut::<ReadParams>(mem, data) }.unwrap();
 				Hypercall::FileRead(sysread)
 			}
 			HypercallAddress::FileWrite => {
-				let syswrite = unsafe { mem.get_ref_mut(data).unwrap() };
+				let syswrite = unsafe { mem_get_ref_mut(mem, data) }.unwrap();
 				Hypercall::FileWrite(syswrite)
 			}
 			HypercallAddress::FileUnlink => {
-				let sysunlink = unsafe { mem.get_ref_mut(data).unwrap() };
+				let sysunlink = unsafe { mem_get_ref_mut(mem, data) }.unwrap();
 				Hypercall::FileUnlink(sysunlink)
 			}
 			HypercallAddress::Exit => {
-				let sysexit = unsafe { mem.get_ref_mut(data).unwrap() };
+				let sysexit = unsafe { mem_get_ref_mut(mem, data) }.unwrap();
 				Hypercall::Exit(sysexit)
 			}
 			HypercallAddress::Cmdsize => {
-				let syssize = unsafe { mem.get_ref_mut(data).unwrap() };
+				let syssize = unsafe { mem_get_ref_mut(mem, data) }.unwrap();
 				Hypercall::Cmdsize(syssize)
 			}
 			HypercallAddress::Cmdval => {
-				let syscmdval = unsafe { mem.get_ref_mut(data).unwrap() };
+				let syscmdval = unsafe { mem_get_ref_mut(mem, data) }.unwrap();
 				Hypercall::Cmdval(syscmdval)
 			}
 			HypercallAddress::Uart => Hypercall::SerialWriteByte(data.as_u64() as u8),
 			HypercallAddress::SerialBufferWrite => {
-				let sysserialwrite = unsafe { mem.get_ref_mut(data).unwrap() };
+				let sysserialwrite = unsafe { mem_get_ref_mut(mem, data).unwrap() };
 				Hypercall::SerialWriteBuffer(sysserialwrite)
 			}
 			_ => return None,
@@ -86,8 +86,11 @@ pub unsafe fn address_to_hypercall(
 /// Note for when using Landlock: Unlinking files results in them being veiled. If a text
 /// file (that existed during initialization) called `log.txt` is unlinked, attempting to
 /// open `log.txt` again will result in an error.
-pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut UhyveFileMap) {
-	let requested_path_ptr = mem.host_address(sysunlink.name).unwrap() as *const i8;
+pub fn unlink(mem: &GuestMemoryMmap, sysunlink: &mut UnlinkParams, file_map: &mut UhyveFileMap) {
+	let requested_path_ptr = mem
+		.get_host_address(GuestAddress(sysunlink.name.as_u64()))
+		.unwrap() as *const i8;
+
 	let guest_path = unsafe { CStr::from_ptr(requested_path_ptr) };
 	sysunlink.ret = if let Some(host_path) = file_map.get_host_path(guest_path) {
 		// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
@@ -101,8 +104,10 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 }
 
 /// Handles an open syscall by opening a file on the host.
-pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
-	let requested_path_ptr = mem.host_address(sysopen.name).unwrap() as *const i8;
+pub fn open(mem: &GuestMemoryMmap, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
+	let requested_path_ptr = mem
+		.get_host_address(GuestAddress(sysopen.name.as_u64()))
+		.unwrap() as *const i8;
 	let mut flags = sysopen.flags & ALLOWED_OPEN_FLAGS;
 	let guest_path = unsafe { CStr::from_ptr(requested_path_ptr) };
 	// See: https://lwn.net/Articles/926782/
@@ -176,15 +181,21 @@ pub fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
 
 /// Handles a read syscall on the host.
 pub fn read(
-	mem: &MmapMemory,
+	mem: &GuestMemoryMmap,
 	sysread: &mut ReadParams,
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
 ) {
+	// TODO:
+	// mem.get_host_address(GuestAddress(
+	// 	virt_to_phys(sysread.buf, mem, root_pt).unwrap().as_u64(),
+	// ))
+	// .unwrap() as *mut libc::c_void,
+
 	sysread.ret = if let Some(fdata) = file_map.fdmap.get_mut(GuestFd(sysread.fd.into_raw_fd())) {
 		let guest_phys_addr = virt_to_phys(sysread.buf, mem, root_pt);
 		if let Ok(guest_phys_addr) = guest_phys_addr
-			&& let Ok(host_address) = mem.host_address(guest_phys_addr)
+			&& let Ok(host_address) = mem.get_host_address(GuestAddress(guest_phys_addr.as_u64()))
 		{
 			match fdata {
 				FdData::Raw(rfd) => {
@@ -204,11 +215,7 @@ pub fn read(
 					// SAFETY: the input slices can't overlap, as `host_address` is owned by the guest
 					// and `data` is owned by the host.
 					unsafe {
-						core::ptr::copy_nonoverlapping(
-							remaining.as_ptr(),
-							host_address as *mut u8,
-							amt,
-						)
+						core::ptr::copy_nonoverlapping(remaining.as_ptr(), host_address, amt)
 					};
 					amt as isize
 				}
@@ -247,15 +254,12 @@ pub fn write(
 		);
 		return if let Ok(guest_phys_addr) = guest_phys_addr {
 			let bytes = unsafe {
-				peripherals
-					.mem
-					.slice_at(guest_phys_addr, syswrite.len)
-					.map_err(|e| {
-						io::Error::new(
-							io::ErrorKind::InvalidInput,
-							format!("invalid syswrite buffer: {e:?}"),
-						)
-					})?
+				mem_as_slice(&peripherals.mem, guest_phys_addr, syswrite.len).map_err(|e| {
+					io::Error::new(
+						io::ErrorKind::InvalidInput,
+						format!("invalid syswrite buffer: {e:?}"),
+					)
+				})?
 			};
 			peripherals.serial.output(bytes)
 		} else {
@@ -268,19 +272,26 @@ pub fn write(
 			syswrite.buf + bytes_written as u64,
 			&peripherals.mem,
 			root_pt,
-		);
+		)
+		.map_err(|e| {
+			io::Error::new(
+				io::ErrorKind::InvalidInput,
+				format!("invalid virtual address: {e:?}"),
+			)
+		})?;
 		let guest_phys_len = syswrite.len - bytes_written;
 
 		let host_address = peripherals
 			.mem
-			.host_address(guest_phys_addr.unwrap())
+			.get_host_address(GuestAddress::new(guest_phys_addr.as_u64())) // TODO: Graceful handling instead of unwrap
 			.map_err(|e| match e {
-				MemoryError::BoundsViolation => {
-					unreachable!("Bounds violation after host_address function")
+				GuestMemoryError::InvalidGuestAddress(ga) => {
+					unreachable!(
+						"Bounds violation after host_address function (Address: {:x})",
+						ga.0
+					)
 				}
-				MemoryError::WrongMemoryError => {
-					Error::new(ErrorKind::AddrNotAvailable, e.to_string())
-				}
+				e => Error::new(ErrorKind::AddrNotAvailable, e.to_string()),
 			})?;
 
 		match file_map.fdmap.get_mut(gfd).unwrap() {
@@ -341,10 +352,10 @@ pub fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 }
 
 /// Copies the arguments of the application into the VM's memory to the destinations specified in `syscmdval`.
-pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &MmapMemory) {
+pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &GuestMemoryMmap) {
 	// copy kernel path as first argument
 	let argvp = mem
-		.host_address(syscmdval.argv)
+		.get_host_address(GuestAddress(syscmdval.argv.as_u64()))
 		.expect("Systemcall parameters for Cmdval are invalid") as *const GuestPhysAddr;
 	let arg_addrs = unsafe { std::slice::from_raw_parts(argvp, argv.len() + 1) };
 
@@ -352,7 +363,7 @@ pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &
 		let len = path.len();
 		// Safety: we drop path_dest before anything else is done with mem
 		let path_dest = unsafe {
-			mem.slice_at_mut(arg_addrs[0], len + 1)
+			mem_as_slice(mem, arg_addrs[0], len + 1)
 				.expect("Systemcall parameters for Cmdval are invalid")
 		};
 
@@ -364,7 +375,7 @@ pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &
 	for (counter, argument) in argv.iter().enumerate() {
 		let len = argument.len();
 		let arg_dest = unsafe {
-			mem.slice_at_mut(arg_addrs[counter], len + 1)
+			mem_as_slice(mem, arg_addrs[counter], len + 1)
 				.expect("Systemcall parameters for Cmdval are invalid")
 		};
 		arg_dest[0..len].copy_from_slice(argument.as_bytes());
@@ -373,9 +384,9 @@ pub fn copy_argv(path: &OsStr, argv: &[String], syscmdval: &CmdvalParams, mem: &
 }
 
 /// Copies the environment variables into the VM's memory to the destinations specified in `syscmdval`.
-pub fn copy_env(env: &EnvVars, syscmdval: &CmdvalParams, mem: &MmapMemory) {
+pub fn copy_env(env: &EnvVars, syscmdval: &CmdvalParams, mem: &GuestMemoryMmap) {
 	let envp = mem
-		.host_address(syscmdval.envp)
+		.get_host_address(GuestAddress(syscmdval.envp.as_u64()))
 		.expect("Systemcall parameters for Cmdval are invalid") as *const GuestPhysAddr;
 
 	let env: Vec<(String, String)> = match env {
@@ -398,7 +409,7 @@ pub fn copy_env(env: &EnvVars, syscmdval: &CmdvalParams, mem: &MmapMemory) {
 	for (counter, (key, value)) in env.iter().enumerate().take(MAX_ARGC_ENVC) {
 		let len = key.len() + value.len() + 1;
 		let env_dest = unsafe {
-			mem.slice_at_mut(env_addrs[counter], len + 1)
+			mem_as_slice(mem, env_addrs[counter], len + 1)
 				.expect("Systemcall parameters for Cmdval are invalid")
 		};
 		//write_env_into_mem(env_dest, key.as_bytes(), value.as_bytes());

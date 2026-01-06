@@ -3,6 +3,7 @@ use std::{io, num::NonZero, sync::Arc};
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress};
+use vm_memory::{GuestMemory, GuestMemoryRegion};
 use vmm_sys_util::eventfd::EventFd;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
@@ -11,6 +12,7 @@ use crate::{
 	consts::*,
 	hypercall,
 	linux::KVM,
+	mem::mem_as_slice,
 	params::Params,
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
@@ -75,28 +77,37 @@ impl VirtualizationBackendInternal for KvmVm {
 	) -> HypervisorResult<Self> {
 		let vm = KVM.create_vm().unwrap();
 
-		let sz = std::cmp::min(peripherals.mem.memory_size, KVM_32BIT_GAP_START);
+		// TODO: Support multiple regions and iterate over them
+		let mem_region = peripherals.mem.iter().next().unwrap();
+		//let sz = std::cmp::min(
+		//peripherals.mem.last_addr().raw_value(),
+		//KVM_32BIT_GAP_START as u64,
+		//);
+
+		let start_addr = mem_region.start_addr();
+		let region_addr = mem_region.to_region_addr(start_addr).unwrap();
 
 		let kvm_mem = kvm_userspace_memory_region {
 			slot: 0,
-			flags: peripherals.mem.flags,
-			memory_size: sz as u64,
-			guest_phys_addr: peripherals.mem.guest_address.as_u64(),
-			userspace_addr: peripherals.mem.host_address as u64,
+			flags: 0, // Can be KVM_MEM_LOG_DIRTY_PAGES and KVM_MEM_READONLY
+			memory_size: mem_region.len(),
+			guest_phys_addr: start_addr.0,
+			userspace_addr: mem_region.get_host_address(region_addr).unwrap() as u64,
 		};
 
 		unsafe { vm.set_user_memory_region(kvm_mem) }?;
 
-		if peripherals.mem.memory_size > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
+		if mem_region.size() > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
 			let kvm_mem = kvm_userspace_memory_region {
 				slot: 1,
-				flags: peripherals.mem.flags,
-				memory_size: (peripherals.mem.memory_size
+				flags: mem_region.flags() as u32,
+				memory_size: (mem_region.last_addr().0 as usize
 					- KVM_32BIT_GAP_START
 					- KVM_32BIT_GAP_SIZE) as u64,
-				guest_phys_addr: peripherals.mem.guest_address.as_u64()
-					+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
-				userspace_addr: (peripherals.mem.host_address as usize
+				guest_phys_addr: start_addr.0 + (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
+				userspace_addr: (mem_region
+					.get_host_address(mem_region.to_region_addr(mem_region.start_addr()).unwrap())
+					.unwrap() as usize
 					+ KVM_32BIT_GAP_START
 					+ KVM_32BIT_GAP_SIZE) as u64,
 			};
@@ -520,15 +531,16 @@ impl VirtualCPU for KvmCpu {
 								Hypercall::SerialWriteBuffer(sysserialwrite) => {
 									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 									let buf = unsafe {
-										self
-											.peripherals
-											.mem
-											.slice_at(sysserialwrite.buf, sysserialwrite.len)
-											.unwrap_or_else(|e| {
-												panic!(
-													"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
-												)
-											})
+										mem_as_slice(
+											&self.peripherals.mem,
+											sysserialwrite.buf,
+											sysserialwrite.len,
+										)
+										.unwrap_or_else(|e| {
+											panic!(
+												"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
+											)
+										})
 									};
 
 									self.peripherals

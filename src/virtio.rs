@@ -6,8 +6,9 @@ use mac_address::*;
 use tun_tap::*;
 use uhyve_interface::GuestPhysAddr;
 use virtio_bindings::bindings::virtio_net::*;
+use vm_memory::{GuestAddress, GuestMemory, GuestMemoryMmap};
 
-use crate::{mem::MmapMemory, virtqueue::*};
+use crate::virtqueue::*;
 
 const STATUS_ACKNOWLEDGE: u8 = 0b00000001;
 const STATUS_DRIVER: u8 = 0b00000010;
@@ -126,7 +127,7 @@ impl VirtioNetPciDevice {
 		//TODO: how to read packets without synchronization issues
 	}
 
-	pub fn handle_notify_output(&mut self, dest: &[u8], mem: &MmapMemory) {
+	pub fn handle_notify_output(&mut self, dest: &[u8], mem: &GuestMemoryMmap) {
 		let tx_num = read_u16!(dest, 0);
 		if tx_num == 1 && self.read_status_reg() & STATUS_DRIVER_OK == STATUS_DRIVER_OK {
 			self.send_available_packets(mem);
@@ -134,7 +135,7 @@ impl VirtioNetPciDevice {
 	}
 
 	// Sends packets using the tun_tap crate, subject to change
-	fn send_available_packets(&mut self, mem: &MmapMemory) {
+	fn send_available_packets(&mut self, mem: &GuestMemoryMmap) {
 		let tx_queue = &mut self.virt_queues[TX_QUEUE];
 		let mut send_indices = Vec::new();
 		for index in tx_queue.avail_iter() {
@@ -143,7 +144,7 @@ impl VirtioNetPciDevice {
 		for index in send_indices {
 			let desc = unsafe { tx_queue.get_descriptor(index) };
 			let gpa = GuestPhysAddr::new(unsafe { *(desc.addr as *const u64) });
-			let hva = mem.host_address(gpa).unwrap();
+			let hva = mem.get_host_address(GuestAddress(gpa.as_u64())).unwrap();
 			match &self.iface {
 				Some(tap) => unsafe {
 					let vec = vec![0; (desc.len as usize) - size_of::<virtio_net_hdr>()];
@@ -263,7 +264,7 @@ impl VirtioNetPciDevice {
 	}
 
 	// Register virtqueue
-	pub fn write_pfn(&mut self, dest: &[u8], mem: &MmapMemory) {
+	pub fn write_pfn(&mut self, dest: &[u8], mem: &GuestMemoryMmap) {
 		let status = self.read_status_reg();
 		if status & STATUS_FEATURES_OK != 0
 			&& status & STATUS_DRIVER_OK == 0
@@ -273,8 +274,8 @@ impl VirtioNetPciDevice {
 				#[expect(clippy::cast_ptr_alignment)]
 				*(dest.as_ptr() as *const u64)
 			});
-			let hva = mem.host_address(gpa).unwrap();
-			let queue = unsafe { Virtqueue::new(hva as *mut u8, QUEUE_LIMIT) };
+			let hva = mem.get_host_address(GuestAddress(gpa.as_u64())).unwrap();
+			let queue = unsafe { Virtqueue::new(hva, QUEUE_LIMIT) };
 			self.virt_queues.push(queue);
 		}
 	}
