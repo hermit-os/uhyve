@@ -22,7 +22,7 @@ authors:
 - name: "The Hermit Project Contributors"
 
 title: "Uhyve - A specialized hypervisor for Hermit"
-version: 0.6.0
+version: 0.7.0
 doi: 10.5281/zenodo.14639288
 date-released: 2025-12-05
 url: "https://github.com/hermit-os/uhyve"
