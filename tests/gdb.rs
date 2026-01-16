@@ -8,7 +8,7 @@ use std::{
 	thread,
 };
 
-use common::{build_hermit_bin, rust_gdb};
+use common::{BuildMode, build_hermit_bin, rust_gdb};
 use tempfile::TempDir;
 use uhyvelib::{
 	params::{Output, Params},
@@ -18,7 +18,7 @@ use uhyvelib::{
 #[test]
 fn gdb() -> io::Result<()> {
 	let port = 1234;
-	let bin_path = build_hermit_bin("gdb");
+	let bin_path = build_hermit_bin("gdb", BuildMode::Debug);
 
 	let bin_path_clone = bin_path.clone();
 	let vm = thread::spawn(move || {

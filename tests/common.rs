@@ -22,16 +22,24 @@ use uhyvelib::{
 	vm::{UhyveVm, VmResult},
 };
 
+#[derive(PartialEq, Eq)]
+pub enum BuildMode {
+	Debug,
+	Release,
+}
+
 /// Uses Cargo to build a kernel in the `tests/test-kernels` directory.
 /// Returns a path to the build binary.
-pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
+pub fn build_hermit_bin(kernel: impl AsRef<Path>, mode: BuildMode) -> PathBuf {
 	// Build hermit binaries sequentially
 	// and avoid invoking cargo twice for the same kernel
 	// if we already know it is up-to-date.
 	static BUILT_HERMIT_BINS: OnceLock<Mutex<HashMap<PathBuf, ()>>> = OnceLock::new();
 
 	let kernel = kernel.as_ref();
-	let kernel_src_path = Path::new("tests/test-kernels");
+	let kernel_src_path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "tests/test-kernels"]
+		.iter()
+		.collect();
 
 	BUILT_HERMIT_BINS
 		.get_or_init(|| Mutex::new(HashMap::new()))
@@ -42,27 +50,32 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>) -> PathBuf {
 			info!("Building kernel {kernel:?}");
 			println!("Building test kernel: {}", kernel.display());
 
-			let cmd = cargo()
+			let mut cmd = cargo();
+			let mut cmd = cmd
 				.arg("build")
 				.arg("-Zbuild-std=std,panic_abort")
 				.arg("--target=x86_64-unknown-hermit")
 				.arg("--bin")
 				.arg(kernel)
-				.env("HERMIT_LOG_LEVEL_FILTER", "Debug")
-				.current_dir(kernel_src_path)
-				.status()
-				.expect("failed to execute `cargo build`");
+				.current_dir(&kernel_src_path);
+
+			cmd = if mode == BuildMode::Release {
+				cmd.arg("--release").env("HERMIT_LOG_LEVEL_FILTER", "Error")
+			} else {
+				cmd.env("HERMIT_LOG_LEVEL_FILTER", "Debug")
+			};
+
+			let cmd = cmd.status().expect("failed to execute `cargo build`");
 
 			assert!(cmd.success(), "Test binaries could not be built.");
 		});
 
-	[
-		kernel_src_path,
-		Path::new("target/x86_64-unknown-hermit/debug"),
-		Path::new(kernel),
-	]
-	.iter()
-	.collect()
+	let p = if mode == BuildMode::Release {
+		Path::new("target/x86_64-unknown-hermit/release")
+	} else {
+		Path::new("target/x86_64-unknown-hermit/debug")
+	};
+	[&kernel_src_path, p, Path::new(kernel)].iter().collect()
 }
 
 /// Small wrapper around [`Uhyve::run`] with default parameters for a small and
