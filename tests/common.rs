@@ -29,6 +29,7 @@ pub enum BuildMode {
 }
 
 pub const HERMIT_GATEWAY: &str = "10.0.5.2";
+
 pub const HERMIT_IP: &str = "10.0.5.3";
 
 /// Uses Cargo to build a kernel in the `tests/test-kernels` directory.
