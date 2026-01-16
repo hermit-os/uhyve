@@ -384,7 +384,7 @@ impl KvmCpu {
 	/// This is only intended to be used after a hypercall has taken place,
 	/// i.e. when handling an IoOut exit.
 	pub(crate) fn get_hypercall_data_addr_v2(&self) -> GuestPhysAddr {
-		GuestPhysAddr::new(self.vcpu.get_regs().unwrap().rcx)
+		GuestPhysAddr::new(self.vcpu.sync_regs().regs.rcx)
 	}
 
 	pub fn get_root_pagetable(&self) -> GuestPhysAddr {
@@ -400,6 +400,7 @@ impl VirtualCPU for KvmCpu {
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
+			self.vcpu.set_sync_valid_reg(kvm_ioctls::SyncReg::Register);
 			match self.vcpu.run() {
 				Ok(vcpu_stop_reason) => match vcpu_stop_reason {
 					VcpuExit::Hlt => {
