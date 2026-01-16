@@ -14,7 +14,7 @@ use uhyvelib::{
 	vm::UhyveVm,
 };
 
-use crate::common::{HERMIT_GATEWAY, check_result};
+use crate::common::{BuildMode, HERMIT_GATEWAY, check_result};
 
 static NETWORK_TEST_MUTEX: Mutex<()> = Mutex::new(());
 
@@ -24,7 +24,7 @@ fn network_guest_receive_test() {
 	// The precise timestampe can be important when debugging networking,
 	builder.format_timestamp_nanos().try_init().ok();
 
-	let bin_path = build_hermit_bin("network_test");
+	let bin_path = build_hermit_bin("network_test", BuildMode::Debug);
 	let params = Params {
 		cpu_count: 1.try_into().unwrap(),
 		memory_size: Byte::from_u64_with_unit(64, Unit::MiB)
@@ -78,7 +78,7 @@ fn network_guest_send_test() {
 	// The precise timestampe can be important when debugging networking,
 	builder.format_timestamp_nanos().try_init().ok();
 
-	let bin_path = build_hermit_bin("network_test");
+	let bin_path = build_hermit_bin("network_test", BuildMode::Debug);
 	let params = Params {
 		cpu_count: 1.try_into().unwrap(),
 		memory_size: Byte::from_u64_with_unit(64, Unit::MiB)
