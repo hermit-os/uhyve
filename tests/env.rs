@@ -3,7 +3,7 @@ mod common;
 use std::collections::HashMap;
 
 use byte_unit::{Byte, Unit};
-use common::{build_hermit_bin, check_result};
+use common::{BuildMode, build_hermit_bin, check_result};
 use uhyvelib::{
 	params::{EnvVars, Output, Params},
 	vm::UhyveVm,
@@ -12,7 +12,7 @@ use uhyvelib::{
 #[test]
 fn selective_env_test() {
 	env_logger::try_init().ok();
-	let bin_path = build_hermit_bin("env");
+	let bin_path = build_hermit_bin("env", BuildMode::Debug);
 
 	let env_vars = [
 		("ASDF".to_string(), "ASDF".to_string()),
@@ -48,7 +48,7 @@ fn selective_env_test() {
 #[test]
 fn host_env_test() {
 	env_logger::try_init().ok();
-	let bin_path = build_hermit_bin("env");
+	let bin_path = build_hermit_bin("env", BuildMode::Debug);
 
 	println!("Launching kernel {}", bin_path.display());
 	let params = Params {

@@ -1,7 +1,7 @@
 mod common;
 
 use byte_unit::{Byte, Unit};
-use common::{build_hermit_bin, check_result};
+use common::{BuildMode, build_hermit_bin, check_result};
 use regex::Regex;
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
@@ -13,7 +13,7 @@ use uhyvelib::{
 #[test]
 fn multicore_test() {
 	env_logger::try_init().ok();
-	let bin_path = build_hermit_bin("multi-thread");
+	let bin_path = build_hermit_bin("multi-thread", BuildMode::Debug);
 
 	let re = Regex::new(r"Speedup: [\d]+us / \d+us =\s*([\d.]+)").unwrap();
 

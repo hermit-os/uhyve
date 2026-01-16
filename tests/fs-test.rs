@@ -9,7 +9,8 @@ use byte_unit::{Byte, Unit};
 #[cfg(target_os = "linux")]
 use common::strict_sandbox;
 use common::{
-	build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists, run_vm_in_thread,
+	BuildMode, build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists,
+	run_vm_in_thread,
 };
 use rand::{Rng, distr::Alphanumeric};
 use tempfile::TempDir;
@@ -154,7 +155,7 @@ fn create_mapped_parent_nonpresent_file() {
 
 	let params = generate_params(uhyvefilemap_params.into(), test_name, &guest_file_path);
 
-	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	remove_file_if_exists(&host_file_path);
 	check_result(&res);
@@ -179,7 +180,7 @@ fn create_write_mapped_nonpresent_file() {
 
 	let params = generate_params(uhyvefilemap_params.into(), test_name, &guest_file_path);
 
-	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	verify_file_equals(&host_file_path, "Hello, world!");
 	remove_file_if_exists(&host_file_path);
@@ -201,7 +202,7 @@ fn create_write_unmapped_nonpresent_file() {
 
 	let params = generate_params(None, testname, &guest_file_path);
 
-	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 }
@@ -232,7 +233,7 @@ fn remove_mapped_present_file() {
 	let params = generate_params(uhyvefilemap_params.into(), test_name, &guest_file_path);
 
 	assert!(host_file_path.exists());
-	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 	assert!(!host_file_path.exists());
@@ -265,7 +266,7 @@ fn remove_mapped_parent_present_file() {
 	let params = generate_params(uhyvefilemap_params.into(), test_name, &guest_file_path);
 
 	assert!(host_file_path.exists());
-	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 	assert!(!host_file_path.exists());
@@ -283,7 +284,7 @@ fn remove_nonpresent_file_test() {
 	let guest_file_path = get_testname_derived_guest_path(test_name);
 	let params = generate_params(None, test_name, &guest_file_path);
 
-	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	assert_ne!(res.code, 0);
 }
@@ -298,7 +299,7 @@ fn fd_open_remove_close() {
 	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);
 	let params = generate_params(Some(filemap), test_name, &guest_file_path);
 
-	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 }
@@ -313,7 +314,7 @@ fn fd_open_remove_before_and_after_closing() {
 	let guest_file_path = get_testname_derived_guest_path(test_name);
 	let params = generate_params(None, test_name, &guest_file_path);
 
-	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	assert_ne!(res.code, 0);
 }
@@ -328,7 +329,7 @@ fn fd_remove_twice_before_closing() {
 	let guest_file_path = get_testname_derived_guest_path(test_name);
 	let params = generate_params(None, test_name, &guest_file_path);
 
-	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	assert_ne!(res.code, 0);
 }
@@ -343,7 +344,7 @@ fn open_read_only_write() {
 	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);
 	let params = generate_params(Some(filemap), test_name, &guest_file_path);
 
-	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 
 	std::thread::spawn(move || {
 		let vm = UhyveVm::new(bin_path, params).unwrap();
@@ -374,7 +375,7 @@ fn fd_write_to_fd() {
 		..Default::default()
 	};
 
-	let bin_path: PathBuf = build_hermit_bin("write_to_fd");
+	let bin_path: PathBuf = build_hermit_bin("write_to_fd", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 }
@@ -416,7 +417,7 @@ fn mounts_test() {
 	let guest_file_path = get_testname_derived_guest_path(test_name);
 	let params = generate_params(uhyvefilemap_params.into(), test_name, &guest_file_path);
 
-	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 }
@@ -429,7 +430,7 @@ fn lseek_test() {
 	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);
 	let params = generate_params(Some(filemap), test_name, &guest_file_path);
 
-	let bin_path: PathBuf = build_hermit_bin("fs_tests");
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
 }
