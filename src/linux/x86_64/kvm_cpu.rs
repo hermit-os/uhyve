@@ -384,7 +384,7 @@ impl KvmCpu {
 	/// This is only intended to be used after a hypercall has taken place,
 	/// i.e. when handling an IoOut exit.
 	pub(crate) fn get_hypercall_data_addr_v2(&self) -> GuestPhysAddr {
-		GuestPhysAddr::new(self.vcpu.get_regs().unwrap().rdi)
+		GuestPhysAddr::new(self.vcpu.sync_regs().regs.rdi)
 	}
 
 	pub fn get_root_pagetable(&self) -> GuestPhysAddr {
@@ -402,6 +402,7 @@ impl VirtualCPU for KvmCpu {
 		loop {
 			let virtio_device = || self.peripherals.virtio_device.lock().unwrap();
 			let file_mapping = || self.peripherals.file_mapping.lock().unwrap();
+			self.vcpu.set_sync_valid_reg(kvm_ioctls::SyncReg::Register);
 			match self.vcpu.run() {
 				Ok(vcpu_stop_reason) => match vcpu_stop_reason {
 					VcpuExit::Hlt => {
@@ -504,14 +505,14 @@ impl VirtualCPU for KvmCpu {
 									// SAFETY: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 									let buf = unsafe {
 										self
-											.peripherals
-											.mem
-											.slice_at(sysserialwrite.buf, sysserialwrite.len as usize)
-											.unwrap_or_else(|e| {
-												panic!(
-													"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
-												)
-											})
+										.peripherals
+										.mem
+										.slice_at(sysserialwrite.buf, sysserialwrite.len as usize)
+										.unwrap_or_else(|e| {
+											panic!(
+												"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
+											)
+										})
 									};
 
 									self.peripherals
@@ -598,14 +599,14 @@ impl VirtualCPU for KvmCpu {
 									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 									let buf = unsafe {
 										self.peripherals.mem.slice_at(
-											sysserialwrite.buf,
-											sysserialwrite.len,
+										sysserialwrite.buf,
+										sysserialwrite.len,
+									)
+									.unwrap_or_else(|e| {
+										panic!(
+											"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
 										)
-										.unwrap_or_else(|e| {
-											panic!(
-												"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
-											)
-										})
+									})
 									};
 
 									self.peripherals
