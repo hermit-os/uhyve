@@ -121,10 +121,10 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 
 		let host_fd =
 			unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode) };
-		if let Some(guest_fd) = file_map.fdmap.insert(FdData::Raw(host_fd)) {
-			guest_fd.0
-		} else if host_fd < 0 {
+		if host_fd < 0 {
 			host_fd
+		} else if let Some(guest_fd) = file_map.fdmap.insert(FdData::Raw(host_fd)) {
+			guest_fd.0
 		} else {
 			-ENOENT
 		}
@@ -144,10 +144,10 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 			let host_path_c_string = file_map.create_temporary_file(guest_path);
 			let new_host_path = host_path_c_string.as_c_str().as_ptr();
 			let host_fd = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
-			if let Some(guest_fd) = file_map.fdmap.insert(FdData::Raw(host_fd)) {
-				guest_fd.0
-			} else if host_fd < 0 {
+			if host_fd < 0 {
 				host_fd
+			} else if let Some(guest_fd) = file_map.fdmap.insert(FdData::Raw(host_fd)) {
+				guest_fd.0
 			} else {
 				-ENOENT
 			}
