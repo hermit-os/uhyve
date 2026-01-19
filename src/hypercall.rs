@@ -9,7 +9,7 @@ use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress, MAX_ARGC_ENVC,
 
 use crate::{
 	isolation::{
-		fd::{FdData, GuestFd},
+		fd::{FdData, GuestFd, UhyveFileDescriptorLayer},
 		filemap::UhyveFileMap,
 	},
 	mem::{MemoryError, MmapMemory},
@@ -113,21 +113,30 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 		return;
 	}
 
+	/// Attempts to open `host_path_c_string` with `flags` and `mode`. Inserts the fd into `fdmap`
+	/// on success and returns it, else returns the (negative) return value of the underlying `open` call.
+	fn do_open(
+		fdmap: &mut UhyveFileDescriptorLayer,
+		host_path_c_string: CString,
+		flags: i32,
+		mode: i32,
+	) -> i32 {
+		let host_fd = unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, mode) };
+		if host_fd < 0 {
+			host_fd
+		} else if let Some(guest_fd) = fdmap.insert(FdData::Raw(host_fd)) {
+			guest_fd.0
+		} else {
+			-ENOENT
+		}
+	}
+
 	sysopen.ret = if let Some(host_path) = file_map.get_host_path(guest_path) {
 		debug!("{guest_path:#?} found in file map.");
 		// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 		// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 		let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
-
-		let host_fd =
-			unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, sysopen.mode) };
-		if host_fd < 0 {
-			host_fd
-		} else if let Some(guest_fd) = file_map.fdmap.insert(FdData::Raw(host_fd)) {
-			guest_fd.0
-		} else {
-			-ENOENT
-		}
+		do_open(&mut file_map.fdmap, host_path_c_string, flags, sysopen.mode)
 	} else {
 		debug!("{guest_path:#?} not found in file map.");
 		if (flags & O_CREAT) == O_CREAT {
@@ -142,15 +151,7 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 			}
 
 			let host_path_c_string = file_map.create_temporary_file(guest_path);
-			let new_host_path = host_path_c_string.as_c_str().as_ptr();
-			let host_fd = unsafe { libc::open(new_host_path, flags, sysopen.mode) };
-			if host_fd < 0 {
-				host_fd
-			} else if let Some(guest_fd) = file_map.fdmap.insert(FdData::Raw(host_fd)) {
-				guest_fd.0
-			} else {
-				-ENOENT
-			}
+			do_open(&mut file_map.fdmap, host_path_c_string, flags, sysopen.mode)
 		} else {
 			debug!("Returning -ENOENT for {guest_path:#?}");
 			-ENOENT
