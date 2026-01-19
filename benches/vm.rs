@@ -5,7 +5,7 @@ use criterion::{Criterion, criterion_group};
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
-	params::{FileSandboxMode, Output, Params},
+	params::{Output, Params},
 	vm::{DefaultBackend, UhyveVm},
 };
 
