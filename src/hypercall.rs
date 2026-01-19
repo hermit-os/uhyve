@@ -81,6 +81,23 @@ pub unsafe fn address_to_hypercall(
 	}
 }
 
+/// Translates the last error in `errno` to a value suitable to return from the hypercall.
+fn translate_last_errno() -> Option<i32> {
+	let errno = std::io::Error::last_os_error().raw_os_error()?;
+
+	// A loop, because rust can't know for sure that errno numbers don't overlap on the host.
+	macro_rules! error_pairs {
+		($($x:ident),*) => {{[ $((libc::$x, uhyve_interface::parameters::$x)),* ]}}
+	}
+	for (e_host, e_guest) in error_pairs!(EBADF, EEXIST, EFAULT, EINVAL, EPERM, ENOENT, EROFS) {
+		if errno == e_host {
+			return Some(e_guest);
+		}
+	}
+
+	None
+}
+
 /// unlink deletes a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
 ///
 /// Note for when using Landlock: Unlinking files results in them being veiled. If a text
@@ -93,7 +110,11 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 		// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 		// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 		let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
-		unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) }
+		if unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) } < 0 {
+			-translate_last_errno().unwrap_or(1)
+		} else {
+			0
+		}
 	} else {
 		error!("The kernel requested to unlink() an unknown path ({guest_path:?}): Rejecting...");
 		-ENOENT
@@ -123,7 +144,11 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 	) -> i32 {
 		let host_fd = unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, mode) };
 		if host_fd < 0 {
-			host_fd
+			let errno = translate_last_errno().unwrap_or(1);
+			if host_fd != -1 {
+				warn!("Unexpected return value {host_fd} from open(2)");
+			}
+			-errno
 		} else if let Some(guest_fd) = fdmap.insert(FdData::Raw(host_fd)) {
 			guest_fd.0
 		} else {
@@ -166,7 +191,13 @@ pub fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
 		.is_fd_present(GuestFd(sysclose.fd.into_raw_fd()))
 	{
 		match file_map.fdmap.remove(GuestFd(sysclose.fd)) {
-			Some(FdData::Raw(fd)) => unsafe { libc::close(fd) },
+			Some(FdData::Raw(fd)) => {
+				if unsafe { libc::close(fd) } < 0 {
+					-translate_last_errno().unwrap_or(1)
+				} else {
+					0
+				}
+			}
 			// ignore other closures (fdmap's remove already handles stdio)
 			_ => 0,
 		}
@@ -191,7 +222,11 @@ pub fn read(
 				FdData::Raw(rfd) => {
 					let bytes_read =
 						unsafe { libc::read(*rfd, host_address as *mut libc::c_void, sysread.len) };
-					if bytes_read >= 0 { bytes_read } else { -1 }
+					if bytes_read >= 0 {
+						bytes_read
+					} else {
+						-translate_last_errno().unwrap_or(1) as isize
+					}
 				}
 				FdData::Virtual { data, offset } => {
 					let data: &[u8] = data.get();
