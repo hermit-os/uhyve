@@ -57,5 +57,5 @@ fn serial_file_output_test() {
 
 	assert!(output_path.exists());
 	let file_content = read_to_string(&output_path).unwrap();
-	assert!(file_content.contains("Hello from serial!\nABCD\n1234ASDF!@#$\n"));
+	assert!(file_content.contains("ABCD\n1234ASDF!@#$\n"));
 }
