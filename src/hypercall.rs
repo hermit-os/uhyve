@@ -1,7 +1,7 @@
 use core::cmp;
 use std::{
 	ffi::{CStr, CString, OsStr},
-	io::{self, Error, ErrorKind},
+	io,
 	os::{fd::IntoRawFd, unix::ffi::OsStrExt},
 };
 
@@ -12,7 +12,7 @@ use crate::{
 		fd::{FdData, GuestFd, UhyveFileDescriptorLayer},
 		filemap::UhyveFileMap,
 	},
-	mem::{MemoryError, MmapMemory},
+	mem::MmapMemory,
 	params::EnvVars,
 	virt_to_phys,
 	vm::VmPeripherals,
@@ -83,7 +83,7 @@ pub unsafe fn address_to_hypercall(
 
 /// Translates the last error in `errno` to a value suitable to return from the hypercall.
 fn translate_last_errno() -> Option<i32> {
-	let errno = std::io::Error::last_os_error().raw_os_error()?;
+	let errno = io::Error::last_os_error().raw_os_error()?;
 
 	// A loop, because rust can't know for sure that errno numbers don't overlap on the host.
 	macro_rules! error_pairs {
@@ -265,80 +265,68 @@ pub fn write(
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
 ) -> io::Result<()> {
-	let mut bytes_written: usize = 0;
-	let gfd = GuestFd(syswrite.fd.into_raw_fd());
-	if !file_map.fdmap.is_fd_present(gfd) {
-		// We don't write anything if the file descriptor is not available,
-		// but this is OK for now, as we have no means of returning an error code
-		// and writes are not necessarily guaranteed to write anything.
-		return Ok(());
-	}
+	// uhyve-interface TODO: add capability to return non-fatal errors to
+	// the guest, e.g. via an `syswrite.ret` like with other hypercalls.
 
-	// Handles to standard outputs differs to that of e.g. files.
-	if syswrite.fd == 1 || syswrite.fd == 2 {
-		let guest_phys_addr = virt_to_phys(
-			syswrite.buf + bytes_written as u64,
-			&peripherals.mem,
-			root_pt,
-		);
-		return if let Ok(guest_phys_addr) = guest_phys_addr {
-			let bytes = unsafe {
-				peripherals
-					.mem
-					.slice_at(guest_phys_addr, syswrite.len)
-					.map_err(|e| {
-						io::Error::new(
-							io::ErrorKind::InvalidInput,
-							format!("invalid syswrite buffer: {e:?}"),
-						)
-					})?
-			};
-			peripherals.serial.output(bytes)
-		} else {
-			Ok(())
-		};
-	}
-
-	while bytes_written != syswrite.len {
-		let guest_phys_addr = virt_to_phys(
-			syswrite.buf + bytes_written as u64,
-			&peripherals.mem,
-			root_pt,
-		);
-		let guest_phys_len = syswrite.len - bytes_written;
-
-		let host_address = peripherals
+	let guest_phys_addr = virt_to_phys(syswrite.buf, &peripherals.mem, root_pt).map_err(|e| {
+		io::Error::new(
+			io::ErrorKind::InvalidInput,
+			format!("invalid syswrite buffer: {e:?}"),
+		)
+	})?;
+	let mut bytes = unsafe {
+		peripherals
 			.mem
-			.host_address(guest_phys_addr.unwrap())
-			.map_err(|e| match e {
-				MemoryError::BoundsViolation => {
-					unreachable!("Bounds violation after host_address function")
-				}
-				MemoryError::WrongMemoryError => {
-					Error::new(ErrorKind::AddrNotAvailable, e.to_string())
-				}
-			})?;
+			.slice_at(guest_phys_addr, syswrite.len)
+			.map_err(|e| {
+				io::Error::new(
+					io::ErrorKind::InvalidInput,
+					format!("invalid syswrite buffer: {e:?}"),
+				)
+			})?
+	};
 
-		match file_map.fdmap.get_mut(gfd).unwrap() {
-			FdData::Raw(r) => unsafe {
-				let step = libc::write(*r, host_address as *const libc::c_void, guest_phys_len);
+	match file_map.fdmap.get_mut(GuestFd(syswrite.fd.into_raw_fd())) {
+		None => {
+			// We don't write anything if the file descriptor is not available,
+			// but this is OK for now, as we have no means of returning an error code
+			// and writes are not necessarily guaranteed to write anything.
+			Ok(())
+		}
+
+		Some(FdData::Virtual { .. }) => {
+			// virtual fds are read-only
+			Err(io::Error::new(
+				io::ErrorKind::ReadOnlyFilesystem,
+				format!(
+					"Unable to write to virtual file {}",
+					GuestFd(syswrite.fd.into_raw_fd())
+				),
+			))
+		}
+
+		// Handles to standard outputs differs to that of e.g. files.
+		Some(FdData::Raw(1 | 2)) => peripherals.serial.output(bytes),
+
+		Some(FdData::Raw(r)) => {
+			while !bytes.is_empty() {
+				let step = unsafe {
+					libc::write(
+						*r,
+						&bytes[0] as *const u8 as *const libc::c_void,
+						bytes.len(),
+					)
+				};
 				if step >= 0 {
-					bytes_written += step as usize;
+					bytes = &bytes[step as usize..];
 				} else {
 					return Err(io::Error::last_os_error());
 				}
-			},
-			FdData::Virtual { .. } => {
-				// virtual fds are read-only
-				return Err(io::Error::new(
-					io::ErrorKind::ReadOnlyFilesystem,
-					format!("Unable to write to virtual file {gfd}"),
-				));
 			}
+
+			Ok(())
 		}
 	}
-
-	Ok(())
 }
 
 /// Handles an lseek syscall on the host.
