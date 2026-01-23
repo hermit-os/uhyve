@@ -9,6 +9,9 @@ use nix::sys::{
 
 #[cfg(target_arch = "aarch64")]
 pub use crate::macos::aarch64::vcpu::{XhyveCpu, XhyveVm};
+#[cfg(target_arch = "x86_64")]
+pub use crate::macos::x86_64::vcpu::{XhyveCpu, XhyveVm};
+use crate::vm::{UhyveVm, VmResult};
 
 /// The signal for kicking vCPUs out of KVM_RUN.
 ///
