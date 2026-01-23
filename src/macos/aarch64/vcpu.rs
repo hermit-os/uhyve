@@ -1,7 +1,7 @@
 use std::{num::NonZero, sync::Arc};
 
 use log::debug;
-use uhyve_interface::{GuestPhysAddr, v1::Hypercall};
+use uhyve_interface::{GuestPhysAddr, v1, v2};
 use xhypervisor::{
 	self, Gic, MemPerm, Register, SystemRegister, VirtualCpuExitReason, create_vm, map_mem,
 	protect_mem,
@@ -18,7 +18,7 @@ use crate::{
 	},
 	hypercall::{self, copy_argv, copy_env},
 	params::Params,
-	stats::{CpuStats, VmExit},
+	stats::CpuStats,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::{
 		KernelInfo, VirtualizationBackend, VmPeripherals, internal::VirtualizationBackendInternal,
@@ -238,7 +238,76 @@ impl VirtualCPU for XhyveCpu {
 
 							let data_addr = GuestPhysAddr::new(vcpu.read_register(Register::X8)?);
 							if let Some(hypercall) = unsafe {
-								hypercall::address_to_hypercall(
+								hypercall::address_to_hypercall_v2(
+									&self.peripherals.mem,
+									addr - self.kernel_info.guest_address.as_u64(),
+									data_addr,
+								)
+							} {
+								if let Some(s) = self.stats.as_mut() {
+									s.increment_val((&hypercall).into())
+								}
+
+								match hypercall {
+									v2::Hypercall::Exit(sysexit) => {
+										return Ok(VcpuStopReason::Exit(sysexit));
+									}
+									v2::Hypercall::FileClose(sysclose) => hypercall::close(
+										sysclose,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
+									v2::Hypercall::FileLseek(syslseek) => hypercall::lseek(
+										syslseek,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
+									v2::Hypercall::FileOpen(sysopen) => hypercall::open(
+										&self.peripherals.mem,
+										sysopen,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
+									v2::Hypercall::FileRead(sysread) => hypercall::read(
+										&self.peripherals.mem,
+										sysread,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
+									v2::Hypercall::FileWrite(syswrite) => hypercall::write(
+										&self.peripherals,
+										syswrite,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									)?,
+									v2::Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
+										&self.peripherals.mem,
+										sysunlink,
+										&mut self.peripherals.file_mapping.lock().unwrap(),
+									),
+									v2::Hypercall::SerialWriteByte(buf) => self
+										.peripherals
+										.serial
+										.output(&[buf])
+										.unwrap_or_else(|e| error!("{e:?}")),
+									v2::Hypercall::SerialWriteBuffer(sysserialwrite) => {
+										// SAFETY: as this buffer is only read and not used afterwards, we don't create multiple aliasing
+										let buf = unsafe {
+											self
+												.peripherals
+												.mem
+												.slice_at(sysserialwrite.buf, sysserialwrite.len as usize)
+												.unwrap_or_else(|e| {
+													panic!(
+														"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
+													)
+												})
+										};
+
+										self.peripherals
+											.serial
+											.output(buf)
+											.unwrap_or_else(|e| error!("{e:?}"))
+									}
+									_ => panic!("Got unknown hypercall {hypercall:?}"),
+								}
+							} else if let Some(hypercall) = unsafe {
+								hypercall::address_to_hypercall_v1(
 									&self.peripherals.mem,
 									(addr - self.kernel_info.guest_address.as_u64())
 										.try_into()
@@ -247,19 +316,18 @@ impl VirtualCPU for XhyveCpu {
 								)
 							} {
 								if let Some(s) = self.stats.as_mut() {
-									s.increment_val(VmExit::Hypercall(HypercallAddress::from(
-										&hypercall,
-									)))
+									s.increment_val((&hypercall).into())
 								}
+
 								match hypercall {
-									Hypercall::SerialWriteByte(_char) => {
+									v1::Hypercall::SerialWriteByte(_char) => {
 										let x8 = (vcpu.read_register(Register::X8)? & 0xFF) as u8;
 										self.peripherals
 											.serial
 											.output(&[x8])
 											.unwrap_or_else(|e| error!("{e:?}"));
 									}
-									Hypercall::SerialWriteBuffer(sysserialwrite) => {
+									v1::Hypercall::SerialWriteBuffer(sysserialwrite) => {
 										// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 										let buf = unsafe {
 											self.peripherals
@@ -275,14 +343,14 @@ impl VirtualCPU for XhyveCpu {
 											.output(buf)
 											.unwrap_or_else(|e| error!("{e:?}"))
 									}
-									Hypercall::Exit(sysexit) => {
+									v1::Hypercall::Exit(sysexit) => {
 										return Ok(VcpuStopReason::Exit(sysexit.arg));
 									}
-									Hypercall::Cmdsize(syssize) => syssize.update(
+									v1::Hypercall::Cmdsize(syssize) => syssize.update(
 										&self.kernel_info.path,
 										&self.kernel_info.params.kernel_args,
 									),
-									Hypercall::Cmdval(syscmdval) => {
+									v1::Hypercall::Cmdval(syscmdval) => {
 										copy_argv(
 											self.kernel_info.path.as_os_str(),
 											&self.kernel_info.params.kernel_args,
@@ -295,20 +363,20 @@ impl VirtualCPU for XhyveCpu {
 											&self.peripherals.mem,
 										);
 									}
-									Hypercall::FileClose(sysclose) => hypercall::close(
+									v1::Hypercall::FileClose(sysclose) => hypercall::close(
 										sysclose,
 										&mut self.peripherals.file_mapping.lock().unwrap(),
 									),
-									Hypercall::FileLseek(syslseek) => hypercall::lseek(
+									v1::Hypercall::FileLseek(syslseek) => hypercall::lseek_v1(
 										syslseek,
 										&mut self.peripherals.file_mapping.lock().unwrap(),
 									),
-									Hypercall::FileOpen(sysopen) => hypercall::open(
+									v1::Hypercall::FileOpen(sysopen) => hypercall::open(
 										&self.peripherals.mem,
 										sysopen,
 										&mut self.peripherals.file_mapping.lock().unwrap(),
 									),
-									Hypercall::FileRead(sysread) => hypercall::read(
+									v1::Hypercall::FileRead(sysread) => hypercall::read_v1(
 										&self.peripherals.mem,
 										sysread,
 										GuestPhysAddr::new(
@@ -316,7 +384,7 @@ impl VirtualCPU for XhyveCpu {
 										),
 										&mut self.peripherals.file_mapping.lock().unwrap(),
 									),
-									Hypercall::FileWrite(syswrite) => hypercall::write(
+									v1::Hypercall::FileWrite(syswrite) => hypercall::write_v1(
 										&self.peripherals,
 										syswrite,
 										GuestPhysAddr::new(
@@ -325,7 +393,7 @@ impl VirtualCPU for XhyveCpu {
 										&mut self.peripherals.file_mapping.lock().unwrap(),
 									)
 									.unwrap(),
-									Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
+									v1::Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
 										&self.peripherals.mem,
 										sysunlink,
 										&mut self.peripherals.file_mapping.lock().unwrap(),

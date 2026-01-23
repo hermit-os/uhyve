@@ -2,10 +2,8 @@ use std::{io, num::NonZero, sync::Arc};
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
-use uhyve_interface::{
-	GuestPhysAddr,
-	v1::{Hypercall, HypercallAddress},
-};
+#[allow(unused_imports)]
+use uhyve_interface::{GuestPhysAddr, v1, v2};
 use vmm_sys_util::eventfd::EventFd;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
@@ -380,6 +378,15 @@ impl KvmCpu {
 		&self.vcpu
 	}
 
+	/// This checks the pointer to the a hypercall's data struct provided
+	/// by the Hermit unikernel when initiating a hypercall.
+	///
+	/// This is only intended to be used after a hypercall has taken place,
+	/// i.e. when handling an IoOut exit.
+	pub(crate) fn get_hypercall_data_addr_v2(&self) -> GuestPhysAddr {
+		GuestPhysAddr::new(self.vcpu.get_regs().unwrap().rdi)
+	}
+
 	pub fn get_root_pagetable(&self) -> GuestPhysAddr {
 		GuestPhysAddr::new(self.vcpu.get_sregs().unwrap().cr3)
 	}
@@ -443,23 +450,102 @@ impl VirtualCPU for KvmCpu {
 						}
 					}
 					VcpuExit::IoOut(port, addr) => {
-						let data_addr =
-							GuestPhysAddr::new(unsafe { (*(addr.as_ptr() as *const u32)) as u64 });
+						// The use of a mut ref would later render the non-mut ref
+						// needed for getting the hypercall data adddress impossible.
+						let addr = addr.to_owned();
+
 						if let Some(hypercall) = unsafe {
-							hypercall::address_to_hypercall(&self.peripherals.mem, port, data_addr)
+							hypercall::address_to_hypercall_v2(
+								&self.peripherals.mem,
+								port as u64,
+								self.get_hypercall_data_addr_v2(),
+							)
 						} {
 							if let Some(s) = self.stats.as_mut() {
-								s.increment_val(VmExit::Hypercall(HypercallAddress::from(
-									&hypercall,
-								)))
+								s.increment_val((&hypercall).into())
 							}
 
 							match hypercall {
-								Hypercall::Cmdsize(syssize) => syssize.update(
+								v2::Hypercall::Exit(sysexit) => {
+									return Ok(VcpuStopReason::Exit(sysexit));
+								}
+								v2::Hypercall::FileClose(sysclose) => {
+									hypercall::close(sysclose, &mut file_mapping())
+								}
+								v2::Hypercall::FileLseek(syslseek) => {
+									hypercall::lseek(syslseek, &mut file_mapping())
+								}
+								v2::Hypercall::FileOpen(sysopen) => hypercall::open(
+									&self.peripherals.mem,
+									sysopen,
+									&mut file_mapping(),
+								),
+								v2::Hypercall::FileRead(sysread) => hypercall::read(
+									&self.peripherals.mem,
+									sysread,
+									&mut file_mapping(),
+								),
+								v2::Hypercall::FileWrite(syswrite) => hypercall::write(
+									&self.peripherals,
+									syswrite,
+									&mut file_mapping(),
+								)?,
+								v2::Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
+									&self.peripherals.mem,
+									sysunlink,
+									&mut file_mapping(),
+								),
+								v2::Hypercall::SerialWriteByte(buf) => self
+									.peripherals
+									.serial
+									.output(&[buf])
+									.unwrap_or_else(|e| error!("{e:?}")),
+								v2::Hypercall::SerialWriteBuffer(sysserialwrite) => {
+									// SAFETY: as this buffer is only read and not used afterwards, we don't create multiple aliasing
+									let buf = unsafe {
+										self
+											.peripherals
+											.mem
+											.slice_at(sysserialwrite.buf, sysserialwrite.len as usize)
+											.unwrap_or_else(|e| {
+												panic!(
+													"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
+												)
+											})
+									};
+
+									self.peripherals
+										.serial
+										.output(buf)
+										.unwrap_or_else(|e| error!("{e:?}"))
+								}
+								_ => panic!("Got unknown hypercall {hypercall:?}"),
+							}
+						} else if let Some(hypercall) = unsafe {
+							// v1 images used to read the address from the 32-bit value written
+							// into the virtual device register to perform an IoOut. Although
+							// this was done for speed reasons, this implementation cannot
+							// work for addresses containing more than 32 bits (which is to be
+							// deemed as conventional in 64-bit environments), thus constraining
+							// the memory size used by Uhyve.
+							let data_addr =
+								GuestPhysAddr::new((*(addr.as_ptr() as *const u32)) as u64);
+							hypercall::address_to_hypercall_v1(
+								&self.peripherals.mem,
+								port,
+								data_addr,
+							)
+						} {
+							if let Some(s) = self.stats.as_mut() {
+								s.increment_val((&hypercall).into())
+							}
+
+							match hypercall {
+								v1::Hypercall::Cmdsize(syssize) => syssize.update(
 									&self.kernel_info.path,
 									&self.kernel_info.params.kernel_args,
 								),
-								Hypercall::Cmdval(syscmdval) => {
+								v1::Hypercall::Cmdval(syscmdval) => {
 									hypercall::copy_argv(
 										self.kernel_info.path.as_os_str(),
 										&self.kernel_info.params.kernel_args,
@@ -472,43 +558,43 @@ impl VirtualCPU for KvmCpu {
 										&self.peripherals.mem,
 									);
 								}
-								Hypercall::Exit(sysexit) => {
+								v1::Hypercall::Exit(sysexit) => {
 									return Ok(VcpuStopReason::Exit(sysexit.arg));
 								}
-								Hypercall::FileClose(sysclose) => {
+								v1::Hypercall::FileClose(sysclose) => {
 									hypercall::close(sysclose, &mut file_mapping())
 								}
-								Hypercall::FileLseek(syslseek) => {
-									hypercall::lseek(syslseek, &mut file_mapping())
+								v1::Hypercall::FileLseek(syslseek) => {
+									hypercall::lseek_v1(syslseek, &mut file_mapping())
 								}
-								Hypercall::FileOpen(sysopen) => hypercall::open(
+								v1::Hypercall::FileOpen(sysopen) => hypercall::open(
 									&self.peripherals.mem,
 									sysopen,
 									&mut file_mapping(),
 								),
-								Hypercall::FileRead(sysread) => hypercall::read(
+								v1::Hypercall::FileRead(sysread) => hypercall::read_v1(
 									&self.peripherals.mem,
 									sysread,
 									self.get_root_pagetable(),
 									&mut file_mapping(),
 								),
-								Hypercall::FileWrite(syswrite) => hypercall::write(
+								v1::Hypercall::FileWrite(syswrite) => hypercall::write_v1(
 									&self.peripherals,
 									syswrite,
 									self.get_root_pagetable(),
 									&mut file_mapping(),
 								)?,
-								Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
+								v1::Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
 									&self.peripherals.mem,
 									sysunlink,
 									&mut file_mapping(),
 								),
-								Hypercall::SerialWriteByte(buf) => self
+								v1::Hypercall::SerialWriteByte(buf) => self
 									.peripherals
 									.serial
 									.output(&[buf])
 									.unwrap_or_else(|e| error!("{e:?}")),
-								Hypercall::SerialWriteBuffer(sysserialwrite) => {
+								v1::Hypercall::SerialWriteBuffer(sysserialwrite) => {
 									// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
 									let buf = unsafe {
 										self.peripherals.mem.slice_at(
@@ -539,33 +625,40 @@ impl VirtualCPU for KvmCpu {
 									if let Some(pci_addr) = self.pci_addr
 										&& pci_addr & 0x1ff800 == 0
 									{
-										virtio_device().handle_write(pci_addr & 0x3ff, addr);
+										let mut virtio_device =
+											self.peripherals.virtio_device.lock().unwrap();
+										virtio_device.handle_write(pci_addr & 0x3ff, &addr);
 									}
 								}
 								PCI_CONFIG_ADDRESS_PORT => {
-									self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
+									self.pci_addr = Some(unsafe { *(addr.as_ptr() as *mut u32) });
 								}
 								VIRTIO_PCI_STATUS => {
-									virtio_device().write_status(addr);
+									let mut virtio_device = virtio_device();
+									virtio_device.write_status(&addr);
 								}
 								VIRTIO_PCI_GUEST_FEATURES => {
-									virtio_device().write_requested_features(addr);
+									let mut virtio_device = virtio_device();
+									virtio_device.write_requested_features(&addr);
 								}
 								VIRTIO_PCI_QUEUE_NOTIFY => {
-									virtio_device()
-										.handle_notify_output(addr, &self.peripherals.mem);
+									let mut virtio_device = virtio_device();
+									virtio_device
+										.handle_notify_output(&addr, &self.peripherals.mem);
 								}
 								VIRTIO_PCI_QUEUE_SEL => {
-									virtio_device().write_selected_queue(addr);
+									let mut virtio_device = virtio_device();
+									virtio_device.write_selected_queue(&addr);
 								}
 								VIRTIO_PCI_QUEUE_PFN => {
-									virtio_device().write_pfn(addr, &self.peripherals.mem);
+									let mut virtio_device = virtio_device();
+									virtio_device.write_pfn(&addr, &self.peripherals.mem);
 								}
 								port => {
 									warn!("guest wrote to unknown I/O port {port:#x}");
 								}
 							}
-						}
+						};
 					}
 					VcpuExit::MmioRead(addr, _targ) => {
 						match addr {
