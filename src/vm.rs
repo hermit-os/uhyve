@@ -476,7 +476,7 @@ fn write_fdt_into_mem(
 
 	let mut fdt = Fdt::new()
 		.unwrap()
-		.memory(mem.guest_addr()..mem.guest_addr() + mem.size() as u64)
+		.memory(mem.address_range())
 		.unwrap()
 		.kernel_args(&params.kernel_args[..sep])
 		.app_args(params.kernel_args.get(sep + 1..).unwrap_or_default());
@@ -522,8 +522,7 @@ fn write_boot_info_to_mem(
 	);
 	let boot_info = BootInfo {
 		hardware_info: HardwareInfo {
-			phys_addr_range: mem.guest_addr().as_u64()
-				..mem.guest_addr().as_u64() + mem.size() as u64,
+			phys_addr_range: mem.address_range_u64(),
 			#[cfg_attr(
 				target_arch = "x86_64",
 				expect(
