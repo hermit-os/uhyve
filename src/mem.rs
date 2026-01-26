@@ -1,4 +1,4 @@
-use std::mem::MaybeUninit;
+use std::{mem::MaybeUninit, ops::Range};
 #[cfg(target_os = "linux")]
 use std::{os::raw::c_void, ptr::NonNull};
 
@@ -228,6 +228,17 @@ impl MmapMemory {
 		} else {
 			Err(MemoryError::BoundsViolation)
 		}
+	}
+
+	/// Produces a (exclusive) range of all valid addresses in this memory.
+	pub fn address_range(&self) -> Range<GuestPhysAddr> {
+		self.guest_addr()..self.guest_addr() + self.size() as u64
+	}
+
+	/// Same as [`address_range`] but with `u64` as range type.
+	// TODO: Eliminate usages in favor of `address_range`
+	pub fn address_range_u64(&self) -> Range<u64> {
+		self.guest_addr().as_u64()..self.guest_addr().as_u64() + self.size() as u64
 	}
 }
 
