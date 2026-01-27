@@ -32,7 +32,7 @@ path = "benches/benchmarks.rs"
 harness = false
 
 [features]
-instrument = ["rftrace", "rftrace-frontend"]
+instrument = ["dep:rftrace", "dep:rftrace-frontend"]
 
 [dependencies]
 align-address = "0.3.0"
