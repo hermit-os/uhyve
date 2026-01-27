@@ -6,8 +6,14 @@ use crate::{HypervisorResult, os::DebugExitInfo};
 
 /// Reasons for vCPU exits.
 #[cfg_attr(
-	target_os = "macos",
-	expect(dead_code, reason = "Not all variants used in macOS.")
+	any(
+		target_os = "macos",
+		all(target_os = "linux", not(feature = "gdbstub"))
+	),
+	expect(
+		dead_code,
+		reason = "Some variants are only used when gdb support is included."
+	)
 )]
 pub enum VcpuStopReason {
 	/// The vCPU stopped for debugging.

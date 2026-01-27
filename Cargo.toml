@@ -32,6 +32,9 @@ path = "benches/benchmarks.rs"
 harness = false
 
 [features]
+# enables gdbstub support (linux x86_64). disabling it is intended as a convenience feature for devs
+# (i.e. refactors, bring-ups). disabling this won't remove all gdbstub references from binary.
+gdbstub = ["dep:gdbstub_arch"]
 instrument = ["dep:rftrace", "dep:rftrace-frontend"]
 
 [dependencies]
@@ -42,7 +45,7 @@ clean-path = "0.2.1"
 core_affinity = "0.8"
 env_logger = "0.11"
 gdbstub = "0.7"
-gdbstub_arch = "0.3"
+gdbstub_arch = { version = "0.3", optional = true }
 hermit-entry = { version = "0.10.7", features = ["loader"] }
 libc = "0.2"
 log = "0.4"

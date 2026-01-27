@@ -374,6 +374,7 @@ impl KvmCpu {
 		println!("{name}       {seg:?}");
 	}
 
+	#[cfg(feature = "gdbstub")]
 	pub(crate) fn get_vcpu(&self) -> &VcpuFd {
 		&self.vcpu
 	}

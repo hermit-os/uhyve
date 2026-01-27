@@ -1,29 +1,33 @@
 #[cfg(target_arch = "x86_64")]
 pub mod x86_64;
 
+#[cfg(feature = "gdbstub")]
 pub(crate) mod gdb;
 
 pub(crate) type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
 
+use std::sync::LazyLock;
+#[cfg(feature = "gdbstub")]
 use std::{
 	io,
 	net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream},
-	sync::LazyLock,
 };
 
 use core_affinity::CoreId;
+#[cfg(feature = "gdbstub")]
 use gdbstub::stub::{DisconnectReason, GdbStub};
 use kvm_ioctls::Kvm;
 use libc::{SIGRTMAX, SIGRTMIN};
 use nix::sys::pthread::Pthread;
 
+#[cfg(feature = "gdbstub")]
 use crate::{
-	linux::{
-		gdb::{GdbUhyve, UhyveGdbEventLoop},
-		x86_64::kvm_cpu::KvmVm,
-	},
+	linux::gdb::{GdbUhyve, UhyveGdbEventLoop},
 	serial::Destination,
 	vcpu::VirtualCPU,
+};
+use crate::{
+	linux::x86_64::kvm_cpu::KvmVm,
 	vm::{UhyveVm, VmResult},
 };
 
@@ -46,9 +50,12 @@ pub(crate) struct KickSignal;
 /// This can be safely sent across threads because pthread IDs are just opaque identifiers
 /// and thread-safety is ensured by the pthread library.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(feature = "gdbstub")]
 pub(crate) struct PthreadWrapper(pub Pthread);
 
+#[cfg(feature = "gdbstub")]
 unsafe impl Send for PthreadWrapper {}
+#[cfg(feature = "gdbstub")]
 unsafe impl Sync for PthreadWrapper {}
 
 // TODO: nix::signal::Signal doesn't support real-time signals yet.
@@ -97,10 +104,15 @@ impl UhyveVm<KvmVm> {
 		if self.kernel_info.params.gdb_port.is_none() {
 			self.run_no_gdb(cpu_affinity)
 		} else {
-			self.run_gdb(cpu_affinity)
+			#[cfg(feature = "gdbstub")]
+			return self.run_gdb(cpu_affinity);
+
+			#[cfg(not(feature = "gdbstub"))]
+			panic!("Uhyve has not been built with the 'gdb' feature enabled.")
 		}
 	}
 
+	#[cfg(feature = "gdbstub")]
 	fn run_gdb(mut self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
 		let cpu_id = 0;
 
@@ -156,11 +168,13 @@ impl UhyveVm<KvmVm> {
 	}
 }
 
+#[cfg(feature = "gdbstub")]
 const LOCALHOST: [IpAddr; 2] = [
 	IpAddr::V4(Ipv4Addr::LOCALHOST),
 	IpAddr::V6(Ipv6Addr::LOCALHOST),
 ];
 
+#[cfg(feature = "gdbstub")]
 fn wait_for_gdb_connection(port: u16) -> io::Result<TcpStream> {
 	let sock = TcpListener::bind(
 		[

@@ -122,7 +122,13 @@ pub(crate) struct KernelInfo {
 	/// The first instruction after boot
 	pub entry_point: GuestPhysAddr,
 	/// The starting position of the image in physical memory
-	#[cfg_attr(target_os = "macos", expect(dead_code))] // currently only needed in gdb
+	#[cfg_attr(
+		any(
+			target_os = "macos",
+			all(target_os = "linux", not(feature = "gdbstub"))
+		),
+		expect(dead_code, reason = "Currently only needed in gdb.")
+	)]
 	pub kernel_address: GuestPhysAddr,
 	pub params: Params,
 	pub path: PathBuf,
