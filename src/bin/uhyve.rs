@@ -22,20 +22,25 @@ extern crate rftrace as _;
 use rftrace_frontend as rftrace;
 
 #[cfg(feature = "instrument")]
-fn setup_trace() {
+fn setup_trace(out_dir: String) {
+	use std::sync::OnceLock;
+
 	use rftrace::Events;
 
+	static OUT_DIR: OnceLock<String> = OnceLock::new();
 	static mut EVENTS: Option<&mut Events> = None;
 
 	#[allow(static_mut_refs)]
 	extern "C" fn dump_trace() {
 		unsafe {
 			if let Some(e) = &mut EVENTS {
-				rftrace::dump_full_uftrace(e, "uhyve_trace", "uhyve").expect("Saving trace failed");
+				rftrace::dump_full_uftrace(e, OUT_DIR.get().unwrap(), "uhyve")
+					.expect("Saving trace failed");
 			}
 		}
 	}
 
+	OUT_DIR.set(out_dir).unwrap();
 	let events = rftrace_frontend::init(1000000, true);
 	rftrace::enable();
 
@@ -173,6 +178,19 @@ struct UhyveArgs {
 	#[serde(skip)]
 	#[merge(strategy = merge::option::overwrite_none)]
 	pub config: Option<PathBuf>,
+
+	/// Directory to store traces (using rftrace)
+	///
+	/// By using this setting, tracing will be enabled when running Uhyve.
+	/// The given directory will be used to store the resulting dumped traces.
+	/// The directory must exist on the host.
+	///
+	/// [default: "uhyve_trace"]
+	#[clap(long, num_args(0..=1), default_missing_value("./uhyve_trace"))]
+	#[serde(skip)]
+	#[merge(skip)]
+	#[cfg(feature = "instrument")]
+	pub trace: Option<PathBuf>,
 }
 
 /// Arguments for memory resources allocated to the guest (both guest and host).
@@ -419,6 +437,8 @@ impl From<Args> for Params {
 					#[cfg(target_os = "linux")]
 					gdb_port,
 					config: _,
+					#[cfg(feature = "instrument")]
+					trace,
 				},
 			memory:
 				MemoryArgs {
@@ -479,6 +499,8 @@ impl From<Args> for Params {
 			},
 			stats: stats.unwrap_or_default(),
 			env: EnvVars::try_from(env_vars.as_slice()).unwrap(),
+			#[cfg(feature = "instrument")]
+			trace,
 		}
 	}
 }
@@ -521,9 +543,6 @@ fn load_vm_config(args: &mut Args) {
 }
 
 fn run_uhyve() -> i32 {
-	#[cfg(feature = "instrument")]
-	setup_trace();
-
 	let mut env_builder = Builder::new();
 	env_builder
 		.filter_level(LevelFilter::Warn)
@@ -535,6 +554,13 @@ fn run_uhyve() -> i32 {
 	let mut args = Args::parse();
 
 	load_vm_config(&mut args);
+
+	#[cfg(feature = "instrument")]
+	if let Some(trace) = args.uhyve.trace.as_ref() {
+		let trace_outdir_str = trace.to_str().unwrap();
+		info!("Setting up trace output directory: {}", trace_outdir_str);
+		setup_trace(String::from(trace_outdir_str));
+	}
 
 	let stats = args.uhyve.stats.unwrap_or_default();
 	let kernel_path = args.guest.kernel.clone();
@@ -669,6 +695,8 @@ mod tests {
 				#[cfg(target_os = "linux")]
 				gdb_port: None,
 				config: Some(PathBuf::from("config.txt")),
+				#[cfg(feature = "instrument")]
+				trace: Some(PathBuf::from(".")),
 			},
 			memory: MemoryArgs {
 				memory_size: None,
@@ -734,6 +762,8 @@ mod tests {
 				#[cfg(target_os = "linux")]
 				gdb_port: Some(1),
 				config: Some(PathBuf::from("config.txt")),
+				#[cfg(feature = "instrument")]
+				trace: Some(PathBuf::from(".")),
 			},
 			memory: MemoryArgs {
 				memory_size: Some(GuestMemorySize::from_str("16MiB").unwrap()),
