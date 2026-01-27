@@ -227,6 +227,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			&file_mapping.lock().unwrap(),
 			&kernel_path,
 			&params.output,
+			#[cfg(feature = "instrument")]
+			&params.trace,
 		);
 
 		let (
@@ -323,6 +325,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		file_map: &UhyveFileMap,
 		kernel_path: &std::path::Path,
 		output: &Output,
+		#[cfg(feature = "instrument")] trace: &Option<PathBuf>,
 	) {
 		if file_sandbox_mode != &FileSandboxMode::None {
 			debug!("Attempting to initialize Landlock...");
@@ -334,6 +337,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 				output,
 				host_paths,
 				temp_dir,
+				#[cfg(feature = "instrument")]
+				trace,
 			);
 			landlock.apply_landlock_restrictions();
 		}

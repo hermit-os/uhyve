@@ -73,6 +73,10 @@ pub struct Params {
 
 	/// Load the kernel to a random address
 	pub aslr: bool,
+
+	/// Store trace dumps in this directory
+	#[cfg(feature = "instrument")]
+	pub trace: Option<PathBuf>,
 }
 
 impl Default for Params {
@@ -100,6 +104,8 @@ impl Default for Params {
 			stats: false,
 			env: EnvVars::default(),
 			aslr: true,
+			#[cfg(feature = "instrument")]
+			trace: Default::default(),
 		}
 	}
 }
