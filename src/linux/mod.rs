@@ -101,7 +101,7 @@ impl UhyveVm<KvmVm> {
 		}
 	}
 
-	fn run_gdb(mut self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
+	fn run_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
 		let cpu_id = 0;
 
 		let local_cpu_affinity = cpu_affinity
@@ -117,6 +117,8 @@ impl UhyveVm<KvmVm> {
 		}
 
 		self.vcpus[0]
+			.lock()
+			.unwrap()
 			.thread_local_init()
 			.expect("Unable to initialize vCPU");
 

@@ -88,13 +88,15 @@ impl GdbUhyve {
 		};
 
 		self.vm.vcpus[0]
+			.lock()
+			.unwrap()
 			.get_vcpu()
 			.set_guest_debug(&debug_struct)
 			.map_err(HypervisorError::from)
 	}
 
 	pub fn run(&mut self) -> HypervisorResult<SingleThreadStopReason<u64>> {
-		let stop_reason = match self.vm.vcpus[0].r#continue()? {
+		let stop_reason = match self.vm.vcpus[0].lock().unwrap().r#continue()? {
 			VcpuStopReason::Debug(debug) => match debug.exception {
 				DB_VECTOR => {
 					let dr6 = Dr6Flags::from_bits_truncate(debug.dr6);
@@ -112,12 +114,12 @@ impl GdbUhyve {
 
 impl SingleThreadBase for GdbUhyve {
 	fn read_registers(&mut self, regs: &mut X86_64CoreRegs) -> TargetResult<(), Self> {
-		regs::read(self.vm.vcpus[0].get_vcpu(), regs)
+		regs::read(self.vm.vcpus[0].lock().unwrap().get_vcpu(), regs)
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))
 	}
 
 	fn write_registers(&mut self, regs: &X86_64CoreRegs) -> TargetResult<(), Self> {
-		regs::write(regs, self.vm.vcpus[0].get_vcpu())
+		regs::write(regs, self.vm.vcpus[0].lock().unwrap().get_vcpu())
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))
 	}
 
@@ -129,7 +131,7 @@ impl SingleThreadBase for GdbUhyve {
 				virt_to_phys(
 					guest_addr,
 					&self.vm.peripherals.mem,
-					self.vm.vcpus[0].get_root_pagetable(),
+					self.vm.vcpus[0].lock().unwrap().get_root_pagetable(),
 				)
 				.map_err(|_err| ())?,
 				data.len(),
@@ -147,7 +149,7 @@ impl SingleThreadBase for GdbUhyve {
 				virt_to_phys(
 					GuestVirtAddr::new(start_addr),
 					&self.vm.peripherals.mem,
-					self.vm.vcpus[0].get_root_pagetable(),
+					self.vm.vcpus[0].lock().unwrap().get_root_pagetable(),
 				)
 				.map_err(|_err| ())?,
 				data.len(),

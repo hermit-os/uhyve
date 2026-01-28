@@ -72,7 +72,7 @@ pub(crate) mod internal {
 
 	/// Trait marking a interface for creating (accelerated) VMs.
 	pub trait VirtualizationBackendInternal: Sized {
-		type VCPU: 'static + VirtualCPU;
+		type VCPU: 'static + VirtualCPU + Send;
 		const NAME: &str;
 
 		/// Create a new CPU object
@@ -132,7 +132,8 @@ pub(crate) struct KernelInfo {
 }
 
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
-	pub(crate) vcpus: Vec<<VirtBackend::BACKEND as VirtualizationBackendInternal>::VCPU>,
+	pub(crate) vcpus:
+		Vec<Arc<Mutex<<VirtBackend::BACKEND as VirtualizationBackendInternal>::VCPU>>>,
 	pub(crate) peripherals: Arc<VmPeripherals>,
 	pub(crate) kernel_info: Arc<KernelInfo>,
 }
@@ -280,13 +281,15 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		let vcpus: Vec<_> = (0..cpu_count)
 			.map(|cpu_id| {
-				virt_backend
-					.new_cpu(cpu_id, kernel_info.clone(), kernel_info.params.stats)
-					.unwrap()
+				Arc::new(Mutex::new(
+					virt_backend
+						.new_cpu(cpu_id, kernel_info.clone(), kernel_info.params.stats)
+						.unwrap(),
+				))
 			})
 			.collect();
 
-		let freq = vcpus[0].get_cpu_frequency();
+		let freq = vcpus[0].lock().unwrap().get_cpu_frequency();
 
 		write_fdt_into_mem(&peripherals.mem, &kernel_info.params, freq, mounts);
 		write_boot_info_to_mem(&peripherals.mem, load_info, cpu_count as u64, freq);
@@ -339,7 +342,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		}
 	}
 
-	pub fn run_no_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
+	pub fn run_no_gdb(&self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
 		KickSignal::register_handler().unwrap();
 
 		// After spinning up all vCPU threads, the main thread waits for any vCPU to end execution.
@@ -348,15 +351,18 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		trace!("Starting vCPUs");
 		let threads = self
 			.vcpus
-			.into_iter()
+			.iter()
 			.enumerate()
-			.map(|(cpu_id, mut cpu)| {
+			.map(|(cpu_id, cpu)| {
 				let main_parker = main_parker.clone();
 				let local_cpu_affinity = cpu_affinity
 					.as_ref()
 					.and_then(|core_ids| core_ids.get(cpu_id).copied());
 
+				let cpu = cpu.clone();
+
 				thread::spawn(move || {
+					let mut cpu = cpu.lock().unwrap();
 					trace!("Create thread for CPU {cpu_id}");
 					match local_cpu_affinity {
 						Some(core_id) => {

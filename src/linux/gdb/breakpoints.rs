@@ -55,7 +55,7 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 					virt_to_phys(
 						GuestVirtAddr::new(addr),
 						&self.vm.peripherals.mem,
-						self.vm.vcpus[0].get_root_pagetable(),
+						self.vm.vcpus[0].lock().unwrap().get_root_pagetable(),
 					)
 					.map_err(|_err| ())?,
 					kind,
@@ -80,7 +80,7 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 					virt_to_phys(
 						GuestVirtAddr::new(addr),
 						&self.vm.peripherals.mem,
-						self.vm.vcpus[0].get_root_pagetable(),
+						self.vm.vcpus[0].lock().unwrap().get_root_pagetable(),
 					)
 					.map_err(|_err| ())?,
 					kind,
