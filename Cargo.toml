@@ -23,6 +23,10 @@ exclude = [
     "/tests"
 ]
 
+[profile.release]
+codegen-units = 1
+lto           = "thin"
+
 [lib]
 name = "uhyvelib"
 
