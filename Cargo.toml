@@ -35,7 +35,7 @@ harness = false
 instrument = ["dep:rftrace", "dep:rftrace-frontend"]
 
 [dependencies]
-align-address = "0.3.0"
+align-address = "0.4"
 byte-unit = { version = "5", features = ["byte", "serde"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 clean-path = "0.2.1"
@@ -80,14 +80,14 @@ xhypervisor = { version = "0.3.0", features = ["macos_15_0_0"] }
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = { version = "0.15", default-features = false }
 raw-cpuid = "11"
-memory_addresses = { version = "0.2.4", default-features = false, features = [
+memory_addresses = { version = "0.3", default-features = false, features = [
   "conversions",
   "x86_64",
 ] }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 bitflags = "2.10"
-memory_addresses = { version = "0.2.4", default-features = false, features = [
+memory_addresses = { version = "0.3", default-features = false, features = [
   "aarch64",
 ] }
 
