@@ -29,13 +29,6 @@ const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 const PCI_CONFIG_DATA_PORT: u16 = 0xCFC;
 const PCI_CONFIG_ADDRESS_PORT: u16 = 0xCF8;
 
-// First address that uses more than 32 bits.
-const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
-// 1 GiB
-const KVM_32BIT_GAP_SIZE: usize = 1024 << 20;
-// 3 GiB, aka. 0xC000_0000
-const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
-
 pub struct KvmVm {
 	vm_fd: VmFd,
 	peripherals: Arc<VmPeripherals>,
@@ -76,33 +69,15 @@ impl VirtualizationBackendInternal for KvmVm {
 	) -> HypervisorResult<Self> {
 		let vm = KVM.create_vm().unwrap();
 
-		let sz = std::cmp::min(peripherals.mem.size(), KVM_32BIT_GAP_START);
-
 		let kvm_mem = kvm_userspace_memory_region {
 			slot: 0,
 			flags: 0, // Can be KVM_MEM_LOG_DIRTY_PAGES and KVM_MEM_READONLY
-			memory_size: sz as u64,
+			memory_size: peripherals.mem.size() as u64,
 			guest_phys_addr: peripherals.mem.guest_addr().as_u64(),
 			userspace_addr: peripherals.mem.host_start() as u64,
 		};
 
 		unsafe { vm.set_user_memory_region(kvm_mem) }?;
-
-		if peripherals.mem.size() > KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE {
-			let kvm_mem = kvm_userspace_memory_region {
-				slot: 1,
-				flags: 0, // Can be KVM_MEM_LOG_DIRTY_PAGES and KVM_MEM_READONLY
-				memory_size: (peripherals.mem.size() - KVM_32BIT_GAP_START - KVM_32BIT_GAP_SIZE)
-					as u64,
-				guest_phys_addr: peripherals.mem.guest_addr().as_u64()
-					+ (KVM_32BIT_GAP_START + KVM_32BIT_GAP_SIZE) as u64,
-				userspace_addr: (peripherals.mem.host_start() as usize
-					+ KVM_32BIT_GAP_START
-					+ KVM_32BIT_GAP_SIZE) as u64,
-			};
-
-			unsafe { vm.set_user_memory_region(kvm_mem) }?;
-		}
 
 		trace!("Initialize interrupt controller");
 

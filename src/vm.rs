@@ -294,15 +294,45 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		let uhyve_interface_version = object.uhyve_interface_version();
 		let serial_port = SerialPortBase::new(match uhyve_interface_version {
-			#[cfg(target_arch = "aarch64")]
-			None | Some(UhyveIfVersion(1)) => uhyve_interface::v1::HypercallAddress::Uart as u64,
-			#[cfg(target_arch = "x86_64")]
-			None | Some(UhyveIfVersion(1)) => uhyve_interface::v1::HypercallAddress::Uart as u16,
+			None | Some(UhyveIfVersion(1)) => {
+				#[cfg(target_arch = "aarch64")]
+				{
+					uhyve_interface::v1::HypercallAddress::Uart as u64
+				}
+				#[cfg(target_arch = "x86_64")]
+				{
+					// Here, hypercalls work(ed) using addresses placed in 32-bit device registers during IoOut exits.
+					// Of course, there is a chance that an image would still run properly, but that is up to chance.
+					const MAX_32_BIT_ADDRESS: usize = 2 << (32 - 1);
+					if peripherals.mem.size() > MAX_32_BIT_ADDRESS {
+						panic!(
+							"Memory sizes above {:#X} (here: {:#X}) are unsupported for x86_64 Hermit unikernel images with Uhyve interface version: {:#?}",
+							MAX_32_BIT_ADDRESS,
+							peripherals.mem.size(),
+							uhyve_interface_version
+						)
+					}
+					// Showing a warning is better than reducing the range of the ASLR-generated address to not cross the upper boundary
+					if kernel_info.params.aslr {
+						warn!(
+							"ASLR is enabled: Boot may not succeed for Hermit unikernel with Uhyve interface version: {:#?}",
+							uhyve_interface_version
+						)
+					}
+					uhyve_interface::v1::HypercallAddress::Uart as u16
+				}
+			}
 			// FIXME: improve condition
-			#[cfg(target_arch = "aarch64")]
-			Some(UhyveIfVersion(2)) => uhyve_interface::v2::HypercallAddress::SerialWriteBuffer as u64,
-			#[cfg(target_arch = "x86_64")]
-			Some(UhyveIfVersion(2)) => uhyve_interface::v2::HypercallAddress::SerialWriteBuffer as u16,
+			Some(UhyveIfVersion(2)) => {
+				#[cfg(target_arch = "aarch64")]
+				{
+					uhyve_interface::v2::HypercallAddress::SerialWriteBuffer as u64
+				}
+				#[cfg(target_arch = "x86_64")]
+				{
+					uhyve_interface::v2::HypercallAddress::SerialWriteBuffer as u16
+				}
+			}
 			_ => {
 				unimplemented!("Kernel uses unsupported uhyve-interface version. Is Uhyve too old?")
 			}
