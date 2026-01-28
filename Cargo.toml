@@ -35,7 +35,7 @@ harness = false
 instrument = ["dep:rftrace", "dep:rftrace-frontend"]
 
 [dependencies]
-align-address = "0.3.0"
+align-address = "0.4.0"
 byte-unit = { version = "5", features = ["byte", "serde"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 clean-path = "0.2.1"

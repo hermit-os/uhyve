@@ -1767,7 +1767,7 @@ dependencies = [
 name = "uhyve"
 version = "0.7.0"
 dependencies = [
- "align-address 0.3.0",
+ "align-address 0.4.0",
  "bitflags 2.10.0",
  "byte-unit",
  "clap",
