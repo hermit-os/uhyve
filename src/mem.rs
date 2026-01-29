@@ -7,8 +7,8 @@ use nix::sys::mman::{MmapAdvise, madvise};
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
 use vm_memory::{
-	Address, GuestAddress, GuestMemoryRegion, GuestRegionMmap, MemoryRegionAddress,
-	mmap::MmapRegionBuilder,
+	Address, GuestAddress, GuestMemoryBackend, GuestMemoryMmap, GuestMemoryRegion, GuestRegionMmap,
+	MemoryRegionAddress, mmap::MmapRegionBuilder,
 };
 
 #[derive(Error, Debug)]
@@ -21,7 +21,7 @@ pub enum MemoryError {
 /// Uses `GuestMemoryMmap` under the hood.
 #[derive(Debug)]
 pub(crate) struct MmapMemory {
-	mem: GuestRegionMmap,
+	mem: GuestMemoryMmap,
 }
 impl MmapMemory {
 	pub fn new(
@@ -76,26 +76,34 @@ impl MmapMemory {
 		}
 
 		Self {
-			mem: GuestRegionMmap::<()>::new(mm_region, GuestAddress(guest_address.as_u64()))
-				.unwrap(),
+			mem: GuestMemoryMmap::from_regions(vec![
+				GuestRegionMmap::<()>::new(mm_region, GuestAddress(guest_address.as_u64()))
+					.unwrap(),
+			])
+			.unwrap(),
 		}
+	}
+
+	/// Helper function to access the only Mmap region in our struct
+	fn region_mmap(&self) -> &GuestRegionMmap {
+		self.mem.iter().next().unwrap()
 	}
 
 	/// Returns the size of the memory in bytes
 	pub fn size(&self) -> usize {
-		self.mem.size()
+		self.region_mmap().size()
 	}
 
 	/// Returns the first valid physical address from the gutest perspective.
 	pub fn guest_addr(&self) -> GuestPhysAddr {
-		GuestPhysAddr::new(self.mem.start_addr().0)
+		GuestPhysAddr::new(self.mem.iter().next().unwrap().start_addr().0)
 	}
 
 	/// Returns a pointer to the beginning of the memory on the host.
 	pub fn host_start(&self) -> *mut u8 {
-		let start_addr = self.mem.start_addr();
-		let region_addr = self.mem.to_region_addr(start_addr).unwrap();
-		self.mem.get_host_address(region_addr).unwrap()
+		let start_addr = self.region_mmap().start_addr();
+		let region_addr = self.region_mmap().to_region_addr(start_addr).unwrap();
+		self.region_mmap().get_host_address(region_addr).unwrap()
 	}
 
 	/// # Safety
@@ -123,15 +131,15 @@ impl MmapMemory {
 	) -> Result<MemoryRegionAddress, MemoryError> {
 		Ok(MemoryRegionAddress(
 			addr.as_u64()
-				.checked_sub(self.mem.start_addr().0)
+				.checked_sub(self.mem.iter().next().unwrap().start_addr().0)
 				.ok_or(MemoryError::BoundsViolation)?,
 		))
 	}
 
 	/// Checks if the range described by `addr` + `len` is part of this memory region
 	fn check_range(&self, addr: MemoryRegionAddress, len: usize) -> Result<bool, MemoryError> {
-		Ok(self.mem.address_in_range(addr)
-			&& self.mem.address_in_range(
+		Ok(self.region_mmap().address_in_range(addr)
+			&& self.region_mmap().address_in_range(
 				addr.checked_add(if len > 0 { len as u64 - 1 } else { 0 })
 					.ok_or(MemoryError::BoundsViolation)?,
 			))
@@ -148,7 +156,10 @@ impl MmapMemory {
 		let guest_addr = self.addr_to_mem_region_addr(addr)?;
 		if self.check_range(guest_addr, len)? {
 			Ok(unsafe {
-				std::slice::from_raw_parts_mut(self.mem.get_host_address(guest_addr).unwrap(), len)
+				std::slice::from_raw_parts_mut(
+					self.region_mmap().get_host_address(guest_addr).unwrap(),
+					len,
+				)
 			})
 		} else {
 			Err(MemoryError::BoundsViolation)
@@ -171,7 +182,10 @@ impl MmapMemory {
 		let guest_addr = self.addr_to_mem_region_addr(addr)?;
 		if self.check_range(guest_addr, len)? {
 			Ok(unsafe {
-				std::slice::from_raw_parts_mut(self.mem.get_host_address(guest_addr).unwrap(), len)
+				std::slice::from_raw_parts_mut(
+					self.region_mmap().get_host_address(guest_addr).unwrap(),
+					len,
+				)
 			})
 		} else {
 			Err(MemoryError::BoundsViolation)
@@ -182,9 +196,9 @@ impl MmapMemory {
 	/// memory, if the address is valid.
 	pub fn host_address(&self, addr: GuestPhysAddr) -> Result<*const u8, MemoryError> {
 		let ptr = self
-			.mem
+			.region_mmap()
 			.get_host_address(
-				self.mem
+				self.region_mmap()
 					.to_region_addr(GuestAddress(addr.as_u64()))
 					.unwrap(),
 			)
@@ -199,7 +213,7 @@ impl MmapMemory {
 	}
 
 	unsafe fn get_ptr_internal(&self, addr: MemoryRegionAddress) -> Result<*mut u8, MemoryError> {
-		self.mem
+		self.region_mmap()
 			.get_host_address(addr)
 			.map_err(|_| MemoryError::BoundsViolation)
 	}
