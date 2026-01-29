@@ -68,6 +68,9 @@ pub enum HypervisorError {
 
 	#[error("Kernel Loading Error: {0}")]
 	LoadedKernelError(#[from] vm::LoadKernelError),
+
+	#[error("Kernel doesn't support the necessary features: {0}")]
+	FeatureMismatch(&'static str),
 }
 
 impl HypervisorError {
