@@ -432,6 +432,18 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		// create virtio interface
 		let mem = Arc::new(mem);
+		if let Some(version) = hermit_version
+			&& kernel_info.params.network.is_some()
+			&& (version
+				< HermitVersion {
+					major: 0,
+					minor: 13,
+					patch: 2,
+				}) {
+			return Err(HypervisorError::FeatureMismatch(
+				"Network requires Kernel 0.13.2 or newer",
+			));
+		}
 		let virtio_device = kernel_info.params.network.as_ref().map(|mode| {
 			Mutex::new(VirtBackend::BACKEND::virtio_net_device(
 				mode.clone(),
