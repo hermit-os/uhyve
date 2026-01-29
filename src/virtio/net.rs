@@ -333,7 +333,7 @@ impl VirtioNetPciDevice {
 						"Frame larger than MTU, was the device reconfigured?"
 					);
 
-					match write_packet(&rx_queue, &mut frame_queue, &mmap, &rx_notifier) {
+					match write_packet(&rx_queue, &mut frame_queue, mmap, &rx_notifier) {
 						Ok(data_sent) => {
 							if data_sent
 								&& rx_queue
