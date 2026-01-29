@@ -433,6 +433,18 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 
 		// create virtio interface
 		let mem = Arc::new(mem);
+		if let Some(version) = hermit_version
+			&& kernel_info.params.network.is_some()
+			&& (version
+				< HermitVersion {
+					major: 0,
+					minor: 13,
+					patch: 2,
+				}) {
+			return Err(HypervisorError::FeatureMismatch(
+				"Network requires Kernel 0.13.2 or newer",
+			));
+		}
 		let virtio_device = kernel_info
 			.params
 			.network
