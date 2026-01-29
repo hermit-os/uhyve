@@ -135,6 +135,7 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(crate) vcpus: Vec<<VirtBackend::BACKEND as VirtualizationBackendInternal>::VCPU>,
 	pub(crate) peripherals: Arc<VmPeripherals>,
 	pub(crate) kernel_info: Arc<KernelInfo>,
+	_virt_backend: VirtBackend::BACKEND,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
@@ -314,6 +315,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			peripherals,
 			kernel_info,
 			vcpus,
+			_virt_backend: virt_backend,
 		})
 	}
 
