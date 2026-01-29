@@ -15,7 +15,7 @@ use crate::{
 	mem::MmapMemory,
 	params::EnvVars,
 	virt_to_phys,
-	vm::VmPeripherals,
+	vm::{VmPeripherals, internal::VirtualizationBackendInternal},
 };
 
 /// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
@@ -259,8 +259,8 @@ pub fn read(
 }
 
 /// Handles an write syscall on the host.
-pub fn write(
-	peripherals: &VmPeripherals,
+pub fn write<B: VirtualizationBackendInternal>(
+	peripherals: &VmPeripherals<B>,
 	syswrite: &WriteParams,
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
