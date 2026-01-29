@@ -4,8 +4,20 @@ use std::{
 	time::{Duration, Instant},
 };
 
-use uhyve_interface::HypercallAddress;
+use uhyve_interface::{
+	v1::{self, HypercallAddress as AddressV1},
+	v2::{self, HypercallAddress as AddressV2},
+};
 
+/// Possible hypercalls that can cause an exit.
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[repr(u64)]
+pub enum HypercallAddresses {
+	V1(AddressV1),
+	V2(AddressV2),
+}
+
+/// Possible causes a VM exit (guest -> host transition)
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum VmExit {
 	MMIORead,
@@ -13,7 +25,31 @@ pub enum VmExit {
 	PCIRead,
 	PCIWrite,
 	Debug,
-	Hypercall(HypercallAddress),
+	Hypercall(HypercallAddresses),
+}
+
+impl From<AddressV1> for VmExit {
+	fn from(item: AddressV1) -> Self {
+		VmExit::Hypercall(HypercallAddresses::V1(item))
+	}
+}
+
+impl<'a> From<&v1::Hypercall<'a>> for VmExit {
+	fn from(item: &v1::Hypercall<'a>) -> Self {
+		AddressV1::from(item).into()
+	}
+}
+
+impl From<AddressV2> for VmExit {
+	fn from(item: AddressV2) -> Self {
+		VmExit::Hypercall(HypercallAddresses::V2(item))
+	}
+}
+
+impl<'a> From<&v2::Hypercall<'a>> for VmExit {
+	fn from(item: &v2::Hypercall<'a>) -> Self {
+		AddressV2::from(item).into()
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -131,9 +167,9 @@ mod tests {
 		s1.start_time_measurement();
 		s1.increment_val(VmExit::PCIRead);
 		s1.increment_val(VmExit::PCIRead);
-		s1.increment_val(VmExit::Hypercall(HypercallAddress::Uart));
-		s1.increment_val(VmExit::Hypercall(HypercallAddress::Uart));
-		s1.increment_val(VmExit::Hypercall(HypercallAddress::FileOpen));
+		s1.increment_val(AddressV1::Uart.into());
+		s1.increment_val(AddressV1::Uart.into());
+		s1.increment_val(AddressV1::FileOpen.into());
 		s1.stop_time_measurement();
 		println!("{s1:?}");
 
@@ -141,8 +177,14 @@ mod tests {
 		s2.start_time_measurement();
 		s2.increment_val(VmExit::PCIRead);
 		s2.increment_val(VmExit::MMIOWrite);
-		s2.increment_val(VmExit::Hypercall(HypercallAddress::Uart));
-		s2.increment_val(VmExit::Hypercall(HypercallAddress::FileClose));
+		s2.increment_val(AddressV1::Uart.into());
+		s2.increment_val(AddressV1::FileWrite.into());
+		// Technically, having a v2 FileClose is not necessarily possible in some real-world
+		// scenarios (specifically when assuming Linux x86_64 here), but we are testing the
+		// data structure here.
+		s2.increment_val(AddressV2::FileClose.into());
+		s2.increment_val(AddressV2::SerialWriteBuffer.into());
+		s2.increment_val(AddressV2::SerialWriteBuffer.into());
 		s2.stop_time_measurement();
 		println!("{s2:?}");
 
@@ -171,11 +213,20 @@ mod tests {
 		assert_eq!(
 			vm_stats
 				.vm_exits
-				.get(&VmExit::Hypercall(HypercallAddress::Uart))
+				.get(&AddressV2::FileClose.into())
 				.unwrap()
 				.values()
 				.sum::<usize>(),
-			3
+			1
+		);
+		assert_eq!(
+			vm_stats
+				.vm_exits
+				.get(&AddressV2::SerialWriteBuffer.into())
+				.unwrap()
+				.values()
+				.sum::<usize>(),
+			2
 		);
 		assert_eq!(vm_stats.cpu_runtimes.len(), 2);
 	}
