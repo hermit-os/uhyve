@@ -96,7 +96,8 @@ fn translate_last_errno() -> Option<i32> {
 	macro_rules! error_pairs {
 		($($x:ident),*) => {{[ $((libc::$x, parameters::$x)),* ]}}
 	}
-	for (e_host, e_guest) in error_pairs!(EBADF, EEXIST, EFAULT, EINVAL, EPERM, ENOENT, EROFS) {
+	for (e_host, e_guest) in error_pairs!(EBADF, EEXIST, EFAULT, EINVAL, EIO, EPERM, ENOENT, EROFS)
+	{
 		if errno == e_host {
 			return Some(e_guest);
 		}
@@ -285,11 +286,15 @@ pub fn read_v1(
 			fd: sysread.fd,
 			buf: guest_phys_addr,
 			len: sysread.len as u64,
-			ret: sysread.ret as i64,
+			ret: sysread.ret as u64,
 			errno: 0i32,
 		};
 		read(mem, &mut tmp, file_map);
-		sysread.ret = tmp.ret as isize;
+		if tmp.ret > 0 {
+			sysread.ret = tmp.ret as isize;
+		} else {
+			sysread.ret = tmp.errno as isize;
+		}
 	} else {
 		warn!("Unable to convert guest virtual address into guest physical address");
 		sysread.ret = -EFAULT as isize;
@@ -313,11 +318,11 @@ pub fn read(
 							sysread.len as usize,
 						)
 					};
-					if bytes_read >= 0 {
-						bytes_read as i64
-					} else {
-						-1
+					if bytes_read == 0 {
+						let errno = translate_last_errno().unwrap_or(1);
+						sysread.errno = -errno;
 					}
+					bytes_read as u64
 				}
 				FdData::Virtual { data, offset } => {
 					let data: &[u8] = data.get();
@@ -337,15 +342,17 @@ pub fn read(
 							amt,
 						)
 					};
-					amt as i64
+					amt as u64
 				}
 			}
 		} else {
 			warn!("Unable to get host address for read buffer");
-			-EFAULT as i64
+			sysread.errno = -EFAULT;
+			0
 		}
 	} else {
-		-EBADF as i64
+		sysread.errno = -EBADF;
+		0
 	};
 }
 
@@ -353,7 +360,7 @@ pub fn read(
 /// converted to a guest physical address by the host).
 pub fn write_v1(
 	peripherals: &VmPeripherals,
-	syswrite: &v1::parameters::WriteParams,
+	syswrite: &mut v1::parameters::WriteParams,
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
 ) -> io::Result<()> {
@@ -363,19 +370,22 @@ pub fn write_v1(
 			format!("invalid syswrite buffer: {e:?}"),
 		)
 	})?;
-	let tmp = v2::parameters::WriteParams {
+	let mut tmp = v2::parameters::WriteParams {
 		fd: syswrite.fd,
 		buf: guest_phys_addr,
 		len: syswrite.len as u64,
 		errno: 0i32,
 	};
-	write(peripherals, &tmp, file_map)
+	let res = write(peripherals, &mut tmp, file_map);
+	// Error number is silently ignored for v1.
+	syswrite.len = tmp.len as usize;
+	res
 }
 
 /// Handles an write syscall on the host.
 pub fn write(
 	peripherals: &VmPeripherals,
-	syswrite: &v2::parameters::WriteParams,
+	syswrite: &mut v2::parameters::WriteParams,
 	file_map: &mut UhyveFileMap,
 ) -> io::Result<()> {
 	// uhyve-interface TODO: add capability to return non-fatal errors to
@@ -427,6 +437,8 @@ pub fn write(
 				if step >= 0 {
 					bytes = &bytes[step as usize..];
 				} else {
+					let errno = translate_last_errno().unwrap_or(1);
+					syswrite.errno = -errno;
 					return Err(io::Error::last_os_error());
 				}
 			}

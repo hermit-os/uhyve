@@ -87,7 +87,7 @@ pub enum Hypercall<'a> {
 	FileLseek(&'a mut LseekParams),
 	FileOpen(&'a mut OpenParams),
 	FileRead(&'a mut ReadParams),
-	FileWrite(&'a WriteParams),
+	FileWrite(&'a mut WriteParams),
 	FileUnlink(&'a mut UnlinkParams),
 	/// Write a char to the terminal.
 	SerialWriteByte(u8),
