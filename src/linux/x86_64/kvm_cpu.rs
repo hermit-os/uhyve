@@ -3,18 +3,19 @@ use std::{io, num::NonZero, sync::Arc};
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
 use uhyve_interface::{GuestPhysAddr, Hypercall, HypercallAddress};
-use vmm_sys_util::eventfd::EventFd;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
 use crate::{
 	HypervisorResult,
 	consts::*,
 	hypercall,
-	linux::KVM,
-	params::Params,
+	linux::{KVM, x86_64::virtio_device::KvmVirtioNetDevice},
+	mem::MmapMemory,
+	params::{NetworkMode, Params},
+	pci::{IOBASE_U64, IOEND_U64, PciConfigurationAddress, PciDevice},
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
-	virtio::*,
+	virtio::net::VirtioNetPciDevice,
 	vm::{
 		KernelInfo, VirtualizationBackend, VmPeripherals, internal::VirtualizationBackendInternal,
 	},
@@ -36,12 +37,13 @@ const KVM_32BIT_GAP_SIZE: usize = 1024 << 20;
 const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
 
 pub struct KvmVm {
-	vm_fd: VmFd,
-	peripherals: Arc<VmPeripherals>,
+	pub(crate) vm_fd: VmFd,
+	peripherals: Arc<VmPeripherals<Self>>,
 }
 
 impl VirtualizationBackendInternal for KvmVm {
 	type VCPU = KvmCpu;
+	type VirtioNetImpl = KvmVirtioNetDevice;
 	const NAME: &str = "KvmVm";
 
 	fn new_cpu(
@@ -69,7 +71,7 @@ impl VirtualizationBackendInternal for KvmVm {
 	}
 
 	fn new(
-		peripherals: Arc<VmPeripherals>,
+		peripherals: Arc<VmPeripherals<Self>>,
 		params: &Params,
 		_guest_addr: GuestPhysAddr,
 	) -> HypervisorResult<Self> {
@@ -159,13 +161,18 @@ impl VirtualizationBackendInternal for KvmVm {
 			}
 		}
 
-		let evtfd = EventFd::new(0).unwrap();
-		vm.register_irqfd(&evtfd, UHYVE_IRQ_NET)?;
+		if let Some(virtiodevice) = &peripherals.virtio_device {
+			virtiodevice.lock().unwrap().setup(&vm);
+		}
 
 		Ok(Self {
 			vm_fd: vm,
 			peripherals,
 		})
+	}
+
+	fn virtio_net_device(mode: NetworkMode, memory: Arc<MmapMemory>) -> Self::VirtioNetImpl {
+		KvmVirtioNetDevice::new(VirtioNetPciDevice::new(mode, memory))
 	}
 }
 
@@ -176,7 +183,7 @@ impl VirtualizationBackend for KvmVm {
 pub struct KvmCpu {
 	id: u32,
 	vcpu: VcpuFd,
-	peripherals: Arc<VmPeripherals>,
+	peripherals: Arc<VmPeripherals<KvmVm>>,
 	// TODO: Remove once the getenv/getargs hypercalls are removed
 	kernel_info: Arc<KernelInfo>,
 	pci_addr: Option<u32>,
@@ -409,40 +416,17 @@ impl VirtualCPU for KvmCpu {
 								if let Some(pci_addr) = self.pci_addr
 									&& pci_addr & 0x1ff800 == 0
 								{
-									let virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.handle_read(pci_addr & 0x3ff, addr);
+									if let Some(virtio_device) = &self.peripherals.virtio_device {
+										virtio_device.lock().unwrap().virtio.handle_read(
+											PciConfigurationAddress(pci_addr & 0x3ff),
+											addr,
+										);
+									}
 								} else {
 									unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
 								}
 							}
 							PCI_CONFIG_ADDRESS_PORT => {}
-							VIRTIO_PCI_STATUS => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_status(addr);
-							}
-							VIRTIO_PCI_HOST_FEATURES => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_host_features(addr);
-							}
-							VIRTIO_PCI_GUEST_FEATURES => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_requested_features(addr);
-							}
-							VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device
-									.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_OFF);
-							}
-							VIRTIO_PCI_ISR => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.reset_interrupt()
-							}
-							VIRTIO_PCI_LINK_STATUS_MSIX_OFF => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_link_status(addr);
-							}
 							port => {
 								warn!("guest read from unknown I/O port {port:#x}");
 							}
@@ -542,43 +526,20 @@ impl VirtualCPU for KvmCpu {
 								s.increment_val(VmExit::PCIWrite)
 							}
 							match port {
-								//TODO:
+								// Legacy PCI addressing method
 								PCI_CONFIG_DATA_PORT => {
 									if let Some(pci_addr) = self.pci_addr
-										&& pci_addr & 0x1ff800 == 0
+										&& pci_addr & 0x1ff800 == 0 && let Some(virtio_device) =
+										&self.peripherals.virtio_device
 									{
-										let mut virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										virtio_device.handle_write(pci_addr & 0x3ff, addr);
+										virtio_device.lock().unwrap().virtio.handle_write(
+											PciConfigurationAddress(pci_addr & 0x3ff),
+											addr,
+										);
 									}
 								}
 								PCI_CONFIG_ADDRESS_PORT => {
 									self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
-								}
-								VIRTIO_PCI_STATUS => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_status(addr);
-								}
-								VIRTIO_PCI_GUEST_FEATURES => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_requested_features(addr);
-								}
-								VIRTIO_PCI_QUEUE_NOTIFY => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.handle_notify_output(addr, &self.peripherals.mem);
-								}
-								VIRTIO_PCI_QUEUE_SEL => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_selected_queue(addr);
-								}
-								VIRTIO_PCI_QUEUE_PFN => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_pfn(addr, &self.peripherals.mem);
 								}
 								port => {
 									warn!("guest wrote to unknown I/O port {port:#x}");
@@ -586,18 +547,27 @@ impl VirtualCPU for KvmCpu {
 							}
 						}
 					}
-					VcpuExit::MmioRead(addr, _targ) => {
+					VcpuExit::MmioRead(addr, data) => {
 						match addr {
 							0x9_F000..0xA_0000 | 0xF_0000..0x10_0000 => {} // Search for MP floating table
+							IOBASE_U64..IOEND_U64 => {
+								if let Some(virtio_device) = &self.peripherals.virtio_device {
+									virtio_device
+										.lock()
+										.unwrap()
+										.virtio
+										.handle_read(PciConfigurationAddress(addr as u32), data)
+								}
+							}
 							_ => {
+								let l = data.len();
 								self.print_registers();
-								panic!("mmio read to {addr:#x}");
+								panic!(
+									"undefined mmio read of {l} bytes to {addr:#x?} (ConfigAddress {:x?})",
+									PciConfigurationAddress::from_guest_address(addr.into())
+								);
 							}
 						}
-					}
-					VcpuExit::MmioWrite(addr, _targ) => {
-						self.print_registers();
-						panic!("undefined mmio write to {addr:#x}");
 					}
 					VcpuExit::Debug(debug) => {
 						if let Some(s) = self.stats.as_mut() {
@@ -626,6 +596,22 @@ impl VirtualCPU for KvmCpu {
 						let err = io::Error::other(format!("{debug:?}"));
 						return Err(err.into());
 					}
+					VcpuExit::MmioWrite(addr, data) => match addr {
+						IOBASE_U64..IOEND_U64 => {
+							if let Some(virtio_device) = &self.peripherals.virtio_device {
+								virtio_device
+									.lock()
+									.unwrap()
+									.virtio
+									.handle_write(PciConfigurationAddress(addr as u32), data)
+							}
+						}
+						_ => {
+							let l = data.len();
+							self.print_registers();
+							panic!("undefined mmio write of {l} bytes to {addr:#x?}");
+						}
+					},
 					vcpu_exit => {
 						let err = io::Error::other(format!("not implemented: {vcpu_exit:?}"));
 						return Err(err.into());

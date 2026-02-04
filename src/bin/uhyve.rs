@@ -12,7 +12,7 @@ use thiserror::Error;
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
-	params::{CpuCount, EnvVars, GuestMemorySize, Output, Params},
+	params::{CpuCount, EnvVars, GuestMemorySize, NetworkMode, Output, Params},
 	vm::UhyveVm,
 };
 
@@ -173,6 +173,14 @@ struct UhyveArgs {
 	#[serde(skip)]
 	#[merge(strategy = merge::option::overwrite_none)]
 	pub config: Option<PathBuf>,
+
+	/// Network configuration. Specify network mode and device as colon separated string.
+	///
+	/// Example: --net=tap:tap10
+	#[serde(skip)]
+	#[merge(strategy = merge::option::overwrite_none)]
+	#[clap(short, long)]
+	net: Option<String>,
 }
 
 /// Arguments for memory resources allocated to the guest (both guest and host).
@@ -420,6 +428,7 @@ impl From<Args> for Params {
 					#[cfg(target_os = "linux")]
 					gdb_port,
 					config: _,
+					net,
 				},
 			memory:
 				MemoryArgs {
@@ -480,6 +489,7 @@ impl From<Args> for Params {
 			},
 			stats: stats.unwrap_or_default(),
 			env: EnvVars::try_from(env_vars.as_slice()).unwrap(),
+			network: net.map(|net| NetworkMode::try_from(net).unwrap()),
 		}
 	}
 }
@@ -670,6 +680,7 @@ mod tests {
 				#[cfg(target_os = "linux")]
 				gdb_port: None,
 				config: Some(PathBuf::from("config.txt")),
+				net: Some(String::from("tap10")),
 			},
 			memory: MemoryArgs {
 				memory_size: None,
@@ -735,6 +746,7 @@ mod tests {
 				#[cfg(target_os = "linux")]
 				gdb_port: Some(1),
 				config: Some(PathBuf::from("config.txt")),
+				net: Some(String::from("tap10")),
 			},
 			memory: MemoryArgs {
 				memory_size: Some(GuestMemorySize::from_str("16MiB").unwrap()),

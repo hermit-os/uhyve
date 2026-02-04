@@ -36,6 +36,7 @@ instrument = ["dep:rftrace", "dep:rftrace-frontend"]
 
 [dependencies]
 align-address = "0.4"
+bitflags = "2.10"
 byte-unit = { version = "5", features = ["byte", "serde"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 clean-path = "0.2.1"
@@ -47,12 +48,12 @@ hermit-entry = { version = "0.10.8", features = ["loader"] }
 libc = "0.2"
 log = "0.4"
 mac_address = "1.1"
-nix = { version = "0.31", features = ["mman", "pthread", "signal"] }
+nix = { version = "0.31", features = ["mman", "pthread", "signal", "net", "ioctl", "poll"] }
 thiserror = "2.0.18"
 time = "0.3"
 tun-tap = { version = "0.1.3", default-features = false }
 uhyve-interface = { version = "0.1.4", path = "uhyve-interface", features = ["std"] }
-virtio-bindings = { version = "0.2", features = ["virtio-v4_14_0"] }
+virtio-bindings = "0.2"
 vm-memory = { version = "0.18", features = ["backend-mmap"] }
 rftrace = { version = "0.3", optional = true }
 rftrace-frontend = { version = "0.3", optional = true }
@@ -63,15 +64,19 @@ vm-fdt = "0.3"
 tempfile = "3.24"
 uuid = { version = "1.20.0", features = ["fast-rng", "v4"]}
 toml = "0.9.11"
+virtio-queue = "0.17"
 serde = { version = "1.0", features = ["derive"] }
 merge = "0.2"
 yoke = "0.8"
 nohash = "0.2"
+zerocopy = { version = "0.8", features = ["derive"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.14"
 kvm-ioctls = "0.24"
 landlock = "0.4.4"
+mac_address = "1.1"
+tun-tap = { version = "0.1", default-features = false }
 vmm-sys-util = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -86,7 +91,6 @@ memory_addresses = { version = "0.3", default-features = false, features = [
 ] }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
-bitflags = "2.10"
 memory_addresses = { version = "0.3", default-features = false, features = [
   "aarch64",
 ] }
