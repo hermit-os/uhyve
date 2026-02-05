@@ -9,7 +9,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2df0852593ebb4ed15e4fce123daf16a272b8d4449ae75050d6b9d7cea461a21"
 dependencies = [
  "aarch64-cpu",
- "memory_addresses",
+ "memory_addresses 0.2.3",
  "tock-registers",
 ]
 
@@ -33,6 +33,12 @@ name = "align-address"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ac6c08a67736554282858203cd9b7ff53cf55f54c34e85689962748a350cbf0"
+
+[[package]]
+name = "align-address"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cee078b3ed87e2621e0389729e2f032cc0408a4548768ced01678c9451c62237"
 
 [[package]]
 name = "base64"
@@ -223,7 +229,17 @@ version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01af0509edc73791972185a4ed1e3e8b2d0f21c3c527f96078586446b61750c4"
 dependencies = [
- "align-address",
+ "align-address 0.3.0",
+ "cfg-if",
+]
+
+[[package]]
+name = "memory_addresses"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b0d19077c1bd58a846e275c3bb80527600ab8afbfb2768a80eb39f77cf93f1d"
+dependencies = [
+ "align-address 0.4.0",
  "cfg-if",
  "x86_64",
 ]
@@ -416,7 +432,7 @@ version = "0.1.4"
 dependencies = [
  "aarch64",
  "hermit-abi",
- "memory_addresses",
+ "memory_addresses 0.3.0",
  "num_enum",
  "x86_64",
 ]
