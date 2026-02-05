@@ -383,7 +383,6 @@ impl<'de> serde::de::Deserialize<'de> for Affinity {
 #[cfg_attr(test, derive(PartialEq))]
 struct GuestArgs {
 	/// The kernel to execute
-	#[clap(value_parser)]
 	#[serde(skip)]
 	#[merge(skip)]
 	kernel: PathBuf,
