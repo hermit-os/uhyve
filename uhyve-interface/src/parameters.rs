@@ -97,7 +97,7 @@ pub struct ReadParams {
 	pub buf: GuestVirtAddr,
 	/// Number of bytes to read into the buffer.
 	pub len: usize,
-	/// Number of bytes read on success. `-1` on failure.
+	/// Number of bytes read on success or negative value on failure.
 	pub ret: isize,
 }
 
@@ -107,7 +107,7 @@ pub struct ReadParams {
 pub struct CloseParams {
 	/// File descriptor of the file.
 	pub fd: i32,
-	/// Zero on success, `-1` on failure.
+	/// Zero on success or negative value on failure.
 	pub ret: i32,
 }
 
@@ -121,7 +121,7 @@ pub struct OpenParams {
 	pub flags: i32,
 	/// Access permissions upon opening/creating a file.
 	pub mode: i32,
-	/// File descriptor upon successful opening or `-1` upon failure.
+	/// File descriptor upon successful opening or negative value upon failure.
 	pub ret: i32,
 }
 
