@@ -390,6 +390,8 @@ impl VirtualCPU for KvmCpu {
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
+			let virtio_device = || self.peripherals.virtio_device.lock().unwrap();
+			let file_mapping = || self.peripherals.file_mapping.lock().unwrap();
 			match self.vcpu.run() {
 				Ok(vcpu_stop_reason) => match vcpu_stop_reason {
 					VcpuExit::Hlt => {
@@ -409,39 +411,28 @@ impl VirtualCPU for KvmCpu {
 								if let Some(pci_addr) = self.pci_addr
 									&& pci_addr & 0x1ff800 == 0
 								{
-									let virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.handle_read(pci_addr & 0x3ff, addr);
+									virtio_device().handle_read(pci_addr & 0x3ff, addr);
 								} else {
 									unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
 								}
 							}
 							PCI_CONFIG_ADDRESS_PORT => {}
 							VIRTIO_PCI_STATUS => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_status(addr);
+								virtio_device().read_status(addr);
 							}
 							VIRTIO_PCI_HOST_FEATURES => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_host_features(addr);
+								virtio_device().read_host_features(addr);
 							}
 							VIRTIO_PCI_GUEST_FEATURES => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_requested_features(addr);
+								virtio_device().read_requested_features(addr);
 							}
 							VIRTIO_PCI_CONFIG_OFF_MSIX_OFF..=VIRTIO_PCI_CONFIG_OFF_MSIX_OFF_MAX => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device
+								virtio_device()
 									.read_mac_byte(addr, port - VIRTIO_PCI_CONFIG_OFF_MSIX_OFF);
 							}
-							VIRTIO_PCI_ISR => {
-								let mut virtio_device =
-									self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.reset_interrupt()
-							}
+							VIRTIO_PCI_ISR => virtio_device().reset_interrupt(),
 							VIRTIO_PCI_LINK_STATUS_MSIX_OFF => {
-								let virtio_device = self.peripherals.virtio_device.lock().unwrap();
-								virtio_device.read_link_status(addr);
+								virtio_device().read_link_status(addr);
 							}
 							port => {
 								warn!("guest read from unknown I/O port {port:#x}");
@@ -481,35 +472,33 @@ impl VirtualCPU for KvmCpu {
 								Hypercall::Exit(sysexit) => {
 									return Ok(VcpuStopReason::Exit(sysexit.arg));
 								}
-								Hypercall::FileClose(sysclose) => hypercall::close(
-									sysclose,
-									&mut self.peripherals.file_mapping.lock().unwrap(),
-								),
-								Hypercall::FileLseek(syslseek) => hypercall::lseek(
-									syslseek,
-									&mut self.peripherals.file_mapping.lock().unwrap(),
-								),
+								Hypercall::FileClose(sysclose) => {
+									hypercall::close(sysclose, &mut file_mapping())
+								}
+								Hypercall::FileLseek(syslseek) => {
+									hypercall::lseek(syslseek, &mut file_mapping())
+								}
 								Hypercall::FileOpen(sysopen) => hypercall::open(
 									&self.peripherals.mem,
 									sysopen,
-									&mut self.peripherals.file_mapping.lock().unwrap(),
+									&mut file_mapping(),
 								),
 								Hypercall::FileRead(sysread) => hypercall::read(
 									&self.peripherals.mem,
 									sysread,
 									self.get_root_pagetable(),
-									&mut self.peripherals.file_mapping.lock().unwrap(),
+									&mut file_mapping(),
 								),
 								Hypercall::FileWrite(syswrite) => hypercall::write(
 									&self.peripherals,
 									syswrite,
 									self.get_root_pagetable(),
-									&mut self.peripherals.file_mapping.lock().unwrap(),
+									&mut file_mapping(),
 								)?,
 								Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
 									&self.peripherals.mem,
 									sysunlink,
-									&mut self.peripherals.file_mapping.lock().unwrap(),
+									&mut file_mapping(),
 								),
 								Hypercall::SerialWriteByte(buf) => self
 									.peripherals
@@ -547,38 +536,27 @@ impl VirtualCPU for KvmCpu {
 									if let Some(pci_addr) = self.pci_addr
 										&& pci_addr & 0x1ff800 == 0
 									{
-										let mut virtio_device =
-											self.peripherals.virtio_device.lock().unwrap();
-										virtio_device.handle_write(pci_addr & 0x3ff, addr);
+										virtio_device().handle_write(pci_addr & 0x3ff, addr);
 									}
 								}
 								PCI_CONFIG_ADDRESS_PORT => {
 									self.pci_addr = Some(unsafe { *(addr.as_ptr() as *const u32) });
 								}
 								VIRTIO_PCI_STATUS => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_status(addr);
+									virtio_device().write_status(addr);
 								}
 								VIRTIO_PCI_GUEST_FEATURES => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_requested_features(addr);
+									virtio_device().write_requested_features(addr);
 								}
 								VIRTIO_PCI_QUEUE_NOTIFY => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.handle_notify_output(addr, &self.peripherals.mem);
+									virtio_device()
+										.handle_notify_output(addr, &self.peripherals.mem);
 								}
 								VIRTIO_PCI_QUEUE_SEL => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_selected_queue(addr);
+									virtio_device().write_selected_queue(addr);
 								}
 								VIRTIO_PCI_QUEUE_PFN => {
-									let mut virtio_device =
-										self.peripherals.virtio_device.lock().unwrap();
-									virtio_device.write_pfn(addr, &self.peripherals.mem);
+									virtio_device().write_pfn(addr, &self.peripherals.mem);
 								}
 								port => {
 									warn!("guest wrote to unknown I/O port {port:#x}");
