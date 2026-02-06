@@ -13,8 +13,8 @@ fn gauss_sum(n: u64) -> u64 {
 fn main() {
 	println!("Multi threading test");
 
-	const CNT: usize = 50000;
-	const NR_THREADS: usize = 4;
+	const CNT: usize = 100000;
+	const NR_THREADS: usize = 16;
 
 	let start = Instant::now();
 	for _ in 0..CNT {

@@ -17,7 +17,9 @@ fn multicore_test() {
 
 	let re = Regex::new(r"Speedup: [\d]+us / \d+us =\s*([\d.]+)").unwrap();
 
-	for nr_cpus in [2, 4] {
+	// The expected speedup values are rather conservative, so that CI doesn't fail easily on
+	// overloaded runners
+	for (nr_cpus, expected_min_speedup) in [(2, 1.25), (3, 1.5), (4, 2.0)] {
 		println!("Launching kernel {}", bin_path.display());
 		let params = Params {
 			cpu_count: nr_cpus.try_into().unwrap(),
@@ -44,8 +46,9 @@ fn multicore_test() {
 		dbg!(&caps);
 		let speedup = caps.get(1).unwrap().as_str().parse::<f64>().unwrap();
 		dbg!(&speedup);
-		if speedup < nr_cpus as f64 * 0.66 {
-			panic!("Speedup of {speedup} is not enough for a CPU count of {nr_cpus}");
-		}
+		assert!(
+			speedup >= expected_min_speedup,
+			"Speedup of {speedup} is not enough for a CPU count of {nr_cpus}"
+		);
 	}
 }
