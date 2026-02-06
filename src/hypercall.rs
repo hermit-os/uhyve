@@ -30,55 +30,30 @@ pub unsafe fn address_to_hypercall(
 	addr: u16,
 	data: GuestPhysAddr,
 ) -> Option<Hypercall<'_>> {
-	if let Ok(hypercall_port) = HypercallAddress::try_from(addr) {
-		Some(match hypercall_port {
-			HypercallAddress::FileClose => {
-				let sysclose = unsafe { mem.get_ref_mut::<CloseParams>(data).unwrap() };
-				// let sysclose = unsafe { &mut *(self.host_address(data) as *mut CloseParams) };
-				Hypercall::FileClose(sysclose)
-			}
-			HypercallAddress::FileLseek => {
-				let syslseek = unsafe { mem.get_ref_mut::<LseekParams>(data).unwrap() };
-				Hypercall::FileLseek(syslseek)
-			}
-			HypercallAddress::FileOpen => {
-				let sysopen = unsafe { mem.get_ref_mut::<OpenParams>(data).unwrap() };
-				Hypercall::FileOpen(sysopen)
-			}
-			HypercallAddress::FileRead => {
-				let sysread = unsafe { mem.get_ref_mut::<ReadParams>(data).unwrap() };
-				Hypercall::FileRead(sysread)
-			}
-			HypercallAddress::FileWrite => {
-				let syswrite = unsafe { mem.get_ref_mut(data).unwrap() };
-				Hypercall::FileWrite(syswrite)
-			}
-			HypercallAddress::FileUnlink => {
-				let sysunlink = unsafe { mem.get_ref_mut(data).unwrap() };
-				Hypercall::FileUnlink(sysunlink)
-			}
-			HypercallAddress::Exit => {
-				let sysexit = unsafe { mem.get_ref_mut(data).unwrap() };
-				Hypercall::Exit(sysexit)
-			}
-			HypercallAddress::Cmdsize => {
-				let syssize = unsafe { mem.get_ref_mut(data).unwrap() };
-				Hypercall::Cmdsize(syssize)
-			}
-			HypercallAddress::Cmdval => {
-				let syscmdval = unsafe { mem.get_ref_mut(data).unwrap() };
-				Hypercall::Cmdval(syscmdval)
-			}
-			HypercallAddress::Uart => Hypercall::SerialWriteByte(data.as_u64() as u8),
-			HypercallAddress::SerialBufferWrite => {
-				let sysserialwrite = unsafe { mem.get_ref_mut(data).unwrap() };
-				Hypercall::SerialWriteBuffer(sysserialwrite)
-			}
-			_ => return None,
-		})
-	} else {
-		None
+	// Using a macro here is necessary because it:
+	// - is used to reduce repetition,
+	// - has to capture values from the environment (mem, data),
+	// - has to be generic over its return type.
+	//
+	// So neither functions nor closures can serve this purpose alone.
+	macro_rules! get_data {
+		() => {{ unsafe { mem.get_ref_mut(data).unwrap() } }};
 	}
+
+	Some(match HypercallAddress::try_from(addr).ok()? {
+		HypercallAddress::FileClose => Hypercall::FileClose(get_data!()),
+		HypercallAddress::FileLseek => Hypercall::FileLseek(get_data!()),
+		HypercallAddress::FileOpen => Hypercall::FileOpen(get_data!()),
+		HypercallAddress::FileRead => Hypercall::FileRead(get_data!()),
+		HypercallAddress::FileWrite => Hypercall::FileWrite(get_data!()),
+		HypercallAddress::FileUnlink => Hypercall::FileUnlink(get_data!()),
+		HypercallAddress::Exit => Hypercall::Exit(get_data!()),
+		HypercallAddress::Cmdsize => Hypercall::Cmdsize(get_data!()),
+		HypercallAddress::Cmdval => Hypercall::Cmdval(get_data!()),
+		HypercallAddress::Uart => Hypercall::SerialWriteByte(data.as_u64() as u8),
+		HypercallAddress::SerialBufferWrite => Hypercall::SerialWriteBuffer(get_data!()),
+		_ => return None,
+	})
 }
 
 /// Translates the last error in `errno` to a value suitable to return from the hypercall.
