@@ -189,6 +189,14 @@ fn mount_test() {
 	assert_eq!(contents, "12345");
 }
 
+fn max_files_test(filename: &str) {
+	println!("Running max_files_test.");
+	// The open should not work because the host has exhausted its fds.
+	let e = File::open(filename).expect_err("Got a file descriptor.");
+	// If execution continues, then this means that...
+	println!("File open unsuccessful (as expected) with error: {e:#?}")
+}
+
 fn main() {
 	let args: Vec<String> = env::args().collect();
 	let testname = &args[1].split('=').collect::<Vec<_>>()[1];
@@ -210,6 +218,7 @@ fn main() {
 		"write_to_fd" => write_to_fd_test(),
 		"lseek_file" => lseek_file(filename),
 		"mounts_test" => mount_test(),
+		"max_files_test" => max_files_test(filename),
 		_ => panic!("test not found"),
 	}
 }

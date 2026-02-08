@@ -165,6 +165,11 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 		flags: i32,
 		mode: i32,
 	) -> i32 {
+		#[cfg(target_os = "linux")]
+		if !fdmap.files_left() {
+			warn!("File descriptors exhausted on host, returning EINVAL to guest");
+			return -EINVAL;
+		}
 		let host_fd = unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, mode) };
 		if host_fd < 0 {
 			let errno = translate_last_errno().unwrap_or(1);
