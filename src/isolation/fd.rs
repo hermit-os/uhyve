@@ -1,7 +1,8 @@
 use std::{
 	collections::HashMap,
-	fmt,
+	fmt, fs,
 	hash::BuildHasherDefault,
+	mem::MaybeUninit,
 	os::fd::{FromRawFd, OwnedFd, RawFd},
 };
 
@@ -81,20 +82,61 @@ impl FromRawFd for FdData {
 pub struct UhyveFileDescriptorLayer {
 	fds: HashMap<u32, FdData, BuildHasherDefault<NoHashHasher<u32>>>,
 	next_fd: u32,
+	#[cfg(target_os = "linux")]
+	files_left: u64,
 }
 
 impl Default for UhyveFileDescriptorLayer {
 	fn default() -> Self {
+		#[cfg(target_os = "linux")]
+		use libc::{RLIMIT_NOFILE, getrlimit, rlimit};
+
+		#[cfg(target_os = "linux")]
+		fn get_max_fds() -> u64 {
+			let max_nofile: u64 = fs::read_to_string("/proc/sys/fs/nr_open")
+				.map_err(|e| warn!("Unable to read nr_open: {e}"))
+				.map(|str| str.trim().parse().expect("nr_open value not an integer"))
+				.unwrap_or(u64::MAX);
+			let mut limit = MaybeUninit::<rlimit>::zeroed();
+			let ret = unsafe { getrlimit(RLIMIT_NOFILE, limit.as_mut_ptr()) };
+			if ret < 0 {
+				warn!("getrlimit call failed, using nr_open as limit");
+				return max_nofile;
+			}
+			// This will include the loaded ELF file.
+			match unsafe { limit.assume_init() }.rlim_cur {
+				0 => {
+					warn!("getrlimit's rlim_cur is zero, using nr_open as limit");
+					max_nofile
+				}
+				rlim_cur => std::cmp::min(max_nofile, rlim_cur),
+			}
+		}
+
 		let mut fds = HashMap::with_capacity_and_hasher(3, BuildHasherDefault::default());
 		// fill the first 3 fds (0, 1, 2) = the standard streams to avoid weird effects
 		fds.insert(0, FdData::Raw(0));
 		fds.insert(1, FdData::Raw(1));
 		fds.insert(2, FdData::Raw(2));
-		Self { fds, next_fd: 3 }
+		Self {
+			fds,
+			next_fd: 3,
+			#[cfg(target_os = "linux")]
+			// Assumption: Global limit won't change throughout the execution. If it does, well, not our fault.
+			// Substract count by 1 because the kernel will be closed when the actual execution starts.
+			files_left: get_max_fds().saturating_sub(std::fs::read_dir("/proc/self/fd").unwrap().count() as u64),
+		}
 	}
 }
 
 impl UhyveFileDescriptorLayer {
+	#[inline]
+	#[cfg(target_os = "linux")]
+	pub fn files_left(&self) -> bool {
+		debug!("files_left: {}", self.files_left);
+		self.files_left != 0
+	}
+
 	/// Inserts a file descriptor. Invoked by [crate::hypercall::open].
 	///
 	/// Only positive numbers (negative numbers are errors) above
@@ -108,8 +150,11 @@ impl UhyveFileDescriptorLayer {
 			return None;
 		}
 
-		debug!("Adding fd {data:?} to fdset: {self}");
 		let ret = self.next_fd;
+		#[cfg(target_os = "linux")]
+		{
+			self.files_left = self.files_left.checked_sub(1).unwrap();
+		}
 		assert!(self.fds.insert(ret, data).is_none());
 		self.next_fd = ret.checked_add(1).unwrap();
 		debug!("=> {ret}");
@@ -128,6 +173,10 @@ impl UhyveFileDescriptorLayer {
 		let ret = if fd.is_standard() {
 			None
 		} else {
+			#[cfg(target_os = "linux")]
+			{
+				self.files_left = self.files_left.checked_add(1).unwrap();
+			}
 			self.fds.remove(&fd.get())
 		};
 		if ret.is_none() {

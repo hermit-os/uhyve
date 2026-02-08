@@ -13,6 +13,7 @@ use common::{
 	run_vm_in_thread,
 };
 use rand::{Rng, distr::Alphanumeric};
+use serial_test::{parallel, serial};
 use tempfile::TempDir;
 use uhyvelib::{params::Params, vm::UhyveVm};
 
@@ -118,7 +119,7 @@ fn create_kernel_args<T: AsStr, U: AsStr>(test_name: T, file_path: U) -> Vec<Str
 fn generate_params(
 	filemap_params: Option<Vec<String>>,
 	test_name: &'static str,
-	guest_path: &PathBuf,
+	guest_path: Option<PathBuf>,
 ) -> Params {
 	Params {
 		cpu_count: 2.try_into().unwrap(),
@@ -129,7 +130,11 @@ fn generate_params(
 		file_mapping: filemap_params.unwrap_or_default(),
 		#[cfg(target_os = "linux")]
 		file_isolation: strict_sandbox(),
-		kernel_args: create_kernel_args(test_name, guest_path),
+		// A default value is chosen to make debugging investigations a bit easier.
+		kernel_args: create_kernel_args(
+			test_name,
+			&guest_path.unwrap_or(PathBuf::from("./no_guest_path_needed")),
+		),
 		..Default::default()
 	}
 }
@@ -137,6 +142,7 @@ fn generate_params(
 /// Checks whether guests can create, then use files on the host.
 /// (The file is present in a mapped parent directory.)
 #[test]
+#[parallel]
 fn create_mapped_parent_nonpresent_file() {
 	env_logger::try_init().ok();
 
@@ -153,7 +159,11 @@ fn create_mapped_parent_nonpresent_file() {
 
 	let uhyvefilemap_params = create_filemap_params(&host_dir_path, &guest_dir_path);
 
-	let params = generate_params(uhyvefilemap_params.into(), test_name, &guest_file_path);
+	let params = generate_params(
+		uhyvefilemap_params.into(),
+		test_name,
+		guest_file_path.into(),
+	);
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
@@ -164,6 +174,7 @@ fn create_mapped_parent_nonpresent_file() {
 /// Checks whether guests can create, then use files on the host.
 /// (File directly mapped.)
 #[test]
+#[parallel]
 fn create_write_mapped_nonpresent_file() {
 	env_logger::try_init().ok();
 
@@ -178,7 +189,11 @@ fn create_write_mapped_nonpresent_file() {
 
 	let uhyvefilemap_params = create_filemap_params(&host_file_path, &guest_file_path);
 
-	let params = generate_params(uhyvefilemap_params.into(), test_name, &guest_file_path);
+	let params = generate_params(
+		uhyvefilemap_params.into(),
+		test_name,
+		guest_file_path.into(),
+	);
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
@@ -190,6 +205,7 @@ fn create_write_mapped_nonpresent_file() {
 /// Checks UhyveFileMap temporary directory functionality.
 /// (No mappings present.)
 #[test]
+#[parallel]
 fn create_write_unmapped_nonpresent_file() {
 	env_logger::try_init().ok();
 
@@ -200,7 +216,7 @@ fn create_write_unmapped_nonpresent_file() {
 	let mut guest_file_path = guest_dir_path.clone();
 	guest_file_path.push(&filename);
 
-	let params = generate_params(None, testname, &guest_file_path);
+	let params = generate_params(None, testname, guest_file_path.into());
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
@@ -213,6 +229,7 @@ fn create_write_unmapped_nonpresent_file() {
 /// Should this test ever fail, it is probably because of a regression
 /// involving a misconfiguration in Landlock.
 #[test]
+#[parallel]
 fn remove_mapped_present_file() {
 	env_logger::try_init().ok();
 
@@ -230,7 +247,11 @@ fn remove_mapped_present_file() {
 
 	let uhyvefilemap_params = create_filemap_params(&host_file_path, &guest_file_path);
 
-	let params = generate_params(uhyvefilemap_params.into(), test_name, &guest_file_path);
+	let params = generate_params(
+		uhyvefilemap_params.into(),
+		test_name,
+		guest_file_path.into(),
+	);
 
 	assert!(host_file_path.exists());
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
@@ -245,6 +266,7 @@ fn remove_mapped_present_file() {
 /// Should this test ever fail, it is probably either because of a misconfiguration in Landlock
 /// or because of a UhyveFileMap regression.
 #[test]
+#[parallel]
 fn remove_mapped_parent_present_file() {
 	env_logger::try_init().ok();
 
@@ -263,7 +285,11 @@ fn remove_mapped_parent_present_file() {
 
 	let uhyvefilemap_params = create_filemap_params(&host_dir_path, &guest_dir_path);
 
-	let params = generate_params(uhyvefilemap_params.into(), test_name, &guest_file_path);
+	let params = generate_params(
+		uhyvefilemap_params.into(),
+		test_name,
+		guest_file_path.into(),
+	);
 
 	assert!(host_file_path.exists());
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
@@ -275,6 +301,7 @@ fn remove_mapped_parent_present_file() {
 /// This checks whether UhyveFileMap rejects unlink calls to unmapped files that do not exist.
 /// Unlike other tests, the VM should not return a success code (0).
 #[test]
+#[parallel]
 fn remove_nonpresent_file_test() {
 	// kernel tries to open a non-present file, so uhyve will reject the hypercall and the kernel
 	// will panic.
@@ -282,7 +309,7 @@ fn remove_nonpresent_file_test() {
 
 	let test_name: &'static str = "remove_nonpresent_file_test";
 	let guest_file_path = get_testname_derived_guest_path(test_name);
-	let params = generate_params(None, test_name, &guest_file_path);
+	let params = generate_params(None, test_name, guest_file_path.into());
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
@@ -292,12 +319,13 @@ fn remove_nonpresent_file_test() {
 /// Tests whether the file descriptor sandbox works correctly, by unlinking an open
 /// file on the host before the file descriptor of that said file is closed.
 #[test]
+#[parallel]
 fn fd_open_remove_close() {
 	env_logger::try_init().ok();
 
 	let test_name: &'static str = "fd_open_remove_close";
 	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);
-	let params = generate_params(Some(filemap), test_name, &guest_file_path);
+	let params = generate_params(Some(filemap), test_name, guest_file_path.into());
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
@@ -307,12 +335,13 @@ fn fd_open_remove_close() {
 /// fd sandbox test: Unlinks a file with a still-open file descriptor.
 /// Then unlinks again, after the file descriptor is closed.
 #[test]
+#[parallel]
 fn fd_open_remove_before_and_after_closing() {
 	env_logger::try_init().ok();
 
 	let test_name: &'static str = "fd_open_remove_before_and_after_closing";
 	let guest_file_path = get_testname_derived_guest_path(test_name);
-	let params = generate_params(None, test_name, &guest_file_path);
+	let params = generate_params(None, test_name, guest_file_path.into());
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
@@ -322,12 +351,13 @@ fn fd_open_remove_before_and_after_closing() {
 /// fd sandbox test: Unlinks an open file on the host twice, before the
 /// file descriptor of that said file is closed.
 #[test]
+#[parallel]
 fn fd_remove_twice_before_closing() {
 	env_logger::try_init().ok();
 
 	let test_name: &'static str = "fd_remove_twice_before_closing";
 	let guest_file_path = get_testname_derived_guest_path(test_name);
-	let params = generate_params(None, test_name, &guest_file_path);
+	let params = generate_params(None, test_name, guest_file_path.into());
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
@@ -337,12 +367,13 @@ fn fd_remove_twice_before_closing() {
 /// write hypercall test: Opens a file on the host as read-only,
 /// then tries to write to it.
 #[test]
+#[parallel]
 fn open_read_only_write() {
 	env_logger::try_init().ok();
 
 	let test_name: &'static str = "open_read_only_write";
 	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);
-	let params = generate_params(Some(filemap), test_name, &guest_file_path);
+	let params = generate_params(Some(filemap), test_name, guest_file_path.into());
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 
@@ -361,26 +392,35 @@ fn open_read_only_write() {
 ///   (It shouldn't be able to do so!)
 /// - the guest can write to a leaked, yet valid file descriptor.
 #[test]
+#[parallel]
 fn fd_write_to_fd() {
 	env_logger::try_init().ok();
 
-	let params = Params {
-		cpu_count: 2.try_into().unwrap(),
-		memory_size: Byte::from_u64_with_unit(32, Unit::MiB)
-			.unwrap()
-			.try_into()
-			.unwrap(),
-		#[cfg(target_os = "linux")]
-		file_isolation: strict_sandbox(),
-		..Default::default()
-	};
-
-	let bin_path: PathBuf = build_hermit_bin("write_to_fd", BuildMode::Debug);
+	let test_name: &'static str = "write_to_fd";
+	let mut params = generate_params(None, test_name, None);
+	// This is a one-time thing... for now. If this is used in more tests,
+	// a toggle should become part of generate_params.
+	params.output = uhyvelib::params::Output::Buffer;
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
+	// The file descriptors are standard streams.
+	assert!(
+		res.output
+			.as_ref()
+			.unwrap()
+			.contains("Wrote to stdout manually!")
+	);
+	assert!(
+		res.output
+			.as_ref()
+			.unwrap()
+			.contains("Wrote to stderr manually!")
+	);
 }
 
 #[test]
+#[parallel]
 fn mounts_test() {
 	env_logger::try_init().ok();
 
@@ -414,8 +454,7 @@ fn mounts_test() {
 			(&host_dir_path).as_str(),
 		),
 	];
-	let guest_file_path = get_testname_derived_guest_path(test_name);
-	let params = generate_params(uhyvefilemap_params.into(), test_name, &guest_file_path);
+	let params = generate_params(uhyvefilemap_params.into(), test_name, None);
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
@@ -423,14 +462,66 @@ fn mounts_test() {
 }
 
 #[test]
+#[parallel]
 fn lseek_test() {
 	env_logger::try_init().ok();
 
 	let test_name: &'static str = "lseek_file";
 	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);
-	let params = generate_params(Some(filemap), test_name, &guest_file_path);
+	let params = generate_params(Some(filemap), test_name, guest_file_path.into());
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	check_result(&res);
+}
+
+/// Tests whether Uhyve will block the guest from opening a new file and
+/// return an error to the guest without crashing if it no longer has
+/// available file descriptors.
+///
+/// This *must* be serial because the file descriptor limitations apply
+/// for the entire process, which includes other threads running tests.
+///
+/// This implicitly tests the kernel's parsing of the -EINVAL return value
+/// for the open hypercall.
+#[test]
+#[serial]
+fn max_files_test() {
+	env_logger::try_init().ok();
+
+	let test_name: &'static str = "max_files_test";
+	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);
+	let mut params = generate_params(Some(filemap), test_name, guest_file_path.into());
+	params.output = uhyvelib::params::Output::Buffer;
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
+	let res = std::thread::spawn(move || {
+		use libc::{RLIMIT_NOFILE, getrlimit, rlimit, setrlimit};
+		let mut rlimit_old_mem = std::mem::MaybeUninit::<rlimit>::zeroed();
+		let ret = unsafe { getrlimit(RLIMIT_NOFILE, rlimit_old_mem.as_mut_ptr()) };
+		assert_eq!(ret, 0);
+		let rlimit_old = unsafe { rlimit_old_mem.assume_init() };
+		// Hardcoded for convenience, please change this if you need to open more
+		// files. The assertions done later are robust enough; guesswork is fine.
+		let rlimit_new = rlimit {
+			rlim_cur: 7,
+			rlim_max: rlimit_old.rlim_max,
+		};
+		let ret = unsafe { setrlimit(RLIMIT_NOFILE, &rlimit_new) };
+		assert_eq!(ret, 0);
+		let vm = UhyveVm::new(bin_path, params).unwrap();
+		let res = vm.run(None);
+		let ret = unsafe { setrlimit(RLIMIT_NOFILE, &rlimit_old) };
+		assert_eq!(ret, 0);
+		res
+	})
+	.join()
+	.unwrap();
+	assert_eq!(res.code, 0);
+	assert!(
+		res.output
+			.as_ref()
+			.unwrap()
+			.contains("File open unsuccessful (as expected) with error:")
+	);
+	assert!(res.output.as_ref().unwrap().contains("InvalidInput"));
 }
