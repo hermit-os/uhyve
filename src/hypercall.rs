@@ -114,7 +114,10 @@ fn translate_last_errno() -> Option<i32> {
 			return Some(e_guest);
 		}
 	}
-
+	warn!(
+		"No Hermit equivalent of host error {} (errno: {errno}), returning default to guest...",
+		io::Error::from_raw_os_error(errno)
+	);
 	None
 }
 
