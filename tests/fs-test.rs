@@ -12,7 +12,7 @@ use common::{
 	BuildMode, build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists,
 	run_vm_in_thread,
 };
-use rand::{Rng, distr::Alphanumeric};
+use rand::{RngExt, distr::Alphanumeric};
 use tempfile::TempDir;
 use uhyvelib::{params::Params, vm::UhyveVm};
 

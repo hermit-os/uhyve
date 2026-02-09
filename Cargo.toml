@@ -56,7 +56,7 @@ virtio-bindings = "~0.2.7"
 vm-memory = { version = "0.18", features = ["backend-mmap"] }
 rftrace = { version = "0.3", optional = true }
 rftrace-frontend = { version = "0.3", optional = true }
-rand = "0.9"
+rand = "0.10"
 shell-words = "1"
 sysinfo = { version = "0.38.0", default-features = false, features = ["system"] }
 vm-fdt = "0.3"
