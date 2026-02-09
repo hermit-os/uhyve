@@ -2,7 +2,7 @@ use std::mem::size_of;
 
 use align_address::Align;
 use bitflags::bitflags;
-use rand::Rng;
+use rand::RngExt;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 
 use crate::{

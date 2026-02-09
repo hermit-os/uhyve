@@ -3,7 +3,7 @@ pub(crate) mod registers;
 
 use align_address::Align;
 use paging::initialize_pagetables;
-use rand::Rng;
+use rand::RngExt;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 use x86_64::structures::paging::{
 	PageTable, PageTableIndex,
