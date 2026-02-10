@@ -289,24 +289,23 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			.collect();
 
 		let freq = vcpus[0].get_cpu_frequency();
+
 		// Kernels with different Uhyve interface versions may have differing addresses for the
 		// serial port. As we begun embedding the uhyve-interface version in unikernel images
 		// much later than v1, but before v2, we assume that all images that don't have a version
 		// embedded must be v1.
+		let uhyve_interface_version = object
+			.uhyve_interface_version()
+			.unwrap_or(UhyveIfVersion(1));
 
-		let uhyve_interface_version = object.uhyve_interface_version();
-		let serial_port = SerialPortBase::new(match uhyve_interface_version {
-			#[cfg(target_arch = "aarch64")]
-			None | Some(UhyveIfVersion(1)) => uhyve_interface::v1::HypercallAddress::Uart as u64,
-			#[cfg(target_arch = "x86_64")]
-			None | Some(UhyveIfVersion(1)) => uhyve_interface::v1::HypercallAddress::Uart as u16,
-			// FIXME: improve condition
-			#[cfg(target_arch = "aarch64")]
-			Some(UhyveIfVersion(2)) => uhyve_interface::v2::HypercallAddress::SerialWriteBuffer as u64,
-			#[cfg(target_arch = "x86_64")]
-			Some(UhyveIfVersion(2)) => uhyve_interface::v2::HypercallAddress::SerialWriteBuffer as u16,
-			_ => {
-				unimplemented!("Kernel uses unsupported uhyve-interface version. Is Uhyve too old?")
+		let serial_port = SerialPortBase::new(match uhyve_interface_version.0 {
+			1 => uhyve_interface::v1::HypercallAddress::Uart as _,
+			2 => uhyve_interface::v2::HypercallAddress::SerialWriteBuffer as _,
+			uhifv => {
+				unimplemented!(
+					"Kernel uses unsupported uhyve-interface version {}. Is Uhyve too old?",
+					uhifv
+				)
 			}
 		});
 
