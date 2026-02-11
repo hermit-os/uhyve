@@ -210,12 +210,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			#[cfg(target_os = "linux")]
 			params.io_mode,
 		));
-		let mut mounts: Vec<_> = file_mapping
-			.lock()
-			.unwrap()
-			.get_all_guest_dirs()
-			.map(|s| s.to_str().unwrap().to_string())
-			.collect();
+		let mut mounts: Vec<_> = file_mapping.lock().unwrap().get_all_guest_dirs().collect();
 		mounts.dedup();
 
 		let serial = UhyveSerial::from_params(&params.output)?;
