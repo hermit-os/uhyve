@@ -476,7 +476,14 @@ pub fn lseek_v1(syslseek: &mut v1::parameters::LseekParams, file_map: &mut Uhyve
 /// Handles an lseek syscall on the host.
 fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 	syslseek.offset = match file_map.fdmap.get_mut(GuestFd(syslseek.fd.into_raw_fd())) {
-		Some(FdData::Raw(r)) => unsafe { libc::lseek(*r, syslseek.offset, syslseek.whence as i32) },
+		Some(FdData::Raw(r)) => {
+			let ret = unsafe { libc::lseek(*r, syslseek.offset, syslseek.whence as i32) };
+			if ret < 0 {
+				-translate_last_errno().unwrap_or(1) as i64
+			} else {
+				ret
+			}
+		}
 		Some(FdData::Virtual { data, offset }) => {
 			#[forbid(unused_variables, unreachable_patterns)]
 			let tmp: i64 = match syslseek.whence as i32 {
