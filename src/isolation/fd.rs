@@ -47,8 +47,7 @@ pub enum FdData {
 	/// A host file descriptor
 	Raw(RawFd),
 
-	#[allow(dead_code)]
-	/// An in-memory slice (possibly mmap-ed)
+	/// An in-memory slice.
 	///
 	/// SAFETY: It is not allowed for `data` to point into guest memory.
 	Virtual { data: Arc<[u8]>, offset: u64 },
