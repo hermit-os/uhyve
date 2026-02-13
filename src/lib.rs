@@ -49,6 +49,24 @@ pub enum HypervisorError {
 	#[error("Invalid kernel path ({0})")]
 	InvalidKernelPath(PathBuf),
 
+	#[error(transparent)]
+	HermitImageError(#[from] crate::isolation::filemap::HermitImageError),
+
+	#[error("Unable to find Hermit image config in archive")]
+	HermitImageConfigNotFound,
+
+	#[error("Unable to parse Hermit image config: {0}")]
+	HermitImageConfigParseError(#[from] toml::de::Error),
+
+	#[error("Insufficient guest memory size: got = {got}, wanted = {wanted}")]
+	InsufficientGuestMemorySize {
+		got: byte_unit::Byte,
+		wanted: byte_unit::Byte,
+	},
+
+	#[error("Insufficient guest CPU count: got = {got}, wanted = {wanted}")]
+	InsufficientGuestCPUs { got: u32, wanted: u32 },
+
 	#[error("Kernel Loading Error: {0}")]
 	LoadedKernelError(#[from] vm::LoadKernelError),
 }

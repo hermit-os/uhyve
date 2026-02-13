@@ -41,6 +41,7 @@ clap = { version = "4.5", features = ["derive", "env"] }
 clean-path = "0.2.1"
 core_affinity = "0.8"
 env_logger = "0.11"
+flate2 = "1.1"
 gdbstub = "0.7"
 gdbstub_arch = "0.3"
 hermit-abi = "0.5"
@@ -67,6 +68,7 @@ virtio-bindings = "~0.2.7"
 vm-fdt = "0.3"
 vm-memory = { version = "0.18", features = ["backend-mmap"] }
 uuid = { version = "1.21.0", features = ["fast-rng", "v4"]}
+tar-no-std = { version = "0.4", features = ["alloc"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.14"

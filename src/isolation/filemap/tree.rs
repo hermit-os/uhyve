@@ -16,7 +16,6 @@ pub enum Leaf {
 	OnHost(PathBuf),
 
 	/// An in-memory file
-	#[allow(dead_code)]
 	Virtual(Arc<[u8]>),
 }
 
