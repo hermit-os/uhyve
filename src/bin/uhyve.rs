@@ -400,7 +400,7 @@ impl<'de> serde::de::Deserialize<'de> for Affinity {
 #[derive(Debug, Default, Deserialize, Merge, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 struct GuestArgs {
-	/// The kernel to execute
+	/// The kernel or Hermit image to execute
 	#[serde(skip)]
 	#[merge(skip)]
 	kernel: PathBuf,
