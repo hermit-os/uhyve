@@ -2,6 +2,7 @@ use std::{
 	ffi::{CStr, CString, OsString},
 	os::unix::ffi::OsStrExt,
 	path::PathBuf,
+	sync::Arc,
 };
 
 #[cfg(target_os = "linux")]
@@ -54,6 +55,19 @@ impl From<Option<String>> for UhyveIoMode {
 	}
 }
 
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum HermitImageError {
+	#[error("The Hermit image tar file is corrupted: {0}")]
+	CorruptData(#[from] tar_no_std::CorruptDataError),
+
+	#[error("A file in the Hermit image doesn't have an UTF-8 file name: {0:?}")]
+	// NOTE: `Box`ed to avoid too large size differences between enum entries.
+	NonUtf8Filename(Box<tar_no_std::TarFormatString<256>>),
+
+	#[error("Unable to create a file from the Hermit image in the directory tree: {0:?}")]
+	CreateFile(String),
+}
+
 /// Wrapper around a `HashMap` to map guest paths to arbitrary host paths and track file descriptors.
 #[derive(Debug)]
 pub struct UhyveFileMap {
@@ -94,6 +108,32 @@ impl UhyveFileMap {
 			}
 		}
 		fm
+	}
+
+	/// Adds the contents of a decompressed hermit image to the file map.
+	#[allow(unused)]
+	pub fn add_hermit_image(&mut self, tar_bytes: &[u8]) -> Result<(), HermitImageError> {
+		if tar_bytes.is_empty() {
+			return Ok(());
+		}
+
+		for i in tar_no_std::TarArchiveRef::new(tar_bytes)?.entries() {
+			let filename = i.filename();
+			let filename = filename
+				.as_str()
+				.map_err(|_| HermitImageError::NonUtf8Filename(Box::new(filename)))?;
+			let data: Arc<[u8]> = i.data().to_vec().into();
+
+			// UNWRAP: `tar_no_std::ArchiveEntry::filename` already truncates at the first null byte.
+			if !self.create_file(
+				&CString::new(filename).unwrap(),
+				UhyveTreeFile::Virtual(data),
+			) {
+				return Err(HermitImageError::CreateFile(filename.to_string()));
+			}
+		}
+
+		Ok(())
 	}
 
 	/// Returns the host_path on the host filesystem given a requested guest_path, if it exists.

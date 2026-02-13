@@ -4,9 +4,8 @@ use std::{
 	fmt, fs,
 	os::unix::ffi::OsStrExt,
 	path::{Path, PathBuf},
+	sync::Arc,
 };
-
-use yoke::{Yoke, erased::ErasedArcCart};
 
 pub type Directory = HashMap<Box<str>, Tree>;
 
@@ -18,14 +17,14 @@ pub enum File {
 
 	/// An in-memory file
 	#[allow(unused)]
-	Virtual(Yoke<&'static [u8], ErasedArcCart>),
+	Virtual(Arc<[u8]>),
 }
 
 impl fmt::Debug for File {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::OnHost(hp) => write!(f, "OnHost({:?})", hp),
-			Self::Virtual(_) => write!(f, "Virtual(..)"),
+			Self::Virtual(slice) => write!(f, "Virtual(len={})", slice.len()),
 		}
 	}
 }
