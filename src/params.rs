@@ -150,7 +150,7 @@ impl FromStr for CpuCount {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
-pub struct GuestMemorySize(Byte);
+pub struct GuestMemorySize(pub(crate) Byte);
 
 impl GuestMemorySize {
 	const fn minimum() -> Byte {
@@ -257,13 +257,13 @@ impl Default for EnvVars {
 		Self::Set(HashMap::new())
 	}
 }
-impl<S: AsRef<str> + std::fmt::Debug + PartialEq<S> + From<&'static str>> TryFrom<&[S]>
+impl<S: AsRef<str> + core::fmt::Debug + PartialEq + PartialEq<&'static str>> TryFrom<&[S]>
 	for EnvVars
 {
 	type Error = &'static str;
 
 	fn try_from(v: &[S]) -> Result<Self, Self::Error> {
-		if v.contains(&S::from("host")) {
+		if v.iter().any(|i| *i == "host") {
 			if v.len() != 1 {
 				warn!(
 					"Specifying -e host discards all other explicitly specified environment vars"

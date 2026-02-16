@@ -111,7 +111,6 @@ impl UhyveFileMap {
 	}
 
 	/// Adds the contents of a decompressed hermit image to the file map.
-	#[allow(unused)]
 	pub fn add_hermit_image(&mut self, tar_bytes: &[u8]) -> Result<(), HermitImageError> {
 		if tar_bytes.is_empty() {
 			return Ok(());

@@ -16,7 +16,6 @@ pub enum File {
 	OnHost(PathBuf),
 
 	/// An in-memory file
-	#[allow(unused)]
 	Virtual(Arc<[u8]>),
 }
 
