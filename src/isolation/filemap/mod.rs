@@ -1,8 +1,4 @@
-use std::{
-	ffi::{CStr, CString, OsString},
-	os::unix::ffi::OsStrExt,
-	path::PathBuf,
-};
+use std::{ffi::CString, os::unix::ffi::OsStrExt, path::PathBuf};
 
 #[cfg(target_os = "linux")]
 use libc::{O_DIRECT, O_SYNC};
@@ -99,17 +95,17 @@ impl UhyveFileMap {
 	/// Returns the host_path on the host filesystem given a requested guest_path, if it exists.
 	///
 	/// * `guest_path` - The guest path that is to be looked up in the map.
-	pub fn get_host_path(&self, guest_path: &CStr) -> Option<UhyveMapLeaf> {
-		tree::resolve_guest_path(&self.root, guest_path.to_bytes())
+	pub fn get_host_path(&self, guest_path: &str) -> Option<UhyveMapLeaf> {
+		tree::resolve_guest_path(&self.root, guest_path.as_bytes())
 	}
 
 	/// Returns an array of all host paths (for Landlock).
 	#[cfg(target_os = "linux")]
-	pub(crate) fn get_all_host_paths(&self) -> impl Iterator<Item = &std::ffi::OsStr> {
-		tree::get_all_host_paths(&self.root).map(|i| i.as_os_str())
+	pub(crate) fn get_all_host_paths(&self) -> impl Iterator<Item = &std::path::Path> {
+		tree::get_all_host_paths(&self.root)
 	}
 
-	/// Returns an iterator (non-unique) over all mountable guest directories.
+	/// Returns an iterator over all mountable guest directories.
 	pub(crate) fn get_all_guest_dirs(&self) -> impl Iterator<Item = String> {
 		tree::get_all_guest_dirs(&self.root)
 	}
@@ -139,15 +135,15 @@ impl UhyveFileMap {
 	///
 	/// Note that this is also used for the entire setup of the uhyve file tree,
 	/// and this also called for the entire initial mapping.
-	pub fn create_leaf(&mut self, guest_path: &CStr, leaf: UhyveMapLeaf) -> bool {
-		tree::create_leaf(&mut self.root, guest_path.to_bytes(), leaf)
+	pub fn create_leaf(&mut self, guest_path: &str, leaf: UhyveMapLeaf) -> bool {
+		tree::create_leaf(&mut self.root, guest_path.as_bytes(), leaf)
 	}
 
 	/// Inserts an opened temporary file into the file map. Returns a CString so that
 	/// the file can be directly used by [crate::hypercall::open].
 	///
 	/// * `guest_path` - The requested guest path.
-	pub fn create_temporary_file(&mut self, guest_path: &CStr) -> Option<CString> {
+	pub fn create_temporary_file(&mut self, guest_path: &str) -> Option<CString> {
 		let host_path = self.tempdir.path().join(Uuid::new_v4().to_string());
 		trace!("create_temporary_file (host_path): {host_path:#?}");
 		let ret = CString::new(host_path.as_os_str().as_bytes()).unwrap();
@@ -159,7 +155,7 @@ impl UhyveFileMap {
 	}
 
 	/// Attempt to remove a file. Note that this will fail on non-empty directories.
-	pub fn unlink(&mut self, guest_path: &CStr) -> Result<Option<OsString>, ()> {
-		tree::unlink(&mut self.root, guest_path.to_bytes()).map(|i| i.map(|j| j.into_os_string()))
+	pub fn unlink(&mut self, guest_path: &str) -> Result<Option<PathBuf>, ()> {
+		tree::unlink(&mut self.root, guest_path.as_bytes())
 	}
 }

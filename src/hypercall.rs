@@ -259,19 +259,35 @@ fn translate_last_errno() -> Option<i32> {
 	None
 }
 
+/// Decodes a guest path given at address `path_addr` in `mem`.
+///
+/// # Safety
+///
+/// The calling convention of hypercalls ensures that the given address doesn't alias with anything mutable.
+/// The return value is only valid for the duration of the hypercall.
+unsafe fn decode_guest_path(mem: &MmapMemory, path_addr: GuestPhysAddr) -> Option<&str> {
+	let requested_path_ptr = mem.host_address(path_addr).unwrap() as *const i8;
+	unsafe { CStr::from_ptr(requested_path_ptr) }.to_str().ok()
+}
+
 /// unlink deletes a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
 ///
-/// Note for when using Landlock: Unlinking files results in them being veiled. If a text
+/// Note for when using Landlock: Unlinking files results in them being veiled. If a
 /// file (that existed during initialization) called `log.txt` is unlinked, attempting to
 /// open `log.txt` again will result in an error.
 fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut UhyveFileMap) {
-	let requested_path_ptr = mem.host_address(sysunlink.name).unwrap() as *const i8;
-	let guest_path = unsafe { CStr::from_ptr(requested_path_ptr) };
+	let guest_path = if let Some(guest_path) = unsafe { decode_guest_path(mem, sysunlink.name) } {
+		guest_path
+	} else {
+		error!("The kernel requested to unlink() an non-UTF8 path: Rejecting...");
+		sysunlink.ret = -EINVAL;
+		return;
+	};
 	sysunlink.ret = match file_map.unlink(guest_path) {
 		Ok(Some(host_path)) => {
 			// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 			// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
-			let host_path_c_string = CString::new(host_path.as_bytes()).unwrap();
+			let host_path_c_string = CString::new(host_path.as_os_str().as_bytes()).unwrap();
 			if unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) } < 0 {
 				-translate_last_errno().unwrap_or(1)
 			} else {
@@ -293,9 +309,14 @@ fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut UhyveFi
 
 /// Handles an open syscall by opening a file on the host.
 fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
-	let requested_path_ptr = mem.host_address(sysopen.name).unwrap() as *const i8;
+	let guest_path = if let Some(guest_path) = unsafe { decode_guest_path(mem, sysopen.name) } {
+		guest_path
+	} else {
+		error!("The kernel requested to open() an non-UTF8 path: Rejecting...");
+		sysopen.ret = -EINVAL;
+		return;
+	};
 	let mut flags = sysopen.flags & ALLOWED_OPEN_FLAGS;
-	let guest_path = unsafe { CStr::from_ptr(requested_path_ptr) };
 	// See: https://lwn.net/Articles/926782/
 	// See: https://github.com/hermit-os/kernel/commit/71bc629
 	if (flags & (O_DIRECTORY | O_CREAT)) == (O_DIRECTORY | O_CREAT) {
@@ -378,10 +399,7 @@ fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap)
 
 /// Handles an close syscall by closing the file on the host.
 fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
-	sysclose.ret = if file_map
-		.fdmap
-		.is_fd_present(GuestFd(sysclose.fd.into_raw_fd()))
-	{
+	sysclose.ret = if file_map.fdmap.is_fd_present(GuestFd(sysclose.fd)) {
 		match file_map.fdmap.remove(GuestFd(sysclose.fd)) {
 			Some(FdData::Raw(fd)) => {
 				if unsafe { libc::close(fd) } < 0 {
