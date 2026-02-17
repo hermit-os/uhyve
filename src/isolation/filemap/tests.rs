@@ -43,39 +43,37 @@ fn test_uhyvefilemap() {
 	);
 
 	assert_eq!(
-		map.get_host_path(c"readme_file.md")
+		map.get_host_path("readme_file.md")
 			.unwrap()
 			.unwrap_on_host(),
 		OsString::from(&map_results[0])
 	);
 	assert_eq!(
-		map.get_host_path(c"guest_folder").unwrap().unwrap_on_host(),
+		map.get_host_path("guest_folder").unwrap().unwrap_on_host(),
 		OsString::from(&map_results[1])
 	);
 	assert_eq!(
-		map.get_host_path(c"guest_symlink")
-			.unwrap()
-			.unwrap_on_host(),
+		map.get_host_path("guest_symlink").unwrap().unwrap_on_host(),
 		OsString::from(&map_results[2])
 	);
 	assert_eq!(
-		map.get_host_path(c"guest_dangling_symlink")
+		map.get_host_path("guest_dangling_symlink")
 			.unwrap()
 			.unwrap_on_host(),
 		OsString::from(&map_results[3])
 	);
 	assert_eq!(
-		map.get_host_path(c"guest_file").unwrap().unwrap_on_host(),
+		map.get_host_path("guest_file").unwrap().unwrap_on_host(),
 		OsString::from(&map_results[4])
 	);
 	assert_eq!(
-		map.get_host_path(c"guest_file_symlink")
+		map.get_host_path("guest_file_symlink")
 			.unwrap()
 			.unwrap_on_host(),
 		OsString::from(&map_results[5])
 	);
 
-	assert!(map.get_host_path(c"this_file_is_not_mapped").is_none());
+	assert!(map.get_host_path("this_file_is_not_mapped").is_none());
 }
 
 #[test]
@@ -110,12 +108,7 @@ fn test_uhyvefilemap_directory() {
 		},
 	);
 
-	let mut found_host_path = map.get_host_path(
-		CString::new(target_guest_path.as_os_str().as_bytes())
-			.unwrap()
-			.as_c_str(),
-	);
-
+	let mut found_host_path = map.get_host_path(target_guest_path.to_str().unwrap());
 	assert_eq!(found_host_path.unwrap().unwrap_on_host(), target_host_path);
 
 	// Tests successful directory traversal of the child directory.
@@ -124,11 +117,7 @@ fn test_uhyvefilemap_directory() {
 	target_host_path.pop();
 	target_guest_path.pop();
 
-	found_host_path = map.get_host_path(
-		CString::new(target_guest_path.as_os_str().as_bytes())
-			.unwrap()
-			.as_c_str(),
-	);
+	found_host_path = map.get_host_path(target_guest_path.to_str().unwrap());
 	assert_eq!(found_host_path.unwrap().unwrap_on_host(), target_host_path);
 
 	// Tests directory traversal leading to valid symbolic link with an
@@ -154,11 +143,7 @@ fn test_uhyvefilemap_directory() {
 	target_guest_path = PathBuf::from("/root/this_symlink_leads_to_a_file");
 	target_host_path = fixture_path.clone();
 	target_host_path.push("this_folder_exists/file_in_folder.txt");
-	found_host_path = map.get_host_path(
-		CString::new(target_guest_path.as_os_str().as_bytes())
-			.unwrap()
-			.as_c_str(),
-	);
+	found_host_path = map.get_host_path(target_guest_path.to_str().unwrap());
 	assert_eq!(found_host_path.unwrap().unwrap_on_host(), target_host_path);
 
 	// Tests directory traversal with no maps
@@ -172,11 +157,7 @@ fn test_uhyvefilemap_directory() {
 			sync: false,
 		},
 	);
-	found_host_path = map.get_host_path(
-		CString::new(target_guest_path.as_os_str().as_bytes())
-			.unwrap()
-			.as_c_str(),
-	);
+	found_host_path = map.get_host_path(target_guest_path.to_str().unwrap());
 	assert!(found_host_path.is_none());
 }
 

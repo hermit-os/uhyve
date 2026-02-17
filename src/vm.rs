@@ -353,7 +353,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 				file_sandbox_mode,
 				kernel_path.into(),
 				output,
-				host_paths,
+				host_paths.map(|i| i.as_os_str()),
 				temp_dir,
 				#[cfg(feature = "instrument")]
 				trace,
