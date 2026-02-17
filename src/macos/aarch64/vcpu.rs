@@ -56,23 +56,19 @@ impl VirtualizationBackendInternal for XhyveVm {
 		})
 	}
 
-	fn new(
-		peripherals: Arc<VmPeripherals>,
-		_params: &Params,
-		guest_addr: GuestPhysAddr,
-	) -> HypervisorResult<Self> {
+	fn new(peripherals: Arc<VmPeripherals>, _params: &Params) -> HypervisorResult<Self> {
 		trace!("Create VM...");
 		create_vm()?;
 
 		trace!("Map guest memory...");
 		map_mem(
 			unsafe { peripherals.mem.as_slice_mut() },
-			guest_addr.as_u64(),
+			peripherals.mem.guest_addr().as_u64(),
 			MemPerm::ExecReadWrite,
 		)?;
 		// protect the first page for hypercall
 		// Apple uses on aarch64 default page size of 16K
-		protect_mem(guest_addr.as_u64(), 0x4000, MemPerm::None)?;
+		protect_mem(peripherals.mem.guest_addr().as_u64(), 0x4000, MemPerm::None)?;
 
 		trace!("Create GIC...");
 		let gic = Gic::new(GICD_BASE_ADDRESS, GICR_BASE_ADDRESS, MSI_BASE_ADDRESS)?;
