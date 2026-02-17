@@ -1,7 +1,5 @@
 use std::{
-	env,
-	ffi::CString,
-	fmt, fs, io,
+	env, fmt, fs, io,
 	mem::{drop, take},
 	num::NonZero,
 	os::unix::prelude::JoinHandleExt,
@@ -175,7 +173,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 				// TODO: make `hermit_entry::config::DEFAULT_CONFIG_NAME` public and use that here instead.
 				let config_data = if let Some(UhyveTreeFile::Virtual(data)) =
-					file_mapping.get_host_path(&CString::new("/hermit.toml").unwrap())
+					file_mapping.get_host_path("/hermit.toml")
 				{
 					data
 				} else {
@@ -249,9 +247,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 						// .kernel
 						if let Some(UhyveTreeFile::Virtual(data)) =
-							file_mapping.get_host_path(&CString::new(kernel.into_owned()).map_err(
-								|_| HypervisorError::PathContainedNullBytes("hermit image kernel"),
-							)?) {
+							file_mapping.get_host_path(&kernel)
+						{
 							data.to_vec()
 						} else {
 							error!("Unable to find kernel in Hermit image");
@@ -324,8 +321,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		let mut mem = MmapMemory::new(memory_size, guest_address, false, false);
 
 		// TODO: file_mapping not in kernel_info
-		let mut mounts: Vec<_> = file_mapping.get_all_guest_dirs().collect();
-		mounts.dedup();
+		let mounts: Vec<_> = file_mapping.get_all_guest_dirs().collect();
 		let file_mapping = Mutex::new(file_mapping);
 
 		let serial = UhyveSerial::from_params(&params.output)?;
@@ -470,7 +466,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 				file_sandbox_mode,
 				kernel_path.into(),
 				output,
-				host_paths,
+				host_paths.map(|i| i.as_os_str()),
 				temp_dir,
 				#[cfg(feature = "instrument")]
 				trace,

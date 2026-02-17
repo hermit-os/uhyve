@@ -49,9 +49,6 @@ pub enum HypervisorError {
 	#[error("Invalid kernel path ({0})")]
 	InvalidKernelPath(PathBuf),
 
-	#[error("Path for {0} contained null bytes")]
-	PathContainedNullBytes(&'static str),
-
 	#[error(transparent)]
 	HermitImageError(#[from] crate::isolation::filemap::HermitImageError),
 
