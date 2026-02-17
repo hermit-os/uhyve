@@ -53,7 +53,7 @@ impl<'a> From<&v2::Hypercall<'a>> for VmExit {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct CpuStats {
+pub struct CpuStats {
 	id: usize,
 	vm_exits: HashMap<VmExit, usize>,
 	runtime: Option<Duration>,
