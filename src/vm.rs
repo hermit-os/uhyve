@@ -320,9 +320,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		#[cfg(not(target_os = "linux"))]
 		let mut mem = MmapMemory::new(memory_size, guest_address, false, false);
 
-		// TODO: file_mapping not in kernel_info
 		let mounts: Vec<_> = file_mapping.get_all_guest_dirs().collect();
-		let file_mapping = Mutex::new(file_mapping);
 
 		let serial = UhyveSerial::from_params(&params.output)?;
 
@@ -330,7 +328,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		#[cfg(target_os = "linux")]
 		Self::landlock_init(
 			&params.file_isolation,
-			&file_mapping.lock().unwrap(),
+			&file_mapping,
 			&kernel_path,
 			&params.output,
 			#[cfg(feature = "instrument")]
@@ -362,13 +360,12 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			stack_address,
 		});
 
-		// create virtio interface
-		let virtio_device = Mutex::new(VirtioNetPciDevice::new());
-
 		let peripherals = Arc::new(VmPeripherals {
 			mem,
-			virtio_device,
-			file_mapping,
+			// create virtio interface
+			virtio_device: Mutex::new(VirtioNetPciDevice::new()),
+			// TODO: file_mapping not in kernel_info
+			file_mapping: Mutex::new(file_mapping),
 			serial,
 		});
 
