@@ -237,6 +237,7 @@ impl VirtualCPU for XhyveCpu {
 							let pc = vcpu.read_register(Register::PC)?;
 
 							let data_addr = GuestPhysAddr::new(vcpu.read_register(Register::X8)?);
+							let file_mapping = || self.peripherals.file_mapping.lock().unwrap();
 							if let Some(hypercall) = unsafe {
 								hypercall::address_to_hypercall_v2(
 									&self.peripherals.mem,
@@ -252,33 +253,31 @@ impl VirtualCPU for XhyveCpu {
 									v2::Hypercall::Exit(sysexit) => {
 										return Ok(VcpuStopReason::Exit(sysexit));
 									}
-									v2::Hypercall::FileClose(sysclose) => hypercall::close(
-										sysclose,
-										&mut self.peripherals.file_mapping.lock().unwrap(),
-									),
-									v2::Hypercall::FileLseek(syslseek) => hypercall::lseek(
-										syslseek,
-										&mut self.peripherals.file_mapping.lock().unwrap(),
-									),
+									v2::Hypercall::FileClose(sysclose) => {
+										hypercall::close(sysclose, &mut file_mapping())
+									}
+									v2::Hypercall::FileLseek(syslseek) => {
+										hypercall::lseek(syslseek, &mut file_mapping())
+									}
 									v2::Hypercall::FileOpen(sysopen) => hypercall::open(
 										&self.peripherals.mem,
 										sysopen,
-										&mut self.peripherals.file_mapping.lock().unwrap(),
+										&mut file_mapping(),
 									),
 									v2::Hypercall::FileRead(sysread) => hypercall::read(
 										&self.peripherals.mem,
 										sysread,
-										&mut self.peripherals.file_mapping.lock().unwrap(),
+										&mut file_mapping(),
 									),
 									v2::Hypercall::FileWrite(syswrite) => hypercall::write(
 										&self.peripherals,
 										syswrite,
-										&mut self.peripherals.file_mapping.lock().unwrap(),
+										&mut file_mapping(),
 									)?,
 									v2::Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
 										&self.peripherals.mem,
 										sysunlink,
-										&mut self.peripherals.file_mapping.lock().unwrap(),
+										&mut file_mapping(),
 									),
 									v2::Hypercall::SerialWriteByte(buf) => self
 										.peripherals
@@ -363,18 +362,16 @@ impl VirtualCPU for XhyveCpu {
 											&self.peripherals.mem,
 										);
 									}
-									v1::Hypercall::FileClose(sysclose) => hypercall::close(
-										sysclose,
-										&mut self.peripherals.file_mapping.lock().unwrap(),
-									),
-									v1::Hypercall::FileLseek(syslseek) => hypercall::lseek_v1(
-										syslseek,
-										&mut self.peripherals.file_mapping.lock().unwrap(),
-									),
+									v1::Hypercall::FileClose(sysclose) => {
+										hypercall::close(sysclose, &mut file_mapping())
+									}
+									v1::Hypercall::FileLseek(syslseek) => {
+										hypercall::lseek_v1(syslseek, &mut file_mapping())
+									}
 									v1::Hypercall::FileOpen(sysopen) => hypercall::open(
 										&self.peripherals.mem,
 										sysopen,
-										&mut self.peripherals.file_mapping.lock().unwrap(),
+										&mut file_mapping(),
 									),
 									v1::Hypercall::FileRead(sysread) => hypercall::read_v1(
 										&self.peripherals.mem,
@@ -382,7 +379,7 @@ impl VirtualCPU for XhyveCpu {
 										GuestPhysAddr::new(
 											vcpu.read_system_register(SystemRegister::TTBR0_EL1)?,
 										),
-										&mut self.peripherals.file_mapping.lock().unwrap(),
+										&mut file_mapping(),
 									),
 									v1::Hypercall::FileWrite(syswrite) => hypercall::write_v1(
 										&self.peripherals,
@@ -390,13 +387,13 @@ impl VirtualCPU for XhyveCpu {
 										GuestPhysAddr::new(
 											vcpu.read_system_register(SystemRegister::TTBR0_EL1)?,
 										),
-										&mut self.peripherals.file_mapping.lock().unwrap(),
+										&mut file_mapping(),
 									)
 									.unwrap(),
 									v1::Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
 										&self.peripherals.mem,
 										sysunlink,
-										&mut self.peripherals.file_mapping.lock().unwrap(),
+										&mut file_mapping(),
 									),
 									_ => {
 										panic! {"Hypercall {hypercall:?} not implemented on macos-aarch64"}
