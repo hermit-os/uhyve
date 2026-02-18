@@ -18,6 +18,7 @@ use crate::{
 	},
 	mem::MmapMemory,
 	params::EnvVars,
+	vcpu::VcpuStopReason,
 	virt_to_phys,
 	vm::VmPeripherals,
 };
@@ -97,6 +98,59 @@ pub unsafe fn address_to_hypercall_v2(
 		HypercallAddress::SerialWriteByte => Hypercall::SerialWriteByte(data.as_u64() as u8),
 		_ => return None,
 	})
+}
+
+/// Given the `peripherals` of the vCPUs, handles an [`v2::Hypercall`], usually performing I/O.
+///
+/// # Panics
+///
+/// When a hypercall returns an error, or the hypercall is invalid, this function might panic
+/// (particularly on failing write calls, due to historical legacy).
+pub fn handle_hypercall_v2(
+	peripherals: &VmPeripherals,
+	hypercall: v2::Hypercall<'_>,
+) -> Option<VcpuStopReason> {
+	let file_mapping = || peripherals.file_mapping.lock().unwrap();
+	match hypercall {
+		v2::Hypercall::Exit(sysexit) => {
+			return Some(VcpuStopReason::Exit(sysexit));
+		}
+		v2::Hypercall::FileClose(sysclose) => close(sysclose, &mut file_mapping()),
+		v2::Hypercall::FileLseek(syslseek) => lseek(syslseek, &mut file_mapping()),
+		v2::Hypercall::FileOpen(sysopen) => open(&peripherals.mem, sysopen, &mut file_mapping()),
+		v2::Hypercall::FileRead(sysread) => read(&peripherals.mem, sysread, &mut file_mapping()),
+		v2::Hypercall::FileWrite(syswrite) => {
+			write(peripherals, syswrite, &mut file_mapping()).unwrap_or_else(|e| error!("{e:?}"));
+		}
+		v2::Hypercall::FileUnlink(sysunlink) => {
+			unlink(&peripherals.mem, sysunlink, &mut file_mapping())
+		}
+		v2::Hypercall::SerialWriteByte(buf) => peripherals
+			.serial
+			.output(&[buf])
+			.unwrap_or_else(|e| error!("{e:?}")),
+		v2::Hypercall::SerialWriteBuffer(sysserialwrite) => {
+			// SAFETY: as this buffer is only read and not used afterwards, we don't create multiple aliasing
+			let buf = unsafe {
+				peripherals
+					.mem
+					.slice_at(sysserialwrite.buf, sysserialwrite.len as usize)
+					.unwrap_or_else(|e| {
+						panic!(
+							"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
+						)
+					})
+			};
+
+			peripherals
+				.serial
+				.output(buf)
+				.unwrap_or_else(|e| error!("{e:?}"))
+		}
+		_ => panic!("Got unknown hypercall {hypercall:?}"),
+	}
+
+	None
 }
 
 /// Translates the last error in `errno` to a value suitable to return from the hypercall.
@@ -255,11 +309,7 @@ pub fn read_v1(
 }
 
 /// Handles a read syscall on the host.
-pub fn read(
-	mem: &MmapMemory,
-	sysread: &mut v2::parameters::ReadParams,
-	file_map: &mut UhyveFileMap,
-) {
+fn read(mem: &MmapMemory, sysread: &mut v2::parameters::ReadParams, file_map: &mut UhyveFileMap) {
 	sysread.ret = if let Some(fdata) = file_map.fdmap.get_mut(GuestFd(sysread.fd.into_raw_fd())) {
 		if let Ok(host_address) = mem.host_address(sysread.buf) {
 			match fdata {
@@ -331,7 +381,7 @@ pub fn write_v1(
 }
 
 /// Handles an write syscall on the host.
-pub fn write(
+fn write(
 	peripherals: &VmPeripherals,
 	syswrite: &mut v2::parameters::WriteParams,
 	file_map: &mut UhyveFileMap,
@@ -424,7 +474,7 @@ pub fn lseek_v1(syslseek: &mut v1::parameters::LseekParams, file_map: &mut Uhyve
 }
 
 /// Handles an lseek syscall on the host.
-pub fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
+fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 	syslseek.offset = match file_map.fdmap.get_mut(GuestFd(syslseek.fd.into_raw_fd())) {
 		Some(FdData::Raw(r)) => unsafe { libc::lseek(*r, syslseek.offset, syslseek.whence as i32) },
 		Some(FdData::Virtual { data, offset }) => {
