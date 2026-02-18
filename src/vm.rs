@@ -104,11 +104,11 @@ pub struct VmResult {
 
 /// mutable devices that a vCPU interacts with
 #[derive(Debug)]
-pub(crate) struct VmPeripherals {
-	pub file_mapping: Mutex<UhyveFileMap>,
-	pub mem: MmapMemory,
+pub struct VmPeripherals {
+	pub(crate) file_mapping: Mutex<UhyveFileMap>,
+	pub(crate) mem: MmapMemory,
 	pub(crate) serial: UhyveSerial,
-	pub virtio_device: Mutex<VirtioNetPciDevice>,
+	pub(crate) virtio_device: Mutex<VirtioNetPciDevice>,
 }
 
 // TODO: Investigate soundness
@@ -118,17 +118,17 @@ unsafe impl Sync for VmPeripherals {}
 
 /// static information that does not change during execution
 #[derive(Debug)]
-pub(crate) struct KernelInfo {
+pub struct KernelInfo {
 	/// The first instruction after boot
-	pub entry_point: GuestPhysAddr,
+	pub(crate) entry_point: GuestPhysAddr,
 	/// The starting position of the image in physical memory
 	#[cfg_attr(target_os = "macos", expect(dead_code))] // currently only needed in gdb
-	pub kernel_address: GuestPhysAddr,
-	pub params: Params,
-	pub path: PathBuf,
-	pub stack_address: GuestPhysAddr,
+	pub(crate) kernel_address: GuestPhysAddr,
+	pub(crate) params: Params,
+	pub(crate) path: PathBuf,
+	pub(crate) stack_address: GuestPhysAddr,
 	/// The location of the whole guest in the physical address space
-	pub guest_address: GuestPhysAddr,
+	pub(crate) guest_address: GuestPhysAddr,
 }
 
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
