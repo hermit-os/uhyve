@@ -2,7 +2,7 @@ use std::{io, num::NonZero, sync::Arc};
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
-use uhyve_interface::{GuestPhysAddr, v1, v2};
+use uhyve_interface::{GuestPhysAddr, v1};
 use vmm_sys_util::eventfd::EventFd;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
@@ -465,61 +465,10 @@ impl VirtualCPU for KvmCpu {
 								s.increment_val((&hypercall).into())
 							}
 
-							match hypercall {
-								v2::Hypercall::Exit(sysexit) => {
-									return Ok(VcpuStopReason::Exit(sysexit));
-								}
-								v2::Hypercall::FileClose(sysclose) => {
-									hypercall::close(sysclose, &mut file_mapping())
-								}
-								v2::Hypercall::FileLseek(syslseek) => {
-									hypercall::lseek(syslseek, &mut file_mapping())
-								}
-								v2::Hypercall::FileOpen(sysopen) => hypercall::open(
-									&self.peripherals.mem,
-									sysopen,
-									&mut file_mapping(),
-								),
-								v2::Hypercall::FileRead(sysread) => hypercall::read(
-									&self.peripherals.mem,
-									sysread,
-									&mut file_mapping(),
-								),
-								v2::Hypercall::FileWrite(syswrite) => hypercall::write(
-									&self.peripherals,
-									syswrite,
-									&mut file_mapping(),
-								)?,
-								v2::Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
-									&self.peripherals.mem,
-									sysunlink,
-									&mut file_mapping(),
-								),
-								v2::Hypercall::SerialWriteByte(buf) => self
-									.peripherals
-									.serial
-									.output(&[buf])
-									.unwrap_or_else(|e| error!("{e:?}")),
-								v2::Hypercall::SerialWriteBuffer(sysserialwrite) => {
-									// SAFETY: as this buffer is only read and not used afterwards, we don't create multiple aliasing
-									let buf = unsafe {
-										self
-										.peripherals
-										.mem
-										.slice_at(sysserialwrite.buf, sysserialwrite.len as usize)
-										.unwrap_or_else(|e| {
-											panic!(
-												"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
-											)
-										})
-									};
-
-									self.peripherals
-										.serial
-										.output(buf)
-										.unwrap_or_else(|e| error!("{e:?}"))
-								}
-								_ => panic!("Got unknown hypercall {hypercall:?}"),
+							if let Some(stop) =
+								hypercall::handle_hypercall_v2(&self.peripherals, hypercall)
+							{
+								return Ok(stop);
 							}
 						} else if let Some(hypercall) = unsafe {
 							// v1 images used to read the address from the 32-bit value written
