@@ -8,7 +8,7 @@ use xhypervisor::{
 };
 
 use crate::{
-	HypervisorResult,
+	HypervisorError, HypervisorResult,
 	aarch64::{
 		MT_DEVICE_GRE, MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_NORMAL, MT_NORMAL_NC, PSR, TCR_FLAGS,
 		TCR_TG1_4K, VA_BITS, mair, tcr_size,
@@ -16,7 +16,7 @@ use crate::{
 	consts::{
 		BOOT_INFO_OFFSET, GICD_BASE_ADDRESS, GICR_BASE_ADDRESS, MSI_BASE_ADDRESS, PGT_OFFSET,
 	},
-	hypercall::{self, copy_argv, copy_env},
+	hypercall,
 	params::Params,
 	stats::CpuStats,
 	vcpu::{VcpuStopReason, VirtualCPU},
@@ -237,7 +237,6 @@ impl VirtualCPU for XhyveCpu {
 							let pc = vcpu.read_register(Register::PC)?;
 
 							let data_addr = GuestPhysAddr::new(vcpu.read_register(Register::X8)?);
-							let file_mapping = || self.peripherals.file_mapping.lock().unwrap();
 							if let Some(hypercall) = unsafe {
 								hypercall::address_to_hypercall_v2(
 									&self.peripherals.mem,
@@ -267,86 +266,23 @@ impl VirtualCPU for XhyveCpu {
 									s.increment_val((&hypercall).into())
 								}
 
-								match hypercall {
-									v1::Hypercall::SerialWriteByte(_char) => {
-										let x8 = (vcpu.read_register(Register::X8)? & 0xFF) as u8;
-										self.peripherals
-											.serial
-											.output(&[x8])
-											.unwrap_or_else(|e| error!("{e:?}"));
-									}
-									v1::Hypercall::SerialWriteBuffer(sysserialwrite) => {
-										// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
-										let buf = unsafe {
-											self.peripherals
-												.mem
-												.slice_at(sysserialwrite.buf, sysserialwrite.len)
-												.expect(
-													"Systemcall parameters for SerialWriteBuffer are invalid",
-												)
-										};
-
-										self.peripherals
-											.serial
-											.output(buf)
-											.unwrap_or_else(|e| error!("{e:?}"))
-									}
-									v1::Hypercall::Exit(sysexit) => {
-										return Ok(VcpuStopReason::Exit(sysexit.arg));
-									}
-									v1::Hypercall::Cmdsize(syssize) => syssize.update(
-										&self.kernel_info.path,
-										&self.kernel_info.params.kernel_args,
-									),
-									v1::Hypercall::Cmdval(syscmdval) => {
-										copy_argv(
-											self.kernel_info.path.as_os_str(),
-											&self.kernel_info.params.kernel_args,
-											syscmdval,
-											&self.peripherals.mem,
-										);
-										copy_env(
-											&self.kernel_info.params.env,
-											syscmdval,
-											&self.peripherals.mem,
-										);
-									}
-									v1::Hypercall::FileClose(sysclose) => {
-										hypercall::close(sysclose, &mut file_mapping())
-									}
-									v1::Hypercall::FileLseek(syslseek) => {
-										hypercall::lseek_v1(syslseek, &mut file_mapping())
-									}
-									v1::Hypercall::FileOpen(sysopen) => hypercall::open(
-										&self.peripherals.mem,
-										sysopen,
-										&mut file_mapping(),
-									),
-									v1::Hypercall::FileRead(sysread) => hypercall::read_v1(
-										&self.peripherals.mem,
-										sysread,
-										GuestPhysAddr::new(
-											vcpu.read_system_register(SystemRegister::TTBR0_EL1)?,
-										),
-										&mut file_mapping(),
-									),
-									v1::Hypercall::FileWrite(syswrite) => hypercall::write_v1(
-										&self.peripherals,
-										syswrite,
-										GuestPhysAddr::new(
-											vcpu.read_system_register(SystemRegister::TTBR0_EL1)?,
-										),
-										&mut file_mapping(),
-									)
-									.unwrap(),
-									v1::Hypercall::FileUnlink(sysunlink) => hypercall::unlink(
-										&self.peripherals.mem,
-										sysunlink,
-										&mut file_mapping(),
-									),
-									_ => {
-										panic! {"Hypercall {hypercall:?} not implemented on macos-aarch64"}
-									}
+								if let v1::Hypercall::SerialWriteByte(_) = &hypercall {
+									let x8 = (vcpu.read_register(Register::X8)? & 0xFF) as u8;
+									self.peripherals
+										.serial
+										.output(&[x8])
+										.unwrap_or_else(|e| error!("{e:?}"));
+								} else if let Some(stop) = hypercall::handle_hypercall_v1(
+									&self.peripherals,
+									&self.kernel_info,
+									|| {
+										vcpu.read_system_register(SystemRegister::TTBR0_EL1)
+											.map(GuestPhysAddr::new)
+											.map_err(HypervisorError::BackendError)
+									},
+									hypercall,
+								) {
+									return stop;
 								}
 								// increase the pc to the instruction after the exception to continue execution
 								vcpu.write_register(Register::PC, pc + 4)?;

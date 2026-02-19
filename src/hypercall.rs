@@ -12,6 +12,7 @@ use uhyve_interface::{
 };
 
 use crate::{
+	HypervisorResult,
 	isolation::{
 		fd::{FdData, GuestFd, UhyveFileDescriptorLayer},
 		filemap::UhyveFileMap,
@@ -20,7 +21,7 @@ use crate::{
 	params::EnvVars,
 	vcpu::VcpuStopReason,
 	virt_to_phys,
-	vm::VmPeripherals,
+	vm::{KernelInfo, VmPeripherals},
 };
 
 /// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
@@ -153,6 +154,89 @@ pub fn handle_hypercall_v2(
 	None
 }
 
+/// Given the `peripherals` of the vCPUs, handles an [`v1::Hypercall`], usually performing I/O.
+///
+/// # Panics
+///
+/// When a hypercall returns an error, or the hypercall is invalid, this function might panic
+/// (particularly on failing write calls).
+pub fn handle_hypercall_v1(
+	peripherals: &VmPeripherals,
+	kernel_info: &KernelInfo,
+	root_pt: impl FnOnce() -> HypervisorResult<GuestPhysAddr>,
+	hypercall: v1::Hypercall<'_>,
+) -> Option<HypervisorResult<VcpuStopReason>> {
+	let file_mapping = || peripherals.file_mapping.lock().unwrap();
+
+	match hypercall {
+		v1::Hypercall::Cmdsize(syssize) => {
+			syssize.update(&kernel_info.path, &kernel_info.params.kernel_args)
+		}
+		v1::Hypercall::Cmdval(syscmdval) => {
+			copy_argv(
+				kernel_info.path.as_os_str(),
+				&kernel_info.params.kernel_args,
+				syscmdval,
+				&peripherals.mem,
+			);
+			copy_env(&kernel_info.params.env, syscmdval, &peripherals.mem);
+		}
+		v1::Hypercall::Exit(sysexit) => {
+			return Some(Ok(VcpuStopReason::Exit(sysexit.arg)));
+		}
+		v1::Hypercall::FileClose(sysclose) => close(sysclose, &mut file_mapping()),
+		v1::Hypercall::FileLseek(syslseek) => lseek_v1(syslseek, &mut file_mapping()),
+		v1::Hypercall::FileOpen(sysopen) => open(&peripherals.mem, sysopen, &mut file_mapping()),
+		v1::Hypercall::FileRead(sysread) => read_v1(
+			&peripherals.mem,
+			sysread,
+			match root_pt() {
+				Ok(root_pt) => root_pt,
+				Err(e) => return Some(Err(e)),
+			},
+			&mut file_mapping(),
+		),
+		v1::Hypercall::FileWrite(syswrite) => write_v1(
+			peripherals,
+			syswrite,
+			match root_pt() {
+				Ok(root_pt) => root_pt,
+				Err(e) => return Some(Err(e)),
+			},
+			&mut file_mapping(),
+		)
+		.unwrap(),
+		v1::Hypercall::FileUnlink(sysunlink) => {
+			unlink(&peripherals.mem, sysunlink, &mut file_mapping())
+		}
+		v1::Hypercall::SerialWriteByte(buf) => peripherals
+			.serial
+			.output(&[buf])
+			.unwrap_or_else(|e| error!("{e:?}")),
+		v1::Hypercall::SerialWriteBuffer(sysserialwrite) => {
+			// safety: as this buffer is only read and not used afterwards, we don't create multiple aliasing
+			let buf = unsafe {
+				peripherals
+					.mem
+					.slice_at(sysserialwrite.buf, sysserialwrite.len)
+					.unwrap_or_else(|e| {
+						panic!(
+							"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
+						)
+					})
+			};
+
+			peripherals
+				.serial
+				.output(buf)
+				.unwrap_or_else(|e| error!("{e:?}"))
+		}
+		_ => panic!("Got unknown hypercall {hypercall:?}"),
+	}
+
+	None
+}
+
 /// Translates the last error in `errno` to a value suitable to return from the hypercall.
 fn translate_last_errno() -> Option<i32> {
 	let errno = io::Error::last_os_error().raw_os_error()?;
@@ -180,7 +264,7 @@ fn translate_last_errno() -> Option<i32> {
 /// Note for when using Landlock: Unlinking files results in them being veiled. If a text
 /// file (that existed during initialization) called `log.txt` is unlinked, attempting to
 /// open `log.txt` again will result in an error.
-pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut UhyveFileMap) {
+fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut UhyveFileMap) {
 	let requested_path_ptr = mem.host_address(sysunlink.name).unwrap() as *const i8;
 	let guest_path = unsafe { CStr::from_ptr(requested_path_ptr) };
 	sysunlink.ret = if let Some(host_path) = file_map.get_host_path(guest_path) {
@@ -199,7 +283,7 @@ pub fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut Uhy
 }
 
 /// Handles an open syscall by opening a file on the host.
-pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
+fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
 	let requested_path_ptr = mem.host_address(sysopen.name).unwrap() as *const i8;
 	let mut flags = sysopen.flags & ALLOWED_OPEN_FLAGS;
 	let guest_path = unsafe { CStr::from_ptr(requested_path_ptr) };
@@ -262,7 +346,7 @@ pub fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFile
 }
 
 /// Handles an close syscall by closing the file on the host.
-pub fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
+fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
 	sysclose.ret = if file_map
 		.fdmap
 		.is_fd_present(GuestFd(sysclose.fd.into_raw_fd()))
@@ -285,7 +369,7 @@ pub fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
 
 /// Handles a v1 read hypercall (for which a guest-provided guest virtual address must be
 /// converted to a guest physical address by the host).
-pub fn read_v1(
+fn read_v1(
 	mem: &MmapMemory,
 	sysread: &mut v1::parameters::ReadParams,
 	root_pt: GuestPhysAddr,
@@ -359,7 +443,7 @@ fn read(mem: &MmapMemory, sysread: &mut v2::parameters::ReadParams, file_map: &m
 
 /// Handles a v1 write hypercall (for which a guest-provided guest virtual address must be
 /// converted to a guest physical address by the host).
-pub fn write_v1(
+fn write_v1(
 	peripherals: &VmPeripherals,
 	syswrite: &v1::parameters::WriteParams,
 	root_pt: GuestPhysAddr,
@@ -457,7 +541,7 @@ fn write(
 }
 
 /// Handles a v1 lseek syscall on the host, which has a different struct format.
-pub fn lseek_v1(syslseek: &mut v1::parameters::LseekParams, file_map: &mut UhyveFileMap) {
+fn lseek_v1(syslseek: &mut v1::parameters::LseekParams, file_map: &mut UhyveFileMap) {
 	let mut tmp = LseekParams {
 		offset: syslseek.offset as i64,
 		whence: syslseek.whence as u32,
@@ -513,8 +597,7 @@ fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 }
 
 /// Copies the arguments of the application into the VM's memory to the destinations specified in `syscmdval`.
-#[allow(unused)]
-pub fn copy_argv(
+fn copy_argv(
 	path: &OsStr,
 	argv: &[String],
 	syscmdval: &v1::parameters::CmdvalParams,
@@ -551,8 +634,7 @@ pub fn copy_argv(
 }
 
 /// Copies the environment variables into the VM's memory to the destinations specified in `syscmdval`.
-#[allow(unused)]
-pub fn copy_env(env: &EnvVars, syscmdval: &v1::parameters::CmdvalParams, mem: &MmapMemory) {
+fn copy_env(env: &EnvVars, syscmdval: &v1::parameters::CmdvalParams, mem: &MmapMemory) {
 	let envp = mem
 		.host_address(syscmdval.envp)
 		.expect("Systemcall parameters for Cmdval are invalid") as *const GuestPhysAddr;
