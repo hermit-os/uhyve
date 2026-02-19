@@ -2,16 +2,16 @@ use std::mem::size_of;
 
 use align_address::Align;
 use bitflags::bitflags;
-use rand::RngExt;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 
 use crate::{
-	consts::{KERNEL_OFFSET, PAGETABLES_END, PAGETABLES_OFFSET, PGT_OFFSET},
+	consts::{PAGETABLES_END, PAGETABLES_OFFSET, PGT_OFFSET},
 	mem::MmapMemory,
 	paging::{BumpAllocator, PagetableError},
 };
 
 pub(crate) const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x1000_0000);
+pub(crate) const V1_MAX_ADDR: u64 = 0x0010_0000_0000u64;
 
 const SIZE_4KIB: u64 = 0x1000;
 
@@ -70,19 +70,6 @@ pub const TCR_FLAGS: u64 = TCR_IRGN_WBWA | TCR_ORGN_WBWA | TCR_SHARED;
 
 /// Number of virtual address bits for 4KB page
 pub const VA_BITS: u64 = 48;
-
-/// Generates a random guest address for Uhyve's virtualized memory.
-/// This function gets invoked when a new UhyveVM gets created, provided that the object file is relocatable.
-pub(crate) fn generate_address(object_mem_size: usize) -> GuestPhysAddr {
-	let mut rng = rand::rng();
-	let start_address_upper_bound: u64 =
-		0x0000_0010_0000_0000 - object_mem_size as u64 - KERNEL_OFFSET;
-
-	GuestPhysAddr::new(
-		rng.random_range(RAM_START.as_u64()..start_address_upper_bound)
-			.align_down(0x20_0000),
-	)
-}
 
 #[inline(always)]
 pub const fn tcr_size(x: u64) -> u64 {
