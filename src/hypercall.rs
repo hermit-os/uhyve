@@ -120,7 +120,7 @@ pub fn handle_hypercall_v2(
 		v2::Hypercall::FileOpen(sysopen) => open(&peripherals.mem, sysopen, &mut file_mapping()),
 		v2::Hypercall::FileRead(sysread) => read(&peripherals.mem, sysread, &mut file_mapping()),
 		v2::Hypercall::FileWrite(syswrite) => {
-			write(peripherals, syswrite, &mut file_mapping()).unwrap_or_else(|e| error!("{e:?}"));
+			write(peripherals, syswrite, &mut file_mapping()).unwrap();
 		}
 		v2::Hypercall::FileUnlink(sysunlink) => {
 			unlink(&peripherals.mem, sysunlink, &mut file_mapping())
