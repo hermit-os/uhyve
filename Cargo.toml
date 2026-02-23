@@ -66,7 +66,7 @@ uhyve-interface = { version = "0.2.0", path = "uhyve-interface", features = ["st
 virtio-bindings = "~0.2.7"
 vm-fdt = "0.3"
 vm-memory = { version = "0.18", features = ["backend-mmap"] }
-uuid = { version = "1.20.0", features = ["fast-rng", "v4"]}
+uuid = { version = "1.21.0", features = ["fast-rng", "v4"]}
 yoke = "0.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]
