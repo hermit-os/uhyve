@@ -87,7 +87,7 @@ memory_addresses = { version = "0.3", default-features = false, features = [
 ] }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
-bitflags = "2.10"
+bitflags = "2.11"
 memory_addresses = { version = "0.3", default-features = false, features = [
   "aarch64",
 ] }
