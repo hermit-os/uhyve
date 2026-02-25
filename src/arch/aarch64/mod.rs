@@ -237,78 +237,52 @@ pub fn init_guest_mem(
 		..(guest_address + length).align_up(SIZE_4KIB).as_u64())
 		.step_by(SIZE_4KIB as usize)
 	{
-		let idx_l4 = (frame_addr as usize >> 39) & (0x1FF);
-		let idx_l3 = (frame_addr as usize >> 30) & (0x1FF);
-		let idx_l2 = (frame_addr as usize >> 21) & (0x1FF);
-		let idx_l1 = (frame_addr as usize >> 12) & (0x1FF);
+		let frame_addr_usz = frame_addr as usize;
+		let indices = [
+			/* idx_l4 */ frame_addr_usz >> 39,
+			/* idx_l3 */ frame_addr_usz >> 30,
+			/* idx_l2 */ frame_addr_usz >> 21,
+			/* idx_l1 */ frame_addr_usz >> 12,
+		]
+		.map(|i| i & 0x1FF);
+		let (idx_l4, idx_l3, idx_l2, idx_l1) = (indices[0], indices[1], indices[2], indices[3]);
+
 		debug!("mapping frame {frame_addr:x} to pagetable {idx_l4}-{idx_l3}-{idx_l2}-{idx_l1}");
 
-		let (pgd_addr, new) = if pgt_slice[idx_l4] == 0 {
-			(boot_frame_allocator.allocate().unwrap().as_u64(), true)
-		} else {
-			(
-				PageTableEntry::from(pgt_slice[idx_l4]).address().as_u64(),
-				false,
-			)
-		};
-		let pgd_slice = unsafe {
-			std::slice::from_raw_parts_mut(
-				mem_addr.offset((pgd_addr - guest_address.as_u64()) as isize) as *mut u64,
-				512,
-			)
-		};
-		if new {
-			pgd_slice.fill(0);
-			pgt_slice[idx_l4] = pgd_addr | PT_PT;
-		}
+		let pmd_slice = indices[0..3]
+			.iter()
+			.fold(&mut *pgt_slice, |prev_slice, &idx| {
+				let (pd_addr, new) = if prev_slice[idx] == 0 {
+					(boot_frame_allocator.allocate().unwrap().as_u64(), true)
+				} else {
+					(
+						PageTableEntry::from(prev_slice[idx]).address().as_u64(),
+						false,
+					)
+				};
+				let pd_slice = unsafe {
+					core::slice::from_raw_parts_mut(
+						mem_addr.offset((pd_addr - guest_address.as_u64()) as isize) as *mut u64,
+						512,
+					)
+				};
+				if new {
+					pd_slice.fill(0);
+					prev_slice[idx] = pd_addr | PT_PT;
+				}
+				pd_slice
+			});
 
-		let (pud_addr, new) = if pgd_slice[idx_l3] == 0 {
-			(boot_frame_allocator.allocate().unwrap().as_u64(), true)
-		} else {
-			(
-				PageTableEntry::from(pgd_slice[idx_l3]).address().as_u64(),
-				false,
-			)
-		};
-		let pud_slice = unsafe {
-			std::slice::from_raw_parts_mut(
-				mem_addr.offset((pud_addr - guest_address.as_u64()) as isize) as *mut u64,
-				512,
-			)
-		};
-		if new {
-			pud_slice.fill(0);
-			pgd_slice[idx_l3] = pud_addr | PT_PT;
-		}
-
-		let (pmd_addr, new) = if pud_slice[idx_l2] == 0 {
-			(boot_frame_allocator.allocate().unwrap().as_u64(), true)
-		} else {
-			(
-				PageTableEntry::from(pud_slice[idx_l2]).address().as_u64(),
-				false,
-			)
-		};
-		let pmd_slice = unsafe {
-			std::slice::from_raw_parts_mut(
-				mem_addr.offset((pmd_addr - guest_address.as_u64()) as isize) as *mut u64,
-				512,
-			)
-		};
-		if new {
-			pmd_slice.fill(0);
-			pud_slice[idx_l2] = pmd_addr | PT_PT;
-		}
-
-		if idx_l1 == 0 && idx_l2 == 0 && idx_l3 == 0 && idx_l4 == 0 {
-			// Hypercall/IO mapping
-			pmd_slice[idx_l1] = frame_addr | PT_MEM_CD;
-		} else if idx_l1 == 0 && idx_l2 == 0 && idx_l3 == 0 && idx_l4 < 16 {
-			pmd_slice[idx_l1] = frame_addr | PT_MEM;
-		} else {
-			// set contiguous bit only if the page is mapped contiguous
-			// and each 16 * 4 KByte area have the same access property
-			pmd_slice[idx_l1] = frame_addr | PT_MEM_CONTIGUOUS;
-		}
+		pmd_slice[idx_l1] = frame_addr
+			| if idx_l1 == 0 && idx_l2 == 0 && idx_l3 == 0 && idx_l4 == 0 {
+				// Hypercall/IO mapping
+				PT_MEM_CD
+			} else if idx_l1 == 0 && idx_l2 == 0 && idx_l3 == 0 && idx_l4 < 16 {
+				PT_MEM
+			} else {
+				// set contiguous bit only if the page is mapped contiguous
+				// and each 16 * 4 KByte area have the same access property
+				PT_MEM_CONTIGUOUS
+			};
 	}
 }
