@@ -17,9 +17,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Test
         run: |
           cargo test --lib --no-fail-fast
@@ -42,9 +39,6 @@ jobs:
       - uses: mkroening/rust-toolchain-toml@main
         with:
           toolchain-file: 'tests/test-kernels/rust-toolchain.toml'
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Integration Tests
         run: timeout 15m cargo test --test '*' --no-fail-fast
 
@@ -59,9 +53,6 @@ jobs:
           sudo apt-get install -y --no-install-recommends libclang-dev
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --locked
       - name: Run images (No sandboxing)
         timeout-minutes: 1
@@ -116,9 +107,6 @@ jobs:
         with:
           targets: ${{ matrix.targets }}
           components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Clippy
         run: cargo clippy --all-targets ${{ matrix.flags }} -- -D warnings
       - run: git diff --exit-code Cargo.lock
@@ -132,9 +120,6 @@ jobs:
       - name: Install clippy for Test Kernels
         run: rustup component add clippy
         working-directory: tests/test-kernels
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Clippy Test Kernels
         run: cargo clippy --all-targets -- -D warnings
         working-directory: tests/test-kernels
@@ -156,9 +141,6 @@ jobs:
           toolchain-file: 'tests/test-kernels/rust-toolchain.toml'
       - name: Install cargo-llvm-cov
         run: curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Generate code coverage
         run: cargo llvm-cov --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
