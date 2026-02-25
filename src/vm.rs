@@ -210,11 +210,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			#[cfg(target_os = "linux")]
 			params.io_mode,
 		);
-		let mut mounts: Vec<_> = file_mapping
-			.get_all_guest_dirs()
-			.map(|s| s.to_str().unwrap().to_string())
-			.collect();
-		mounts.dedup();
+		let mounts: Vec<_> = file_mapping.get_all_guest_dirs().collect();
 
 		let serial = UhyveSerial::from_params(&params.output)?;
 
@@ -357,7 +353,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 				file_sandbox_mode,
 				kernel_path.into(),
 				output,
-				host_paths,
+				host_paths.map(|i| i.as_os_str()),
 				temp_dir,
 				#[cfg(feature = "instrument")]
 				trace,
