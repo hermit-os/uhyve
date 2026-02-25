@@ -412,7 +412,6 @@ fn read(mem: &MmapMemory, sysread: &mut v2::parameters::ReadParams, file_map: &m
 					}
 				}
 				FdData::Virtual { data, offset } => {
-					let data: &[u8] = data.get();
 					let remaining = {
 						let pos = cmp::min(*offset, data.len() as u64);
 						&data[pos as usize..]
@@ -573,7 +572,7 @@ fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 			let tmp: i64 = match syslseek.whence as i32 {
 				SEEK_SET => 0,
 				SEEK_CUR => *offset as i64,
-				SEEK_END => data.get().len() as i64,
+				SEEK_END => data.len() as i64,
 				_ => -EINVAL as i64,
 			};
 			if tmp >= 0 {

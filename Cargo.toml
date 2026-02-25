@@ -67,7 +67,6 @@ virtio-bindings = "~0.2.7"
 vm-fdt = "0.3"
 vm-memory = { version = "0.18", features = ["backend-mmap"] }
 uuid = { version = "1.21.0", features = ["fast-rng", "v4"]}
-yoke = "0.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.14"

@@ -3,10 +3,10 @@ use std::{
 	fmt,
 	hash::BuildHasherDefault,
 	os::fd::{FromRawFd, OwnedFd, RawFd},
+	sync::Arc,
 };
 
 use nohash::NoHashHasher;
-use yoke::{Yoke, erased::ErasedArcCart};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GuestFd(pub i32);
@@ -51,10 +51,7 @@ pub enum FdData {
 	/// An in-memory slice (possibly mmap-ed)
 	///
 	/// SAFETY: It is not allowed for `data` to point into guest memory.
-	Virtual {
-		data: Yoke<&'static [u8], ErasedArcCart>,
-		offset: u64,
-	},
+	Virtual { data: Arc<[u8]>, offset: u64 },
 }
 
 impl fmt::Debug for FdData {
@@ -62,7 +59,6 @@ impl fmt::Debug for FdData {
 		match self {
 			FdData::Raw(r) => write!(f, "Raw({r})"),
 			FdData::Virtual { data, offset } => {
-				let data = data.get();
 				let data_snip = &data[..core::cmp::min(10, data.len())];
 				write!(f, "Virtual({data_snip:?} @ {offset})")
 			}
