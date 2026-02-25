@@ -1,6 +1,7 @@
 use std::{
 	env, fmt, fs, io,
 	num::NonZero,
+	ops::Add,
 	os::unix::prelude::JoinHandleExt,
 	path::PathBuf,
 	sync::{Arc, Mutex},
@@ -8,6 +9,7 @@ use std::{
 	time::SystemTime,
 };
 
+use align_address::Align;
 use core_affinity::CoreId;
 use hermit_entry::{
 	HermitVersion, UhyveIfVersion,
@@ -20,10 +22,9 @@ use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
 
 use crate::{
-	HypervisorError, arch,
+	HypervisorError, RAM_START, V1_MAX_ADDR,
 	consts::*,
 	fdt::Fdt,
-	generate_address,
 	isolation::filemap::UhyveFileMap,
 	mem::MmapMemory,
 	os::KickSignal,
@@ -62,8 +63,6 @@ pub type DefaultBackend = crate::macos::XhyveVm;
 pub(crate) mod internal {
 	use std::sync::Arc;
 
-	use uhyve_interface::GuestPhysAddr;
-
 	use crate::{
 		HypervisorResult,
 		vcpu::VirtualCPU,
@@ -83,11 +82,7 @@ pub(crate) mod internal {
 			enable_stats: bool,
 		) -> HypervisorResult<Self::VCPU>;
 
-		fn new(
-			peripherals: Arc<VmPeripherals>,
-			params: &Params,
-			guest_addr: GuestPhysAddr,
-		) -> HypervisorResult<Self>;
+		fn new(peripherals: Arc<VmPeripherals>, params: &Params) -> HypervisorResult<Self>;
 	}
 }
 
@@ -131,6 +126,81 @@ pub(crate) struct KernelInfo {
 	pub guest_address: GuestPhysAddr,
 }
 
+/// Returns a guest & start address tuple based on the object file.
+///
+/// Generates a tuple containing a potentially random guest address and a derived
+/// start address for Uhyve's virtualized memory. The guest address will not be
+/// random under the following conditions:
+/// - The image is not relocatable / uses uhyve-interface v1.
+/// - ASLR is disabled.
+///
+/// If the image is not relocatable, the start address will be equal to that
+/// present in the unikernel image file's object representation.
+///
+/// - `interface_version`: Version of uhyve-interface.
+/// - `aslr`: `bool` describing whether ASLR is enabled (`true`) or disabled (`false`).
+/// - `object_mem_size`: Memory required to load the object file onto the guest's memory.
+/// - `object_start_addr`: Start address embedded in the unikernel image (if applicable).
+/// - `mem_size`: User-defined memory size that should be available to the VM.
+pub(crate) fn generate_guest_start_address(
+	interface_version: UhyveIfVersion,
+	aslr: bool,
+	object_mem_size: usize,
+	object_start_addr: Option<u64>,
+	mem_size: usize,
+) -> (GuestPhysAddr, GuestPhysAddr) {
+	let (guest_address_lb, guest_address_ub): (u64, u64) = {
+		match interface_version.0 {
+			1 => (
+				RAM_START.as_u64(),
+				V1_MAX_ADDR
+					.checked_sub((object_mem_size + mem_size) as u64 + KERNEL_OFFSET)
+					.unwrap_or_else(|| {
+						panic!("Memory size {mem_size:#x} is higher than maximum upper boundary")
+					}),
+			),
+			2 => (
+				0x0001_0000_0000u64,
+				// Taken from V1_MAX_ADDR of macOS.
+				0x0010_0000_0000u64
+					.checked_sub((object_mem_size + mem_size) as u64 + KERNEL_OFFSET)
+					.unwrap_or_else(|| {
+						panic!("Memory size {mem_size:#x} is higher than maximum upper boundary")
+					}),
+			),
+			_ => unimplemented!(),
+		}
+	};
+
+	match (aslr, object_start_addr) {
+		(true, None) => {
+			let mut rng = rand::rng();
+			let guest_address = GuestPhysAddr::new(
+				rand::RngExt::random_range(&mut rng, guest_address_lb..=guest_address_ub)
+					.align_down(0x20_0000),
+			);
+			(guest_address, guest_address.add(KERNEL_OFFSET))
+		}
+		(false, None) => {
+			let guest_address = GuestPhysAddr::new(guest_address_lb);
+			(guest_address, guest_address.add(KERNEL_OFFSET))
+		}
+		(_, Some(predefined_start_address)) => {
+			assert!(
+				(guest_address_lb..=guest_address_ub).contains(&predefined_start_address),
+				"Predefined address {predefined_start_address:#x} out of range of possible guest addresses: [{guest_address_lb:#x}, {guest_address_ub:#x}]."
+			);
+			if aslr {
+				warn!("ASLR is enabled but kernel is not relocatable - disabling ASLR");
+			}
+			(
+				GuestPhysAddr::new(guest_address_lb),
+				GuestPhysAddr::new(predefined_start_address),
+			)
+		}
+	}
+}
+
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(crate) vcpus: Vec<<VirtBackend::BACKEND as VirtualizationBackendInternal>::VCPU>,
 	pub(crate) peripherals: Arc<VmPeripherals>,
@@ -151,6 +221,10 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		} else {
 			info!("Loading a pre Hermit v0.10.0 kernel");
 		}
+
+		let uhyve_interface_version = object
+			.uhyve_interface_version()
+			.unwrap_or(UhyveIfVersion(1));
 
 		// The memory layout of uhyve looks as follows:
 		//
@@ -180,19 +254,13 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		//                 │                   │
 		//                 └───────────────────┘
 
-		let (guest_address, kernel_address) = if let Some(start_addr) = object.start_addr() {
-			if params.aslr {
-				warn!("ASLR is enabled but kernel is not relocatable - disabling ASLR");
-			}
-			(arch::RAM_START, GuestPhysAddr::from(start_addr))
-		} else {
-			let guest_address = if params.aslr {
-				generate_address(object.mem_size())
-			} else {
-				arch::RAM_START
-			};
-			(guest_address, (guest_address + KERNEL_OFFSET))
-		};
+		let (guest_address, kernel_address) = generate_guest_start_address(
+			uhyve_interface_version,
+			params.aslr,
+			object.mem_size(),
+			object.start_addr(),
+			memory_size,
+		);
 
 		debug!("Guest starts at {guest_address:#x}");
 		debug!("Kernel gets loaded to {kernel_address:#x}");
@@ -266,8 +334,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			serial,
 		});
 
-		let virt_backend =
-			VirtBackend::BACKEND::new(peripherals.clone(), &kernel_info.params, guest_address)?;
+		let virt_backend = VirtBackend::BACKEND::new(peripherals.clone(), &kernel_info.params)?;
 
 		let cpu_count = kernel_info.params.cpu_count.get();
 
@@ -289,14 +356,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			.collect();
 
 		let freq = vcpus[0].get_cpu_frequency();
-
-		// Kernels with different Uhyve interface versions may have differing addresses for the
-		// serial port. As we begun embedding the uhyve-interface version in unikernel images
-		// much later than v1, but before v2, we assume that all images that don't have a version
-		// embedded must be v1.
-		let uhyve_interface_version = object
-			.uhyve_interface_version()
-			.unwrap_or(UhyveIfVersion(1));
 
 		let serial_port = SerialPortBase::new(match uhyve_interface_version.0 {
 			1 => uhyve_interface::v1::HypercallAddress::Uart as _,
@@ -594,4 +653,109 @@ fn load_kernel_to_mem(
 		),
 		kernel_end_address,
 	))
+}
+
+#[cfg(test)]
+mod tests {
+	use std::ops::Add;
+
+	use hermit_entry::UhyveIfVersion;
+
+	use crate::{RAM_START, V1_MAX_ADDR, consts::KERNEL_OFFSET, vm::generate_guest_start_address};
+
+	#[test]
+	fn test_generate_guest_start_address() {
+		let mem_size: usize = 0xBE20_0000; // 3042 MiB
+		let if_v1 = UhyveIfVersion(1);
+		let if_v2 = UhyveIfVersion(2);
+		let object_mem_size: usize = 0x0009_C400;
+		let object_no_start_addr: Option<u64> = None;
+		#[cfg(target_arch = "x86_64")]
+		let object_start_addr: u64 = 0x0002_0000;
+		#[cfg(target_arch = "aarch64")]
+		let object_start_addr: u64 = 0x1002_0000;
+
+		/* v1 */
+
+		// v1: No ASLR, relocatable
+		let (mut guest_address, mut start_address) = generate_guest_start_address(
+			if_v1,
+			false,
+			object_mem_size,
+			object_no_start_addr,
+			mem_size,
+		);
+		assert_eq!(guest_address, RAM_START);
+		assert_eq!(start_address, guest_address.add(KERNEL_OFFSET));
+
+		// v1: ASLR, relocatable
+		(guest_address, start_address) = generate_guest_start_address(
+			if_v1,
+			true,
+			object_mem_size,
+			object_no_start_addr,
+			mem_size,
+		);
+		assert_eq!(start_address, guest_address.add(KERNEL_OFFSET));
+		assert!(start_address.as_u64() <= V1_MAX_ADDR);
+
+		// v1: ASLR, non-relocatable
+		(guest_address, start_address) = generate_guest_start_address(
+			if_v1,
+			true,
+			object_mem_size,
+			object_start_addr.into(),
+			mem_size,
+		);
+		assert_eq!(guest_address, RAM_START);
+		assert_eq!(start_address.as_u64(), object_start_addr);
+		// Note that this is a bit brittle and implicitly relies on RAM_START.
+		assert_eq!(start_address, guest_address.add(0x0002_0000usize));
+		assert!(start_address.as_u64() <= V1_MAX_ADDR);
+
+		/* v2 */
+
+		// v2: No ASLR, relocatable
+		(guest_address, start_address) = generate_guest_start_address(
+			if_v2,
+			false,
+			object_mem_size,
+			object_no_start_addr,
+			mem_size,
+		);
+		assert_eq!(guest_address.as_u64(), 0x0001_0000_0000u64);
+		assert_eq!(start_address, guest_address.add(KERNEL_OFFSET));
+		#[cfg(target_arch = "x86_64")]
+		assert!(start_address.as_u64() >= V1_MAX_ADDR);
+
+		// v2: ASLR, relocatable
+		(guest_address, start_address) = generate_guest_start_address(
+			if_v2,
+			true,
+			object_mem_size,
+			object_no_start_addr,
+			mem_size,
+		);
+		assert_eq!(start_address, guest_address.add(KERNEL_OFFSET));
+		#[cfg(target_arch = "x86_64")]
+		assert!(start_address.as_u64() >= V1_MAX_ADDR);
+
+		// v2: Use entire memory available
+		//
+		// (This effectively renders ASLR worthless, yet it is great for testing,
+		//  underlying arithmetic operations for potential regressions without
+		//  exclusively relying on randomness!)
+		(guest_address, start_address) = generate_guest_start_address(
+			if_v2,
+			true,
+			object_mem_size,
+			object_no_start_addr,
+			// Highest address, minus everything that is subtracted from it in the function.
+			0x0010_0000_0000 - object_mem_size - KERNEL_OFFSET as usize - 0x0001_0000_0000,
+		);
+		assert_eq!(guest_address.as_u64(), 0x0001_0000_0000);
+		assert_eq!(start_address, guest_address.add(KERNEL_OFFSET));
+		#[cfg(target_arch = "x86_64")]
+		assert!(start_address.as_u64() >= V1_MAX_ADDR);
+	}
 }
