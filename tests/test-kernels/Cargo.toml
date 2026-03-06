@@ -5,8 +5,9 @@ authors = ["The Hermit Project Developers"]
 edition = "2024"
 publish = false
 
-[target.'cfg(target_os = "hermit")'.dependencies]
-hermit = "0.12"
+[target.'cfg(target_os = "hermit")'.dependencies.hermit]
+git = "https://github.com/hermit-os/hermit-rs.git"
+tag = "hermit-0.13.1"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = { version = "0.15", default-features = false, features = [
