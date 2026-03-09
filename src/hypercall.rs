@@ -399,19 +399,25 @@ fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap)
 
 /// Handles an close syscall by closing the file on the host.
 fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
-	sysclose.ret = if file_map.fdmap.is_fd_present(GuestFd(sysclose.fd)) {
-		match file_map.fdmap.remove(GuestFd(sysclose.fd)) {
-			Some(FdData::Raw(fd)) => {
-				if unsafe { libc::close(fd) } < 0 {
-					-translate_last_errno().unwrap_or(1)
-				} else {
-					0
-				}
-			}
-			// ignore other closures (fdmap's remove already handles stdio)
-			_ => 0,
+	let gfd = GuestFd(sysclose.fd);
+	debug!(
+		"Guest tries to close fd {gfd} from fdmap {:?}",
+		file_map.fdmap
+	);
+	sysclose.ret = if gfd.is_standard() {
+		// ignore stdio closures
+		warn!("Guest tried to close stdio fd: {gfd}");
+		0
+	} else if let Some(fddata) = file_map.fdmap.remove(gfd) {
+		if let FdData::Raw(fd) = fddata
+			&& unsafe { libc::close(fd) } < 0
+		{
+			-translate_last_errno().unwrap_or(1)
+		} else {
+			0
 		}
 	} else {
+		warn!("Guest tried to close unknown fd: {gfd}");
 		-EBADF
 	};
 }

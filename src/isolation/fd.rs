@@ -32,7 +32,7 @@ impl From<&u32> for GuestFd {
 }
 
 impl GuestFd {
-	fn is_standard(self) -> bool {
+	pub(crate) fn is_standard(self) -> bool {
 		self.0 < 3
 	}
 
@@ -133,17 +133,6 @@ impl UhyveFileDescriptorLayer {
 
 	pub fn get_mut(&mut self, fd: GuestFd) -> Option<&mut FdData> {
 		self.fds.get_mut(&fd.get())
-	}
-
-	/// Checks whether an fd exists in this structure, i.e. whether the guest
-	/// should be able to use the fd, as it has been previously opened by the
-	/// guest (and not discarded). Standard streams (file descriptors 0, 1, 2)
-	//// are always considered to be present and return `true`.
-	///
-	/// * `fd` - File descriptor of to-be-operated file.
-	pub fn is_fd_present(&self, fd: GuestFd) -> bool {
-		debug!("Check if {fd} in fdset: {self}");
-		self.fds.contains_key(&fd.get())
 	}
 }
 
