@@ -670,10 +670,10 @@ fn copy_argv(
 	}
 
 	// Copy the application arguments into the vm memory
-	for (counter, argument) in argv.iter().enumerate() {
+	for (argument, &arg_dest_addr) in argv.iter().zip(arg_addrs.iter()) {
 		let len = argument.len();
 		let arg_dest = unsafe {
-			mem.slice_at_mut(arg_addrs[counter], len + 1)
+			mem.slice_at_mut(arg_dest_addr, len + 1)
 				.expect("Systemcall parameters for Cmdval are invalid")
 		};
 		arg_dest[0..len].copy_from_slice(argument.as_bytes());
@@ -704,10 +704,10 @@ fn copy_env(env: &EnvVars, syscmdval: &v1::parameters::CmdvalParams, mem: &MmapM
 	let env_addrs = unsafe { std::slice::from_raw_parts(envp, env.len()) };
 
 	// Copy the environment variables into the vm memory
-	for (counter, (key, value)) in env.iter().enumerate().take(MAX_ARGC_ENVC) {
+	for ((key, value), &env_dest_addr) in env.iter().take(MAX_ARGC_ENVC).zip(env_addrs.iter()) {
 		let len = key.len() + value.len() + 1;
 		let env_dest = unsafe {
-			mem.slice_at_mut(env_addrs[counter], len + 1)
+			mem.slice_at_mut(env_dest_addr, len + 1)
 				.expect("Systemcall parameters for Cmdval are invalid")
 		};
 		//write_env_into_mem(env_dest, key.as_bytes(), value.as_bytes());

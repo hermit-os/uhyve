@@ -325,9 +325,7 @@ impl PciDevice for VirtioNetPciDevice {
 	}
 
 	fn handle_write(&mut self, address: u32, dest: &[u8]) {
-		for (i, var) in dest.iter().enumerate() {
-			self.registers[(address as usize) + i] = *var;
-		}
+		self.registers[address as usize..][..dest.len()].copy_from_slice(dest);
 	}
 }
 
