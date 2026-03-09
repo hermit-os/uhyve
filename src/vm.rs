@@ -25,13 +25,13 @@ use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
 
 use crate::{
-	HypervisorError, V1_ADDR_RANGE, V2_ADDR_RANGE,
+	HypervisorError, PAGE_SIZE, V1_ADDR_RANGE, V2_ADDR_RANGE,
 	fdt::Fdt,
 	isolation::filemap::{UhyveFileMap, UhyveMapLeaf},
 	mem::MmapMemory,
 	net::NetworkBackend,
 	os::KickSignal,
-	params::{EnvVars, NetworkMode, Params},
+	params::{EnvVars, HermitImageMode, NetworkMode, Params},
 	parking::Parker,
 	serial::{Destination, UhyveSerial},
 	stats::{CpuStats, VmStats},
@@ -227,12 +227,14 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 			params.io_mode,
 		);
 
+		let mut hermit_image = None;
+
 		// `kernel_data` might be an Hermit image
 		let elf = match detect_format(&kernel_data[..]) {
 			None => return Err(HypervisorError::InvalidKernelPath(kernel_path.clone())),
 			Some(Format::Elf) => kernel_data,
 			Some(Format::Gzip) => {
-				{
+				let buf_decompressed = {
 					use io::Read;
 
 					// decompress image
@@ -240,27 +242,67 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 					flate2::bufread::GzDecoder::new(&kernel_data[..])
 						.read_to_end(&mut buf_decompressed)?;
 					drop(kernel_data);
-
-					// insert Hermit image tree into file map
-					file_mapping.add_hermit_image(&buf_decompressed[..])?;
-				}
-
-				let config_data = if let Some(UhyveMapLeaf::Virtual(data)) =
-					file_mapping.get_host_path(&("/".to_string() + config::Config::DEFAULT_PATH))
-				{
-					data
-				} else {
-					return Err(HypervisorError::HermitImageConfigNotFound);
+					buf_decompressed
 				};
 
-				let config: config::Config<'_> = toml::from_slice(&config_data[..])?;
+				let keep_config_data;
+				let keep_kernel_data;
+
+				let handle = match params.hermit_image_mode {
+					HermitImageMode::External => {
+						// insert Hermit image tree into file map
+						file_mapping.add_hermit_image(&buf_decompressed[..])?;
+						drop(buf_decompressed);
+
+						let config_data = if let Some(UhyveMapLeaf::Virtual(data)) = file_mapping
+							.get_host_path(&("/".to_string() + config::Config::DEFAULT_PATH))
+						{
+							keep_config_data = data;
+							&keep_config_data[..]
+						} else {
+							return Err(HypervisorError::HermitImageConfigNotFound);
+						};
+
+						let konfig: config::Config<'_> = toml::from_slice(config_data)?;
+
+						// .kernel
+						let inner_kernel_path = match &konfig {
+							config::Config::V1 { kernel, .. } => kernel,
+						};
+						let raw_kernel = if let Some(UhyveMapLeaf::Virtual(data)) =
+							file_mapping.get_host_path(inner_kernel_path)
+						{
+							keep_kernel_data = data;
+							&keep_kernel_data[..]
+						} else {
+							error!("Unable to find kernel in Hermit image");
+							return Err(HypervisorError::InvalidKernelPath(kernel_path.clone()));
+						};
+
+						config::ConfigHandle {
+							config: konfig,
+							raw_kernel,
+						}
+					}
+					HermitImageMode::Internal => {
+						match config::parse_tar(hermit_image.insert(buf_decompressed)) {
+							Ok(handle) => handle,
+							Err(e) => {
+								error!("Error during Hermit image parsing: {e}");
+								return Err(HypervisorError::InvalidKernelPath(
+									kernel_path.clone(),
+								));
+							}
+						}
+					}
+				};
 
 				// handle Hermit image configuration
-				match config {
+				match handle.config {
 					config::Config::V1 {
 						mut input,
 						requirements,
-						kernel,
+						kernel: _,
 					} => {
 						// .input
 						if params.kernel_args.is_empty() {
@@ -317,18 +359,10 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 								wanted: requirements.cpus,
 							});
 						}
-
-						// .kernel
-						if let Some(UhyveMapLeaf::Virtual(data)) =
-							file_mapping.get_host_path(&kernel)
-						{
-							data.to_vec()
-						} else {
-							error!("Unable to find kernel in Hermit image");
-							return Err(HypervisorError::InvalidKernelPath(kernel_path.clone()));
-						}
 					}
 				}
+
+				handle.raw_kernel.to_vec()
 			}
 		};
 
@@ -406,6 +440,13 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 			&params.trace_dir,
 		);
 
+		assert!(
+			kernel_address.as_u64() > KERNEL_STACK_SIZE,
+			"there should be enough space for the boot stack before the kernel start address",
+		);
+		let stack_address = kernel_address - KERNEL_STACK_SIZE;
+		debug!("Stack starts at {stack_address:#x}");
+
 		let (
 			LoadedKernel {
 				load_info,
@@ -415,12 +456,15 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 		) = load_kernel_to_mem(&object, &mut mem, kernel_address - guest_address)
 			.expect("Unable to load Kernel {kernel_path}");
 
-		assert!(
-			kernel_address.as_u64() > KERNEL_STACK_SIZE,
-			"there should be enough space for the boot stack before the kernel start address",
-		);
-		let stack_address = kernel_address - KERNEL_STACK_SIZE;
-		debug!("Stack starts at {stack_address:#x}");
+		// Allocate memory for hermit image
+		let hermit_image = hermit_image.map(|hermit_image| {
+			load_hermit_image_to_mem(
+				&hermit_image[..],
+				&mut mem,
+				(kernel_end_address - guest_address).align_up(PAGE_SIZE as u64),
+			)
+			.expect("Unable to load Hermit image {kernel_path}")
+		});
 
 		let kernel_info = Arc::new(KernelInfo {
 			entry_point: entry_point.into(),
@@ -490,7 +534,13 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 			}
 		});
 
-		write_fdt_into_mem(&peripherals.mem, &kernel_info.params, freq, mounts);
+		write_fdt_into_mem(
+			&peripherals.mem,
+			&kernel_info.params,
+			hermit_image.clone(),
+			freq,
+			mounts,
+		);
 		write_boot_info_to_mem(
 			&peripherals.mem,
 			load_info,
@@ -513,7 +563,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 		init_guest_mem(
 			unsafe { peripherals.mem.as_slice_mut() }, // slice only lives during this fn call
 			guest_address,
-			kernel_end_address - guest_address,
+			hermit_image.map(|i| i.end).unwrap_or(kernel_end_address) - guest_address,
 			legacy_mapping,
 		);
 		trace!("VM initialization complete");
@@ -673,6 +723,7 @@ fn init_guest_mem(
 fn write_fdt_into_mem(
 	mem: &MmapMemory,
 	params: &Params,
+	hermit_image: Option<core::ops::Range<GuestPhysAddr>>,
 	cpu_freq: Option<NonZero<u32>>,
 	mounts: Vec<String>,
 ) {
@@ -684,7 +735,7 @@ fn write_fdt_into_mem(
 		.take_while(|arg| *arg != "--")
 		.count();
 
-	let mut fdt = Fdt::new()
+	let mut fdt = Fdt::new(hermit_image)
 		.unwrap()
 		.memory(mem.address_range())
 		.unwrap()
@@ -774,6 +825,52 @@ fn load_kernel_to_mem(
 		),
 		kernel_end_address,
 	))
+}
+
+/// Loads the `hermit_image` into `mem`. `relative_offset` is the start address the image relative to `mem`.
+/// Returns the memory range of the image in terms of guest addresses.
+fn load_hermit_image_to_mem(
+	hermit_image: &[u8],
+	mem: &mut MmapMemory,
+	relative_offset: u64,
+) -> Option<core::ops::Range<GuestPhysAddr>> {
+	assert!(!hermit_image.is_empty());
+
+	let aligned_image_len = hermit_image.len().align_up(PAGE_SIZE);
+	let image_start_address = mem.guest_addr() + relative_offset;
+	let image_end_address = image_start_address + aligned_image_len as u64;
+
+	if image_end_address > mem.guest_addr() + mem.size() {
+		return None;
+	}
+
+	// TODO: mark that memory in the memory handling as read-only, such that
+	// the hypervisor can more-or-less gracefully shutdown/error in case of
+	// errornous write access to a read-only section.
+
+	// Safety: Slice only lives during the rest of this function invocation, so no aliasing happens
+	let mem_slice =
+		unsafe { &mut mem.as_slice_mut()[relative_offset as usize..][..aligned_image_len] };
+	mem_slice[..hermit_image.len()].copy_from_slice(hermit_image);
+	mem_slice[hermit_image.len()..].fill(0);
+	debug!(
+		"Hermit image: start={relative_offset:#x}, length={:#x}",
+		hermit_image.len()
+	);
+	// Safety: the length supplied matches `mem_slice.len()` and the length is aligned to the page size.
+	if unsafe {
+		libc::mprotect(
+			&mut mem_slice[0] as *mut u8 as *mut libc::c_void,
+			aligned_image_len,
+			libc::PROT_READ | libc::PROT_EXEC,
+		)
+	} == -1
+	{
+		let e = std::io::Error::last_os_error();
+		warn!("Hermit image mprotect(2) failed: {e}");
+	}
+
+	Some(image_start_address..image_end_address)
 }
 
 #[cfg(test)]

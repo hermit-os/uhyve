@@ -5,6 +5,7 @@ use std::{fmt::Write, ops::Range};
 use uhyve_interface::GuestPhysAddr;
 use vm_fdt::{FdtWriter, FdtWriterNode, FdtWriterResult};
 
+use crate::PAGE_SIZE;
 #[cfg(target_arch = "aarch64")]
 use crate::{
 	arch::{
@@ -17,28 +18,39 @@ use crate::{
 pub struct Fdt {
 	writer: FdtWriter,
 	root_node: FdtWriterNode,
+	hermit_image: Option<(u64, u64)>,
 	kernel_args: String,
 	app_args: String,
 }
 
 impl Fdt {
 	/// Creates a new FDT builder.
-	pub fn new() -> FdtWriterResult<Self> {
-		let mut writer = FdtWriter::new()?;
+	pub fn new(hermit_image: Option<core::ops::Range<GuestPhysAddr>>) -> FdtWriterResult<Self> {
+		let mut mem_reserved = Vec::new();
+
+		let hermit_image = if let Some(hermit_image) = hermit_image.clone() {
+			let start = hermit_image.start.as_u64();
+			let length = hermit_image.end.as_u64() - start;
+			assert_eq!(length % PAGE_SIZE as u64, 0);
+			mem_reserved.push(vm_fdt::FdtReserveEntry::new(start, length)?);
+			Some((start, length))
+		} else {
+			None
+		};
+
+		let mut writer = FdtWriter::new_with_mem_reserv(&mem_reserved[..])?;
 
 		let root_node = writer.begin_node("")?;
 		writer.property_string("compatible", "hermit,uhyve")?;
 		writer.property_u32("#address-cells", 0x2)?;
 		writer.property_u32("#size-cells", 0x2)?;
 
-		let kernel_args = String::new();
-		let app_args = String::new();
-
 		Ok(Self {
 			writer,
 			root_node,
-			kernel_args,
-			app_args,
+			hermit_image,
+			kernel_args: String::new(),
+			app_args: String::new(),
 		})
 	}
 
@@ -54,8 +66,13 @@ impl Fdt {
 
 		let chosen_node = self.writer.begin_node("chosen")?;
 		self.writer.property_string("bootargs", &bootargs)?;
-		self.writer.end_node(chosen_node)?;
 
+		if let Some((hermit_image_start, hermit_image_length)) = self.hermit_image {
+			self.writer
+				.property_array_u64("image_reg", &[hermit_image_start, hermit_image_length])?;
+		}
+
+		self.writer.end_node(chosen_node)?;
 		self.writer.end_node(self.root_node)?;
 
 		self.writer.finish()

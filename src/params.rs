@@ -54,6 +54,9 @@ pub struct Params {
 	/// Path to create temporary directory on
 	pub tempdir: Option<PathBuf>,
 
+	/// In case the given kernel is an Hermit image, how it should be forwarded to the (contained) kernel.
+	pub hermit_image_mode: HermitImageMode,
+
 	/// Level of file isolation to be enforced
 	#[cfg(target_os = "linux")]
 	pub file_isolation: FileSandboxMode,
@@ -98,6 +101,7 @@ impl Default for Params {
 			gdb_port: Default::default(),
 			file_mapping: Default::default(),
 			tempdir: Default::default(),
+			hermit_image_mode: HermitImageMode::default(),
 			#[cfg(target_os = "linux")]
 			file_isolation: FileSandboxMode::default(),
 			#[cfg(target_os = "linux")]
@@ -308,7 +312,6 @@ impl TryFrom<&str> for NetworkMode {
 		netmode_try_from(netmode)
 	}
 }
-
 fn netmode_try_from<S: AsRef<str>>(netmode: S) -> Result<NetworkMode, &'static str> {
 	if netmode.as_ref() == "tap" {
 		return Ok(NetworkMode::Tap {
@@ -325,6 +328,40 @@ fn netmode_try_from<S: AsRef<str>>(netmode: S) -> Result<NetworkMode, &'static s
 			name: device.to_string(),
 		}),
 		_ => Err("invalid networking mode"),
+	}
+}
+/// Specify the way an Hermit image should be provided to the Hermit Kernel
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HermitImageMode {
+	/// Let Uhyve handle the image provision by embedding it into the file mapping
+	///
+	/// This supports all Hermit kernel versions and
+	/// not just those which have (experimental) Hermit Image support.
+	#[default]
+	External,
+
+	/// Let the Hermit kernel handle the Hermit image provision.
+	///
+	/// This should be faster on average, but requires an Hermit kernel that supports it
+	/// and reduces the effective memory of the kernel.
+	Internal,
+}
+impl fmt::Display for HermitImageMode {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		f.write_str(match self {
+			Self::External => "external",
+			Self::Internal => "internal",
+		})
+	}
+}
+impl FromStr for HermitImageMode {
+	type Err = &'static str;
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		Ok(match s.to_lowercase().as_str() {
+			"external" => Self::External,
+			"internal" => Self::Internal,
+			_ => return Err("Unknown Hermit image mode"),
+		})
 	}
 }
 
