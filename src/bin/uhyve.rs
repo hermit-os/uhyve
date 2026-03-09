@@ -12,7 +12,7 @@ use thiserror::Error;
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
-	params::{CpuCount, EnvVars, GuestMemorySize, Output, Params},
+	params::{CpuCount, EnvVars, GuestMemorySize, HermitImageMode, Output, Params},
 	vm::UhyveVm,
 };
 
@@ -117,6 +117,21 @@ struct UhyveArgs {
 	#[merge(strategy = merge::option::overwrite_none)]
 	tempdir: Option<PathBuf>,
 
+	/// Hermit image mode (external, internal)
+	///
+	/// - `external` embeds the Hermit image into the Uhyve file mapping,
+	///   which is supported by all Hermit kernels, but has a higher overhead.
+	///
+	/// - `internal` forwards the Hermit image to the kernel,
+	///   which should be faster on average,
+	///   but requires Hermit kernel support to work, which is currently experimental.
+	///
+	/// [default: external]
+	#[clap(long)]
+	#[serde(default)]
+	#[merge(strategy = merge::option::overwrite_none)]
+	hermit_image_mode: Option<String>,
+
 	/// File isolation (none, normal, strict)
 	///
 	/// - 'none' disables all file isolation features
@@ -153,7 +168,6 @@ struct UhyveArgs {
 	/// - `host=direct,sync`: Combines `host=direct` and `host=sync`. This should be the
 	///   slowest option, but may be considered the most "fair" one in benchmarking
 	///   contexts.
-
 	#[clap(long)]
 	#[serde(default)]
 	#[merge(strategy = merge::option::overwrite_none)]
@@ -430,6 +444,7 @@ impl From<Args> for Params {
 					stats,
 					file_mapping,
 					tempdir,
+					hermit_image_mode,
 					#[cfg(target_os = "linux")]
 					file_isolation,
 					#[cfg(target_os = "linux")]
@@ -483,6 +498,11 @@ impl From<Args> for Params {
 			gdb_port: None,
 			kernel_args,
 			tempdir,
+			hermit_image_mode: if let Some(hermit_image_mode) = hermit_image_mode {
+				HermitImageMode::from_str(&hermit_image_mode).unwrap()
+			} else {
+				HermitImageMode::default()
+			},
 			#[cfg(target_os = "linux")]
 			file_isolation: if let Some(file_isolation) = file_isolation {
 				FileSandboxMode::from_str(&file_isolation).unwrap()
@@ -688,6 +708,7 @@ mod tests {
 				stats: None,
 				file_mapping: vec![String::from("./host:/root/guest.txt")],
 				tempdir: None,
+				hermit_image_mode: None,
 				#[cfg(target_os = "linux")]
 				file_isolation: None,
 				#[cfg(target_os = "linux")]
@@ -727,6 +748,7 @@ mod tests {
 			output = 'test.txt'
 			stats = true
 			tempdir = '/tmp/'
+			hermit_image_mode = 'internal'
 			file_isolation = 'strict'
 			io_mode = 'direct'
 			gdb_port = 1
@@ -755,6 +777,7 @@ mod tests {
 				stats: Some(true),
 				file_mapping: vec![String::from("./host:/root/guest.txt")],
 				tempdir: Some(PathBuf::from("/tmp/")),
+				hermit_image_mode: Some(String::from("internal")),
 				#[cfg(target_os = "linux")]
 				file_isolation: Some(String::from("strict")),
 				#[cfg(target_os = "linux")]
