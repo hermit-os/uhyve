@@ -3,7 +3,8 @@ mod common;
 use std::thread;
 
 use common::{
-	BuildMode, build_hermit_bin, check_result, env_logger_build, run_vm_with_custom_memory,
+	BuildMode, build_hermit_bin, check_result_and_print_output, env_logger_build,
+	run_vm_with_custom_memory,
 };
 use uhyvelib::vm::VmResult;
 
@@ -35,8 +36,7 @@ fn memory_test() {
 		println!("MiB: {mem_size}, success: {success_expected}");
 		if success_expected {
 			let res = vm.join().expect("VM panicked for {mem_size}MiB");
-			println!("Code for {mem_size}MiB: {}", res.code);
-			check_result(&res);
+			check_result_and_print_output(&res, 0);
 		} else {
 			vm.join().expect_err("VM did not panic for {mem_size}MiB.");
 		}

@@ -9,8 +9,8 @@ use byte_unit::{Byte, Unit};
 #[cfg(target_os = "linux")]
 use common::strict_sandbox;
 use common::{
-	BuildMode, build_hermit_bin, check_result, env_logger_build, get_fs_fixture_path,
-	remove_file_if_exists, run_vm_in_thread,
+	BuildMode, build_hermit_bin, check_result_and_print_output, env_logger_build,
+	get_fs_fixture_path, remove_file_if_exists, run_vm_in_thread,
 };
 use rand::{RngExt, distr::Alphanumeric};
 use tempfile::TempDir;
@@ -166,7 +166,7 @@ fn create_mapped_parent_nonpresent_file() {
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
 	remove_file_if_exists(&host_file_path);
-	check_result(&res);
+	check_result_and_print_output(&res, 0);
 }
 
 /// Checks whether guests can create, then use files on the host.
@@ -196,7 +196,7 @@ fn create_write_mapped_nonpresent_file() {
 	let res = run_vm_in_thread(bin_path, params);
 	verify_file_equals(&host_file_path, "Hello, world!");
 	remove_file_if_exists(&host_file_path);
-	check_result(&res);
+	check_result_and_print_output(&res, 0);
 }
 
 /// Checks UhyveFileMap temporary directory functionality.
@@ -216,7 +216,7 @@ fn create_write_unmapped_nonpresent_file() {
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
-	check_result(&res);
+	check_result_and_print_output(&res, 0);
 }
 
 /// Guest attempts to remove file created by host.
@@ -251,7 +251,7 @@ fn remove_mapped_present_file() {
 	assert!(host_file_path.exists());
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
-	check_result(&res);
+	check_result_and_print_output(&res, 0);
 	assert!(!host_file_path.exists());
 }
 
@@ -288,7 +288,7 @@ fn remove_mapped_parent_present_file() {
 	assert!(host_file_path.exists());
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
-	check_result(&res);
+	check_result_and_print_output(&res, 0);
 	assert!(!host_file_path.exists());
 }
 
@@ -321,7 +321,7 @@ fn fd_open_remove_close() {
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
-	check_result(&res);
+	check_result_and_print_output(&res, 0);
 }
 
 /// fd sandbox test: Unlinks a file with a still-open file descriptor.
@@ -391,7 +391,7 @@ fn fd_write_to_fd() {
 	params.output = uhyvelib::params::Output::Buffer;
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
-	check_result(&res);
+	check_result_and_print_output(&res, 0);
 	// The file descriptors are standard streams.
 	assert!(
 		res.output
@@ -445,7 +445,7 @@ fn mounts_test() {
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
-	check_result(&res);
+	check_result_and_print_output(&res, 0);
 }
 
 #[test]
@@ -458,5 +458,5 @@ fn lseek_test() {
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
-	check_result(&res);
+	check_result_and_print_output(&res, 0);
 }

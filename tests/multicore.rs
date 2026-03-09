@@ -3,7 +3,7 @@ mod common;
 use std::{thread::sleep, time::Duration};
 
 use byte_unit::{Byte, Unit};
-use common::{BuildMode, build_hermit_bin, check_result, env_logger_build};
+use common::{BuildMode, build_hermit_bin, check_result_and_print_output, env_logger_build};
 use regex::Regex;
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
@@ -43,7 +43,7 @@ fn multicore_test() {
 		};
 			let vm = UhyveVm::new(bin_path.clone(), params).unwrap();
 			let res = vm.run(None);
-			check_result(&res);
+			check_result_and_print_output(&res, 0);
 
 			let outp = res.output.unwrap();
 			let caps = re
