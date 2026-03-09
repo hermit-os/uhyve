@@ -56,14 +56,14 @@ fn test_split_guest_and_host_path() {
 		(PathBuf::from("guest_string.txt"), fixture_path),
 	];
 
-	for (i, host_and_guest_string) in host_guest_strings
+	for (host_and_guest_string, expected_result) in host_guest_strings
 		.into_iter()
 		.map(split_guest_and_host_path)
-		.enumerate()
+		.zip(results.into_iter())
 	{
 		assert_eq!(
 			host_and_guest_string.expect("Result is an error!"),
-			results[i]
+			expected_result,
 		);
 	}
 }

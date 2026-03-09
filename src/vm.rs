@@ -658,10 +658,8 @@ fn write_fdt_into_mem(
 	let sep = params
 		.kernel_args
 		.iter()
-		.enumerate()
-		.find(|(_i, arg)| *arg == "--")
-		.map(|(i, _arg)| i)
-		.unwrap_or_else(|| params.kernel_args.len());
+		.take_while(|arg| *arg != "--")
+		.count();
 
 	let mut fdt = Fdt::new()
 		.unwrap()
