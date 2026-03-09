@@ -3,7 +3,7 @@ mod common;
 use std::collections::HashMap;
 
 use byte_unit::{Byte, Unit};
-use common::{BuildMode, build_hermit_bin, check_result};
+use common::{BuildMode, build_hermit_bin, check_result_and_print_output};
 use uhyvelib::{
 	params::{EnvVars, Output, Params},
 	vm::UhyveVm,
@@ -33,8 +33,7 @@ fn selective_env_test() {
 	};
 	let vm = UhyveVm::new(bin_path, params).unwrap();
 	let res = vm.run(None);
-	check_result(&res);
-	println!("{:?}", res.output.as_ref().unwrap());
+	check_result_and_print_output(&res, 0);
 	for (key, value) in env_vars.iter() {
 		assert!(
 			res.output
@@ -63,8 +62,7 @@ fn host_env_test() {
 	};
 	let vm = UhyveVm::new(bin_path, params).unwrap();
 	let res = vm.run(None);
-	check_result(&res);
-	println!("{:?}", res.output.as_ref().unwrap());
+	check_result_and_print_output(&res, 0);
 
 	let common_env_vars = ["PWD", "CARGO_MANIFEST_DIR"];
 	for env in common_env_vars.iter() {
