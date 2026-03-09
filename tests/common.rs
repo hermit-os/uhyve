@@ -78,11 +78,18 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>, mode: BuildMode) -> PathBuf {
 	[&kernel_src_path, p, Path::new(kernel)].iter().collect()
 }
 
+/// Internal function for running VMs using a specific Params object.
+/// Useful e.g. when we only need to modify one parameter but do not
+/// want to avoid boilerplate in the actual integration test definitions.
+fn run_vm(kernel_path: PathBuf, params: Params) -> VmResult {
+	env_logger::try_init().ok();
+	println!("Launching kernel {}", kernel_path.display());
+	UhyveVm::new(kernel_path, params).unwrap().run(None)
+}
+
 /// Small wrapper around [`Uhyve::run`] with default parameters for a small and
 /// simple Uhyve vm
 pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
-	env_logger::try_init().ok();
-	println!("Launching kernel {}", kernel_path.display());
 	let params = Params {
 		cpu_count: 2.try_into().unwrap(),
 		memory_size: Byte::from_u64_with_unit(128, Unit::MiB)
@@ -96,7 +103,29 @@ pub fn run_simple_vm(kernel_path: PathBuf) -> VmResult {
 		..Default::default()
 	};
 
-	UhyveVm::new(kernel_path, params).unwrap().run(None)
+	run_vm(kernel_path, params)
+}
+
+/// Small wrapper around [`Uhyve::run`] with default parameters, but the
+/// memory size used is modifiable.
+///
+/// Used in memory tests. Landlock is disabled because that is covered by tests
+/// utilizing other functions.
+pub fn run_vm_with_custom_memory(kernel_path: PathBuf, memory_size: u64) -> VmResult {
+	let params = Params {
+		cpu_count: 2.try_into().unwrap(),
+		memory_size: Byte::from_u64_with_unit(memory_size, Unit::MiB)
+			.unwrap()
+			.try_into()
+			.unwrap(),
+		output: Output::Buffer,
+		stats: true,
+		#[cfg(target_os = "linux")]
+		file_isolation: FileSandboxMode::None,
+		..Default::default()
+	};
+
+	run_vm(kernel_path, params)
 }
 
 pub fn remove_file_if_exists(path: &PathBuf) {
