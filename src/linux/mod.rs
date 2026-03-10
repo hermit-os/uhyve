@@ -131,6 +131,9 @@ impl UhyveVm<KvmVm> {
 			.run_state_machine(&mut freewheel)
 			.expect("GDB run_state_machine initialization failed");
 
+		use gdbstub::target::ext::base::multithread::MultiThreadBase;
+		freewheel.list_active_threads(&mut |tid| trace!("Active thread: {tid:?}"));
+
 		let code = loop {
 			gdb = match gdb {
 				GdbStubStateMachine::Idle(mut gdb) => {

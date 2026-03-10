@@ -193,6 +193,7 @@ impl GdbUhyve {
 			.enumerate()
 			.map(|(vcpu_id, vcpu)| (vcpu.tid, vcpu_id))
 			.collect();
+		trace!("tid2vcpu = {tid_to_vcpu:?}");
 
 		let ret = Freewheel {
 			breakpoints,
@@ -211,6 +212,7 @@ impl GdbUhyve {
 
 impl Freewheel {
 	pub fn tid_to_vcpuw(&self, tid: Tid) -> &VcpuWrapper {
+		trace!("tid_to_vcpuw({tid:?})");
 		&self.vcpus[self.tid_to_vcpu[&tid]]
 	}
 
