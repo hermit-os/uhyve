@@ -160,7 +160,7 @@ impl GdbUhyve {
 
 					loop {
 						shared
-							.apply_current_guest_debug(&*breakpoints.read().unwrap())
+							.apply_current_guest_debug(&(*breakpoints).read().unwrap())
 							.expect("GDB target error");
 						let stop_reason = match shared
 							.vcpu
@@ -217,7 +217,7 @@ impl GdbUhyve {
 			.collect();
 		trace!("tid2vcpu = {tid_to_vcpu:?}");
 
-		let ret = Freewheel {
+		Freewheel {
 			breakpoints,
 			peripherals,
 			kernel_info,
@@ -226,9 +226,7 @@ impl GdbUhyve {
 			tid_to_vcpu,
 
 			resume_cycle: None,
-		};
-
-		ret
+		}
 	}
 }
 
