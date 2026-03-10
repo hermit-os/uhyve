@@ -125,12 +125,27 @@ impl UhyveVm<KvmVm> {
 
 		let connection =
 			wait_for_gdb_connection(self.kernel_info.params.gdb_port.unwrap()).unwrap();
+		let mut conn_clone = connection.try_clone().unwrap();
 		let debugger = GdbStub::new(connection);
 		let mut debuggable_vcpu = GdbUhyve::new(self);
 
 		let mut gdb = debugger
 			.run_state_machine(&mut debuggable_vcpu)
 			.expect("GDB run_state_machine initialization failed");
+
+		let parent_thread = PthreadWrapper(pthread_self());
+		thread::spawn(move || {
+			loop {
+				// Block on TCP stream without consuming any data.
+				std::io::Read::read(&mut conn_clone, &mut []).unwrap();
+
+				// Kick VCPU out of KVM_RUN
+				KickSignal::pthread_kill(parent_thread.0).unwrap();
+
+				// Wait for all inputs to be processed and for VCPU to be running again
+				thread::sleep(Duration::from_millis(20));
+			}
+		});
 
 		let code = loop {
 			gdb = match gdb {
@@ -167,24 +182,6 @@ impl UhyveVm<KvmVm> {
 
 				GdbStubStateMachine::Running(mut gdb) => {
 					// block waiting for the target to return a stop reason
-					static SPAWN_THREAD: std::sync::Once = std::sync::Once::new();
-					SPAWN_THREAD.call_once(|| {
-						let parent_thread = PthreadWrapper(pthread_self());
-						let mut conn_clone = gdb.borrow_conn().try_clone().unwrap();
-						thread::spawn(move || {
-							loop {
-								// Block on TCP stream without consuming any data.
-								std::io::Read::read(&mut conn_clone, &mut []).unwrap();
-
-								// Kick VCPU out of KVM_RUN
-								KickSignal::pthread_kill(parent_thread.0).unwrap();
-
-								// Wait for all inputs to be processed and for VCPU to be running again
-								thread::sleep(Duration::from_millis(20));
-							}
-						});
-					});
-
 					match debuggable_vcpu.run().expect("GDB target error") {
 						SingleThreadStopReason::Signal(Signal::SIGINT) => {
 							let conn = gdb.borrow_conn();
