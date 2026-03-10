@@ -1930,6 +1930,7 @@ dependencies = [
  "core_affinity",
  "criterion",
  "env_logger",
+ "event-listener",
  "flate2",
  "futures-lite",
  "gdbstub",

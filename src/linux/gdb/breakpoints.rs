@@ -3,7 +3,7 @@ use std::collections::{HashMap, hash_map::Entry};
 use gdbstub::target::{self, TargetResult, ext::breakpoints::WatchKind};
 use uhyve_interface::GuestVirtAddr;
 
-use super::GdbUhyve;
+use super::Freewheel;
 use crate::arch::x86_64::{registers, virt_to_phys};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SwBreakpoint {
@@ -21,7 +21,7 @@ impl SwBreakpoint {
 
 pub type SwBreakpoints = HashMap<SwBreakpoint, Vec<u8>>;
 
-impl target::ext::breakpoints::Breakpoints for GdbUhyve {
+impl target::ext::breakpoints::Breakpoints for Freewheel {
 	#[inline(always)]
 	fn support_sw_breakpoint(
 		&mut self,
@@ -44,18 +44,23 @@ impl target::ext::breakpoints::Breakpoints for GdbUhyve {
 	}
 }
 
-impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
+impl target::ext::breakpoints::SwBreakpoint for Freewheel {
 	fn add_sw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
 		let sw_breakpoint = SwBreakpoint::new(addr, kind);
 
-		if let Entry::Vacant(entry) = self.sw_breakpoints.entry(sw_breakpoint) {
+		if let Entry::Vacant(entry) = self.breakpoints.write().unwrap().soft.entry(sw_breakpoint) {
 			// Safety: mem is not altered during the lifetime of `instructions`
 			let instructions = unsafe {
-				self.vm.peripherals.mem.slice_at_mut(
+				self.peripherals.mem.slice_at_mut(
 					virt_to_phys(
 						GuestVirtAddr::new(addr),
-						&self.vm.peripherals.mem,
-						self.vm.vcpus[0].get_root_pagetable(),
+						&self.peripherals.mem,
+						self.vcpus[0]
+							.shared
+							.vcpu
+							.read()
+							.unwrap()
+							.get_root_pagetable(),
 					)
 					.map_err(|_err| ())?,
 					kind,
@@ -73,36 +78,55 @@ impl target::ext::breakpoints::SwBreakpoint for GdbUhyve {
 	fn remove_sw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
 		let sw_breakpoint = SwBreakpoint::new(addr, kind);
 
-		if let Entry::Occupied(entry) = self.sw_breakpoints.entry(sw_breakpoint) {
-			// Safety: mem is not altered during the lifetime of `instructions`
-			let instructions = unsafe {
-				self.vm.peripherals.mem.slice_at_mut(
-					virt_to_phys(
-						GuestVirtAddr::new(addr),
-						&self.vm.peripherals.mem,
-						self.vm.vcpus[0].get_root_pagetable(),
+		Ok(
+			if let Some(bp) = self
+				.breakpoints
+				.write()
+				.unwrap()
+				.soft
+				.remove(&sw_breakpoint)
+			{
+				// Safety: mem is not altered during the lifetime of `instructions`
+				let instructions = unsafe {
+					self.peripherals.mem.slice_at_mut(
+						virt_to_phys(
+							GuestVirtAddr::new(addr),
+							&self.peripherals.mem,
+							self.vcpus[0]
+								.shared
+								.vcpu
+								.read()
+								.unwrap()
+								.get_root_pagetable(),
+						)
+						.map_err(|_err| ())?,
+						kind,
 					)
-					.map_err(|_err| ())?,
-					kind,
-				)
-			}
-			.unwrap();
-			instructions.copy_from_slice(&entry.remove());
-			Ok(true)
-		} else {
-			Ok(false)
-		}
+				}
+				.unwrap();
+				instructions.copy_from_slice(&bp);
+				true
+			} else {
+				false
+			},
+		)
 	}
 }
 
-impl target::ext::breakpoints::HwBreakpoint for GdbUhyve {
+impl target::ext::breakpoints::HwBreakpoint for Freewheel {
 	fn add_hw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
 		let hw_breakpoint = match registers::debug::HwBreakpoint::new_breakpoint(addr, kind) {
 			Some(hw_breakpoint) => hw_breakpoint,
 			None => return Ok(false),
 		};
 
-		let success = self.hw_breakpoints.try_insert(hw_breakpoint).is_ok();
+		let success = self
+			.breakpoints
+			.write()
+			.unwrap()
+			.hard
+			.try_insert(hw_breakpoint)
+			.is_ok();
 		Ok(success)
 	}
 
@@ -112,12 +136,18 @@ impl target::ext::breakpoints::HwBreakpoint for GdbUhyve {
 			None => return Ok(false),
 		};
 
-		let success = self.hw_breakpoints.take(&hw_breakpoint).is_some();
+		let success = self
+			.breakpoints
+			.write()
+			.unwrap()
+			.hard
+			.take(&hw_breakpoint)
+			.is_some();
 		Ok(success)
 	}
 }
 
-impl target::ext::breakpoints::HwWatchpoint for GdbUhyve {
+impl target::ext::breakpoints::HwWatchpoint for Freewheel {
 	fn add_hw_watchpoint(
 		&mut self,
 		addr: u64,
@@ -129,7 +159,13 @@ impl target::ext::breakpoints::HwWatchpoint for GdbUhyve {
 			None => return Ok(false),
 		};
 
-		let success = self.hw_breakpoints.try_insert(hw_breakpoint).is_ok();
+		let success = self
+			.breakpoints
+			.write()
+			.unwrap()
+			.hard
+			.try_insert(hw_breakpoint)
+			.is_ok();
 		Ok(success)
 	}
 
@@ -144,7 +180,13 @@ impl target::ext::breakpoints::HwWatchpoint for GdbUhyve {
 			None => return Ok(false),
 		};
 
-		let success = self.hw_breakpoints.take(&hw_breakpoint).is_some();
+		let success = self
+			.breakpoints
+			.write()
+			.unwrap()
+			.hard
+			.take(&hw_breakpoint)
+			.is_some();
 		Ok(success)
 	}
 }
