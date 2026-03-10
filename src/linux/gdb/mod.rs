@@ -119,11 +119,13 @@ impl GdbUhyve {
 		let peripherals = Arc::clone(&vm.peripherals);
 		let kernel_info = Arc::clone(&vm.kernel_info);
 		let breakpoints = Arc::new(RwLock::new(AllBreakpoints::new()));
+		let cpu_affinity: Option<Arc<[_]>> = cpu_affinity.map(Arc::from);
 
 		let vcpus = vm
 			.vcpus
 			.into_iter()
 			.map(|vcpu| {
+				let vcpu_id = vcpu.get_vcpu_id();
 				let vcpu = RwLock::new(vcpu);
 				let stops_s = stops_s.clone();
 				let breakpoints = Arc::clone(&breakpoints);
@@ -138,7 +140,6 @@ impl GdbUhyve {
 				let cpu_affinity = cpu_affinity.clone();
 				let join_handle = std::thread::spawn(move || {
 					let tid = NonZero::new(pthread_self().try_into().unwrap()).unwrap();
-					let vcpu_id = shared.vcpu.read().unwrap().get_vcpu_id();
 					let local_cpu_affinity = cpu_affinity
 						.as_ref()
 						.and_then(|core_ids| core_ids.get(vcpu_id).copied());

@@ -24,7 +24,6 @@ use nix::sys::pthread::Pthread;
 use crate::{
 	linux::{gdb::GdbUhyve, x86_64::kvm_cpu::KvmVm},
 	serial::Destination,
-	vcpu::VirtualCPU,
 	vm::{UhyveVm, VmResult},
 };
 
