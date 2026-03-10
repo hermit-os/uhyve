@@ -102,37 +102,21 @@ impl UhyveVm<KvmVm> {
 		}
 	}
 
-	fn run_gdb(mut self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
-		let cpu_id = 0;
-
-		let local_cpu_affinity = cpu_affinity
-			.as_ref()
-			.and_then(|core_ids| core_ids.get(cpu_id as usize).copied());
-
-		match local_cpu_affinity {
-			Some(core_id) => {
-				debug!("Trying to pin thread {} to CPU {}", cpu_id, core_id.id);
-				core_affinity::set_for_current(core_id); // This does not return an error if it fails :(
-			}
-			None => debug!("No affinity specified, not binding thread"),
-		}
-
-		self.vcpus[0]
-			.thread_local_init()
-			.expect("Unable to initialize vCPU");
-
+	fn run_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
 		let connection =
 			wait_for_gdb_connection(self.kernel_info.params.gdb_port.unwrap()).unwrap();
 		let debugger = GdbStub::new(connection);
 		// The Uhyve VCPU freewheel thread.
-		let mut freewheel = GdbUhyve::new(self).spawn_freewheel();
+		let mut freewheel = GdbUhyve::new(self).spawn_freewheel(cpu_affinity);
 
 		let mut gdb = debugger
 			.run_state_machine(&mut freewheel)
 			.expect("GDB run_state_machine initialization failed");
 
 		use gdbstub::target::ext::base::multithread::MultiThreadBase;
-		freewheel.list_active_threads(&mut |tid| trace!("Active thread: {tid:?}"));
+		freewheel
+			.list_active_threads(&mut |tid| trace!("Active thread: {tid:?}"))
+			.expect("Expecting active thread");
 
 		let code = loop {
 			gdb = match gdb {

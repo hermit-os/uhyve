@@ -12,6 +12,7 @@ use std::{
 };
 
 use async_io::block_on;
+use core_affinity::CoreId;
 use event_listener::{Event, Listener};
 use gdbstub::{
 	common::{Signal, Tid},
@@ -110,7 +111,7 @@ impl GdbUhyve {
 }
 
 impl GdbUhyve {
-	pub fn spawn_freewheel(self) -> Freewheel {
+	pub fn spawn_freewheel(self, cpu_affinity: Option<Vec<CoreId>>) -> Freewheel {
 		use std::os::unix::thread::JoinHandleExt;
 		let Self { vm } = self;
 
@@ -134,8 +135,29 @@ impl GdbUhyve {
 					vcpu,
 				});
 				let shared2 = Arc::clone(&shared);
+				let cpu_affinity = cpu_affinity.clone();
 				let join_handle = std::thread::spawn(move || {
 					let tid = NonZero::new(pthread_self().try_into().unwrap()).unwrap();
+					let vcpu_id = shared.vcpu.read().unwrap().get_vcpu_id();
+					let local_cpu_affinity = cpu_affinity
+						.as_ref()
+						.and_then(|core_ids| core_ids.get(vcpu_id).copied());
+
+					match local_cpu_affinity {
+						Some(core_id) => {
+							debug!("Trying to pin thread {} to CPU {}", vcpu_id, core_id.id);
+							core_affinity::set_for_current(core_id); // This does not return an error if it fails :(
+						}
+						None => debug!("No affinity specified, not binding thread"),
+					}
+
+					shared
+						.vcpu
+						.write()
+						.unwrap()
+						.thread_local_init()
+						.expect("Unable to initialize vCPU");
+
 					loop {
 						shared
 							.apply_current_guest_debug(&*breakpoints.read().unwrap())

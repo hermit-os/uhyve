@@ -46,7 +46,7 @@ impl VirtualizationBackendInternal for KvmVm {
 
 	fn new_cpu(
 		&self,
-		id: u32,
+		id: usize,
 		kernel_info: Arc<KernelInfo>,
 		enable_stats: bool,
 	) -> HypervisorResult<KvmCpu> {
@@ -58,7 +58,7 @@ impl VirtualizationBackendInternal for KvmVm {
 			kernel_info,
 			pci_addr: None,
 			stats: if enable_stats {
-				Some(CpuStats::new(id as usize))
+				Some(CpuStats::new(id))
 			} else {
 				None
 			},
@@ -166,7 +166,7 @@ impl VirtualizationBackend for KvmVm {
 }
 
 pub struct KvmCpu {
-	id: u32,
+	id: usize,
 	vcpu: VcpuFd,
 	peripherals: Arc<VmPeripherals>,
 	// TODO: Remove once the getenv/getargs hypercalls are removed
@@ -303,7 +303,7 @@ impl KvmCpu {
 		entry_point: GuestPhysAddr,
 		stack_address: GuestPhysAddr,
 		guest_address: GuestPhysAddr,
-		cpu_id: u32,
+		cpu_id: usize,
 	) -> Result<(), kvm_ioctls::Error> {
 		let mut sregs = self.vcpu.get_sregs()?;
 
@@ -353,7 +353,7 @@ impl KvmCpu {
 		regs.rflags = 2;
 		regs.rip = entry_point.as_u64();
 		regs.rdi = (guest_address + BOOT_INFO_OFFSET).as_u64();
-		regs.rsi = cpu_id.into();
+		regs.rsi = cpu_id.try_into().unwrap();
 		regs.rsp = stack_address.as_u64();
 
 		self.vcpu.set_regs(&regs)?;
@@ -363,6 +363,10 @@ impl KvmCpu {
 
 	fn show_segment(name: &str, seg: &kvm_segment) {
 		println!("{name}       {seg:?}");
+	}
+
+	pub(crate) fn get_vcpu_id(&self) -> usize {
+		self.id
 	}
 
 	pub(crate) fn get_vcpu(&self) -> &VcpuFd {
