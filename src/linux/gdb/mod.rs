@@ -2,6 +2,7 @@ mod breakpoints;
 mod regs;
 mod section_offsets;
 
+use async_io::block_on;
 use gdbstub::{
 	common::Signal,
 	stub::SingleThreadStopReason,
@@ -17,6 +18,7 @@ use uhyve_interface::GuestVirtAddr;
 use x86_64::registers::debug::Dr6Flags;
 
 use self::breakpoints::SwBreakpoints;
+use super::{KickSignal, PthreadWrapper};
 use crate::{
 	HypervisorError, HypervisorResult,
 	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
@@ -29,6 +31,22 @@ pub(crate) struct GdbUhyve {
 	pub(crate) vm: UhyveVm<KvmVm>,
 	hw_breakpoints: HwBreakpoints,
 	sw_breakpoints: SwBreakpoints,
+}
+
+pub(crate) struct UhyveToGdbPacket {
+	pub(crate) stop_reason: SingleThreadStopReason<u64>,
+	pub(crate) this: GdbUhyve,
+	resume: async_channel::Sender<GdbUhyve>,
+}
+
+/// This automatically handles the attached (stopped) and detached (running) states of a vCPU
+pub(crate) struct MaybeUhyveToGdbPacket(pub(crate) Option<UhyveToGdbPacket>);
+
+#[derive(Clone)]
+pub(crate) struct GdbUhyveFreewheel {
+	pub(crate) stops: async_channel::Receiver<UhyveToGdbPacket>,
+
+	pthread: PthreadWrapper,
 }
 
 impl GdbUhyve {
@@ -103,6 +121,166 @@ impl GdbUhyve {
 			VcpuStopReason::Kick => SingleThreadStopReason::Signal(Signal::SIGINT),
 		};
 		Ok(stop_reason)
+	}
+
+	pub fn spawn_freewheel(self) -> GdbUhyveFreewheel {
+		use std::os::unix::thread::JoinHandleExt;
+
+		let (stops_s, stops_r) = async_channel::unbounded();
+		let (resume_s, resume_r) = async_channel::bounded(1);
+		let packet = UhyveToGdbPacket {
+			stop_reason: SingleThreadStopReason::SwBreak(()),
+			this: self,
+			resume: resume_s,
+		};
+
+		block_on(async { stops_s.send(packet).await }).expect("unable to send info to GDB");
+
+		let join_handle = std::thread::spawn(move || {
+			let mut this = Some(block_on(async {
+				resume_r
+					.recv()
+					.await
+					.expect("unable to resume with updates from GDB")
+			}));
+
+			loop {
+				let mut this2 = match this {
+					Some(this2) => this2,
+					None => break,
+				};
+				let stop_reason = this2.run().expect("GDB target error");
+				let (resume_s, resume_r) = async_channel::bounded(1);
+				let packet = UhyveToGdbPacket {
+					stop_reason,
+					this: this2,
+					resume: resume_s,
+				};
+				this = block_on(async {
+					stops_s
+						.send(packet)
+						.await
+						.expect("unable to send info to GDB");
+					resume_r.recv().await.ok()
+				});
+			}
+		});
+
+		let ret = GdbUhyveFreewheel {
+			stops: stops_r,
+			pthread: PthreadWrapper(join_handle.as_pthread_t()),
+		};
+
+		ret
+	}
+}
+
+impl GdbUhyveFreewheel {
+	/// Kick the vCPU
+	pub fn kick(&self) {
+		KickSignal::pthread_kill(self.pthread.0).unwrap();
+	}
+}
+
+impl UhyveToGdbPacket {
+	/// Give control of the vCPU from GDB back to Uhyve
+	pub fn resume(self) {
+		let _ = block_on(self.resume.send(self.this));
+	}
+}
+
+impl Target for MaybeUhyveToGdbPacket {
+	type Arch = gdbstub_arch::x86::X86_64_SSE;
+	type Error = HypervisorError;
+
+	// --------------- IMPORTANT NOTE ---------------
+	// Always remember to annotate IDET enable methods with `inline(always)`!
+	// Without this annotation, LLVM might fail to dead-code-eliminate nested IDET
+	// implementations, resulting in unnecessary binary bloat.
+
+	#[inline(always)]
+	fn base_ops(&mut self) -> target::ext::base::BaseOps<'_, Self::Arch, Self::Error> {
+		target::ext::base::BaseOps::SingleThread(self)
+	}
+
+	#[inline(always)]
+	fn support_breakpoints(
+		&mut self,
+	) -> Option<target::ext::breakpoints::BreakpointsOps<'_, Self>> {
+		self.0.as_mut().map(|i| &mut i.this as &mut _)
+	}
+
+	#[inline(always)]
+	fn support_section_offsets(
+		&mut self,
+	) -> Option<target::ext::section_offsets::SectionOffsetsOps<'_, Self>> {
+		self.0.as_mut().map(|i| &mut i.this as &mut _)
+	}
+}
+
+impl SingleThreadBase for MaybeUhyveToGdbPacket {
+	fn read_registers(&mut self, regs: &mut X86_64CoreRegs) -> TargetResult<(), Self> {
+		if let Some(this) = &mut self.0 {
+			this.this.read_registers(regs)
+		} else {
+			Err(TargetError::NonFatal)
+		}
+	}
+
+	fn write_registers(&mut self, regs: &X86_64CoreRegs) -> TargetResult<(), Self> {
+		if let Some(this) = &mut self.0 {
+			this.this.write_registers(regs)
+		} else {
+			Err(TargetError::NonFatal)
+		}
+	}
+
+	fn read_addrs(&mut self, start_addr: u64, data: &mut [u8]) -> TargetResult<usize, Self> {
+		if let Some(this) = &mut self.0 {
+			this.this.read_addrs(start_addr, data)
+		} else {
+			Err(TargetError::NonFatal)
+		}
+	}
+
+	fn write_addrs(&mut self, start_addr: u64, data: &[u8]) -> TargetResult<(), Self> {
+		if let Some(this) = &mut self.0 {
+			this.this.write_addrs(start_addr, data)
+		} else {
+			Err(TargetError::NonFatal)
+		}
+	}
+
+	#[inline(always)]
+	fn support_resume(
+		&mut self,
+	) -> Option<target::ext::base::singlethread::SingleThreadResumeOps<'_, Self>> {
+		Some(self)
+	}
+}
+
+impl target::ext::base::singlethread::SingleThreadResume for MaybeUhyveToGdbPacket {
+	fn resume(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
+		let this = match &mut self.0 {
+			// cannot resume while running
+			None => return Err(kvm_ioctls::Error::new(EINVAL).into()),
+			Some(this) => this,
+		};
+		if signal.is_some() {
+			// cannot resume with signal
+			return Err(kvm_ioctls::Error::new(EINVAL).into());
+		}
+
+		this.this.apply_guest_debug(false)?;
+		self.0.take().unwrap().resume();
+		Ok(())
+	}
+
+	#[inline(always)]
+	fn support_single_step(
+		&mut self,
+	) -> Option<target::ext::base::singlethread::SingleThreadSingleStepOps<'_, Self>> {
+		self.0.as_mut().map(|i| &mut i.this as &mut _)
 	}
 }
 

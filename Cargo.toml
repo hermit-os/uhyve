@@ -36,6 +36,7 @@ instrument = ["dep:rftrace", "dep:rftrace-frontend"]
 
 [dependencies]
 align-address = "0.4"
+async-io = "2.6"
 byte-unit = { version = "5", features = ["byte", "serde"] }
 clap = { version = "4.6", features = ["derive", "env"] }
 clean-path = "0.2.1"
@@ -69,6 +70,8 @@ vm-fdt = "0.3"
 vm-memory = { version = "0.18", features = ["backend-mmap"] }
 uuid = { version = "1.22.0", features = ["fast-rng", "v4"]}
 tar-no-std = { version = "0.4", features = ["alloc"] }
+async-channel = "2.5.0"
+futures-lite = "2.6.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.14"
