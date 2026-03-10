@@ -8,7 +8,7 @@ pub(crate) type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
 use std::{
 	io,
 	net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream},
-	sync::{Arc, LazyLock},
+	sync::LazyLock,
 };
 
 use async_io::block_on;
@@ -22,10 +22,7 @@ use libc::{SIGRTMAX, SIGRTMIN};
 use nix::sys::pthread::Pthread;
 
 use crate::{
-	linux::{
-		gdb::{GdbUhyve, MaybeUhyveToGdbPacket},
-		x86_64::kvm_cpu::KvmVm,
-	},
+	linux::{gdb::GdbUhyve, x86_64::kvm_cpu::KvmVm},
 	serial::Destination,
 	vcpu::VirtualCPU,
 	vm::{UhyveVm, VmResult},
@@ -127,18 +124,11 @@ impl UhyveVm<KvmVm> {
 		let connection =
 			wait_for_gdb_connection(self.kernel_info.params.gdb_port.unwrap()).unwrap();
 		let debugger = GdbStub::new(connection);
-		let peripherals = Arc::clone(&self.peripherals);
 		// The Uhyve VCPU freewheel thread.
-		// NOTE: for multi-threading, one would create one of these for each VCPU
-		let freewheel = GdbUhyve::new(self).spawn_freewheel();
-		// NOTE: unfortunately, we need to start in a "stopped" state
-		// in order for the gdbstub initialization to be able to query our breakpoint features correctly.
-		let mut maybe_stop_packet = MaybeUhyveToGdbPacket(Some(
-			block_on(freewheel.stops.recv()).expect("unable to recv initial stopped state"),
-		));
+		let mut freewheel = GdbUhyve::new(self).spawn_freewheel();
 
 		let mut gdb = debugger
-			.run_state_machine(&mut maybe_stop_packet)
+			.run_state_machine(&mut freewheel)
 			.expect("GDB run_state_machine initialization failed");
 
 		let code = loop {
@@ -146,7 +136,7 @@ impl UhyveVm<KvmVm> {
 				GdbStubStateMachine::Idle(mut gdb) => {
 					// needs more data, so perform a blocking read on the connection
 					let byte = gdb.borrow_conn().read().expect("GDB connection read error");
-					gdb.incoming_data(&mut maybe_stop_packet, byte)
+					gdb.incoming_data(&mut freewheel, byte)
 						.expect("GDB incoming_data error")
 				}
 
@@ -173,16 +163,15 @@ impl UhyveVm<KvmVm> {
 					//let stop_reason = Some(SingleThreadStopReason::Signal(Signal::SIGINT));
 
 					// Kick VCPU out of KVM_RUN
-					freewheel.kick();
+					for i in &freewheel.vcpus {
+						i.kick();
+					}
 
 					//let stop_reason = block_on(freewheel.stop_reasons.recv())
 					//	.expect("unable to receive vCPU stop reason");
 
-					gdb.interrupt_handled(
-						&mut maybe_stop_packet,
-						None::<SingleThreadStopReason<u64>>,
-					)
-					.expect("GDB interrupt_handled packet write failed")
+					gdb.interrupt_handled(&mut freewheel, None::<SingleThreadStopReason<u64>>)
+						.expect("GDB interrupt_handled packet write failed")
 				}
 
 				GdbStubStateMachine::Running(mut gdb) => {
@@ -206,25 +195,18 @@ impl UhyveVm<KvmVm> {
 							let _ = gdb_conn_async.into_inner();
 							UhyveOrGdb::Gdb(ret)
 						},
-						async {
-							if let Some(x) = maybe_stop_packet.0.take() {
-								x.resume();
-							}
-							UhyveOrGdb::Uhyve(freewheel.stops.recv().await)
-						},
+						async { UhyveOrGdb::Uhyve(freewheel.stops.recv().await) },
 					));
 
 					match inp {
 						UhyveOrGdb::Gdb(byte) => {
 							let byte = byte.expect("error during GDB recv");
-							gdb.incoming_data(&mut maybe_stop_packet, byte)
+							gdb.incoming_data(&mut freewheel, byte)
 								.expect("GDB incoming_data error")
 						}
-						UhyveOrGdb::Uhyve(stop_packet) => {
-							let stop_packet = stop_packet.expect("error during stop packet recv");
-							let stop_packet = maybe_stop_packet.0.insert(stop_packet);
-							let stop_reason = stop_packet.stop_reason.clone();
-							gdb.report_stop(&mut maybe_stop_packet, stop_reason)
+						UhyveOrGdb::Uhyve(stop_reason) => {
+							let stop_reason = stop_reason.expect("error during stop packet recv");
+							gdb.report_stop(&mut freewheel, stop_reason)
 								.expect("GDB report_stop error")
 						}
 					}
@@ -232,9 +214,11 @@ impl UhyveVm<KvmVm> {
 			}
 		};
 
-		freewheel.kick();
+		for i in &freewheel.vcpus {
+			i.kick();
+		}
 
-		let output = if let Destination::Buffer(b) = &peripherals.serial.destination {
+		let output = if let Destination::Buffer(b) = &freewheel.peripherals.serial.destination {
 			Some(String::from_utf8_lossy(&b.lock().unwrap()).into_owned())
 		} else {
 			None
