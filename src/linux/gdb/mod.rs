@@ -89,7 +89,8 @@ pub(crate) struct VcpuWrapperShared {
 pub(crate) struct VcpuWrapper {
 	pub(crate) shared: Arc<VcpuWrapperShared>,
 	pthread: PthreadWrapper,
-	tid: Tid,
+	/// This does look odd, but GDB appears to truncate thread-ids to 32bit
+	tid: NonZero<u32>,
 }
 
 #[derive(Clone)]
@@ -99,7 +100,8 @@ pub(crate) struct Freewheel {
 	kernel_info: Arc<KernelInfo>,
 	pub(crate) stops: async_channel::Receiver<MultiThreadStopReason<u64>>,
 	pub(crate) vcpus: Vec<VcpuWrapper>,
-	pub(crate) tid_to_vcpu: HashMap<NonZero<usize>, usize>,
+	/// This does look odd, but GDB appears to truncate thread-ids to 32bit
+	pub(crate) tid_to_vcpu: HashMap<NonZero<u32>, usize>,
 
 	resume_cycle: Option<ResumeCycle>,
 }
@@ -139,7 +141,7 @@ impl GdbUhyve {
 				let shared2 = Arc::clone(&shared);
 				let cpu_affinity = cpu_affinity.clone();
 				let join_handle = std::thread::spawn(move || {
-					let tid = NonZero::new(pthread_self().try_into().unwrap()).unwrap();
+					let tid = NonZero::new(pthread_self() as u32).unwrap();
 					let local_cpu_affinity = cpu_affinity
 						.as_ref()
 						.and_then(|core_ids| core_ids.get(vcpu_id).copied());
@@ -173,16 +175,22 @@ impl GdbUhyve {
 							VcpuStopReason::Debug(debug) => match debug.exception {
 								DB_VECTOR => {
 									let dr6 = Dr6Flags::from_bits_truncate(debug.dr6);
-									breakpoints.read().unwrap().hard.stop_reason(tid, dr6)
+									breakpoints
+										.read()
+										.unwrap()
+										.hard
+										.stop_reason(tid.try_into().unwrap(), dr6)
 								}
-								BP_VECTOR => MultiThreadStopReason::SwBreak(tid),
+								BP_VECTOR => {
+									MultiThreadStopReason::SwBreak(tid.try_into().unwrap())
+								}
 								vector => unreachable!("unknown KVM exception vector: {}", vector),
 							},
 							VcpuStopReason::Exit(code) => {
 								MultiThreadStopReason::Exited(code.try_into().unwrap())
 							}
 							VcpuStopReason::Kick => MultiThreadStopReason::SignalWithThread {
-								tid,
+								tid: tid.try_into().unwrap(),
 								signal: Signal::SIGINT,
 							},
 						};
@@ -206,7 +214,7 @@ impl GdbUhyve {
 				VcpuWrapper {
 					shared: shared2,
 					pthread: PthreadWrapper(pthread),
-					tid: NonZero::new(pthread.try_into().unwrap()).unwrap(),
+					tid: NonZero::new(pthread as u32).unwrap(),
 				}
 			})
 			.collect::<Vec<_>>();
@@ -234,7 +242,7 @@ impl GdbUhyve {
 impl Freewheel {
 	pub fn tid_to_vcpuw(&self, tid: Tid) -> &VcpuWrapper {
 		trace!("tid_to_vcpuw({tid:?})");
-		&self.vcpus[self.tid_to_vcpu[&tid]]
+		&self.vcpus[self.tid_to_vcpu[&(tid.try_into().unwrap())]]
 	}
 
 	pub fn tid_to_kvm_cpu(&self, tid: Tid) -> &RwLock<KvmCpu> {
@@ -403,7 +411,7 @@ impl target_multithread::MultiThreadBase for Freewheel {
 			if i.shared.is_stopped() {
 				continue;
 			}
-			thread_is_active(i.tid);
+			thread_is_active(i.tid.try_into().unwrap());
 		}
 		Ok(())
 	}
@@ -438,7 +446,7 @@ impl target_multithread::MultiThreadResume for Freewheel {
 			.resume_cycle
 			.get_or_insert_with(|| ResumeCycle::new(self.vcpus.len(), false));
 
-		resume_cycle.per_vcpu[self.tid_to_vcpu[&tid]] = ResumeMode::Freewheel;
+		resume_cycle.per_vcpu[self.tid_to_vcpu[&tid.try_into().unwrap()]] = ResumeMode::Freewheel;
 		Ok(())
 	}
 
@@ -484,7 +492,7 @@ impl target_multithread::MultiThreadSingleStep for Freewheel {
 			.resume_cycle
 			.get_or_insert_with(|| ResumeCycle::new(self.vcpus.len(), false));
 
-		resume_cycle.per_vcpu[self.tid_to_vcpu[&tid]] = ResumeMode::Step;
+		resume_cycle.per_vcpu[self.tid_to_vcpu[&tid.try_into().unwrap()]] = ResumeMode::Step;
 		Ok(())
 	}
 }
