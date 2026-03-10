@@ -79,7 +79,7 @@ pub(crate) mod internal {
 		/// Create a new CPU object
 		fn new_cpu(
 			&self,
-			id: u32,
+			id: usize,
 			kernel_info: Arc<KernelInfo>,
 			enable_stats: bool,
 		) -> HypervisorResult<Self::VCPU>;
@@ -442,12 +442,8 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			kernel_info.params.gdb_port.is_none() || cfg!(target_os = "linux"),
 			"gdb is only supported on linux (yet)"
 		);
-		assert!(
-			kernel_info.params.gdb_port.is_none() || cpu_count == 1,
-			"gdbstub is only supported with one CPU"
-		);
 
-		let vcpus: Vec<_> = (0..cpu_count)
+		let vcpus: Vec<_> = (0..cpu_count as usize)
 			.map(|cpu_id| {
 				virt_backend
 					.new_cpu(cpu_id, kernel_info.clone(), kernel_info.params.stats)

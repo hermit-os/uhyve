@@ -3,8 +3,24 @@ use std::collections::{HashMap, hash_map::Entry};
 use gdbstub::target::{self, TargetResult, ext::breakpoints::WatchKind};
 use uhyve_interface::GuestVirtAddr;
 
-use super::Freewheel;
-use crate::arch::x86_64::{registers, virt_to_phys};
+use super::GdbVcpuManager;
+use crate::arch::{
+	virt_to_phys,
+	x86_64::registers::{self, debug::HwBreakpoints},
+};
+
+#[derive(Clone, Debug, Default)]
+pub struct AllBreakpoints {
+	pub hard: HwBreakpoints,
+	pub soft: SwBreakpoints,
+}
+
+impl AllBreakpoints {
+	pub fn new() -> Self {
+		Default::default()
+	}
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SwBreakpoint {
 	addr: u64,
@@ -21,7 +37,7 @@ impl SwBreakpoint {
 
 pub type SwBreakpoints = HashMap<SwBreakpoint, Vec<u8>>;
 
-impl target::ext::breakpoints::Breakpoints for Freewheel {
+impl target::ext::breakpoints::Breakpoints for GdbVcpuManager {
 	#[inline(always)]
 	fn support_sw_breakpoint(
 		&mut self,
@@ -44,7 +60,7 @@ impl target::ext::breakpoints::Breakpoints for Freewheel {
 	}
 }
 
-impl target::ext::breakpoints::SwBreakpoint for Freewheel {
+impl target::ext::breakpoints::SwBreakpoint for GdbVcpuManager {
 	fn add_sw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
 		let sw_breakpoint = SwBreakpoint::new(addr, kind);
 
@@ -113,7 +129,7 @@ impl target::ext::breakpoints::SwBreakpoint for Freewheel {
 	}
 }
 
-impl target::ext::breakpoints::HwBreakpoint for Freewheel {
+impl target::ext::breakpoints::HwBreakpoint for GdbVcpuManager {
 	fn add_hw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
 		let hw_breakpoint = match registers::debug::HwBreakpoint::new_breakpoint(addr, kind) {
 			Some(hw_breakpoint) => hw_breakpoint,
@@ -147,7 +163,7 @@ impl target::ext::breakpoints::HwBreakpoint for Freewheel {
 	}
 }
 
-impl target::ext::breakpoints::HwWatchpoint for Freewheel {
+impl target::ext::breakpoints::HwWatchpoint for GdbVcpuManager {
 	fn add_hw_watchpoint(
 		&mut self,
 		addr: u64,
