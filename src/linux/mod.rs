@@ -12,7 +12,10 @@ use std::{
 };
 
 use core_affinity::CoreId;
-use gdbstub::stub::{DisconnectReason, GdbStub};
+use gdbstub::{
+	conn::ConnectionExt,
+	stub::{DisconnectReason, GdbStub, run_blocking, state_machine::GdbStubStateMachine},
+};
 use kvm_ioctls::Kvm;
 use libc::{SIGRTMAX, SIGRTMIN};
 use nix::sys::pthread::Pthread;
@@ -125,19 +128,72 @@ impl UhyveVm<KvmVm> {
 		let debugger = GdbStub::new(connection);
 		let mut debuggable_vcpu = GdbUhyve::new(self);
 
-		let code = match debugger
-			.run_blocking::<UhyveGdbEventLoop>(&mut debuggable_vcpu)
-			.unwrap()
-		{
-			DisconnectReason::TargetExited(code) => code.into(),
-			DisconnectReason::TargetTerminated(_) => unreachable!(),
-			DisconnectReason::Disconnect => {
-				eprintln!("Debugger disconnected.");
-				0
-			}
-			DisconnectReason::Kill => {
-				eprintln!("Kill command received.");
-				0
+		let mut gdb = debugger
+			.run_state_machine(&mut debuggable_vcpu)
+			.expect("GDB run_state_machine initialization failed");
+
+		use run_blocking::{
+			BlockingEventLoop, Event as BlockingEventLoopEvent, WaitForStopReasonError,
+		};
+
+		let code = loop {
+			gdb = match gdb {
+				GdbStubStateMachine::Idle(mut gdb) => {
+					// needs more data, so perform a blocking read on the connection
+					let byte = gdb.borrow_conn().read().expect("GDB connection read error");
+					gdb.incoming_data(&mut debuggable_vcpu, byte)
+						.expect("GDB incoming_data error")
+				}
+
+				GdbStubStateMachine::Disconnected(gdb) => {
+					// we keep things simple, and doesn't expose a way to re-use the
+					// state machine
+					break match gdb.get_reason() {
+						DisconnectReason::TargetExited(code) => code.into(),
+						DisconnectReason::TargetTerminated(_) => unreachable!(),
+						DisconnectReason::Disconnect => {
+							eprintln!("Debugger disconnected.");
+							0
+						}
+						DisconnectReason::Kill => {
+							eprintln!("Kill command received.");
+							0
+						}
+					};
+				}
+
+				GdbStubStateMachine::CtrlCInterrupt(gdb) => {
+					// defer to the implementation on how it wants to handle the interrupt
+					let stop_reason = UhyveGdbEventLoop::on_interrupt(&mut debuggable_vcpu)
+						.expect("GDB on_interrupt handling failed");
+					gdb.interrupt_handled(&mut debuggable_vcpu, stop_reason)
+						.expect("GDB interrupt_handled packet write failed")
+				}
+
+				GdbStubStateMachine::Running(mut gdb) => {
+					// block waiting for the target to return a stop reason
+					let event = UhyveGdbEventLoop::wait_for_stop_reason(
+						&mut debuggable_vcpu,
+						gdb.borrow_conn(),
+					);
+					match event {
+						Ok(BlockingEventLoopEvent::TargetStopped(stop_reason)) => gdb
+							.report_stop(&mut debuggable_vcpu, stop_reason)
+							.expect("GDB report_stop error"),
+
+						Ok(BlockingEventLoopEvent::IncomingData(byte)) => gdb
+							.incoming_data(&mut debuggable_vcpu, byte)
+							.expect("GDB incoming_data error"),
+
+						Err(WaitForStopReasonError::Target(e)) => {
+							panic!("GDB target error: {}", e);
+						}
+
+						Err(WaitForStopReasonError::Connection(e)) => {
+							panic!("GDB connection read error: {}", e);
+						}
+					}
+				}
 			}
 		};
 
