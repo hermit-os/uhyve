@@ -251,7 +251,7 @@ impl VcpuWrapper {
 	fn apply_resume_mode(&self, mode: ResumeMode) {
 		// SAFETY: we trust the value of `self.resume.mode`.
 		let old: ResumeMode = unsafe {
-			core::mem::transmute(self.shared.resume.mode.swap(mode as u8, Ordering::Release))
+			core::mem::transmute(self.shared.resume.mode.swap(mode as u8, Ordering::AcqRel))
 		};
 		if !matches!(mode, ResumeMode::Stopped) {
 			self.shared.resume.event.notify(usize::MAX);
