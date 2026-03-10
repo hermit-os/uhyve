@@ -2,12 +2,9 @@ mod breakpoints;
 mod regs;
 mod section_offsets;
 
-use std::{io::Read, net::TcpStream, sync::Once, thread, time::Duration};
-
 use gdbstub::{
 	common::Signal,
-	conn::{Connection, ConnectionExt},
-	stub::{SingleThreadStopReason, run_blocking},
+	stub::SingleThreadStopReason,
 	target::{self, Target, TargetError, TargetResult, ext::base::singlethread::SingleThreadBase},
 };
 use gdbstub_arch::x86::reg::X86_64CoreRegs;
@@ -16,7 +13,6 @@ use kvm_bindings::{
 	KVM_GUESTDBG_USE_SW_BP, kvm_guest_debug, kvm_guest_debug_arch,
 };
 use libc::EINVAL;
-use nix::sys::pthread::pthread_self;
 use uhyve_interface::GuestVirtAddr;
 use x86_64::registers::debug::Dr6Flags;
 
@@ -24,7 +20,7 @@ use self::breakpoints::SwBreakpoints;
 use crate::{
 	HypervisorError, HypervisorResult,
 	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
-	linux::{KickSignal, PthreadWrapper, x86_64::kvm_cpu::KvmVm},
+	linux::x86_64::kvm_cpu::KvmVm,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::UhyveVm,
 };
@@ -193,69 +189,5 @@ impl target::ext::base::singlethread::SingleThreadSingleStep for GdbUhyve {
 		}
 
 		self.apply_guest_debug(true)
-	}
-}
-
-pub(crate) enum UhyveGdbEventLoop {}
-
-impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
-	type Target = GdbUhyve;
-	type Connection = TcpStream;
-	type StopReason = SingleThreadStopReason<u64>;
-
-	fn wait_for_stop_reason(
-		target: &mut Self::Target,
-		conn: &mut Self::Connection,
-	) -> Result<
-		run_blocking::Event<SingleThreadStopReason<u64>>,
-		run_blocking::WaitForStopReasonError<
-			<Self::Target as Target>::Error,
-			<Self::Connection as Connection>::Error,
-		>,
-	> {
-		use run_blocking::WaitForStopReasonError;
-
-		static SPAWN_THREAD: Once = Once::new();
-
-		SPAWN_THREAD.call_once(|| {
-			let parent_thread = PthreadWrapper(pthread_self());
-			let mut conn_clone = conn.try_clone().unwrap();
-			thread::spawn(move || {
-				loop {
-					// Block on TCP stream without consuming any data.
-					Read::read(&mut conn_clone, &mut []).unwrap();
-
-					// Kick VCPU out of KVM_RUN
-					KickSignal::pthread_kill(parent_thread.0).unwrap();
-
-					// Wait for all inputs to be processed and for VCPU to be running again
-					thread::sleep(Duration::from_millis(20));
-				}
-			});
-		});
-
-		let stop_reason = target.run().map_err(WaitForStopReasonError::Target)?;
-
-		let event = match stop_reason {
-			SingleThreadStopReason::Signal(Signal::SIGINT) => {
-				assert!(
-					conn.peek()
-						.map_err(WaitForStopReasonError::Connection)?
-						.is_some()
-				);
-				run_blocking::Event::IncomingData(
-					ConnectionExt::read(conn).map_err(WaitForStopReasonError::Connection)?,
-				)
-			}
-			stop_reason => run_blocking::Event::TargetStopped(stop_reason),
-		};
-
-		Ok(event)
-	}
-
-	fn on_interrupt(
-		_target: &mut Self::Target,
-	) -> Result<Option<SingleThreadStopReason<u64>>, <Self::Target as Target>::Error> {
-		Ok(Some(SingleThreadStopReason::Signal(Signal::SIGINT)))
 	}
 }
