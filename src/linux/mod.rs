@@ -9,22 +9,22 @@ use std::{
 	io,
 	net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream},
 	sync::LazyLock,
+	thread,
+	time::Duration,
 };
 
 use core_affinity::CoreId;
 use gdbstub::{
+	common::Signal,
 	conn::ConnectionExt,
-	stub::{DisconnectReason, GdbStub, run_blocking, state_machine::GdbStubStateMachine},
+	stub::{DisconnectReason, GdbStub, SingleThreadStopReason, state_machine::GdbStubStateMachine},
 };
 use kvm_ioctls::Kvm;
 use libc::{SIGRTMAX, SIGRTMIN};
-use nix::sys::pthread::Pthread;
+use nix::sys::pthread::{Pthread, pthread_self};
 
 use crate::{
-	linux::{
-		gdb::{GdbUhyve, UhyveGdbEventLoop},
-		x86_64::kvm_cpu::KvmVm,
-	},
+	linux::{gdb::GdbUhyve, x86_64::kvm_cpu::KvmVm},
 	serial::Destination,
 	vcpu::VirtualCPU,
 	vm::{UhyveVm, VmResult},
@@ -132,10 +132,6 @@ impl UhyveVm<KvmVm> {
 			.run_state_machine(&mut debuggable_vcpu)
 			.expect("GDB run_state_machine initialization failed");
 
-		use run_blocking::{
-			BlockingEventLoop, Event as BlockingEventLoopEvent, WaitForStopReasonError,
-		};
-
 		let code = loop {
 			gdb = match gdb {
 				GdbStubStateMachine::Idle(mut gdb) => {
@@ -164,34 +160,44 @@ impl UhyveVm<KvmVm> {
 
 				GdbStubStateMachine::CtrlCInterrupt(gdb) => {
 					// defer to the implementation on how it wants to handle the interrupt
-					let stop_reason = UhyveGdbEventLoop::on_interrupt(&mut debuggable_vcpu)
-						.expect("GDB on_interrupt handling failed");
+					let stop_reason = Some(SingleThreadStopReason::Signal(Signal::SIGINT));
 					gdb.interrupt_handled(&mut debuggable_vcpu, stop_reason)
 						.expect("GDB interrupt_handled packet write failed")
 				}
 
 				GdbStubStateMachine::Running(mut gdb) => {
 					// block waiting for the target to return a stop reason
-					let event = UhyveGdbEventLoop::wait_for_stop_reason(
-						&mut debuggable_vcpu,
-						gdb.borrow_conn(),
-					);
-					match event {
-						Ok(BlockingEventLoopEvent::TargetStopped(stop_reason)) => gdb
+					static SPAWN_THREAD: std::sync::Once = std::sync::Once::new();
+					SPAWN_THREAD.call_once(|| {
+						let parent_thread = PthreadWrapper(pthread_self());
+						let mut conn_clone = gdb.borrow_conn().try_clone().unwrap();
+						thread::spawn(move || {
+							loop {
+								// Block on TCP stream without consuming any data.
+								std::io::Read::read(&mut conn_clone, &mut []).unwrap();
+
+								// Kick VCPU out of KVM_RUN
+								KickSignal::pthread_kill(parent_thread.0).unwrap();
+
+								// Wait for all inputs to be processed and for VCPU to be running again
+								thread::sleep(Duration::from_millis(20));
+							}
+						});
+					});
+
+					match debuggable_vcpu.run().expect("GDB target error") {
+						SingleThreadStopReason::Signal(Signal::SIGINT) => {
+							let conn = gdb.borrow_conn();
+							assert!(conn.peek().expect("GDB connection read error").is_some());
+
+							let byte =
+								ConnectionExt::read(conn).expect("GDB connection read error");
+							gdb.incoming_data(&mut debuggable_vcpu, byte)
+								.expect("GDB incoming_data error")
+						}
+						stop_reason => gdb
 							.report_stop(&mut debuggable_vcpu, stop_reason)
 							.expect("GDB report_stop error"),
-
-						Ok(BlockingEventLoopEvent::IncomingData(byte)) => gdb
-							.incoming_data(&mut debuggable_vcpu, byte)
-							.expect("GDB incoming_data error"),
-
-						Err(WaitForStopReasonError::Target(e)) => {
-							panic!("GDB target error: {}", e);
-						}
-
-						Err(WaitForStopReasonError::Connection(e)) => {
-							panic!("GDB connection read error: {}", e);
-						}
 					}
 				}
 			}
