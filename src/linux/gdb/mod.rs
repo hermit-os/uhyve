@@ -52,7 +52,10 @@ pub(crate) struct VcpuWrapperShared {
 pub(crate) struct VcpuWrapper {
 	pub(crate) shared: Arc<VcpuWrapperShared>,
 	pthread: PthreadWrapper,
-	/// This does look odd, but GDB appears to truncate thread-ids to 32bit
+
+	// This does look odd, but GDB appears to truncate thread-ids to 32bit.
+	//
+	// See also upstream issue: https://sourceware.org/bugzilla/show_bug.cgi?id=33979
 	tid: NonZero<u32>,
 
 	planned_resume_mode: Option<ResumeMode>,
