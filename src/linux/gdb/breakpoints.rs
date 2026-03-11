@@ -9,7 +9,7 @@ use crate::arch::x86_64::{
 	virt_to_phys,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct AllBreakpoints {
 	pub hard: HwBreakpoints,
 	pub soft: SwBreakpoints,
@@ -17,10 +17,7 @@ pub struct AllBreakpoints {
 
 impl AllBreakpoints {
 	pub fn new() -> Self {
-		Self {
-			hard: HwBreakpoints::new(),
-			soft: SwBreakpoints::new(),
-		}
+		Default::default()
 	}
 }
 
