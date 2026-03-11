@@ -39,17 +39,17 @@ impl VirtualizationBackendInternal for XhyveVm {
 
 	fn new_cpu(
 		&self,
-		id: u32,
+		id: usize,
 		kernel_info: Arc<KernelInfo>,
 		enable_stats: bool,
 	) -> HypervisorResult<XhyveCpu> {
 		Ok(XhyveCpu {
-			id,
+			id: id.try_into().unwrap(),
 			peripherals: self.peripherals.clone(),
 			kernel_info: kernel_info.clone(),
 			vcpu: None,
 			stats: if enable_stats {
-				Some(CpuStats::new(id as usize))
+				Some(CpuStats::new(id))
 			} else {
 				None
 			},
