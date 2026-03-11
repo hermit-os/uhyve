@@ -14,8 +14,11 @@ use std::{
 use core_affinity::CoreId;
 use gdbstub::stub::{DisconnectReason, GdbStub};
 use kvm_ioctls::Kvm;
-use libc::{SIGRTMAX, SIGRTMIN};
-use nix::sys::pthread::Pthread;
+use libc::{SA_RESTART, SIGRTMAX, SIGRTMIN};
+use nix::sys::{
+	pthread::Pthread,
+	signal::{SaFlags, SigAction, SigSet, Signal, sigaction},
+};
 
 use crate::{
 	linux::{
@@ -66,15 +69,17 @@ impl KickSignal {
 
 	pub(crate) fn register_handler() -> nix::Result<()> {
 		extern "C" fn handle_signal(_signal: libc::c_int) {}
+		let action: SigAction = SigAction::new(
+			nix::sys::signal::SigHandler::Handler(handle_signal),
+			SaFlags::from_bits(SA_RESTART).unwrap(),
+			SigSet::empty(),
+		);
+		// SAFETY: Trivially unsafe, necessary due to RT signal (not part of enum).
+		let signal: Signal = unsafe { std::mem::transmute_copy(&Self::get()) };
 		// SAFETY: We don't use the `signal`'s return value and use an empty handler.
 		// (Sidenote: SIG_DFL and SIG_IGN don't do the trick.)
-		let res = unsafe {
-			libc::signal(
-				Self::get(),
-				handle_signal as *const () as libc::sighandler_t,
-			)
-		};
-		nix::errno::Errno::result(res).map(drop)
+		let res = unsafe { sigaction(signal, &action) };
+		res.map(drop)
 	}
 
 	/// Sends the kick signal to a thread.
