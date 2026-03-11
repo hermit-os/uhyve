@@ -26,6 +26,8 @@ pub enum ResumeMode {
 }
 
 impl GdbVcpuManager {
+	/// Signal to the vCPU manager that the `gdbstub` finished initializing,
+	/// i.e. exited the `Idle` state and entered the `Running` state.
 	pub fn finished_initializing(&mut self) {
 		if core::mem::replace(&mut self.is_initializing, false) {
 			for i in &mut self.vcpus {
@@ -67,6 +69,10 @@ impl VcpuWrapper {
 }
 
 impl VcpuWrapperShared {
+	/// Updates the vCPU debug context to correspond to the currently active
+	/// `ResumeMode`, and `breakpoints`.
+	///
+	/// This handles e.g. single-stepping of the vCPU.
 	pub fn apply_current_guest_debug(&self, breakpoints: &AllBreakpoints) -> HypervisorResult<()> {
 		use kvm_bindings::{
 			KVM_GUESTDBG_ENABLE, KVM_GUESTDBG_SINGLESTEP, KVM_GUESTDBG_USE_HW_BP,
