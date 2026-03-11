@@ -229,7 +229,7 @@ impl UhyveVm<KvmVm> {
 
 impl GdbVcpuManager {
 	/// Resolves a [`Tid`] from GDB to the associated [`VcpuWrapper`].
-	pub fn get_vcpu_wrapper(&self, tid: Tid) -> &VcpuWrapper {
+	fn get_vcpu_wrapper(&self, tid: Tid) -> &VcpuWrapper {
 		match self.tid_to_vcpu.get(&(tid.try_into().unwrap())) {
 			Some(&vcpu_id) => &self.vcpus[vcpu_id],
 			None => panic!("unable to resolve thread-id from GDB: {tid}"),
@@ -237,7 +237,7 @@ impl GdbVcpuManager {
 	}
 
 	/// Resolves a [`Tid`] from GDB to the associated [`VcpuWrapper`]. Mutable version.
-	pub fn get_vcpu_wrapper_mut(&mut self, tid: Tid) -> &mut VcpuWrapper {
+	fn get_vcpu_wrapper_mut(&mut self, tid: Tid) -> &mut VcpuWrapper {
 		match self.tid_to_vcpu.get(&(tid.try_into().unwrap())) {
 			Some(&vcpu_id) => &mut self.vcpus[vcpu_id],
 			None => panic!("unable to resolve thread-id from GDB: {tid}"),
@@ -245,7 +245,7 @@ impl GdbVcpuManager {
 	}
 
 	/// Resolves a [`Tid`] from GDB to the lock around the associated [`KvmCpu`].
-	pub fn get_vm_cpu(&self, tid: Tid) -> &RwLock<KvmCpu> {
+	fn get_vm_cpu(&self, tid: Tid) -> &RwLock<KvmCpu> {
 		&self.get_vcpu_wrapper(tid).shared.vcpu
 	}
 }
