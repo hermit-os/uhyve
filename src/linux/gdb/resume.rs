@@ -31,7 +31,7 @@ impl GdbVcpuManager {
 	pub fn finished_initializing(&mut self) {
 		if core::mem::replace(&mut self.is_initializing, false) {
 			for i in &mut self.vcpus {
-				i.free_wheel();
+				i.r#continue();
 			}
 		}
 	}
@@ -45,7 +45,7 @@ impl VcpuWrapper {
 	}
 
 	/// Resume the vCPU in free-wheeling / non-stepped mode
-	fn free_wheel(&mut self) {
+	fn r#continue(&mut self) {
 		// TODO: refactor to get rid of mutability
 		let old_planned = self.planned_resume_mode.take();
 		self.apply_resume_mode(ResumeMode::FreeWheeling);
