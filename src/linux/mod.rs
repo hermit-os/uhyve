@@ -157,7 +157,7 @@ impl UhyveVm<KvmVm> {
 						Gdb(Y),
 					}
 
-					vcpu_manager.finished_initializing();
+					vcpu_manager.set_finished_initializing();
 
 					let borrow_conn = gdb.borrow_conn();
 					let inp = block_on(futures_lite::future::or(
