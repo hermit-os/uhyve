@@ -73,6 +73,7 @@ pub enum HypervisorError {
 
 impl HypervisorError {
 	/// Report an (target independent) invalid value error e.g. during debug interactions
+	#[cfg_attr(target_os = "macos", expect(unused))]
 	fn backend_report_invalid_value() -> Self {
 		Self::BackendError({
 			#[cfg(target_os = "linux")]
