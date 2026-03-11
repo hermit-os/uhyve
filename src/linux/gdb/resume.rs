@@ -118,7 +118,7 @@ impl target_multithread::MultiThreadResume for GdbVcpuManager {
 	) -> Result<(), Self::Error> {
 		if signal.is_some() {
 			// cannot step with signal
-			return Err(crate::HypervisorError::backend_report_invalid_value());
+			return Err(crate::HypervisorError::backend_invalid_value());
 		}
 
 		self.tid_to_vcpuw_mut(tid).planned_resume_mode = Some(ResumeMode::Freewheel);
@@ -157,7 +157,7 @@ impl target_multithread::MultiThreadSingleStep for GdbVcpuManager {
 	) -> Result<(), Self::Error> {
 		if signal.is_some() {
 			// cannot step with signal
-			return Err(crate::HypervisorError::backend_report_invalid_value());
+			return Err(crate::HypervisorError::backend_invalid_value());
 		}
 
 		self.tid_to_vcpuw_mut(tid).planned_resume_mode = Some(ResumeMode::Step);
