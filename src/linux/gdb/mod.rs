@@ -222,22 +222,25 @@ impl UhyveVm<KvmVm> {
 }
 
 impl GdbVcpuManager {
-	pub fn tid_to_vcpuw(&self, tid: Tid) -> &VcpuWrapper {
+	/// Resolves a [`Tid`] from GDB to the associated [`VcpuWrapper`].
+	pub fn get_vcpu_wrapper(&self, tid: Tid) -> &VcpuWrapper {
 		match self.tid_to_vcpu.get(&(tid.try_into().unwrap())) {
 			Some(&vcpu_id) => &self.vcpus[vcpu_id],
 			None => panic!("unable to resolve thread-id from GDB: {tid}"),
 		}
 	}
 
-	pub fn tid_to_vcpuw_mut(&mut self, tid: Tid) -> &mut VcpuWrapper {
+	/// Resolves a [`Tid`] from GDB to the associated [`VcpuWrapper`]. Mutable version.
+	pub fn get_vcpu_wrapper_mut(&mut self, tid: Tid) -> &mut VcpuWrapper {
 		match self.tid_to_vcpu.get(&(tid.try_into().unwrap())) {
 			Some(&vcpu_id) => &mut self.vcpus[vcpu_id],
 			None => panic!("unable to resolve thread-id from GDB: {tid}"),
 		}
 	}
 
-	pub fn tid_to_kvm_cpu(&self, tid: Tid) -> &RwLock<KvmCpu> {
-		&self.tid_to_vcpuw(tid).shared.vcpu
+	/// Resolves a [`Tid`] from GDB to the lock around the associated [`KvmCpu`].
+	pub fn get_vm_cpu(&self, tid: Tid) -> &RwLock<KvmCpu> {
+		&self.get_vcpu_wrapper(tid).shared.vcpu
 	}
 }
 
@@ -272,12 +275,12 @@ impl Target for GdbVcpuManager {
 
 impl target_multithread::MultiThreadBase for GdbVcpuManager {
 	fn read_registers(&mut self, regs: &mut X86_64CoreRegs, tid: Tid) -> TargetResult<(), Self> {
-		regs::read(self.tid_to_kvm_cpu(tid).read().unwrap().get_vcpu(), regs)
+		regs::read(self.get_vm_cpu(tid).read().unwrap().get_vcpu(), regs)
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))
 	}
 
 	fn write_registers(&mut self, regs: &X86_64CoreRegs, tid: Tid) -> TargetResult<(), Self> {
-		regs::write(regs, self.tid_to_kvm_cpu(tid).read().unwrap().get_vcpu())
+		regs::write(regs, self.get_vm_cpu(tid).read().unwrap().get_vcpu())
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))
 	}
 
@@ -294,10 +297,7 @@ impl target_multithread::MultiThreadBase for GdbVcpuManager {
 				virt_to_phys(
 					guest_addr,
 					&self.peripherals.mem,
-					self.tid_to_kvm_cpu(tid)
-						.read()
-						.unwrap()
-						.get_root_pagetable(),
+					self.get_vm_cpu(tid).read().unwrap().get_root_pagetable(),
 				)
 				.map_err(|_| ())?,
 				data.len(),
@@ -315,10 +315,7 @@ impl target_multithread::MultiThreadBase for GdbVcpuManager {
 				virt_to_phys(
 					GuestVirtAddr::new(start_addr),
 					&self.peripherals.mem,
-					self.tid_to_kvm_cpu(tid)
-						.read()
-						.unwrap()
-						.get_root_pagetable(),
+					self.get_vm_cpu(tid).read().unwrap().get_root_pagetable(),
 				)
 				.map_err(|_err| ())?,
 				data.len(),
@@ -343,7 +340,7 @@ impl target_multithread::MultiThreadBase for GdbVcpuManager {
 	}
 
 	fn is_thread_alive(&mut self, tid: Tid) -> Result<bool, Self::Error> {
-		Ok(self.is_initializing || !self.tid_to_vcpuw(tid).shared.is_stopped())
+		Ok(self.is_initializing || !self.get_vcpu_wrapper(tid).shared.is_stopped())
 	}
 
 	#[inline(always)]

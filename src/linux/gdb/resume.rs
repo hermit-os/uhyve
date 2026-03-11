@@ -121,7 +121,7 @@ impl target_multithread::MultiThreadResume for GdbVcpuManager {
 			return Err(crate::HypervisorError::backend_invalid_value());
 		}
 
-		self.tid_to_vcpuw_mut(tid).planned_resume_mode = Some(ResumeMode::Freewheel);
+		self.get_vcpu_wrapper_mut(tid).planned_resume_mode = Some(ResumeMode::Freewheel);
 
 		Ok(())
 	}
@@ -160,7 +160,7 @@ impl target_multithread::MultiThreadSingleStep for GdbVcpuManager {
 			return Err(crate::HypervisorError::backend_invalid_value());
 		}
 
-		self.tid_to_vcpuw_mut(tid).planned_resume_mode = Some(ResumeMode::Step);
+		self.get_vcpu_wrapper_mut(tid).planned_resume_mode = Some(ResumeMode::Step);
 		Ok(())
 	}
 }
