@@ -8,7 +8,7 @@ use std::{
 	thread,
 };
 
-use common::{BuildMode, build_hermit_bin, rust_gdb};
+use common::{BuildMode, build_hermit_bin, check_result_and_print_output, rust_gdb};
 use tempfile::TempDir;
 use uhyvelib::{
 	params::{Output, Params},
@@ -33,7 +33,7 @@ fn gdb() -> io::Result<()> {
 		)
 		.unwrap();
 		let res = vm.run(None);
-		assert_eq!(0, res.code);
+		check_result_and_print_output(&res, 0);
 	});
 
 	let temp = TempDir::new().unwrap();

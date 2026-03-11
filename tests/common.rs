@@ -135,12 +135,20 @@ pub fn remove_file_if_exists(path: &PathBuf) {
 	}
 }
 
-/// Panics if the result's status code is not 0 and prints the serial output of the kernel
-pub fn check_result(res: &VmResult) {
-	if res.code != 0 {
-		println!("Kernel Output:\n{}", res.output.as_ref().unwrap());
-		panic!();
+/// Panics if the result's status code is not 0 and prints the serial output of
+/// the kernel.
+///
+/// - `res`: VmResult returned by vm.run().
+/// - `expected`: Expected return code of `res.code`.
+pub fn check_result_and_print_output(res: &VmResult, expected: i32) {
+	if let Some(output) = &res.output {
+		println!("Kernel output: \n{}", output);
 	}
+	let actual = res.code;
+	assert_eq!(
+		actual, expected,
+		"Actual return code ({actual}) differs from expected one: {expected}"
+	);
 }
 
 pub fn get_fs_fixture_path() -> PathBuf {
