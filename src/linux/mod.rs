@@ -106,9 +106,7 @@ impl UhyveVm<KvmVm> {
 			wait_for_gdb_connection(self.kernel_info.params.gdb_port.unwrap()).unwrap();
 		let debugger = GdbStub::new(connection);
 		// The Uhyve VCPU freewheel thread.
-		let (mut freewheel, full_init_event) = GdbUhyve::new(self).spawn_freewheel(cpu_affinity);
-
-		let mut full_init_event = Some(full_init_event);
+		let mut freewheel = GdbUhyve::new(self).spawn_freewheel(cpu_affinity);
 
 		let mut gdb = debugger
 			.run_state_machine(&mut freewheel)
@@ -160,9 +158,7 @@ impl UhyveVm<KvmVm> {
 						Gdb(Y),
 					}
 
-					if let Some(fie) = full_init_event.take() {
-						fie.notify(usize::MAX);
-					}
+					freewheel.finished_initializing();
 
 					let borrow_conn = gdb.borrow_conn();
 					let inp = block_on(futures_lite::future::or(
