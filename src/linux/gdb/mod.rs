@@ -189,10 +189,13 @@ impl GdbUhyve {
 							VcpuStopReason::Exit(code) => {
 								MultiThreadStopReason::Exited(code.try_into().unwrap())
 							}
-							VcpuStopReason::Kick => MultiThreadStopReason::SignalWithThread {
-								tid: tid.try_into().unwrap(),
-								signal: Signal::SIGINT,
-							},
+							VcpuStopReason::Kick => {
+								trace!("vcpu {} got kicked (recv)", tid);
+								MultiThreadStopReason::SignalWithThread {
+									tid: tid.try_into().unwrap(),
+									signal: Signal::SIGINT,
+								}
+							}
 						};
 						block_on(stops_s.send(stop_reason)).expect("unable to send info to GDB");
 						loop {
@@ -253,6 +256,7 @@ impl Freewheel {
 impl VcpuWrapper {
 	/// Kick the vCPU
 	pub fn kick(&self) {
+		trace!("vcpu: kick! {}", self.tid);
 		KickSignal::pthread_kill(self.pthread.0).unwrap();
 	}
 
@@ -261,9 +265,10 @@ impl VcpuWrapper {
 		let old: ResumeMode = unsafe {
 			core::mem::transmute(self.shared.resume.mode.swap(mode as u8, Ordering::AcqRel))
 		};
-		if !matches!(mode, ResumeMode::Stopped) {
+		trace!("apply_resume_mode @ {}: {:?} -> {:?}", self.tid, old, mode);
+		if mode != ResumeMode::Stopped {
 			self.shared.resume.event.notify(usize::MAX);
-		} else if !matches!(old, ResumeMode::Stopped) {
+		} else if old != ResumeMode::Stopped {
 			self.kick()
 		}
 	}
