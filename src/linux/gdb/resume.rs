@@ -6,7 +6,7 @@ use gdbstub::{
 	target::ext::base::multithread as target_multithread,
 };
 
-use super::{Freewheel, VcpuWrapper, VcpuWrapperShared, breakpoints::AllBreakpoints};
+use super::{GdbVcpuManager, VcpuWrapper, VcpuWrapperShared, breakpoints::AllBreakpoints};
 use crate::{HypervisorError, HypervisorResult, linux::KickSignal};
 
 pub(super) struct ResumeMarker {
@@ -25,7 +25,7 @@ pub enum ResumeMode {
 	Freewheel,
 }
 
-impl Freewheel {
+impl GdbVcpuManager {
 	pub fn finished_initializing(&mut self) {
 		if core::mem::replace(&mut self.is_initializing, false) {
 			for i in &mut self.vcpus {
@@ -42,7 +42,7 @@ impl VcpuWrapper {
 		KickSignal::pthread_kill(self.pthread.0).unwrap();
 	}
 
-	/// Resume the vCPU in Freewheel / non-stepped mode
+	/// Resume the vCPU in freewheel / non-stepped mode
 	fn freewheel(&mut self) {
 		// TODO: refactor to get rid of mutability
 		let old_planned = self.planned_resume_mode.take();
@@ -102,7 +102,7 @@ impl VcpuWrapperShared {
 	}
 }
 
-impl target_multithread::MultiThreadResume for Freewheel {
+impl target_multithread::MultiThreadResume for GdbVcpuManager {
 	fn clear_resume_actions(&mut self) -> Result<(), Self::Error> {
 		self.vcpus
 			.iter_mut()
@@ -149,7 +149,7 @@ impl target_multithread::MultiThreadResume for Freewheel {
 	}
 }
 
-impl target_multithread::MultiThreadSingleStep for Freewheel {
+impl target_multithread::MultiThreadSingleStep for GdbVcpuManager {
 	fn set_resume_action_step(
 		&mut self,
 		tid: Tid,
@@ -165,7 +165,7 @@ impl target_multithread::MultiThreadSingleStep for Freewheel {
 	}
 }
 
-impl target_multithread::MultiThreadSchedulerLocking for Freewheel {
+impl target_multithread::MultiThreadSchedulerLocking for GdbVcpuManager {
 	fn set_resume_action_scheduler_lock(&mut self) -> Result<(), Self::Error> {
 		self.default_resume_mode = ResumeMode::Stopped;
 		Ok(())

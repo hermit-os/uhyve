@@ -43,10 +43,6 @@ use crate::{
 	vm::{KernelInfo, UhyveVm, VmPeripherals},
 };
 
-pub(crate) struct GdbUhyve {
-	pub(crate) vm: UhyveVm<KvmVm>,
-}
-
 pub(crate) struct VcpuWrapperShared {
 	pub(crate) vcpu: RwLock<KvmCpu>,
 	resume: ResumeMarker,
@@ -63,7 +59,7 @@ pub(crate) struct VcpuWrapper {
 }
 
 #[derive(Clone)]
-pub(crate) struct Freewheel {
+pub(crate) struct GdbVcpuManager {
 	breakpoints: Arc<RwLock<AllBreakpoints>>,
 	pub(crate) peripherals: Arc<VmPeripherals>,
 	kernel_info: Arc<KernelInfo>,
@@ -76,12 +72,6 @@ pub(crate) struct Freewheel {
 	default_resume_mode: ResumeMode,
 }
 
-impl GdbUhyve {
-	pub fn new(vm: UhyveVm<KvmVm>) -> Self {
-		Self { vm }
-	}
-}
-
 /// Compute a thread ID from a pthread ID
 ///
 /// This deals with the particularities of GDB which truncates thread IDs to signed 32bit,
@@ -92,18 +82,17 @@ fn derive_tid(pthread: libc::pthread_t) -> NonZero<u32> {
 	NonZero::new((pthread as u32) & !(1u32 << 31)).unwrap()
 }
 
-impl GdbUhyve {
-	pub fn spawn_freewheel(self, cpu_affinity: Option<Vec<CoreId>>) -> Freewheel {
+impl UhyveVm<KvmVm> {
+	pub fn spawn_cpu_manager_for_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> GdbVcpuManager {
 		use std::os::unix::thread::JoinHandleExt;
-		let Self { vm } = self;
 
 		let (stops_s, stops_r) = async_channel::unbounded();
-		let peripherals = Arc::clone(&vm.peripherals);
-		let kernel_info = Arc::clone(&vm.kernel_info);
+		let peripherals = Arc::clone(&self.peripherals);
+		let kernel_info = Arc::clone(&self.kernel_info);
 		let breakpoints = Arc::new(RwLock::new(AllBreakpoints::new()));
 		let cpu_affinity: Option<Arc<[_]>> = cpu_affinity.map(Arc::from);
 
-		let vcpus = vm
+		let vcpus = self
 			.vcpus
 			.into_iter()
 			.map(|vcpu| {
@@ -218,7 +207,7 @@ impl GdbUhyve {
 			.collect();
 		trace!("tid2vcpu = {tid_to_vcpu:?}");
 
-		Freewheel {
+		GdbVcpuManager {
 			breakpoints,
 			peripherals,
 			kernel_info,
@@ -232,7 +221,7 @@ impl GdbUhyve {
 	}
 }
 
-impl Freewheel {
+impl GdbVcpuManager {
 	pub fn tid_to_vcpuw(&self, tid: Tid) -> &VcpuWrapper {
 		match self.tid_to_vcpu.get(&(tid.try_into().unwrap())) {
 			Some(&vcpu_id) => &self.vcpus[vcpu_id],
@@ -252,7 +241,7 @@ impl Freewheel {
 	}
 }
 
-impl Target for Freewheel {
+impl Target for GdbVcpuManager {
 	type Arch = gdbstub_arch::x86::X86_64_SSE;
 	type Error = HypervisorError;
 
@@ -281,7 +270,7 @@ impl Target for Freewheel {
 	}
 }
 
-impl target_multithread::MultiThreadBase for Freewheel {
+impl target_multithread::MultiThreadBase for GdbVcpuManager {
 	fn read_registers(&mut self, regs: &mut X86_64CoreRegs, tid: Tid) -> TargetResult<(), Self> {
 		regs::read(self.tid_to_kvm_cpu(tid).read().unwrap().get_vcpu(), regs)
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))

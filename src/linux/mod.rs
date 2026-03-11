@@ -22,7 +22,7 @@ use libc::{SIGRTMAX, SIGRTMIN};
 use nix::sys::pthread::Pthread;
 
 use crate::{
-	linux::{gdb::GdbUhyve, x86_64::kvm_cpu::KvmVm},
+	linux::x86_64::kvm_cpu::KvmVm,
 	serial::Destination,
 	vm::{UhyveVm, VmResult},
 };
@@ -105,11 +105,10 @@ impl UhyveVm<KvmVm> {
 		let connection =
 			wait_for_gdb_connection(self.kernel_info.params.gdb_port.unwrap()).unwrap();
 		let debugger = GdbStub::new(connection);
-		// The Uhyve VCPU freewheel thread.
-		let mut freewheel = GdbUhyve::new(self).spawn_freewheel(cpu_affinity);
+		let mut vcpu_manager = self.spawn_cpu_manager_for_gdb(cpu_affinity);
 
 		let mut gdb = debugger
-			.run_state_machine(&mut freewheel)
+			.run_state_machine(&mut vcpu_manager)
 			.expect("GDB run_state_machine initialization failed");
 
 		let code = loop {
@@ -117,7 +116,7 @@ impl UhyveVm<KvmVm> {
 				GdbStubStateMachine::Idle(mut gdb) => {
 					// needs more data, so perform a blocking read on the connection
 					let byte = gdb.borrow_conn().read().expect("GDB connection read error");
-					gdb.incoming_data(&mut freewheel, byte)
+					gdb.incoming_data(&mut vcpu_manager, byte)
 						.expect("GDB incoming_data error")
 				}
 
@@ -142,11 +141,11 @@ impl UhyveVm<KvmVm> {
 					// defer to the implementation on how it wants to handle the interrupt
 
 					// Kick VCPU out of KVM_RUN
-					for i in &freewheel.vcpus {
+					for i in &vcpu_manager.vcpus {
 						i.kick();
 					}
 
-					gdb.interrupt_handled(&mut freewheel, None::<MultiThreadStopReason<u64>>)
+					gdb.interrupt_handled(&mut vcpu_manager, None::<MultiThreadStopReason<u64>>)
 						.expect("GDB interrupt_handled packet write failed")
 				}
 
@@ -158,7 +157,7 @@ impl UhyveVm<KvmVm> {
 						Gdb(Y),
 					}
 
-					freewheel.finished_initializing();
+					vcpu_manager.finished_initializing();
 
 					let borrow_conn = gdb.borrow_conn();
 					let inp = block_on(futures_lite::future::or(
@@ -173,18 +172,18 @@ impl UhyveVm<KvmVm> {
 							let _ = gdb_conn_async.into_inner();
 							UhyveOrGdb::Gdb(ret)
 						},
-						async { UhyveOrGdb::Uhyve(freewheel.stops.recv().await) },
+						async { UhyveOrGdb::Uhyve(vcpu_manager.stops.recv().await) },
 					));
 
 					match inp {
 						UhyveOrGdb::Gdb(byte) => {
 							let byte = byte.expect("error during GDB recv");
-							gdb.incoming_data(&mut freewheel, byte)
+							gdb.incoming_data(&mut vcpu_manager, byte)
 								.expect("GDB incoming_data error")
 						}
 						UhyveOrGdb::Uhyve(stop_reason) => {
 							let stop_reason = stop_reason.expect("error during stop packet recv");
-							gdb.report_stop(&mut freewheel, stop_reason)
+							gdb.report_stop(&mut vcpu_manager, stop_reason)
 								.expect("GDB report_stop error")
 						}
 					}
@@ -192,11 +191,11 @@ impl UhyveVm<KvmVm> {
 			}
 		};
 
-		for i in &freewheel.vcpus {
+		for i in &vcpu_manager.vcpus {
 			i.kick();
 		}
 
-		let output = if let Destination::Buffer(b) = &freewheel.peripherals.serial.destination {
+		let output = if let Destination::Buffer(b) = &vcpu_manager.peripherals.serial.destination {
 			Some(String::from_utf8_lossy(&b.lock().unwrap()).into_owned())
 		} else {
 			None
