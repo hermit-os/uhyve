@@ -86,7 +86,10 @@ fn derive_tid(pthread: libc::pthread_t) -> NonZero<u32> {
 }
 
 impl UhyveVm<KvmVm> {
-	pub fn spawn_cpu_manager_for_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> GdbVcpuManager {
+	pub(crate) fn spawn_cpu_manager_for_gdb(
+		self,
+		cpu_affinity: Option<Vec<CoreId>>,
+	) -> GdbVcpuManager {
 		use std::os::unix::thread::JoinHandleExt;
 
 		let (stops_s, stops_r) = async_channel::unbounded();
