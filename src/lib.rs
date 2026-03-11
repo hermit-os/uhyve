@@ -71,4 +71,20 @@ pub enum HypervisorError {
 	LoadedKernelError(#[from] vm::LoadKernelError),
 }
 
+impl HypervisorError {
+	/// Report an (target independent) invalid value error e.g. during debug interactions
+	fn backend_report_invalid_value() -> Self {
+		Self::BackendError({
+			#[cfg(target_os = "linux")]
+			{
+				kvm_ioctls::Error::new(libc::EINVAL)
+			}
+			#[cfg(target_os = "macos")]
+			{
+				xhypervisor::Error::BadArg
+			}
+		})
+	}
+}
+
 pub type HypervisorResult<T> = Result<T, HypervisorError>;

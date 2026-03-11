@@ -5,11 +5,6 @@ use gdbstub::{
 	common::{Signal, Tid},
 	target::ext::base::multithread as target_multithread,
 };
-use kvm_bindings::{
-	KVM_GUESTDBG_ENABLE, KVM_GUESTDBG_SINGLESTEP, KVM_GUESTDBG_USE_HW_BP, KVM_GUESTDBG_USE_SW_BP,
-	kvm_guest_debug, kvm_guest_debug_arch,
-};
-use libc::EINVAL;
 
 use super::{Freewheel, VcpuWrapper, VcpuWrapperShared, breakpoints::AllBreakpoints};
 use crate::{HypervisorError, HypervisorResult, linux::KickSignal};
@@ -73,6 +68,10 @@ impl VcpuWrapper {
 
 impl VcpuWrapperShared {
 	pub fn apply_current_guest_debug(&self, breakpoints: &AllBreakpoints) -> HypervisorResult<()> {
+		use kvm_bindings::{
+			KVM_GUESTDBG_ENABLE, KVM_GUESTDBG_SINGLESTEP, KVM_GUESTDBG_USE_HW_BP,
+			KVM_GUESTDBG_USE_SW_BP, kvm_guest_debug, kvm_guest_debug_arch,
+		};
 		let debugreg = breakpoints.hard.registers();
 		let mut control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_SW_BP | KVM_GUESTDBG_USE_HW_BP;
 		// SAFETY: we trust the value of `self.resume.mode`.
@@ -119,7 +118,7 @@ impl target_multithread::MultiThreadResume for Freewheel {
 	) -> Result<(), Self::Error> {
 		if signal.is_some() {
 			// cannot step with signal
-			return Err(kvm_ioctls::Error::new(EINVAL).into());
+			return Err(crate::HypervisorError::backend_report_invalid_value());
 		}
 
 		self.tid_to_vcpuw_mut(tid).planned_resume_mode = Some(ResumeMode::Freewheel);
@@ -158,7 +157,7 @@ impl target_multithread::MultiThreadSingleStep for Freewheel {
 	) -> Result<(), Self::Error> {
 		if signal.is_some() {
 			// cannot step with signal
-			return Err(kvm_ioctls::Error::new(EINVAL).into());
+			return Err(crate::HypervisorError::backend_report_invalid_value());
 		}
 
 		self.tid_to_vcpuw_mut(tid).planned_resume_mode = Some(ResumeMode::Step);
