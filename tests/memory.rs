@@ -2,14 +2,15 @@ mod common;
 
 use std::thread;
 
-use common::{BuildMode, build_hermit_bin, run_vm_with_custom_memory};
+use common::{
+	BuildMode, build_hermit_bin, check_result, env_logger_build, run_vm_with_custom_memory,
+};
 use uhyvelib::vm::VmResult;
 
-use crate::common::check_result;
 /// Runs the `hello_world` kernel with the given memory size.
 #[inline]
 fn run_x_mib(memory_size: u64) -> VmResult {
-	env_logger::try_init().ok();
+	env_logger_build();
 	let bin_path = build_hermit_bin("hello_world", BuildMode::Debug);
 	run_vm_with_custom_memory(bin_path, memory_size)
 }
