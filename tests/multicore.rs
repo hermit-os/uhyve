@@ -3,7 +3,7 @@ mod common;
 use std::{thread::sleep, time::Duration};
 
 use byte_unit::{Byte, Unit};
-use common::{BuildMode, build_hermit_bin, check_result};
+use common::{BuildMode, build_hermit_bin, check_result, env_logger_build};
 use regex::Regex;
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
@@ -14,7 +14,7 @@ use uhyvelib::{
 
 #[test]
 fn multicore_test() {
-	env_logger::try_init().ok();
+	env_logger_build();
 	let bin_path = build_hermit_bin("multi-thread", BuildMode::Debug);
 
 	let re = Regex::new(r"Speedup: [\d]+us / \d+us =\s*([\d.]+)").unwrap();
@@ -57,7 +57,7 @@ fn multicore_test() {
 				continue 'outer;
 			}
 			println!(
-				"Warning: speedup {speedup} is below expectation (expected_min_speedup). Retrying ({}/{NR_RETRIES})",
+				"Warning! Speedup {speedup} is below expectation (expected_min_speedup). Retrying ({}/{NR_RETRIES})",
 				i + 1
 			);
 			speedups.push(speedup);

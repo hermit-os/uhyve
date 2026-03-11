@@ -12,9 +12,11 @@ use uhyvelib::{
 	vm::UhyveVm,
 };
 
+use crate::common::env_logger_build;
+
 #[test]
 fn serial_buffer_test() {
-	env_logger::try_init().ok();
+	env_logger_build();
 	let bin_path = build_hermit_bin("serial", BuildMode::Debug);
 	let res = run_simple_vm(bin_path);
 	println!("Kernel output: {res:?}");
@@ -29,7 +31,7 @@ fn serial_buffer_test() {
 
 #[test]
 fn serial_file_output_test() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let fixture_path = get_fs_fixture_path();
 

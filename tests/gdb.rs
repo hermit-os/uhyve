@@ -8,7 +8,7 @@ use std::{
 	thread,
 };
 
-use common::{BuildMode, build_hermit_bin, rust_gdb};
+use common::{BuildMode, build_hermit_bin, env_logger_build, rust_gdb};
 use tempfile::TempDir;
 use uhyvelib::{
 	params::{Output, Params},
@@ -17,6 +17,8 @@ use uhyvelib::{
 
 #[test]
 fn gdb() -> io::Result<()> {
+	env_logger_build();
+
 	let port = 1234;
 	let bin_path = build_hermit_bin("gdb", BuildMode::Debug);
 
