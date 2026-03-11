@@ -110,6 +110,16 @@ impl GdbUhyve {
 	}
 }
 
+/// Compute a thread ID from a pthread ID
+///
+/// This deals with the particularities of GDB which truncates thread IDs to signed 32bit,
+/// and gdbstub can't deal with negative thread IDs.
+///
+/// Therefore, we truncate to 31bit.
+fn derive_tid(pthread: libc::pthread_t) -> NonZero<u32> {
+	NonZero::new((pthread as u32) & !(1u32 << 31)).unwrap()
+}
+
 impl GdbUhyve {
 	pub fn spawn_freewheel(self, cpu_affinity: Option<Vec<CoreId>>) -> Freewheel {
 		use std::os::unix::thread::JoinHandleExt;
@@ -139,7 +149,7 @@ impl GdbUhyve {
 				let shared2 = Arc::clone(&shared);
 				let cpu_affinity = cpu_affinity.clone();
 				let join_handle = std::thread::spawn(move || {
-					let tid = NonZero::new(pthread_self() as u32).unwrap();
+					let tid = derive_tid(pthread_self());
 					let local_cpu_affinity = cpu_affinity
 						.as_ref()
 						.and_then(|core_ids| core_ids.get(vcpu_id).copied());
@@ -223,7 +233,7 @@ impl GdbUhyve {
 				VcpuWrapper {
 					shared: shared2,
 					pthread: PthreadWrapper(pthread),
-					tid: NonZero::new(pthread as u32).unwrap(),
+					tid: derive_tid(pthread),
 					planned_resume_mode: None,
 				}
 			})
