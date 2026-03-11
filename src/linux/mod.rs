@@ -111,7 +111,7 @@ impl UhyveVm<KvmVm> {
 			.run_state_machine(&mut vcpu_manager)
 			.expect("GDB run_state_machine initialization failed");
 
-		let code = loop {
+		let exit_code = loop {
 			gdb = match gdb {
 				GdbStubStateMachine::Idle(mut gdb) => {
 					// needs more data, so perform a blocking read on the connection
@@ -124,7 +124,7 @@ impl UhyveVm<KvmVm> {
 					// we keep things simple, and doesn't expose a way to re-use the
 					// state machine
 					break match gdb.get_reason() {
-						DisconnectReason::TargetExited(code) => code.into(),
+						DisconnectReason::TargetExited(exit_code) => exit_code.into(),
 						DisconnectReason::TargetTerminated(_) => unreachable!(),
 						DisconnectReason::Disconnect => {
 							eprintln!("Debugger disconnected.");
@@ -202,7 +202,7 @@ impl UhyveVm<KvmVm> {
 		};
 
 		VmResult {
-			code,
+			code: exit_code,
 			output,
 			stats: None,
 		}
