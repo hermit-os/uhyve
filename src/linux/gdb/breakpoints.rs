@@ -4,7 +4,26 @@ use gdbstub::target::{self, TargetResult, ext::breakpoints::WatchKind};
 use uhyve_interface::GuestVirtAddr;
 
 use super::Freewheel;
-use crate::arch::x86_64::{registers, virt_to_phys};
+use crate::arch::x86_64::{
+	registers::{self, debug::HwBreakpoints},
+	virt_to_phys,
+};
+
+#[derive(Clone, Debug)]
+pub struct AllBreakpoints {
+	pub hard: HwBreakpoints,
+	pub soft: SwBreakpoints,
+}
+
+impl AllBreakpoints {
+	pub fn new() -> Self {
+		Self {
+			hard: HwBreakpoints::new(),
+			soft: SwBreakpoints::new(),
+		}
+	}
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SwBreakpoint {
 	addr: u64,

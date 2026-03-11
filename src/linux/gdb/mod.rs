@@ -1,5 +1,6 @@
 mod breakpoints;
 mod regs;
+mod resume;
 mod section_offsets;
 
 use core::num::NonZero;
@@ -22,54 +23,25 @@ use gdbstub::{
 	},
 };
 use gdbstub_arch::x86::reg::X86_64CoreRegs;
-use kvm_bindings::{
-	BP_VECTOR, DB_VECTOR, KVM_GUESTDBG_ENABLE, KVM_GUESTDBG_SINGLESTEP, KVM_GUESTDBG_USE_HW_BP,
-	KVM_GUESTDBG_USE_SW_BP, kvm_guest_debug, kvm_guest_debug_arch,
-};
-use libc::EINVAL;
+use kvm_bindings::{BP_VECTOR, DB_VECTOR};
 use nix::sys::pthread::pthread_self;
 use uhyve_interface::GuestVirtAddr;
 use x86_64::registers::debug::Dr6Flags;
 
-use self::breakpoints::SwBreakpoints;
-use super::{KickSignal, PthreadWrapper, x86_64::kvm_cpu::KvmCpu};
+use self::{
+	breakpoints::AllBreakpoints,
+	resume::{ResumeMarker, ResumeMode},
+};
 use crate::{
-	HypervisorError, HypervisorResult,
-	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
-	linux::x86_64::kvm_cpu::KvmVm,
+	HypervisorError,
+	arch::x86_64::virt_to_phys,
+	linux::{
+		PthreadWrapper,
+		x86_64::kvm_cpu::{KvmCpu, KvmVm},
+	},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::{KernelInfo, UhyveVm, VmPeripherals},
 };
-
-struct AllBreakpoints {
-	hard: HwBreakpoints,
-	soft: SwBreakpoints,
-}
-
-impl AllBreakpoints {
-	pub fn new() -> Self {
-		Self {
-			hard: HwBreakpoints::new(),
-			soft: SwBreakpoints::new(),
-		}
-	}
-}
-
-struct ResumeMarker {
-	mode: AtomicU8,
-	event: Event,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-enum ResumeMode {
-	/// The vCPU is stopped (r#continue won't get called while this is set)
-	Stopped,
-	/// The vCPU is single-stepped
-	Step,
-	/// The vCPU is uninterrupt-runnable
-	Freewheel,
-}
 
 pub(crate) struct GdbUhyve {
 	pub(crate) vm: UhyveVm<KvmVm>,
@@ -278,77 +250,6 @@ impl Freewheel {
 	pub fn tid_to_kvm_cpu(&self, tid: Tid) -> &RwLock<KvmCpu> {
 		&self.tid_to_vcpuw(tid).shared.vcpu
 	}
-
-	pub fn finished_initializing(&mut self) {
-		if core::mem::replace(&mut self.is_initializing, false) {
-			for i in &mut self.vcpus {
-				i.freewheel();
-			}
-		}
-	}
-}
-
-impl VcpuWrapper {
-	/// Kick the vCPU
-	pub fn kick(&self) {
-		trace!("vcpu: kick! {}", self.tid);
-		KickSignal::pthread_kill(self.pthread.0).unwrap();
-	}
-
-	/// Resume the vCPU in Freewheel / non-stepped mode
-	fn freewheel(&mut self) {
-		// TODO: refactor to get rid of mutability
-		let old_planned = self.planned_resume_mode.take();
-		self.apply_resume_mode(ResumeMode::Freewheel);
-		self.planned_resume_mode = old_planned;
-	}
-
-	fn apply_resume_mode(&self, default_mode: ResumeMode) {
-		let mode = self.planned_resume_mode.unwrap_or(default_mode);
-
-		// SAFETY: we trust the value of `self.resume.mode`.
-		let old: ResumeMode = unsafe {
-			core::mem::transmute(self.shared.resume.mode.swap(mode as u8, Ordering::AcqRel))
-		};
-		trace!("apply_resume_mode @ {}: {:?} -> {:?}", self.tid, old, mode);
-		if mode != ResumeMode::Stopped {
-			self.shared.resume.event.notify(usize::MAX);
-		} else if old != ResumeMode::Stopped {
-			self.kick()
-		}
-	}
-}
-
-impl VcpuWrapperShared {
-	fn apply_current_guest_debug(&self, breakpoints: &AllBreakpoints) -> HypervisorResult<()> {
-		let debugreg = breakpoints.hard.registers();
-		let mut control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_SW_BP | KVM_GUESTDBG_USE_HW_BP;
-		// SAFETY: we trust the value of `self.resume.mode`.
-		let mode: ResumeMode =
-			unsafe { core::mem::transmute(self.resume.mode.load(Ordering::Acquire)) };
-		if mode == ResumeMode::Step {
-			control |= KVM_GUESTDBG_SINGLESTEP;
-		}
-		let debug_struct = kvm_guest_debug {
-			control,
-			pad: 0,
-			arch: kvm_guest_debug_arch { debugreg },
-		};
-
-		self.vcpu
-			.read()
-			.unwrap()
-			.get_vcpu()
-			.set_guest_debug(&debug_struct)
-			.map_err(HypervisorError::from)
-	}
-
-	fn is_stopped(&self) -> bool {
-		// we trust the value of `self.resume.mode`.
-		let mode: ResumeMode =
-			unsafe { core::mem::transmute(self.resume.mode.load(Ordering::Acquire)) };
-		mode == ResumeMode::Stopped
-	}
 }
 
 impl Target for Freewheel {
@@ -459,75 +360,5 @@ impl target_multithread::MultiThreadBase for Freewheel {
 	#[inline(always)]
 	fn support_resume(&mut self) -> Option<target_multithread::MultiThreadResumeOps<'_, Self>> {
 		Some(self)
-	}
-}
-
-impl target_multithread::MultiThreadResume for Freewheel {
-	fn clear_resume_actions(&mut self) -> Result<(), Self::Error> {
-		self.vcpus
-			.iter_mut()
-			.for_each(|i| i.planned_resume_mode = None);
-		self.default_resume_mode = ResumeMode::Freewheel;
-		Ok(())
-	}
-
-	fn set_resume_action_continue(
-		&mut self,
-		tid: Tid,
-		signal: Option<Signal>,
-	) -> Result<(), Self::Error> {
-		if signal.is_some() {
-			// cannot step with signal
-			return Err(kvm_ioctls::Error::new(EINVAL).into());
-		}
-
-		self.tid_to_vcpuw_mut(tid).planned_resume_mode = Some(ResumeMode::Freewheel);
-
-		Ok(())
-	}
-
-	fn resume(&mut self) -> Result<(), Self::Error> {
-		for i in &self.vcpus {
-			i.apply_resume_mode(self.default_resume_mode);
-		}
-
-		Ok(())
-	}
-
-	#[inline(always)]
-	fn support_single_step(
-		&mut self,
-	) -> Option<target_multithread::MultiThreadSingleStepOps<'_, Self>> {
-		Some(self)
-	}
-
-	#[inline(always)]
-	fn support_scheduler_locking(
-		&mut self,
-	) -> Option<target_multithread::MultiThreadSchedulerLockingOps<'_, Self>> {
-		Some(self)
-	}
-}
-
-impl target_multithread::MultiThreadSingleStep for Freewheel {
-	fn set_resume_action_step(
-		&mut self,
-		tid: Tid,
-		signal: Option<Signal>,
-	) -> Result<(), Self::Error> {
-		if signal.is_some() {
-			// cannot step with signal
-			return Err(kvm_ioctls::Error::new(EINVAL).into());
-		}
-
-		self.tid_to_vcpuw_mut(tid).planned_resume_mode = Some(ResumeMode::Step);
-		Ok(())
-	}
-}
-
-impl target_multithread::MultiThreadSchedulerLocking for Freewheel {
-	fn set_resume_action_scheduler_lock(&mut self) -> Result<(), Self::Error> {
-		self.default_resume_mode = ResumeMode::Stopped;
-		Ok(())
 	}
 }
