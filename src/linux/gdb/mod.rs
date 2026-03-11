@@ -71,11 +71,6 @@ enum ResumeMode {
 	Freewheel,
 }
 
-#[derive(Clone)]
-struct ResumeCycle {
-	per_vcpu: Vec<ResumeMode>,
-}
-
 pub(crate) struct GdbUhyve {
 	pub(crate) vm: UhyveVm<KvmVm>,
 }
@@ -91,6 +86,8 @@ pub(crate) struct VcpuWrapper {
 	pthread: PthreadWrapper,
 	/// This does look odd, but GDB appears to truncate thread-ids to 32bit
 	tid: NonZero<u32>,
+
+	planned_resume_mode: Option<ResumeMode>,
 }
 
 #[derive(Clone)]
@@ -103,7 +100,7 @@ pub(crate) struct Freewheel {
 	/// This does look odd, but GDB appears to truncate thread-ids to 32bit
 	pub(crate) tid_to_vcpu: HashMap<NonZero<u32>, usize>,
 
-	resume_cycle: Option<ResumeCycle>,
+	default_resume_mode: ResumeMode,
 }
 
 impl GdbUhyve {
@@ -113,10 +110,11 @@ impl GdbUhyve {
 }
 
 impl GdbUhyve {
-	pub fn spawn_freewheel(self, cpu_affinity: Option<Vec<CoreId>>) -> Freewheel {
+	pub fn spawn_freewheel(self, cpu_affinity: Option<Vec<CoreId>>) -> (Freewheel, Arc<Event>) {
 		use std::os::unix::thread::JoinHandleExt;
 		let Self { vm } = self;
 
+		let full_init_event = Arc::new(Event::new());
 		let (stops_s, stops_r) = async_channel::unbounded();
 		let peripherals = Arc::clone(&vm.peripherals);
 		let kernel_info = Arc::clone(&vm.kernel_info);
@@ -127,6 +125,7 @@ impl GdbUhyve {
 			.vcpus
 			.into_iter()
 			.map(|vcpu| {
+				let full_init_event = Arc::clone(&full_init_event);
 				let vcpu_id = vcpu.get_vcpu_id();
 				let vcpu = RwLock::new(vcpu);
 				let stops_s = stops_s.clone();
@@ -154,6 +153,8 @@ impl GdbUhyve {
 						None => debug!("No affinity specified, not binding thread"),
 					}
 
+					drop(cpu_affinity);
+
 					shared
 						.vcpu
 						.write()
@@ -161,7 +162,23 @@ impl GdbUhyve {
 						.thread_local_init()
 						.expect("Unable to initialize vCPU");
 
+					// TODO: this is an anti-pattern (might spuriously wakeup)
+					full_init_event.listen().wait();
+
 					loop {
+						loop {
+							if !shared.is_stopped() {
+								break;
+							}
+
+							let listener = shared.resume.event.listen();
+
+							if !shared.is_stopped() {
+								break;
+							}
+
+							listener.wait();
+						}
 						shared
 							.apply_current_guest_debug(&(*breakpoints).read().unwrap())
 							.expect("GDB target error");
@@ -197,20 +214,13 @@ impl GdbUhyve {
 								}
 							}
 						};
+						// Make sure that no matter the reason, we have to be explicitly resumed after this
+						// e.g. for breakpoints to work
+						shared
+							.resume
+							.mode
+							.store(ResumeMode::Stopped as u8, Ordering::Release);
 						block_on(stops_s.send(stop_reason)).expect("unable to send info to GDB");
-						loop {
-							if !shared.is_stopped() {
-								break;
-							}
-
-							let listener = shared.resume.event.listen();
-
-							if !shared.is_stopped() {
-								break;
-							}
-
-							listener.wait();
-						}
 					}
 				});
 				let pthread = join_handle.as_pthread_t();
@@ -218,6 +228,7 @@ impl GdbUhyve {
 					shared: shared2,
 					pthread: PthreadWrapper(pthread),
 					tid: NonZero::new(pthread as u32).unwrap(),
+					planned_resume_mode: None,
 				}
 			})
 			.collect::<Vec<_>>();
@@ -229,23 +240,35 @@ impl GdbUhyve {
 			.collect();
 		trace!("tid2vcpu = {tid_to_vcpu:?}");
 
-		Freewheel {
-			breakpoints,
-			peripherals,
-			kernel_info,
-			stops: stops_r,
-			vcpus,
-			tid_to_vcpu,
+		(
+			Freewheel {
+				breakpoints,
+				peripherals,
+				kernel_info,
+				stops: stops_r,
+				vcpus,
+				tid_to_vcpu,
 
-			resume_cycle: None,
-		}
+				default_resume_mode: ResumeMode::Freewheel,
+			},
+			full_init_event,
+		)
 	}
 }
 
 impl Freewheel {
 	pub fn tid_to_vcpuw(&self, tid: Tid) -> &VcpuWrapper {
-		trace!("tid_to_vcpuw({tid:?})");
-		&self.vcpus[self.tid_to_vcpu[&(tid.try_into().unwrap())]]
+		match self.tid_to_vcpu.get(&(tid.try_into().unwrap())) {
+			Some(&vcpu_id) => &self.vcpus[vcpu_id],
+			None => panic!("unable to resolve thread-id from GDB: {tid}"),
+		}
+	}
+
+	pub fn tid_to_vcpuw_mut(&mut self, tid: Tid) -> &mut VcpuWrapper {
+		match self.tid_to_vcpu.get(&(tid.try_into().unwrap())) {
+			Some(&vcpu_id) => &mut self.vcpus[vcpu_id],
+			None => panic!("unable to resolve thread-id from GDB: {tid}"),
+		}
 	}
 
 	pub fn tid_to_kvm_cpu(&self, tid: Tid) -> &RwLock<KvmCpu> {
@@ -260,7 +283,9 @@ impl VcpuWrapper {
 		KickSignal::pthread_kill(self.pthread.0).unwrap();
 	}
 
-	fn apply_resume_mode(&self, mode: ResumeMode) {
+	fn apply_resume_mode(&self, default_mode: ResumeMode) {
+		let mode = self.planned_resume_mode.unwrap_or(default_mode);
+
 		// SAFETY: we trust the value of `self.resume.mode`.
 		let old: ResumeMode = unsafe {
 			core::mem::transmute(self.shared.resume.mode.swap(mode as u8, Ordering::AcqRel))
@@ -303,20 +328,6 @@ impl VcpuWrapperShared {
 		let mode: ResumeMode =
 			unsafe { core::mem::transmute(self.resume.mode.load(Ordering::Acquire)) };
 		mode == ResumeMode::Stopped
-	}
-}
-
-impl ResumeCycle {
-	pub fn new(vcpus: usize, scheduler_locking: bool) -> Self {
-		let default_mode = if scheduler_locking {
-			ResumeMode::Stopped
-		} else {
-			ResumeMode::Freewheel
-		};
-
-		Self {
-			per_vcpu: vec![default_mode; vcpus],
-		}
 	}
 }
 
@@ -433,7 +444,10 @@ impl target_multithread::MultiThreadBase for Freewheel {
 
 impl target_multithread::MultiThreadResume for Freewheel {
 	fn clear_resume_actions(&mut self) -> Result<(), Self::Error> {
-		self.resume_cycle = None;
+		self.vcpus
+			.iter_mut()
+			.for_each(|i| i.planned_resume_mode = None);
+		self.default_resume_mode = ResumeMode::Freewheel;
 		Ok(())
 	}
 
@@ -447,23 +461,16 @@ impl target_multithread::MultiThreadResume for Freewheel {
 			return Err(kvm_ioctls::Error::new(EINVAL).into());
 		}
 
-		let resume_cycle = self
-			.resume_cycle
-			.get_or_insert_with(|| ResumeCycle::new(self.vcpus.len(), false));
+		self.tid_to_vcpuw_mut(tid).planned_resume_mode = Some(ResumeMode::Freewheel);
 
-		resume_cycle.per_vcpu[self.tid_to_vcpu[&tid.try_into().unwrap()]] = ResumeMode::Freewheel;
 		Ok(())
 	}
 
 	fn resume(&mut self) -> Result<(), Self::Error> {
-		let resume_cycle = self
-			.resume_cycle
-			.clone()
-			.unwrap_or_else(|| ResumeCycle::new(self.vcpus.len(), false));
-
-		for (vcpuw, resume_mode) in self.vcpus.iter().zip(resume_cycle.per_vcpu.iter()) {
-			vcpuw.apply_resume_mode(*resume_mode);
+		for i in &self.vcpus {
+			i.apply_resume_mode(self.default_resume_mode);
 		}
+
 		Ok(())
 	}
 
@@ -493,18 +500,14 @@ impl target_multithread::MultiThreadSingleStep for Freewheel {
 			return Err(kvm_ioctls::Error::new(EINVAL).into());
 		}
 
-		let resume_cycle = self
-			.resume_cycle
-			.get_or_insert_with(|| ResumeCycle::new(self.vcpus.len(), false));
-
-		resume_cycle.per_vcpu[self.tid_to_vcpu[&tid.try_into().unwrap()]] = ResumeMode::Step;
+		self.tid_to_vcpuw_mut(tid).planned_resume_mode = Some(ResumeMode::Step);
 		Ok(())
 	}
 }
 
 impl target_multithread::MultiThreadSchedulerLocking for Freewheel {
 	fn set_resume_action_scheduler_lock(&mut self) -> Result<(), Self::Error> {
-		self.resume_cycle = Some(ResumeCycle::new(self.vcpus.len(), true));
+		self.default_resume_mode = ResumeMode::Stopped;
 		Ok(())
 	}
 }

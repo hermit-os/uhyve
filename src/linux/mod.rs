@@ -106,16 +106,13 @@ impl UhyveVm<KvmVm> {
 			wait_for_gdb_connection(self.kernel_info.params.gdb_port.unwrap()).unwrap();
 		let debugger = GdbStub::new(connection);
 		// The Uhyve VCPU freewheel thread.
-		let mut freewheel = GdbUhyve::new(self).spawn_freewheel(cpu_affinity);
+		let (mut freewheel, full_init_event) = GdbUhyve::new(self).spawn_freewheel(cpu_affinity);
+
+		let mut full_init_event = Some(full_init_event);
 
 		let mut gdb = debugger
 			.run_state_machine(&mut freewheel)
 			.expect("GDB run_state_machine initialization failed");
-
-		use gdbstub::target::ext::base::multithread::MultiThreadBase;
-		freewheel
-			.list_active_threads(&mut |tid| trace!("Active thread: {tid:?}"))
-			.expect("Expecting active thread");
 
 		let code = loop {
 			gdb = match gdb {
@@ -146,15 +143,10 @@ impl UhyveVm<KvmVm> {
 				GdbStubStateMachine::CtrlCInterrupt(gdb) => {
 					// defer to the implementation on how it wants to handle the interrupt
 
-					//let stop_reason = Some(SingleThreadStopReason::Signal(Signal::SIGINT));
-
 					// Kick VCPU out of KVM_RUN
 					for i in &freewheel.vcpus {
 						i.kick();
 					}
-
-					//let stop_reason = block_on(freewheel.stop_reasons.recv())
-					//	.expect("unable to receive vCPU stop reason");
 
 					gdb.interrupt_handled(&mut freewheel, None::<SingleThreadStopReason<u64>>)
 						.expect("GDB interrupt_handled packet write failed")
@@ -166,6 +158,10 @@ impl UhyveVm<KvmVm> {
 					enum UhyveOrGdb<X, Y> {
 						Uhyve(X),
 						Gdb(Y),
+					}
+
+					if let Some(fie) = full_init_event.take() {
+						fie.notify(usize::MAX);
 					}
 
 					let borrow_conn = gdb.borrow_conn();
