@@ -22,14 +22,14 @@ pub enum ResumeMode {
 	/// The vCPU is single-stepped
 	Step,
 	/// The vCPU is uninterrupt-runnable
-	Freewheel,
+	FreeWheeling,
 }
 
 impl GdbVcpuManager {
 	pub fn finished_initializing(&mut self) {
 		if core::mem::replace(&mut self.is_initializing, false) {
 			for i in &mut self.vcpus {
-				i.freewheel();
+				i.free_wheel();
 			}
 		}
 	}
@@ -42,11 +42,11 @@ impl VcpuWrapper {
 		KickSignal::pthread_kill(self.pthread.0).unwrap();
 	}
 
-	/// Resume the vCPU in freewheel / non-stepped mode
-	fn freewheel(&mut self) {
+	/// Resume the vCPU in free-wheeling / non-stepped mode
+	fn free_wheel(&mut self) {
 		// TODO: refactor to get rid of mutability
 		let old_planned = self.planned_resume_mode.take();
-		self.apply_resume_mode(ResumeMode::Freewheel);
+		self.apply_resume_mode(ResumeMode::FreeWheeling);
 		self.planned_resume_mode = old_planned;
 	}
 
@@ -107,7 +107,7 @@ impl target_multithread::MultiThreadResume for GdbVcpuManager {
 		self.vcpus
 			.iter_mut()
 			.for_each(|i| i.planned_resume_mode = None);
-		self.default_resume_mode = ResumeMode::Freewheel;
+		self.default_resume_mode = ResumeMode::FreeWheeling;
 		Ok(())
 	}
 
@@ -121,7 +121,7 @@ impl target_multithread::MultiThreadResume for GdbVcpuManager {
 			return Err(crate::HypervisorError::backend_invalid_value());
 		}
 
-		self.get_vcpu_wrapper_mut(tid).planned_resume_mode = Some(ResumeMode::Freewheel);
+		self.get_vcpu_wrapper_mut(tid).planned_resume_mode = Some(ResumeMode::FreeWheeling);
 
 		Ok(())
 	}

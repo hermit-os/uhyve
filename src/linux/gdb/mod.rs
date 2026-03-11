@@ -219,7 +219,7 @@ impl UhyveVm<KvmVm> {
 			tid_to_vcpu,
 
 			is_initializing: true,
-			default_resume_mode: ResumeMode::Freewheel,
+			default_resume_mode: ResumeMode::FreeWheeling,
 		}
 	}
 }
