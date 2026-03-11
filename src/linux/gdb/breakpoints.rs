@@ -4,9 +4,9 @@ use gdbstub::target::{self, TargetResult, ext::breakpoints::WatchKind};
 use uhyve_interface::GuestVirtAddr;
 
 use super::Freewheel;
-use crate::arch::x86_64::{
-	registers::{self, debug::HwBreakpoints},
+use crate::arch::{
 	virt_to_phys,
+	x86_64::registers::{self, debug::HwBreakpoints},
 };
 
 #[derive(Clone, Debug, Default)]

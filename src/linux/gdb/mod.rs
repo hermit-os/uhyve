@@ -34,7 +34,7 @@ use self::{
 };
 use crate::{
 	HypervisorError,
-	arch::x86_64::virt_to_phys,
+	arch::virt_to_phys,
 	linux::{
 		PthreadWrapper,
 		x86_64::kvm_cpu::{KvmCpu, KvmVm},
