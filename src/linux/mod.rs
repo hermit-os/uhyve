@@ -15,7 +15,7 @@ use async_io::block_on;
 use core_affinity::CoreId;
 use gdbstub::{
 	conn::ConnectionExt,
-	stub::{DisconnectReason, GdbStub, SingleThreadStopReason, state_machine::GdbStubStateMachine},
+	stub::{DisconnectReason, GdbStub, MultiThreadStopReason, state_machine::GdbStubStateMachine},
 };
 use kvm_ioctls::Kvm;
 use libc::{SIGRTMAX, SIGRTMIN};
@@ -148,7 +148,7 @@ impl UhyveVm<KvmVm> {
 						i.kick();
 					}
 
-					gdb.interrupt_handled(&mut freewheel, None::<SingleThreadStopReason<u64>>)
+					gdb.interrupt_handled(&mut freewheel, None::<MultiThreadStopReason<u64>>)
 						.expect("GDB interrupt_handled packet write failed")
 				}
 
