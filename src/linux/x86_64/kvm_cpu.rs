@@ -317,45 +317,45 @@ impl KvmCpu {
 
 		let cr4 = Cr4Flags::PHYSICAL_ADDRESS_EXTENSION;
 		sregs.cr4 = cr4.bits();
-
 		sregs.efer = EFER_LME | EFER_LMA | EFER_NXE;
 
+		// Generate segments for code (cs), data (ds), strings (es), stacks (ss)
+		// (See Section 3.4.5 from Intel Software Developer's Manual - Volume 3)
+		//
+		// segment selector layout crash-course:
+		// - bits 0-1: requested privilege level
+		// - bit 2: 0 for GDTs.
+		// - bits 3-15: define the index bit
 		let mut seg = kvm_segment {
-			base: 0,
-			limit: 0xffffffff,
-			selector: 1 << 3,
+			base: 0,           // 64-bit
+			limit: 0xffffffff, // 4GByte
+			selector: 1 << 3,  // first GDT entry
+			type_: 11,         // Execute-Read, accessed (code segment)
 			present: 1,
-			type_: 11,
-			dpl: 0,
-			db: 0,
-			s: 1,
-			l: 1,
-			g: 1,
+			dpl: 0, // most privileged descriptor privilege level
+			s: 1,   // segment is either for code or data
+			l: 1,   // long ("contains native 64-bit code")
+			g: 1,   // granularity, "support 4GByte (limits) in 4Kbyte increments"
 			..Default::default()
 		};
 
 		sregs.cs = seg;
-
-		seg.type_ = 3;
-		seg.selector = 2 << 3;
-		seg.l = 0;
-		sregs.ds = seg;
-		sregs.es = seg;
-		sregs.ss = seg;
-		//sregs.fs = seg;
-		//sregs.gs = seg;
+		// DS, ES, SS: Data segments, using second GDT entry.
+		// Read-Write, accessed. L bit must not be set.
+		(seg.type_, seg.selector, seg.l) = (3, 1 << 4, 0);
+		(sregs.ds, sregs.es, sregs.ss) = (seg, seg, seg);
 		sregs.gdt.base = (guest_address + GDT_OFFSET).as_u64();
 		sregs.gdt.limit = ((std::mem::size_of::<u64>() * BOOT_GDT_MAX) - 1) as u16;
-
 		self.vcpu.set_sregs(&sregs)?;
 
-		let mut regs = self.vcpu.get_regs()?;
-		regs.rflags = 2;
-		regs.rip = entry_point.as_u64();
-		regs.rdi = (guest_address + BOOT_INFO_OFFSET).as_u64();
-		regs.rsi = cpu_id.try_into().unwrap();
-		regs.rsp = stack_address.as_u64();
-
+		let regs = kvm_regs {
+			rflags: 2,
+			rip: entry_point.as_u64(),
+			rdi: (guest_address + BOOT_INFO_OFFSET).as_u64(),
+			rsi: cpu_id.try_into().unwrap(),
+			rsp: stack_address.as_u64(),
+			..Default::default()
+		};
 		self.vcpu.set_regs(&regs)?;
 
 		Ok(())
