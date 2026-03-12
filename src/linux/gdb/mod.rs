@@ -1,51 +1,256 @@
 mod breakpoints;
 mod regs;
+mod resume;
 mod section_offsets;
 
-use std::{io::Read, net::TcpStream, sync::Once, thread, time::Duration};
+use core::num::NonZero;
+use std::{
+	collections::HashMap,
+	sync::{
+		Arc, RwLock,
+		atomic::{AtomicU8, Ordering},
+	},
+};
 
+use async_io::block_on;
+use core_affinity::CoreId;
+use event_listener::{Event, Listener};
 use gdbstub::{
-	common::Signal,
-	conn::{Connection, ConnectionExt},
-	stub::{SingleThreadStopReason, run_blocking},
-	target::{self, Target, TargetError, TargetResult, ext::base::singlethread::SingleThreadBase},
+	common::{Signal, Tid},
+	stub::MultiThreadStopReason,
+	target::{
+		self, Target, TargetError, TargetResult, ext::base::multithread as target_multithread,
+	},
 };
 use gdbstub_arch::x86::reg::X86_64CoreRegs;
-use kvm_bindings::{
-	BP_VECTOR, DB_VECTOR, KVM_GUESTDBG_ENABLE, KVM_GUESTDBG_SINGLESTEP, KVM_GUESTDBG_USE_HW_BP,
-	KVM_GUESTDBG_USE_SW_BP, kvm_guest_debug, kvm_guest_debug_arch,
-};
-use libc::EINVAL;
+use kvm_bindings::{BP_VECTOR, DB_VECTOR};
 use nix::sys::pthread::pthread_self;
 use uhyve_interface::GuestVirtAddr;
 use x86_64::registers::debug::Dr6Flags;
 
-use self::breakpoints::SwBreakpoints;
+use self::{
+	breakpoints::AllBreakpoints,
+	resume::{ResumeMarker, ResumeMode},
+};
 use crate::{
-	HypervisorError, HypervisorResult,
-	arch::x86_64::{registers::debug::HwBreakpoints, virt_to_phys},
-	linux::{KickSignal, PthreadWrapper, x86_64::kvm_cpu::KvmVm},
+	HypervisorError,
+	arch::virt_to_phys,
+	linux::{
+		PthreadWrapper,
+		x86_64::kvm_cpu::{KvmCpu, KvmVm},
+	},
 	vcpu::{VcpuStopReason, VirtualCPU},
-	vm::UhyveVm,
+	vm::{KernelInfo, UhyveVm, VmPeripherals},
 };
 
-pub(crate) struct GdbUhyve {
-	pub(crate) vm: UhyveVm<KvmVm>,
-	hw_breakpoints: HwBreakpoints,
-	sw_breakpoints: SwBreakpoints,
+pub(crate) struct VcpuWrapperShared {
+	pub(crate) vcpu: RwLock<KvmCpu>,
+	resume: ResumeMarker,
 }
 
-impl GdbUhyve {
-	pub fn new(vm: UhyveVm<KvmVm>) -> Self {
-		Self {
-			vm,
-			hw_breakpoints: HwBreakpoints::new(),
-			sw_breakpoints: SwBreakpoints::new(),
+#[derive(Clone)]
+pub(crate) struct VcpuWrapper {
+	pub(crate) shared: Arc<VcpuWrapperShared>,
+	pthread: PthreadWrapper,
+
+	// This does look odd, but GDB appears to truncate thread-ids to 32bit.
+	//
+	// See also upstream issue: https://sourceware.org/bugzilla/show_bug.cgi?id=33979
+	tid: NonZero<u32>,
+
+	planned_resume_mode: Option<ResumeMode>,
+}
+
+#[derive(Clone)]
+pub(crate) struct GdbVcpuManager {
+	breakpoints: Arc<RwLock<AllBreakpoints>>,
+	pub(crate) peripherals: Arc<VmPeripherals>,
+	kernel_info: Arc<KernelInfo>,
+	pub(crate) stops: async_channel::Receiver<MultiThreadStopReason<u64>>,
+	pub(crate) vcpus: Vec<VcpuWrapper>,
+	/// This does look odd, but GDB appears to truncate thread-ids to 32bit
+	pub(crate) tid_to_vcpu: HashMap<NonZero<u32>, usize>,
+
+	is_initializing: bool,
+	default_resume_mode: ResumeMode,
+}
+
+/// Compute a thread ID from a pthread ID
+///
+/// This deals with the particularities of GDB which truncates thread IDs to signed 32bit,
+/// and gdbstub can't deal with negative thread IDs.
+///
+/// Therefore, we truncate to 31bit.
+fn derive_tid(pthread: libc::pthread_t) -> NonZero<u32> {
+	NonZero::new((pthread as u32) & !(1u32 << 31)).unwrap()
+}
+
+impl UhyveVm<KvmVm> {
+	pub(crate) fn spawn_cpu_manager_for_gdb(
+		self,
+		cpu_affinity: Option<Vec<CoreId>>,
+	) -> GdbVcpuManager {
+		use std::os::unix::thread::JoinHandleExt;
+
+		let (stops_s, stops_r) = async_channel::unbounded();
+		let peripherals = Arc::clone(&self.peripherals);
+		let kernel_info = Arc::clone(&self.kernel_info);
+		let breakpoints = Arc::new(RwLock::new(AllBreakpoints::new()));
+		let cpu_affinity: Option<Arc<[_]>> = cpu_affinity.map(Arc::from);
+
+		let vcpus = self
+			.vcpus
+			.into_iter()
+			.map(|vcpu| {
+				let vcpu_id = vcpu.get_vcpu_id();
+				let vcpu = RwLock::new(vcpu);
+				let stops_s = stops_s.clone();
+				let breakpoints = Arc::clone(&breakpoints);
+				let shared = Arc::new(VcpuWrapperShared {
+					resume: ResumeMarker {
+						mode: AtomicU8::new(ResumeMode::Stopped as u8),
+						event: Event::new(),
+					},
+					vcpu,
+				});
+				let shared2 = Arc::clone(&shared);
+				let cpu_affinity = cpu_affinity.clone();
+				let join_handle = std::thread::spawn(move || {
+					let tid = derive_tid(pthread_self());
+					let local_cpu_affinity = cpu_affinity
+						.as_ref()
+						.and_then(|core_ids| core_ids.get(vcpu_id).copied());
+
+					match local_cpu_affinity {
+						Some(core_id) => {
+							debug!("Trying to pin thread {} to CPU {}", vcpu_id, core_id.id);
+							core_affinity::set_for_current(core_id); // This does not return an error if it fails :(
+						}
+						None => debug!("No affinity specified, not binding thread"),
+					}
+
+					drop(cpu_affinity);
+
+					shared
+						.vcpu
+						.write()
+						.unwrap()
+						.thread_local_init()
+						.expect("Unable to initialize vCPU");
+
+					loop {
+						loop {
+							if !shared.is_stopped() {
+								break;
+							}
+
+							let listener = shared.resume.event.listen();
+
+							if !shared.is_stopped() {
+								break;
+							}
+
+							listener.wait();
+						}
+						shared
+							.apply_current_guest_debug(&(*breakpoints).read().unwrap())
+							.expect("GDB target error");
+						let stop_reason = match shared
+							.vcpu
+							.try_write()
+							.expect("GDB target lock error")
+							.r#continue()
+							.expect("GDB target error")
+						{
+							VcpuStopReason::Debug(debug) => match debug.exception {
+								DB_VECTOR => {
+									let dr6 = Dr6Flags::from_bits_truncate(debug.dr6);
+									breakpoints
+										.read()
+										.unwrap()
+										.hard
+										.stop_reason(tid.try_into().unwrap(), dr6)
+								}
+								BP_VECTOR => {
+									MultiThreadStopReason::SwBreak(tid.try_into().unwrap())
+								}
+								vector => unreachable!("unknown KVM exception vector: {}", vector),
+							},
+							VcpuStopReason::Exit(code) => {
+								MultiThreadStopReason::Exited(code.try_into().unwrap())
+							}
+							VcpuStopReason::Kick => {
+								trace!("vcpu {} got kicked (recv)", tid);
+								MultiThreadStopReason::SignalWithThread {
+									tid: tid.try_into().unwrap(),
+									signal: Signal::SIGINT,
+								}
+							}
+						};
+						// Make sure that no matter the reason, we have to be explicitly resumed after this
+						// e.g. for breakpoints to work
+						shared
+							.resume
+							.mode
+							.store(ResumeMode::Stopped as u8, Ordering::Release);
+						block_on(stops_s.send(stop_reason)).expect("unable to send info to GDB");
+					}
+				});
+				let pthread = join_handle.as_pthread_t();
+				VcpuWrapper {
+					shared: shared2,
+					pthread: PthreadWrapper(pthread),
+					tid: derive_tid(pthread),
+					planned_resume_mode: None,
+				}
+			})
+			.collect::<Vec<_>>();
+
+		let tid_to_vcpu = vcpus
+			.iter()
+			.enumerate()
+			.map(|(vcpu_id, vcpu)| (vcpu.tid, vcpu_id))
+			.collect();
+		trace!("tid2vcpu = {tid_to_vcpu:?}");
+
+		GdbVcpuManager {
+			breakpoints,
+			peripherals,
+			kernel_info,
+			stops: stops_r,
+			vcpus,
+			tid_to_vcpu,
+
+			is_initializing: true,
+			default_resume_mode: ResumeMode::FreeWheeling,
 		}
 	}
 }
 
-impl Target for GdbUhyve {
+impl GdbVcpuManager {
+	/// Resolves a [`Tid`] from GDB to the associated [`VcpuWrapper`].
+	fn get_vcpu_wrapper(&self, tid: Tid) -> &VcpuWrapper {
+		match self.tid_to_vcpu.get(&(tid.try_into().unwrap())) {
+			Some(&vcpu_id) => &self.vcpus[vcpu_id],
+			None => panic!("unable to resolve thread-id from GDB: {tid}"),
+		}
+	}
+
+	/// Resolves a [`Tid`] from GDB to the associated [`VcpuWrapper`]. Mutable version.
+	fn get_vcpu_wrapper_mut(&mut self, tid: Tid) -> &mut VcpuWrapper {
+		match self.tid_to_vcpu.get(&(tid.try_into().unwrap())) {
+			Some(&vcpu_id) => &mut self.vcpus[vcpu_id],
+			None => panic!("unable to resolve thread-id from GDB: {tid}"),
+		}
+	}
+
+	/// Resolves a [`Tid`] from GDB to the lock around the associated [`KvmCpu`].
+	fn get_vm_cpu(&self, tid: Tid) -> &RwLock<KvmCpu> {
+		&self.get_vcpu_wrapper(tid).shared.vcpu
+	}
+}
+
+impl Target for GdbVcpuManager {
 	type Arch = gdbstub_arch::x86::X86_64_SSE;
 	type Error = HypervisorError;
 
@@ -56,7 +261,7 @@ impl Target for GdbUhyve {
 
 	#[inline(always)]
 	fn base_ops(&mut self) -> target::ext::base::BaseOps<'_, Self::Arch, Self::Error> {
-		target::ext::base::BaseOps::SingleThread(self)
+		target::ext::base::BaseOps::MultiThread(self)
 	}
 
 	#[inline(always)]
@@ -74,64 +279,33 @@ impl Target for GdbUhyve {
 	}
 }
 
-impl GdbUhyve {
-	fn apply_guest_debug(&mut self, step: bool) -> HypervisorResult<()> {
-		let debugreg = self.hw_breakpoints.registers();
-		let mut control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_SW_BP | KVM_GUESTDBG_USE_HW_BP;
-		if step {
-			control |= KVM_GUESTDBG_SINGLESTEP;
-		}
-		let debug_struct = kvm_guest_debug {
-			control,
-			pad: 0,
-			arch: kvm_guest_debug_arch { debugreg },
-		};
-
-		self.vm.vcpus[0]
-			.get_vcpu()
-			.set_guest_debug(&debug_struct)
-			.map_err(HypervisorError::from)
-	}
-
-	pub fn run(&mut self) -> HypervisorResult<SingleThreadStopReason<u64>> {
-		let stop_reason = match self.vm.vcpus[0].r#continue()? {
-			VcpuStopReason::Debug(debug) => match debug.exception {
-				DB_VECTOR => {
-					let dr6 = Dr6Flags::from_bits_truncate(debug.dr6);
-					self.hw_breakpoints.stop_reason(dr6)
-				}
-				BP_VECTOR => SingleThreadStopReason::SwBreak(()),
-				vector => unreachable!("unknown KVM exception vector: {}", vector),
-			},
-			VcpuStopReason::Exit(code) => SingleThreadStopReason::Exited(code.try_into().unwrap()),
-			VcpuStopReason::Kick => SingleThreadStopReason::Signal(Signal::SIGINT),
-		};
-		Ok(stop_reason)
-	}
-}
-
-impl SingleThreadBase for GdbUhyve {
-	fn read_registers(&mut self, regs: &mut X86_64CoreRegs) -> TargetResult<(), Self> {
-		regs::read(self.vm.vcpus[0].get_vcpu(), regs)
+impl target_multithread::MultiThreadBase for GdbVcpuManager {
+	fn read_registers(&mut self, regs: &mut X86_64CoreRegs, tid: Tid) -> TargetResult<(), Self> {
+		regs::read(self.get_vm_cpu(tid).read().unwrap().get_vcpu(), regs)
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))
 	}
 
-	fn write_registers(&mut self, regs: &X86_64CoreRegs) -> TargetResult<(), Self> {
-		regs::write(regs, self.vm.vcpus[0].get_vcpu())
+	fn write_registers(&mut self, regs: &X86_64CoreRegs, tid: Tid) -> TargetResult<(), Self> {
+		regs::write(regs, self.get_vm_cpu(tid).read().unwrap().get_vcpu())
 			.map_err(|error| TargetError::Errno(error.errno().try_into().unwrap()))
 	}
 
-	fn read_addrs(&mut self, start_addr: u64, data: &mut [u8]) -> TargetResult<usize, Self> {
+	fn read_addrs(
+		&mut self,
+		start_addr: u64,
+		data: &mut [u8],
+		tid: Tid,
+	) -> TargetResult<usize, Self> {
 		let guest_addr = GuestVirtAddr::try_new(start_addr).map_err(|_e| TargetError::NonFatal)?;
 		// Safety: mem is copied to data before mem can be modified.
 		let src = unsafe {
-			self.vm.peripherals.mem.slice_at(
+			self.peripherals.mem.slice_at(
 				virt_to_phys(
 					guest_addr,
-					&self.vm.peripherals.mem,
-					self.vm.vcpus[0].get_root_pagetable(),
+					&self.peripherals.mem,
+					self.get_vm_cpu(tid).read().unwrap().get_root_pagetable(),
 				)
-				.map_err(|_err| ())?,
+				.map_err(|_| ())?,
 				data.len(),
 			)
 		}
@@ -140,122 +314,43 @@ impl SingleThreadBase for GdbUhyve {
 		Ok(data.len())
 	}
 
-	fn write_addrs(&mut self, start_addr: u64, data: &[u8]) -> TargetResult<(), Self> {
+	fn write_addrs(&mut self, start_addr: u64, data: &[u8], tid: Tid) -> TargetResult<(), Self> {
 		// Safety: self.vm.mem is not altered during the lifetime of mem.
 		let mem = unsafe {
-			self.vm.peripherals.mem.slice_at_mut(
+			self.peripherals.mem.slice_at_mut(
 				virt_to_phys(
 					GuestVirtAddr::new(start_addr),
-					&self.vm.peripherals.mem,
-					self.vm.vcpus[0].get_root_pagetable(),
+					&self.peripherals.mem,
+					self.get_vm_cpu(tid).read().unwrap().get_root_pagetable(),
 				)
 				.map_err(|_err| ())?,
 				data.len(),
 			)
 		}
 		.unwrap();
-
 		mem.copy_from_slice(data);
 		Ok(())
 	}
 
-	#[inline(always)]
-	fn support_resume(
+	fn list_active_threads(
 		&mut self,
-	) -> Option<target::ext::base::singlethread::SingleThreadResumeOps<'_, Self>> {
-		Some(self)
-	}
-}
-
-impl target::ext::base::singlethread::SingleThreadResume for GdbUhyve {
-	fn resume(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
-		if signal.is_some() {
-			// cannot resume with signal
-			return Err(kvm_ioctls::Error::new(EINVAL).into());
-		}
-
-		self.apply_guest_debug(false)
-	}
-
-	#[inline(always)]
-	fn support_single_step(
-		&mut self,
-	) -> Option<target::ext::base::singlethread::SingleThreadSingleStepOps<'_, Self>> {
-		Some(self)
-	}
-}
-
-impl target::ext::base::singlethread::SingleThreadSingleStep for GdbUhyve {
-	fn step(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
-		if signal.is_some() {
-			// cannot step with signal
-			return Err(kvm_ioctls::Error::new(EINVAL).into());
-		}
-
-		self.apply_guest_debug(true)
-	}
-}
-
-pub(crate) enum UhyveGdbEventLoop {}
-
-impl run_blocking::BlockingEventLoop for UhyveGdbEventLoop {
-	type Target = GdbUhyve;
-	type Connection = TcpStream;
-	type StopReason = SingleThreadStopReason<u64>;
-
-	fn wait_for_stop_reason(
-		target: &mut Self::Target,
-		conn: &mut Self::Connection,
-	) -> Result<
-		run_blocking::Event<SingleThreadStopReason<u64>>,
-		run_blocking::WaitForStopReasonError<
-			<Self::Target as Target>::Error,
-			<Self::Connection as Connection>::Error,
-		>,
-	> {
-		use run_blocking::WaitForStopReasonError;
-
-		static SPAWN_THREAD: Once = Once::new();
-
-		SPAWN_THREAD.call_once(|| {
-			let parent_thread = PthreadWrapper(pthread_self());
-			let mut conn_clone = conn.try_clone().unwrap();
-			thread::spawn(move || {
-				loop {
-					// Block on TCP stream without consuming any data.
-					Read::read(&mut conn_clone, &mut []).unwrap();
-
-					// Kick VCPU out of KVM_RUN
-					KickSignal::pthread_kill(parent_thread.0).unwrap();
-
-					// Wait for all inputs to be processed and for VCPU to be running again
-					thread::sleep(Duration::from_millis(20));
-				}
-			});
-		});
-
-		let stop_reason = target.run().map_err(WaitForStopReasonError::Target)?;
-
-		let event = match stop_reason {
-			SingleThreadStopReason::Signal(Signal::SIGINT) => {
-				assert!(
-					conn.peek()
-						.map_err(WaitForStopReasonError::Connection)?
-						.is_some()
-				);
-				run_blocking::Event::IncomingData(
-					ConnectionExt::read(conn).map_err(WaitForStopReasonError::Connection)?,
-				)
+		thread_is_active: &mut dyn FnMut(Tid),
+	) -> Result<(), Self::Error> {
+		for i in &self.vcpus {
+			if i.shared.is_stopped() && !self.is_initializing {
+				continue;
 			}
-			stop_reason => run_blocking::Event::TargetStopped(stop_reason),
-		};
-
-		Ok(event)
+			thread_is_active(i.tid.try_into().unwrap());
+		}
+		Ok(())
 	}
 
-	fn on_interrupt(
-		_target: &mut Self::Target,
-	) -> Result<Option<SingleThreadStopReason<u64>>, <Self::Target as Target>::Error> {
-		Ok(Some(SingleThreadStopReason::Signal(Signal::SIGINT)))
+	fn is_thread_alive(&mut self, tid: Tid) -> Result<bool, Self::Error> {
+		Ok(self.is_initializing || !self.get_vcpu_wrapper(tid).shared.is_stopped())
+	}
+
+	#[inline(always)]
+	fn support_resume(&mut self) -> Option<target_multithread::MultiThreadResumeOps<'_, Self>> {
+		Some(self)
 	}
 }
