@@ -35,7 +35,6 @@ use crate::{
 	serial::{Destination, UhyveSerial},
 	stats::{CpuStats, VmStats},
 	vcpu::VirtualCPU,
-	virtio::*,
 };
 #[cfg(target_os = "linux")]
 use crate::{
@@ -63,10 +62,12 @@ pub type DefaultBackend = crate::linux::x86_64::kvm_cpu::KvmVm;
 pub type DefaultBackend = crate::macos::XhyveVm;
 
 pub(crate) mod internal {
-	use std::sync::Arc;
+	use std::{fmt::Debug, sync::Arc};
 
 	use crate::{
 		HypervisorResult,
+		mem::MmapMemory,
+		params::NetworkMode,
 		vcpu::VirtualCPU,
 		vm::{KernelInfo, Params, VmPeripherals},
 	};
@@ -74,6 +75,7 @@ pub(crate) mod internal {
 	/// Trait marking a interface for creating (accelerated) VMs.
 	pub trait VirtualizationBackendInternal: Sized {
 		type VCPU: 'static + VirtualCPU;
+		type VirtioNetImpl: Debug;
 		const NAME: &str;
 
 		/// Create a new CPU object
@@ -84,7 +86,9 @@ pub(crate) mod internal {
 			enable_stats: bool,
 		) -> HypervisorResult<Self::VCPU>;
 
-		fn new(peripherals: Arc<VmPeripherals>, params: &Params) -> HypervisorResult<Self>;
+		fn new(peripherals: Arc<VmPeripherals<Self>>, params: &Params) -> HypervisorResult<Self>;
+
+		fn virtio_net_device(mode: NetworkMode, mmap: Arc<MmapMemory>) -> Self::VirtioNetImpl;
 	}
 }
 
@@ -101,17 +105,17 @@ pub struct VmResult {
 
 /// mutable devices that a vCPU interacts with
 #[derive(Debug)]
-pub(crate) struct VmPeripherals {
+pub(crate) struct VmPeripherals<VirtBackend: VirtualizationBackendInternal> {
 	pub file_mapping: Mutex<UhyveFileMap>,
-	pub mem: MmapMemory,
+	pub mem: Arc<MmapMemory>,
 	pub(crate) serial: UhyveSerial,
-	pub virtio_device: Mutex<VirtioNetPciDevice>,
+	pub virtio_device: Option<Mutex<VirtBackend::VirtioNetImpl>>,
 }
 
 // TODO: Investigate soundness
 // https://github.com/hermitcore/uhyve/issues/229
-unsafe impl Send for VmPeripherals {}
-unsafe impl Sync for VmPeripherals {}
+unsafe impl<B: VirtualizationBackendInternal> Send for VmPeripherals<B> {}
+unsafe impl<B: VirtualizationBackendInternal> Sync for VmPeripherals<B> {}
 
 /// static information that does not change during execution
 #[derive(Debug)]
@@ -203,8 +207,9 @@ pub(crate) fn generate_guest_start_address(
 
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(crate) vcpus: Vec<<VirtBackend::BACKEND as VirtualizationBackendInternal>::VCPU>,
-	pub(crate) peripherals: Arc<VmPeripherals>,
+	pub(crate) peripherals: Arc<VmPeripherals<VirtBackend::BACKEND>>,
 	pub(crate) kernel_info: Arc<KernelInfo>,
+	_virt_backend: VirtBackend::BACKEND,
 }
 impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, mut params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
@@ -425,10 +430,31 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			stack_address,
 		});
 
+		// create virtio interface
+		let mem = Arc::new(mem);
+		if let Some(version) = hermit_version
+			&& kernel_info.params.network.is_some()
+			&& (version
+				< HermitVersion {
+					major: 0,
+					minor: 13,
+					patch: 2,
+				}) {
+			return Err(HypervisorError::FeatureMismatch(
+				"Network requires Kernel 0.13.2 or newer",
+			));
+		}
+		let virtio_device = kernel_info.params.network.as_ref().map(|mode| {
+			Mutex::new(VirtBackend::BACKEND::virtio_net_device(
+				mode.clone(),
+				mem.clone(),
+			))
+		});
+
 		let peripherals = Arc::new(VmPeripherals {
 			mem,
 			// create virtio interface
-			virtio_device: Mutex::new(VirtioNetPciDevice::new()),
+			virtio_device,
 			// TODO: file_mapping not in kernel_info
 			file_mapping: Mutex::new(file_mapping),
 			serial,
@@ -500,6 +526,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			peripherals,
 			kernel_info,
 			vcpus,
+			_virt_backend: virt_backend,
 		})
 	}
 

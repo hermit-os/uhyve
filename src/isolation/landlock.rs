@@ -294,7 +294,11 @@ where
 		PathBuf::from("/proc/stat"),
 	];
 
-	let mut uhyve_rw_paths: Vec<PathBuf> = vec![PathBuf::from("/dev/kvm")];
+	let mut uhyve_rw_paths: Vec<PathBuf> = vec![
+		PathBuf::from("/dev/kvm"),
+		#[cfg(target_os = "linux")]
+		PathBuf::from("/dev/net/tun"),
+	];
 	#[cfg(feature = "instrument")]
 	if let Some(trace) = trace {
 		uhyve_ro_paths.push(PathBuf::from("/proc/self/maps"));

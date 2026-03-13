@@ -21,7 +21,7 @@ use crate::{
 	params::EnvVars,
 	vcpu::VcpuStopReason,
 	virt_to_phys,
-	vm::{KernelInfo, VmPeripherals},
+	vm::{KernelInfo, VmPeripherals, internal::VirtualizationBackendInternal},
 };
 
 /// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
@@ -107,8 +107,8 @@ pub unsafe fn address_to_hypercall_v2(
 ///
 /// When a hypercall returns an error, or the hypercall is invalid, this function might panic
 /// (particularly on failing write calls, due to historical legacy).
-pub fn handle_hypercall_v2(
-	peripherals: &VmPeripherals,
+pub fn handle_hypercall_v2<B: VirtualizationBackendInternal>(
+	peripherals: &VmPeripherals<B>,
 	hypercall: v2::Hypercall<'_>,
 ) -> Option<VcpuStopReason> {
 	let file_mapping = || peripherals.file_mapping.lock().unwrap();
@@ -160,8 +160,8 @@ pub fn handle_hypercall_v2(
 ///
 /// When a hypercall returns an error, or the hypercall is invalid, this function might panic
 /// (particularly on failing write calls).
-pub fn handle_hypercall_v1(
-	peripherals: &VmPeripherals,
+pub fn handle_hypercall_v1<B: VirtualizationBackendInternal>(
+	peripherals: &VmPeripherals<B>,
 	kernel_info: &KernelInfo,
 	root_pt: impl FnOnce() -> HypervisorResult<GuestPhysAddr>,
 	hypercall: v1::Hypercall<'_>,
@@ -497,8 +497,8 @@ fn read(mem: &MmapMemory, sysread: &mut v2::parameters::ReadParams, file_map: &m
 
 /// Handles a v1 write hypercall (for which a guest-provided guest virtual address must be
 /// converted to a guest physical address by the host).
-fn write_v1(
-	peripherals: &VmPeripherals,
+fn write_v1<B: VirtualizationBackendInternal>(
+	peripherals: &VmPeripherals<B>,
 	syswrite: &v1::parameters::WriteParams,
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
@@ -519,8 +519,8 @@ fn write_v1(
 }
 
 /// Handles an write syscall on the host.
-fn write(
-	peripherals: &VmPeripherals,
+fn write<B: VirtualizationBackendInternal>(
+	peripherals: &VmPeripherals<B>,
 	syswrite: &mut v2::parameters::WriteParams,
 	file_map: &mut UhyveFileMap,
 ) -> io::Result<()> {

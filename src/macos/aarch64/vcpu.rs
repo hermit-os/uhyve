@@ -17,7 +17,8 @@ use crate::{
 		BOOT_INFO_OFFSET, GICD_BASE_ADDRESS, GICR_BASE_ADDRESS, MSI_BASE_ADDRESS, PGT_OFFSET,
 	},
 	hypercall,
-	params::Params,
+	mem::MmapMemory,
+	params::{NetworkMode, Params},
 	stats::CpuStats,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::{
@@ -26,7 +27,7 @@ use crate::{
 };
 
 pub struct XhyveVm {
-	peripherals: Arc<VmPeripherals>,
+	peripherals: Arc<VmPeripherals<Self>>,
 	#[expect(
 		dead_code,
 		reason = "Gic should be created and stored throughout the struct's lifetime, not used actively"
@@ -35,6 +36,7 @@ pub struct XhyveVm {
 }
 impl VirtualizationBackendInternal for XhyveVm {
 	type VCPU = XhyveCpu;
+	type VirtioNetImpl = ();
 	const NAME: &str = "XhyveVm";
 
 	fn new_cpu(
@@ -56,7 +58,7 @@ impl VirtualizationBackendInternal for XhyveVm {
 		})
 	}
 
-	fn new(peripherals: Arc<VmPeripherals>, _params: &Params) -> HypervisorResult<Self> {
+	fn new(peripherals: Arc<VmPeripherals<Self>>, _params: &Params) -> HypervisorResult<Self> {
 		trace!("Create VM...");
 		create_vm()?;
 
@@ -75,6 +77,10 @@ impl VirtualizationBackendInternal for XhyveVm {
 
 		Ok(Self { peripherals, gic })
 	}
+
+	fn virtio_net_device(_mode: NetworkMode, _memory: Arc<MmapMemory>) -> Self::VirtioNetImpl {
+		unimplemented!();
+	}
 }
 
 impl VirtualizationBackend for XhyveVm {
@@ -84,7 +90,7 @@ impl VirtualizationBackend for XhyveVm {
 pub struct XhyveCpu {
 	id: u32,
 	vcpu: Option<xhypervisor::VirtualCpu>,
-	peripherals: Arc<VmPeripherals>,
+	peripherals: Arc<VmPeripherals<XhyveVm>>,
 	// TODO: Remove once the getenv/getargs hypercalls are removed
 	kernel_info: Arc<KernelInfo>,
 	stats: Option<CpuStats>,
