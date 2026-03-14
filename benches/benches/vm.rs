@@ -10,9 +10,12 @@ use uhyvelib::{
 };
 
 pub fn load_vm_hello_world(c: &mut Criterion) {
-	let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "data/x86_64/hello_world"]
-		.iter()
-		.collect();
+	let path: PathBuf = [
+		env!("CARGO_MANIFEST_DIR"),
+		"data/sample-v1-images/x86_64/hello_world",
+	]
+	.iter()
+	.collect();
 	let params = Params {
 		memory_size: Byte::from_u64(1024 * 4096 * 500).try_into().unwrap(),
 		output: Output::None,
