@@ -4,8 +4,8 @@ use std::fs::read_to_string;
 
 use byte_unit::{Byte, Unit};
 use common::{
-	BuildMode, build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists,
-	run_simple_vm,
+	BuildMode, build_hermit_bin, check_result, env_logger_build, get_fs_fixture_path,
+	remove_file_if_exists, run_simple_vm,
 };
 use uhyvelib::{
 	params::{Output, Params},
@@ -14,7 +14,7 @@ use uhyvelib::{
 
 #[test]
 fn serial_buffer_test() {
-	env_logger::try_init().ok();
+	env_logger_build();
 	let bin_path = build_hermit_bin("serial", BuildMode::Debug);
 	let res = run_simple_vm(bin_path);
 	println!("Kernel output: {res:?}");
@@ -29,7 +29,7 @@ fn serial_buffer_test() {
 
 #[test]
 fn serial_file_output_test() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let fixture_path = get_fs_fixture_path();
 

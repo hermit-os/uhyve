@@ -9,8 +9,8 @@ use byte_unit::{Byte, Unit};
 #[cfg(target_os = "linux")]
 use common::strict_sandbox;
 use common::{
-	BuildMode, build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists,
-	run_vm_in_thread,
+	BuildMode, build_hermit_bin, check_result, env_logger_build, get_fs_fixture_path,
+	remove_file_if_exists, run_vm_in_thread,
 };
 use rand::{RngExt, distr::Alphanumeric};
 use tempfile::TempDir;
@@ -142,7 +142,7 @@ fn generate_params(
 /// (The file is present in a mapped parent directory.)
 #[test]
 fn create_mapped_parent_nonpresent_file() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let test_name: &'static str = "create_mapped_parent_nonpresent_file";
 	let file_name = generate_filename(test_name);
@@ -173,7 +173,7 @@ fn create_mapped_parent_nonpresent_file() {
 /// (File directly mapped.)
 #[test]
 fn create_write_mapped_nonpresent_file() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let test_name: &'static str = "create_write_mapped_nonpresent_file";
 	let file_name = generate_filename(test_name);
@@ -203,7 +203,7 @@ fn create_write_mapped_nonpresent_file() {
 /// (No mappings present.)
 #[test]
 fn create_write_unmapped_nonpresent_file() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let testname: &'static str = "create_write_unmapped_nonpresent_file";
 	let filename = generate_filename(testname);
@@ -226,7 +226,7 @@ fn create_write_unmapped_nonpresent_file() {
 /// involving a misconfiguration in Landlock.
 #[test]
 fn remove_mapped_present_file() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let test_name: &'static str = "remove_mapped_present_file";
 	let file_name = generate_filename(test_name);
@@ -262,7 +262,7 @@ fn remove_mapped_present_file() {
 /// or because of a UhyveFileMap regression.
 #[test]
 fn remove_mapped_parent_present_file() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let test_name: &'static str = "remove_mapped_parent_present_file";
 	let file_name = generate_filename(test_name);
@@ -298,7 +298,7 @@ fn remove_mapped_parent_present_file() {
 fn remove_nonpresent_file_test() {
 	// kernel tries to open a non-present file, so uhyve will reject the hypercall and the kernel
 	// will panic.
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let test_name: &'static str = "remove_nonpresent_file_test";
 	let guest_file_path = get_testname_derived_guest_path(test_name);
@@ -313,7 +313,7 @@ fn remove_nonpresent_file_test() {
 /// file on the host before the file descriptor of that said file is closed.
 #[test]
 fn fd_open_remove_close() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let test_name: &'static str = "fd_open_remove_close";
 	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);
@@ -328,7 +328,7 @@ fn fd_open_remove_close() {
 /// Then unlinks again, after the file descriptor is closed.
 #[test]
 fn fd_open_remove_before_and_after_closing() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let test_name: &'static str = "fd_open_remove_before_and_after_closing";
 	let guest_file_path = get_testname_derived_guest_path(test_name);
@@ -343,7 +343,7 @@ fn fd_open_remove_before_and_after_closing() {
 /// file descriptor of that said file is closed.
 #[test]
 fn fd_remove_twice_before_closing() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let test_name: &'static str = "fd_remove_twice_before_closing";
 	let guest_file_path = get_testname_derived_guest_path(test_name);
@@ -358,7 +358,7 @@ fn fd_remove_twice_before_closing() {
 /// then tries to write to it.
 #[test]
 fn open_read_only_write() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let test_name: &'static str = "open_read_only_write";
 	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);
@@ -382,7 +382,7 @@ fn open_read_only_write() {
 /// - the guest can write to a leaked, yet valid file descriptor.
 #[test]
 fn fd_write_to_fd() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let test_name: &'static str = "write_to_fd";
 	let mut params = generate_params(None, test_name, None);
@@ -409,7 +409,7 @@ fn fd_write_to_fd() {
 
 #[test]
 fn mounts_test() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let test_name: &'static str = "mounts_test";
 	let guest_dir_path: PathBuf = PathBuf::from("/");
@@ -450,7 +450,7 @@ fn mounts_test() {
 
 #[test]
 fn lseek_test() {
-	env_logger::try_init().ok();
+	env_logger_build();
 
 	let test_name: &'static str = "lseek_file";
 	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);

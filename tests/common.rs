@@ -14,12 +14,11 @@ use std::{
 };
 
 use byte_unit::{Byte, Unit};
-use log::info;
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
 	params::{Output, Params},
-	vm::{UhyveVm, VmResult},
+	vm::VmResult,
 };
 
 #[derive(PartialEq, Eq)]
@@ -47,9 +46,7 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>, mode: BuildMode) -> PathBuf {
 		.unwrap()
 		.entry(kernel.to_path_buf())
 		.or_insert_with(|| {
-			info!("Building kernel {kernel:?}");
-			println!("Building test kernel: {}", kernel.display());
-
+			println!("Building kernel {kernel:?}");
 			let mut cmd = cargo();
 			let mut cmd = cmd
 				.arg("build")
@@ -81,8 +78,12 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>, mode: BuildMode) -> PathBuf {
 /// Internal function for running VMs using a specific Params object.
 /// Useful e.g. when we only need to modify one parameter but do not
 /// want to avoid boilerplate in the actual integration test definitions.
+///
+/// This also checks whether a logger has been configured.
 fn run_vm(kernel_path: PathBuf, params: Params) -> VmResult {
-	env_logger::try_init().ok();
+	use uhyvelib::vm::UhyveVm;
+	// This helps us ensure consistency across integration tests.
+	env_logger::try_init().expect_err("Caller has not initialized a logger yet.");
 	println!("Launching kernel {}", kernel_path.display());
 	UhyveVm::new(kernel_path, params).unwrap().run(None)
 }
@@ -138,7 +139,7 @@ pub fn remove_file_if_exists(path: &PathBuf) {
 /// Panics if the result's status code is not 0 and prints the serial output of the kernel
 pub fn check_result(res: &VmResult) {
 	if res.code != 0 {
-		println!("Kernel Output:\n{}", res.output.as_ref().unwrap());
+		println!("Kernel output:\n{}", res.output.as_ref().unwrap());
 		panic!();
 	}
 }
@@ -156,12 +157,9 @@ pub fn get_fs_fixture_path() -> PathBuf {
 /// * `bin_path` - Path of kernel to be run.
 /// * `params` - Params to run the VM with.
 pub fn run_vm_in_thread(bin_path: PathBuf, params: Params) -> VmResult {
-	thread::spawn(move || {
-		let vm = UhyveVm::new(bin_path, params).unwrap();
-		vm.run(None)
-	})
-	.join()
-	.expect("Uhyve thread panicked.")
+	thread::spawn(move || run_vm(bin_path, params))
+		.join()
+		.expect("Uhyve thread panicked.")
 }
 
 /// If UHYVE_TEST_STRICT_SANDBOX == 1, enable strict sandboxing mode (for the CI).
@@ -174,6 +172,12 @@ pub fn strict_sandbox() -> FileSandboxMode {
 	} else {
 		FileSandboxMode::Normal
 	}
+}
+
+/// This constructs an env_logger that should be called at the beginning of
+/// every integration test.
+pub fn env_logger_build() {
+	let _ = env_logger::builder().is_test(true).try_init();
 }
 
 pub fn cargo() -> Command {

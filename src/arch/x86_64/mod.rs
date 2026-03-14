@@ -86,7 +86,7 @@ mod tests {
 		let guest_address = GuestPhysAddr::new(0x11111000);
 
 		let mem = MmapMemory::new(MIN_PHYSMEM_SIZE * 2, guest_address, true, true);
-		println!("mmap memory created {mem:x?}");
+		log::debug!("mmap memory created {mem:x?}");
 
 		init_guest_mem(
 			unsafe { mem.as_slice_mut() },
