@@ -97,6 +97,24 @@ jobs:
         run: cargo +nightly fmt --all -- --check
         working-directory: tests/test-kernels
 
+  lock-file:
+    name: Lock file
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo update -w --locked
+
+  lock-file-test-kernels:
+    name: Lock file (test-kernels)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: mkroening/rust-toolchain-toml@main
+        with:
+          toolchain-file: 'tests/test-kernels/rust-toolchain.toml'
+      - run: cargo update -w --locked --manifest-path tests/test-kernels/Cargo.toml
+
   clippy:
     name: Clippy
     strategy:
