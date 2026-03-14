@@ -4,15 +4,13 @@ use std::fs::read_to_string;
 
 use byte_unit::{Byte, Unit};
 use common::{
-	BuildMode, build_hermit_bin, check_result, get_fs_fixture_path, remove_file_if_exists,
-	run_simple_vm,
+	BuildMode, build_hermit_bin, check_result, env_logger_build, get_fs_fixture_path,
+	remove_file_if_exists, run_simple_vm,
 };
 use uhyvelib::{
 	params::{Output, Params},
 	vm::UhyveVm,
 };
-
-use crate::common::env_logger_build;
 
 #[test]
 fn serial_buffer_test() {
