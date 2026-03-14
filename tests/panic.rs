@@ -1,8 +1,6 @@
 mod common;
 
-use common::{BuildMode, build_hermit_bin, run_simple_vm};
-
-use crate::common::env_logger_build;
+use common::{BuildMode, build_hermit_bin, env_logger_build, run_simple_vm};
 
 #[test]
 fn panic_test() {
