@@ -669,7 +669,7 @@ mod tests {
 			config = "/ilikerecursion"
 
 			[guest]
-			kernel = './data/x86_64/hello_c'
+			kernel = './data/0.6.0/x86_64/hello_c'
 		"#,
 		)
 		.unwrap();
