@@ -6,25 +6,20 @@ use std::{
 use gdbstub::target::{self, TargetResult, ext::breakpoints::WatchKind};
 use uhyve_interface::GuestVirtAddr;
 
-use super::GdbVcpuManager;
 use crate::{
 	arch::{
 		virt_to_phys,
 		x86_64::registers::{self, debug::HwBreakpoints},
 	},
-	net::NetworkBackend,
+	gdb::GdbVcpuManager,
+	os::KvmVm,
+	vcpu::VirtualCPU,
 };
 
 #[derive(Clone, Debug, Default)]
 pub struct AllBreakpoints {
 	pub hard: HwBreakpoints,
 	pub soft: SwBreakpoints,
-}
-
-impl AllBreakpoints {
-	pub fn new() -> Self {
-		Default::default()
-	}
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -43,9 +38,7 @@ impl SwBreakpoint {
 
 pub type SwBreakpoints = HashMap<SwBreakpoint, Vec<u8>>;
 
-impl<NetBackend: NetworkBackend> target::ext::breakpoints::Breakpoints
-	for GdbVcpuManager<NetBackend>
-{
+impl target::ext::breakpoints::Breakpoints for GdbVcpuManager<KvmVm> {
 	#[inline(always)]
 	fn support_sw_breakpoint(
 		&mut self,
@@ -68,9 +61,7 @@ impl<NetBackend: NetworkBackend> target::ext::breakpoints::Breakpoints
 	}
 }
 
-impl<NetBackend: NetworkBackend> target::ext::breakpoints::SwBreakpoint
-	for GdbVcpuManager<NetBackend>
-{
+impl target::ext::breakpoints::SwBreakpoint for GdbVcpuManager<KvmVm> {
 	fn add_sw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
 		let sw_breakpoint = SwBreakpoint::new(addr, kind);
 
@@ -139,9 +130,7 @@ impl<NetBackend: NetworkBackend> target::ext::breakpoints::SwBreakpoint
 	}
 }
 
-impl<NetBackend: NetworkBackend> target::ext::breakpoints::HwBreakpoint
-	for GdbVcpuManager<NetBackend>
-{
+impl target::ext::breakpoints::HwBreakpoint for GdbVcpuManager<KvmVm> {
 	fn add_hw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
 		let hw_breakpoint = match registers::debug::HwBreakpoint::new_breakpoint(addr, kind) {
 			Some(hw_breakpoint) => hw_breakpoint,
@@ -175,9 +164,7 @@ impl<NetBackend: NetworkBackend> target::ext::breakpoints::HwBreakpoint
 	}
 }
 
-impl<NetBackend: NetworkBackend> target::ext::breakpoints::HwWatchpoint
-	for GdbVcpuManager<NetBackend>
-{
+impl target::ext::breakpoints::HwWatchpoint for GdbVcpuManager<KvmVm> {
 	fn add_hw_watchpoint(
 		&mut self,
 		addr: u64,
