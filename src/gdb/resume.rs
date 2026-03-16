@@ -1,20 +1,19 @@
-use std::{
-	fmt::Debug,
-	sync::atomic::{AtomicU8, Ordering},
-};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use event_listener::Event;
 use gdbstub::{
 	common::{Signal, Tid},
-	target::ext::base::multithread as target_multithread,
+	target::{Target, ext::base::multithread as target_multithread},
 };
 
-use super::{GdbVcpuManager, VcpuWrapper, VcpuWrapperShared, breakpoints::AllBreakpoints};
-use crate::{HypervisorError, HypervisorResult, linux::KickSignal, net::NetworkBackend};
+use crate::{
+	gdb::{GdbVcpuManager, VcpuWrapper, VcpuWrapperShared},
+	vm::VirtualizationBackend,
+};
 
-pub(super) struct ResumeMarker {
-	pub(super) mode: AtomicU8,
-	pub(super) event: Event,
+pub(crate) struct ResumeMarker {
+	pub(crate) mode: AtomicU8,
+	pub(crate) event: Event,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,7 +27,7 @@ pub enum ResumeMode {
 	FreeWheeling,
 }
 
-impl<NetBackend: NetworkBackend> GdbVcpuManager<NetBackend> {
+impl<Vm: VirtualizationBackend> GdbVcpuManager<Vm> {
 	/// Signal to the vCPU manager that the `gdbstub` finished initializing,
 	/// i.e. exited the `Idle` state and entered the `Running` state.
 	pub fn set_finished_initializing(&mut self) {
@@ -40,11 +39,11 @@ impl<NetBackend: NetworkBackend> GdbVcpuManager<NetBackend> {
 	}
 }
 
-impl VcpuWrapper {
+impl<Vcpu> VcpuWrapper<Vcpu> {
 	/// Kick the vCPU
 	pub fn kick(&self) {
 		trace!("vcpu: kick! {}", self.tid);
-		KickSignal::pthread_kill(self.pthread.0).unwrap();
+		crate::vm::KickSignal::pthread_kill(self.pthread.0).unwrap();
 	}
 
 	/// Resume the vCPU in free-wheeling / non-stepped mode
@@ -71,38 +70,7 @@ impl VcpuWrapper {
 	}
 }
 
-impl VcpuWrapperShared {
-	/// Updates the vCPU debug context to correspond to the currently active
-	/// `ResumeMode`, and `breakpoints`.
-	///
-	/// This handles e.g. single-stepping of the vCPU.
-	pub fn apply_current_guest_debug(&self, breakpoints: &AllBreakpoints) -> HypervisorResult<()> {
-		use kvm_bindings::{
-			KVM_GUESTDBG_ENABLE, KVM_GUESTDBG_SINGLESTEP, KVM_GUESTDBG_USE_HW_BP,
-			KVM_GUESTDBG_USE_SW_BP, kvm_guest_debug, kvm_guest_debug_arch,
-		};
-		let debugreg = breakpoints.hard.registers();
-		let mut control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_SW_BP | KVM_GUESTDBG_USE_HW_BP;
-		// SAFETY: we trust the value of `self.resume.mode`.
-		let mode: ResumeMode =
-			unsafe { core::mem::transmute(self.resume.mode.load(Ordering::Acquire)) };
-		if mode == ResumeMode::Step {
-			control |= KVM_GUESTDBG_SINGLESTEP;
-		}
-		let debug_struct = kvm_guest_debug {
-			control,
-			pad: 0,
-			arch: kvm_guest_debug_arch { debugreg },
-		};
-
-		self.vcpu
-			.read()
-			.unwrap()
-			.get_vcpu()
-			.set_guest_debug(&debug_struct)
-			.map_err(HypervisorError::from)
-	}
-
+impl<Vcpu> VcpuWrapperShared<Vcpu> {
 	pub fn is_stopped(&self) -> bool {
 		// we trust the value of `self.resume.mode`.
 		let mode: ResumeMode =
@@ -111,8 +79,9 @@ impl VcpuWrapperShared {
 	}
 }
 
-impl<NetBackend: NetworkBackend> target_multithread::MultiThreadResume
-	for GdbVcpuManager<NetBackend>
+impl<Vm: VirtualizationBackend> target_multithread::MultiThreadResume for GdbVcpuManager<Vm>
+where
+	Self: Target<Error = crate::HypervisorError>,
 {
 	fn clear_resume_actions(&mut self) -> Result<(), Self::Error> {
 		self.vcpus
@@ -160,8 +129,9 @@ impl<NetBackend: NetworkBackend> target_multithread::MultiThreadResume
 	}
 }
 
-impl<NetBackend: NetworkBackend> target_multithread::MultiThreadSingleStep
-	for GdbVcpuManager<NetBackend>
+impl<Vm: VirtualizationBackend> target_multithread::MultiThreadSingleStep for GdbVcpuManager<Vm>
+where
+	Self: Target<Error = crate::HypervisorError>,
 {
 	fn set_resume_action_step(
 		&mut self,
@@ -178,8 +148,10 @@ impl<NetBackend: NetworkBackend> target_multithread::MultiThreadSingleStep
 	}
 }
 
-impl<NetBackend: NetworkBackend> target_multithread::MultiThreadSchedulerLocking
-	for GdbVcpuManager<NetBackend>
+impl<Vm: VirtualizationBackend> target_multithread::MultiThreadSchedulerLocking
+	for GdbVcpuManager<Vm>
+where
+	Self: Target<Error = crate::HypervisorError>,
 {
 	fn set_resume_action_scheduler_lock(&mut self) -> Result<(), Self::Error> {
 		self.default_resume_mode = ResumeMode::Stopped;
