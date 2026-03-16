@@ -76,8 +76,8 @@ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "hermit"
-version = "0.13.1"
-source = "git+https://github.com/hermit-os/hermit-rs.git?tag=hermit-0.13.1#8d32adb0ca02460e13228e45981fbd3c6a409af9"
+version = "0.13.2"
+source = "git+https://github.com/hermit-os/hermit-rs.git?tag=hermit-0.13.2#0e68850e7b848656f8704b6c1fdc3a09685cb4de"
 dependencies = [
  "cc",
  "home",
