@@ -58,7 +58,7 @@ rand = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 shell-words = "1"
 sysinfo = { version = "0.38.3", default-features = false, features = ["system"] }
-tempfile = "3.26"
+tempfile = "3.27"
 thiserror = "2.0.18"
 time = "0.3"
 toml = "1"
