@@ -87,18 +87,6 @@ pub struct XhyveCpu {
 }
 unsafe impl Send for XhyveCpu {}
 
-impl XhyveCpu {
-	pub fn get_root_pagetable(&self) -> GuestPhysAddr {
-		GuestPhysAddr::new(
-			self.vcpu
-				.as_ref()
-				.unwrap()
-				.read_system_register(SystemRegister::TTBR0_EL1)
-				.unwrap(),
-		)
-	}
-}
-
 impl VirtualCPU for XhyveCpu {
 	fn thread_local_init(&mut self) -> HypervisorResult<()> {
 		debug!("Initialize VirtualCPU {}", self.id);
@@ -326,6 +314,20 @@ impl VirtualCPU for XhyveCpu {
 	fn get_cpu_frequency(&self) -> Option<NonZero<u32>> {
 		warn!("CPU base frequency detection not implemented!");
 		None
+	}
+
+	fn get_root_pagetable(&self) -> GuestPhysAddr {
+		GuestPhysAddr::new(
+			self.vcpu
+				.as_ref()
+				.unwrap()
+				.read_system_register(SystemRegister::TTBR0_EL1)
+				.unwrap(),
+		)
+	}
+
+	fn get_vcpu_id(&self) -> usize {
+		self.id
 	}
 }
 

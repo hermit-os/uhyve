@@ -4,6 +4,7 @@ pub mod x86_64;
 pub(crate) mod gdb;
 
 pub(crate) type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
+pub(crate) type Breakpoints = gdb::breakpoints::AllBreakpoints;
 
 use std::{
 	io,
@@ -14,6 +15,7 @@ use std::{
 use async_io::block_on;
 use core_affinity::CoreId;
 use gdbstub::{
+	common::Tid,
 	conn::ConnectionExt,
 	stub::{DisconnectReason, GdbStub, MultiThreadStopReason, state_machine::GdbStubStateMachine},
 };
@@ -33,23 +35,6 @@ static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
 ///
 /// It is used to stop a vCPU from another thread.
 pub(crate) struct KickSignal;
-
-/// A way of sending pthread IDs reliably across threads.
-///
-/// # Platform-specific behavior
-///
-/// This is particularly necessary for musl, as `Pthread` is equal to `*mut c_void` there,
-/// which can't be passed to thread as easily
-///
-/// # Safety
-///
-/// This can be safely sent across threads because pthread IDs are just opaque identifiers
-/// and thread-safety is ensured by the pthread library.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct PthreadWrapper(pub Pthread);
-
-unsafe impl Send for PthreadWrapper {}
-unsafe impl Sync for PthreadWrapper {}
 
 // TODO: nix::signal::Signal doesn't support real-time signals yet.
 // Start using the Signal type once this no longer is the case.
@@ -233,4 +218,21 @@ fn wait_for_gdb_connection(port: u16) -> io::Result<TcpStream> {
 
 	eprintln!("Debugger connected from {addr}");
 	Ok(stream) // `TcpStream` implements `gdbstub::Connection`
+}
+
+pub(crate) fn debug_info_to_stop_reason(
+	debug: DebugExitInfo,
+	tid: Tid,
+	breakpoints: &Breakpoints,
+) -> MultiThreadStopReason<u64> {
+	use kvm_bindings::{BP_VECTOR, DB_VECTOR};
+	match debug.exception {
+		DB_VECTOR => {
+			use ::x86_64::registers::debug::Dr6Flags;
+			let dr6 = Dr6Flags::from_bits_truncate(debug.dr6);
+			breakpoints.hard.stop_reason(tid, dr6)
+		}
+		BP_VECTOR => MultiThreadStopReason::SwBreak(tid),
+		vector => unreachable!("unknown KVM exception vector: {}", vector),
+	}
 }
