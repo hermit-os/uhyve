@@ -13,14 +13,9 @@ use kvm_ioctls::Kvm;
 use libc::{SIGRTMAX, SIGRTMIN};
 use nix::sys::pthread::Pthread;
 
-use crate::linux::x86_64::kvm_cpu::KvmVm;
+use crate::{linux::x86_64::kvm_cpu::KvmVm, vm::KickSignal};
 
 static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
-
-/// The signal for kicking vCPUs out of KVM_RUN.
-///
-/// It is used to stop a vCPU from another thread.
-pub(crate) struct KickSignal;
 
 // TODO: nix::signal::Signal doesn't support real-time signals yet.
 // Start using the Signal type once this no longer is the case.

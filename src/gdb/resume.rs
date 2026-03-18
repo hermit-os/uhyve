@@ -44,7 +44,7 @@ impl<Vcpu> VcpuWrapper<Vcpu> {
 	/// Kick the vCPU
 	pub fn kick(&self) {
 		trace!("vcpu: kick! {}", self.tid);
-		crate::os::KickSignal::pthread_kill(self.pthread.0).unwrap();
+		crate::vm::KickSignal::pthread_kill(self.pthread.0).unwrap();
 	}
 
 	/// Resume the vCPU in free-wheeling / non-stepped mode

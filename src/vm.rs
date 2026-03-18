@@ -30,7 +30,6 @@ use crate::{
 	gdb::GdbVcpuManager,
 	isolation::filemap::{UhyveFileMap, UhyveMapLeaf},
 	mem::MmapMemory,
-	os::KickSignal,
 	params::{EnvVars, Params},
 	parking::Parker,
 	serial::{Destination, UhyveSerial},
@@ -118,6 +117,11 @@ pub(crate) struct KernelInfo {
 	/// The location of the whole guest in the physical address space
 	pub guest_address: GuestPhysAddr,
 }
+
+/// The signal for kicking vCPUs out of KVM_RUN.
+///
+/// It is used to stop a vCPU from another thread.
+pub(crate) struct KickSignal;
 
 /// Returns a guest & start address tuple based on the object file.
 ///
