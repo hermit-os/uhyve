@@ -1,3 +1,4 @@
+pub mod base;
 pub mod resume;
 
 use core::{
@@ -68,6 +69,7 @@ pub(crate) struct VcpuWrapper<VCpu> {
 	pub(crate) planned_resume_mode: Option<ResumeMode>,
 }
 
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub struct GdbVcpuManager<Vm: VirtualizationBackend> {
 	pub(crate) breakpoints: Arc<RwLock<Breakpoints>>,
 
