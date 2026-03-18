@@ -33,7 +33,6 @@ pub struct XhyveVm {
 }
 impl VirtualizationBackendInternal for XhyveVm {
 	type VCPU = XhyveCpu;
-	type GdbstubArch = gdbstub_arch::aarch64::AArch64;
 	const NAME: &str = "XhyveVm";
 
 	fn new_cpu(

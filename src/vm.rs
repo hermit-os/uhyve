@@ -65,7 +65,6 @@ pub type DefaultBackend = crate::os::XhyveVm;
 /// Trait marking a interface for creating (accelerated) VMs.
 pub(crate) trait VirtualizationBackendInternal: Sized {
 	type VCPU: 'static + VirtualCPU;
-	type GdbstubArch: 'static + Arch<Usize = u64>;
 	const NAME: &str;
 
 	/// Create a new CPU object
