@@ -12,6 +12,7 @@ use std::{
 
 use align_address::Align;
 use core_affinity::CoreId;
+use gdbstub::{arch, target::Target};
 use hermit_entry::{
 	Format, HermitVersion, UhyveIfVersion,
 	boot_info::{BootInfo, HardwareInfo, LoadInfo, PlatformInfo, RawBootInfo, SerialPortBase},
@@ -26,6 +27,7 @@ use crate::{
 	HypervisorError, V1_ADDR_RANGE, V2_ADDR_RANGE,
 	consts::*,
 	fdt::Fdt,
+	gdb::GdbVcpuManager,
 	isolation::filemap::{UhyveFileMap, UhyveMapLeaf},
 	mem::MmapMemory,
 	os::KickSignal,
@@ -427,11 +429,6 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 		let cpu_count = kernel_info.params.cpu_count.get();
 
-		assert!(
-			kernel_info.params.gdb_port.is_none() || cfg!(target_os = "linux"),
-			"gdb is only supported on linux (yet)"
-		);
-
 		let vcpus: Vec<_> = (0..cpu_count as usize)
 			.map(|cpu_id| {
 				virt_backend
@@ -513,9 +510,25 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 		}
 	}
 
-	pub fn run_no_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
+	/// Runs the VM.
+	///
+	/// Blocks until the VM has finished execution.
+	pub fn run(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult
+	where
+		GdbVcpuManager<VirtBackend>: Target,
+		<GdbVcpuManager<VirtBackend> as Target>::Error: fmt::Debug,
+		<GdbVcpuManager<VirtBackend> as Target>::Arch: arch::Arch<Usize = u64>,
+	{
 		KickSignal::register_handler().unwrap();
 
+		if self.kernel_info.params.gdb_port.is_none() {
+			self.run_no_gdb(cpu_affinity)
+		} else {
+			self.run_gdb(cpu_affinity)
+		}
+	}
+
+	fn run_no_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
 		// After spinning up all vCPU threads, the main thread waits for any vCPU to end execution.
 		let main_parker = Parker::current();
 

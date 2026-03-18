@@ -19,7 +19,7 @@ pub enum VcpuStopReason {
 }
 
 /// Functionality a virtual CPU backend must provide to be used by uhyve
-pub trait VirtualCPU: Sized + Send {
+pub trait VirtualCPU: Sized + Send + Sync {
 	/// Continues execution.
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason>;
 
