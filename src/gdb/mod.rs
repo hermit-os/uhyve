@@ -31,8 +31,8 @@ use crate::{
 	serial::Destination,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::{
-		KernelInfo, UhyveVm, VirtualizationBackend, VmPeripherals, VmResult,
-		internal::VirtualizationBackendInternal,
+		KernelInfo, UhyveVm, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals,
+		VmResult,
 	},
 };
 
@@ -74,7 +74,7 @@ pub struct GdbVcpuManager<Vm: VirtualizationBackend> {
 	pub(crate) peripherals: Arc<VmPeripherals>,
 	pub(crate) kernel_info: Arc<KernelInfo>,
 	pub(crate) stops: async_channel::Receiver<MultiThreadStopReason<u64>>,
-	pub(crate) vcpus: Vec<VcpuWrapper<<Vm::BACKEND as VirtualizationBackendInternal>::VCPU>>,
+	pub(crate) vcpus: Vec<VcpuWrapper<<Vm as VirtualizationBackendInternal>::VCPU>>,
 	/// This does look odd, but GDB appears to truncate thread-ids to 32bit
 	pub(crate) tid_to_vcpu: HashMap<NonZero<u32>, usize>,
 
@@ -343,7 +343,7 @@ impl<Vm: VirtualizationBackend> GdbVcpuManager<Vm> {
 	pub(crate) fn get_vcpu_wrapper(
 		&self,
 		tid: Tid,
-	) -> &VcpuWrapper<<Vm::BACKEND as VirtualizationBackendInternal>::VCPU> {
+	) -> &VcpuWrapper<<Vm as VirtualizationBackendInternal>::VCPU> {
 		match self.tid_to_vcpu.get(&(tid.try_into().unwrap())) {
 			Some(&vcpu_id) => &self.vcpus[vcpu_id],
 			None => panic!("unable to resolve thread-id from GDB: {tid}"),
@@ -354,7 +354,7 @@ impl<Vm: VirtualizationBackend> GdbVcpuManager<Vm> {
 	pub(crate) fn get_vcpu_wrapper_mut(
 		&mut self,
 		tid: Tid,
-	) -> &mut VcpuWrapper<<Vm::BACKEND as VirtualizationBackendInternal>::VCPU> {
+	) -> &mut VcpuWrapper<<Vm as VirtualizationBackendInternal>::VCPU> {
 		match self.tid_to_vcpu.get(&(tid.try_into().unwrap())) {
 			Some(&vcpu_id) => &mut self.vcpus[vcpu_id],
 			None => panic!("unable to resolve thread-id from GDB: {tid}"),
@@ -366,7 +366,7 @@ impl<Vm: VirtualizationBackend> GdbVcpuManager<Vm> {
 	pub(crate) fn get_vm_cpu(
 		&self,
 		tid: Tid,
-	) -> &RwLock<<Vm::BACKEND as VirtualizationBackendInternal>::VCPU> {
+	) -> &RwLock<<Vm as VirtualizationBackendInternal>::VCPU> {
 		&self.get_vcpu_wrapper(tid).shared.vcpu
 	}
 }

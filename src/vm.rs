@@ -12,7 +12,7 @@ use std::{
 
 use align_address::Align;
 use core_affinity::CoreId;
-use gdbstub::{arch, target::Target};
+use gdbstub::{arch::Arch, target::Target};
 use hermit_entry::{
 	Format, HermitVersion, UhyveIfVersion,
 	boot_info::{BootInfo, HardwareInfo, LoadInfo, PlatformInfo, RawBootInfo, SerialPortBase},
@@ -65,6 +65,7 @@ pub type DefaultBackend = crate::macos::XhyveVm;
 /// Trait marking a interface for creating (accelerated) VMs.
 pub(crate) trait VirtualizationBackendInternal: Sized {
 	type VCPU: 'static + VirtualCPU;
+	type GdbstubArch: 'static + Arch<Usize = u64>;
 	const NAME: &str;
 
 	/// Create a new CPU object
@@ -521,7 +522,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	where
 		GdbVcpuManager<VirtBackend>: Target,
 		<GdbVcpuManager<VirtBackend> as Target>::Error: fmt::Debug,
-		<GdbVcpuManager<VirtBackend> as Target>::Arch: arch::Arch<Usize = u64>,
+		<GdbVcpuManager<VirtBackend> as Target>::Arch: Arch<Usize = u64>,
 	{
 		KickSignal::register_handler().unwrap();
 

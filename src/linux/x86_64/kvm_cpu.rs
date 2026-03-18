@@ -41,6 +41,7 @@ pub struct KvmVm {
 
 impl VirtualizationBackendInternal for KvmVm {
 	type VCPU = KvmCpu;
+	type GdbstubArch = gdbstub_arch::x86::X86_64_SSE;
 	const NAME: &str = "KvmVm";
 
 	fn new_cpu(
