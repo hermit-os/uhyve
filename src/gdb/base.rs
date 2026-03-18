@@ -2,9 +2,11 @@ use gdbstub::{
 	arch::Arch as GdbstubArch,
 	common::Tid,
 	target::{
-		Target, TargetError, TargetResult,
-		ext::base::multithread as target_multithread,
-		{self},
+		self, Target, TargetError, TargetResult,
+		ext::{
+			base::multithread as target_multithread,
+			section_offsets::{Offsets, SectionOffsets},
+		},
 	},
 };
 use uhyve_interface::GuestVirtAddr;
@@ -138,5 +140,16 @@ impl target_multithread::MultiThreadBase for GdbVcpuManager<DefaultBackend> {
 	#[inline(always)]
 	fn support_resume(&mut self) -> Option<target_multithread::MultiThreadResumeOps<'_, Self>> {
 		Some(self)
+	}
+}
+
+impl SectionOffsets for crate::gdb::GdbVcpuManager<DefaultBackend> {
+	fn get_section_offsets(&mut self) -> Result<Offsets<u64>, Self::Error> {
+		let offset = self.kernel_info.kernel_address.as_u64();
+		Ok(Offsets::Sections {
+			text: offset,
+			data: offset,
+			bss: Some(offset),
+		})
 	}
 }
