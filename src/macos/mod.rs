@@ -3,14 +3,12 @@ pub mod aarch64;
 
 pub(crate) mod gdb;
 
-use core_affinity::CoreId;
 use nix::sys::{
 	pthread::{Pthread, pthread_kill},
 	signal::{SIGUSR1, SigHandler, Signal, signal},
 };
 
 pub use crate::macos::aarch64::vcpu::{XhyveCpu, XhyveVm};
-use crate::vm::{UhyveVm, VmResult};
 
 /// TODO: Use proper structure and methods for this
 pub(crate) type DebugExitInfo = xhypervisor::ffi::hv_vcpu_exit_exception_t;
@@ -40,14 +38,5 @@ impl KickSignal {
 	/// [`KickSignal::register_handler`] should be called prior to this to avoid crashing the program with the default handler.
 	pub(crate) fn pthread_kill(pthread: Pthread) -> nix::Result<()> {
 		pthread_kill(pthread, Self::get())
-	}
-}
-
-impl UhyveVm<XhyveVm> {
-	/// Runs the VM.
-	///
-	/// Blocks until the VM has finished execution.
-	pub fn run(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
-		self.run_no_gdb(cpu_affinity)
 	}
 }

@@ -1,11 +1,14 @@
 pub mod resume;
 
 use core::{
+	fmt,
 	num::NonZero,
 	sync::atomic::{AtomicU8, Ordering},
 };
 use std::{
 	collections::HashMap,
+	io,
+	net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream},
 	sync::{Arc, RwLock},
 };
 
@@ -13,8 +16,11 @@ use async_io::block_on;
 use core_affinity::CoreId;
 use event_listener::{Event, Listener as _};
 use gdbstub::{
+	arch,
 	common::{Signal, Tid},
-	stub::MultiThreadStopReason,
+	conn::ConnectionExt as _,
+	stub::{DisconnectReason, GdbStub, MultiThreadStopReason, state_machine::GdbStubStateMachine},
+	target::Target,
 };
 use nix::sys::pthread::{Pthread, pthread_self};
 
@@ -24,9 +30,11 @@ use crate::HypervisorResult;
 use crate::os::Breakpoints;
 use crate::{
 	gdb::resume::{ResumeMarker, ResumeMode},
+	serial::Destination,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::{
-		KernelInfo, VirtualizationBackend, VmPeripherals, internal::VirtualizationBackendInternal,
+		KernelInfo, UhyveVm, VirtualizationBackend, VmPeripherals, VmResult,
+		internal::VirtualizationBackendInternal,
 	},
 };
 
@@ -90,15 +98,120 @@ fn derive_tid(pthread: libc::pthread_t) -> NonZero<u32> {
 	NonZero::new((pthread as u32) & !(1u32 << 31)).unwrap()
 }
 
-impl<Vm: VirtualizationBackend> crate::vm::UhyveVm<Vm> {
-	#[cfg_attr(target_os = "macos", allow(dead_code))]
-	pub(crate) fn spawn_cpu_manager_for_gdb(
-		self,
-		cpu_affinity: Option<Vec<CoreId>>,
-	) -> GdbVcpuManager<Vm>
+impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
+	pub(crate) fn run_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult
 	where
-		<Vm::BACKEND as VirtualizationBackendInternal>::VCPU: Sync,
+		GdbVcpuManager<Vm>: Target,
+		<GdbVcpuManager<Vm> as Target>::Error: fmt::Debug,
+		<GdbVcpuManager<Vm> as Target>::Arch: arch::Arch<Usize = u64>,
 	{
+		let connection =
+			wait_for_gdb_connection(self.kernel_info.params.gdb_port.unwrap()).unwrap();
+		let debugger = GdbStub::new(connection);
+		let mut vcpu_manager = self.spawn_cpu_manager_for_gdb(cpu_affinity);
+
+		let mut gdb = debugger
+			.run_state_machine(&mut vcpu_manager)
+			.expect("GDB run_state_machine initialization failed");
+
+		let exit_code = loop {
+			gdb = match gdb {
+				GdbStubStateMachine::Idle(mut gdb) => {
+					// needs more data, so perform a blocking read on the connection
+					let byte = gdb.borrow_conn().read().expect("GDB connection read error");
+					gdb.incoming_data(&mut vcpu_manager, byte)
+						.expect("GDB incoming_data error")
+				}
+
+				GdbStubStateMachine::Disconnected(gdb) => {
+					// we keep things simple, and doesn't expose a way to re-use the
+					// state machine
+					break match gdb.get_reason() {
+						DisconnectReason::TargetExited(exit_code) => exit_code.into(),
+						DisconnectReason::TargetTerminated(_) => unreachable!(),
+						DisconnectReason::Disconnect => {
+							eprintln!("Debugger disconnected.");
+							0
+						}
+						DisconnectReason::Kill => {
+							eprintln!("Kill command received.");
+							0
+						}
+					};
+				}
+
+				GdbStubStateMachine::CtrlCInterrupt(gdb) => {
+					// defer to the implementation on how it wants to handle the interrupt
+
+					// Kick VCPU out of KVM_RUN
+					for i in &vcpu_manager.vcpus {
+						i.kick();
+					}
+
+					gdb.interrupt_handled(&mut vcpu_manager, None::<MultiThreadStopReason<u64>>)
+						.expect("GDB interrupt_handled packet write failed")
+				}
+
+				GdbStubStateMachine::Running(mut gdb) => {
+					use futures_lite::AsyncReadExt;
+					// block waiting either for stop reason or new data from GDB
+					enum UhyveOrGdb<X, Y> {
+						Uhyve(X),
+						Gdb(Y),
+					}
+
+					vcpu_manager.set_finished_initializing();
+
+					let borrow_conn = gdb.borrow_conn();
+					let inp = block_on(futures_lite::future::or(
+						async move {
+							let mut gdb_conn_async = async_io::Async::new(borrow_conn)
+								.expect("unable to asynchronize gdb connection");
+							let mut data_from_gdb_buf = [0u8];
+							let ret = gdb_conn_async
+								.read_exact(&mut data_from_gdb_buf)
+								.await
+								.map(|_| data_from_gdb_buf[0]);
+							let _ = gdb_conn_async.into_inner();
+							UhyveOrGdb::Gdb(ret)
+						},
+						async { UhyveOrGdb::Uhyve(vcpu_manager.stops.recv().await) },
+					));
+
+					match inp {
+						UhyveOrGdb::Gdb(byte) => {
+							let byte = byte.expect("error during GDB recv");
+							gdb.incoming_data(&mut vcpu_manager, byte)
+								.expect("GDB incoming_data error")
+						}
+						UhyveOrGdb::Uhyve(stop_reason) => {
+							let stop_reason = stop_reason.expect("error during stop packet recv");
+							gdb.report_stop(&mut vcpu_manager, stop_reason)
+								.expect("GDB report_stop error")
+						}
+					}
+				}
+			}
+		};
+
+		for i in &vcpu_manager.vcpus {
+			i.kick();
+		}
+
+		let output = if let Destination::Buffer(b) = &vcpu_manager.peripherals.serial.destination {
+			Some(String::from_utf8_lossy(&b.lock().unwrap()).into_owned())
+		} else {
+			None
+		};
+
+		VmResult {
+			code: exit_code,
+			output,
+			stats: None,
+		}
+	}
+
+	fn spawn_cpu_manager_for_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> GdbVcpuManager<Vm> {
 		use std::os::unix::thread::JoinHandleExt;
 
 		let (stops_s, stops_r) = async_channel::unbounded();
@@ -283,4 +396,30 @@ impl<VCpu: VirtualCPU> VcpuWrapperShared<VCpu> {
 			.unwrap()
 			.apply_current_guest_debug(breakpoints, mode)
 	}
+}
+
+const LOCALHOST: [IpAddr; 2] = [
+	IpAddr::V4(Ipv4Addr::LOCALHOST),
+	IpAddr::V6(Ipv6Addr::LOCALHOST),
+];
+
+fn wait_for_gdb_connection(port: u16) -> io::Result<TcpStream> {
+	let sock = TcpListener::bind(
+		[
+			SocketAddr::new(LOCALHOST[0], port),
+			SocketAddr::new(LOCALHOST[1], port),
+		]
+		.as_ref(),
+	)?;
+	eprintln!(
+		"Waiting for a local GDB connection on port {}...",
+		sock.local_addr().unwrap().port()
+	);
+	let (stream, addr) = sock.accept()?;
+
+	// Blocks until a GDB client connects via TCP.
+	// i.e: Running `target remote localhost:<port>` from the GDB prompt.
+
+	eprintln!("Debugger connected from {addr}");
+	Ok(stream) // `TcpStream` implements `gdbstub::Connection`
 }
