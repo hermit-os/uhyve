@@ -20,9 +20,7 @@ use crate::{
 	params::Params,
 	stats::CpuStats,
 	vcpu::{VcpuStopReason, VirtualCPU},
-	vm::{
-		KernelInfo, VirtualizationBackend, VmPeripherals, internal::VirtualizationBackendInternal,
-	},
+	vm::{KernelInfo, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals},
 };
 
 pub struct XhyveVm {
@@ -77,9 +75,7 @@ impl VirtualizationBackendInternal for XhyveVm {
 	}
 }
 
-impl VirtualizationBackend for XhyveVm {
-	type BACKEND = Self;
-}
+impl VirtualizationBackend for XhyveVm {}
 
 pub struct XhyveCpu {
 	id: u32,

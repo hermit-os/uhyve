@@ -15,9 +15,7 @@ use crate::{
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	virtio::*,
-	vm::{
-		KernelInfo, VirtualizationBackend, VmPeripherals, internal::VirtualizationBackendInternal,
-	},
+	vm::{KernelInfo, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals},
 };
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
@@ -161,9 +159,7 @@ impl VirtualizationBackendInternal for KvmVm {
 	}
 }
 
-impl VirtualizationBackend for KvmVm {
-	type BACKEND = Self;
-}
+impl VirtualizationBackend for KvmVm {}
 
 pub struct KvmCpu {
 	id: usize,

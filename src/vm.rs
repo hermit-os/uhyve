@@ -18,7 +18,6 @@ use hermit_entry::{
 	config, detect_format,
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
-use internal::VirtualizationBackendInternal;
 use log::error;
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
@@ -62,35 +61,25 @@ pub type DefaultBackend = crate::linux::x86_64::kvm_cpu::KvmVm;
 #[cfg(target_os = "macos")]
 pub type DefaultBackend = crate::macos::XhyveVm;
 
-pub(crate) mod internal {
-	use std::sync::Arc;
+/// Trait marking a interface for creating (accelerated) VMs.
+pub(crate) trait VirtualizationBackendInternal: Sized {
+	type VCPU: 'static + VirtualCPU;
+	const NAME: &str;
 
-	use crate::{
-		HypervisorResult,
-		vcpu::VirtualCPU,
-		vm::{KernelInfo, Params, VmPeripherals},
-	};
+	/// Create a new CPU object
+	fn new_cpu(
+		&self,
+		id: usize,
+		kernel_info: Arc<KernelInfo>,
+		enable_stats: bool,
+	) -> HypervisorResult<Self::VCPU>;
 
-	/// Trait marking a interface for creating (accelerated) VMs.
-	pub trait VirtualizationBackendInternal: Sized {
-		type VCPU: 'static + VirtualCPU;
-		const NAME: &str;
-
-		/// Create a new CPU object
-		fn new_cpu(
-			&self,
-			id: usize,
-			kernel_info: Arc<KernelInfo>,
-			enable_stats: bool,
-		) -> HypervisorResult<Self::VCPU>;
-
-		fn new(peripherals: Arc<VmPeripherals>, params: &Params) -> HypervisorResult<Self>;
-	}
+	fn new(peripherals: Arc<VmPeripherals>, params: &Params) -> HypervisorResult<Self>;
 }
 
-pub trait VirtualizationBackend {
-	type BACKEND: internal::VirtualizationBackendInternal;
-}
+// This uses the "private sealed supertrait pattern".
+#[allow(private_bounds)]
+pub trait VirtualizationBackend: Sized + VirtualizationBackendInternal {}
 
 #[derive(Debug, Clone)]
 pub struct VmResult {
@@ -202,7 +191,7 @@ pub(crate) fn generate_guest_start_address(
 }
 
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
-	pub(crate) vcpus: Vec<<VirtBackend::BACKEND as VirtualizationBackendInternal>::VCPU>,
+	pub(crate) vcpus: Vec<<VirtBackend as VirtualizationBackendInternal>::VCPU>,
 	pub(crate) peripherals: Arc<VmPeripherals>,
 	pub(crate) kernel_info: Arc<KernelInfo>,
 }
@@ -434,7 +423,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 			serial,
 		});
 
-		let virt_backend = VirtBackend::BACKEND::new(peripherals.clone(), &kernel_info.params)?;
+		let virt_backend = VirtBackend::new(peripherals.clone(), &kernel_info.params)?;
 
 		let cpu_count = kernel_info.params.cpu_count.get();
 
@@ -617,7 +606,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 
 impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		f.debug_struct(&format!("UhyveVm<{}>", VirtIf::BACKEND::NAME))
+		f.debug_struct(&format!("UhyveVm<{}>", VirtIf::NAME))
 			.field("entry_point", &self.kernel_info.entry_point)
 			.field("stack_address", &self.kernel_info.stack_address)
 			.field("guest_address", &self.kernel_info.guest_address)
