@@ -12,7 +12,7 @@ use gdbstub::{
 use uhyve_interface::GuestVirtAddr;
 
 use crate::{
-	HypervisorError, arch::virt_to_phys, gdb::GdbVcpuManager, linux::KvmVm, vcpu::VirtualCPU,
+	HypervisorError, arch::virt_to_phys, gdb::GdbVcpuManager, os::KvmVm, vcpu::VirtualCPU,
 };
 
 impl Target for GdbVcpuManager<KvmVm> {

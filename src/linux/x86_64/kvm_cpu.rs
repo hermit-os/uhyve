@@ -11,7 +11,7 @@ use crate::{
 	consts::*,
 	gdb::resume::ResumeMode,
 	hypercall,
-	linux::KVM,
+	os::KVM,
 	params::Params,
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
@@ -592,7 +592,7 @@ impl VirtualCPU for KvmCpu {
 
 	fn apply_current_guest_debug(
 		&mut self,
-		breakpoints: &crate::linux::gdb::breakpoints::AllBreakpoints,
+		breakpoints: &crate::os::gdb::breakpoints::AllBreakpoints,
 		resume_mode: ResumeMode,
 	) -> HypervisorResult<()> {
 		use kvm_bindings::{

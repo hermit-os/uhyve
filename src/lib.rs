@@ -11,14 +11,11 @@ mod arch;
 pub mod consts;
 mod fdt;
 mod gdb;
-#[cfg(target_os = "linux")]
-pub mod linux;
-#[cfg(target_os = "linux")]
-use linux as os;
-#[cfg(target_os = "macos")]
-pub mod macos;
-#[cfg(target_os = "macos")]
-use macos as os;
+
+#[cfg_attr(target_os = "linux", path = "linux/mod.rs")]
+#[cfg_attr(target_os = "macos", path = "macos/mod.rs")]
+pub mod os;
+
 mod hypercall;
 mod isolation;
 pub mod mem;
