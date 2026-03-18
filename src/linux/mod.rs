@@ -13,7 +13,7 @@ use kvm_ioctls::Kvm;
 use libc::{SIGRTMAX, SIGRTMIN};
 use nix::sys::pthread::Pthread;
 
-use crate::{linux::x86_64::kvm_cpu::KvmVm, vm::KickSignal};
+use crate::{os::x86_64::kvm_cpu::KvmVm, vm::KickSignal};
 
 static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
 

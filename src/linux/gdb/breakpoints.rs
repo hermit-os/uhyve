@@ -9,7 +9,7 @@ use crate::{
 		x86_64::registers::{self, debug::HwBreakpoints},
 	},
 	gdb::GdbVcpuManager,
-	linux::KvmVm,
+	os::KvmVm,
 	vcpu::VirtualCPU,
 };
 

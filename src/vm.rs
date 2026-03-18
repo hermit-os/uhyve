@@ -58,9 +58,9 @@ pub enum LoadKernelError {
 type LoadKernelResult<T> = Result<T, LoadKernelError>;
 
 #[cfg(target_os = "linux")]
-pub type DefaultBackend = crate::linux::x86_64::kvm_cpu::KvmVm;
+pub type DefaultBackend = crate::os::x86_64::kvm_cpu::KvmVm;
 #[cfg(target_os = "macos")]
-pub type DefaultBackend = crate::macos::XhyveVm;
+pub type DefaultBackend = crate::os::XhyveVm;
 
 /// Trait marking a interface for creating (accelerated) VMs.
 pub(crate) trait VirtualizationBackendInternal: Sized {

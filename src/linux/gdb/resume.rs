@@ -7,7 +7,7 @@ use gdbstub::{
 };
 
 use super::{GdbVcpuManager, VcpuWrapper, VcpuWrapperShared, breakpoints::AllBreakpoints};
-use crate::{HypervisorError, HypervisorResult, linux::KickSignal};
+use crate::{HypervisorError, HypervisorResult, os::KickSignal};
 
 pub(super) struct ResumeMarker {
 	pub(super) mode: AtomicU8,
