@@ -477,10 +477,7 @@ impl From<Args> for Params {
 			#[cfg(target_os = "linux")]
 			pit: pit.unwrap_or_default(),
 			file_mapping,
-			#[cfg(target_os = "linux")]
 			gdb_port,
-			#[cfg(target_os = "macos")]
-			gdb_port: None,
 			kernel_args,
 			tempdir,
 			#[cfg(target_os = "linux")]

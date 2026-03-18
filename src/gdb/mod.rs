@@ -339,7 +339,6 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 
 impl<Vm: VirtualizationBackend> GdbVcpuManager<Vm> {
 	/// Resolves a [`Tid`] from GDB to the associated [`VcpuWrapper`].
-	#[cfg_attr(target_os = "macos", allow(dead_code))]
 	pub(crate) fn get_vcpu_wrapper(
 		&self,
 		tid: Tid,
@@ -362,7 +361,6 @@ impl<Vm: VirtualizationBackend> GdbVcpuManager<Vm> {
 	}
 
 	/// Resolves a [`Tid`] from GDB to the lock around the associated [`KvmCpu`].
-	#[cfg_attr(target_os = "macos", allow(dead_code))]
 	pub(crate) fn get_vm_cpu(
 		&self,
 		tid: Tid,
