@@ -24,12 +24,10 @@ use gdbstub::{
 };
 use nix::sys::pthread::{Pthread, pthread_self};
 
-#[cfg_attr(target_os = "macos", allow(unused_imports))]
-use crate::HypervisorResult;
-#[cfg_attr(target_os = "macos", allow(unused_imports))]
-use crate::os::Breakpoints;
 use crate::{
+	HypervisorResult,
 	gdb::resume::{ResumeMarker, ResumeMode},
+	os::Breakpoints,
 	serial::Destination,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::{
@@ -55,13 +53,11 @@ pub(crate) struct PthreadWrapper(pub Pthread);
 unsafe impl Send for PthreadWrapper {}
 unsafe impl Sync for PthreadWrapper {}
 
-#[cfg_attr(target_os = "macos", allow(unused))]
 pub(crate) struct VcpuWrapperShared<VCpu> {
 	pub(crate) vcpu: RwLock<VCpu>,
 	pub(crate) resume: ResumeMarker,
 }
 
-#[cfg_attr(target_os = "macos", allow(unused))]
 pub(crate) struct VcpuWrapper<VCpu> {
 	pub(crate) shared: Arc<VcpuWrapperShared<VCpu>>,
 
@@ -72,9 +68,7 @@ pub(crate) struct VcpuWrapper<VCpu> {
 	pub(crate) planned_resume_mode: Option<ResumeMode>,
 }
 
-#[cfg_attr(target_os = "macos", allow(unused))]
-pub(crate) struct GdbVcpuManager<Vm: VirtualizationBackend> {
-	#[cfg(not(target_os = "macos"))]
+pub struct GdbVcpuManager<Vm: VirtualizationBackend> {
 	pub(crate) breakpoints: Arc<RwLock<Breakpoints>>,
 
 	pub(crate) peripherals: Arc<VmPeripherals>,
@@ -217,7 +211,6 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 		let (stops_s, stops_r) = async_channel::unbounded();
 		let peripherals = Arc::clone(&self.peripherals);
 		let kernel_info = Arc::clone(&self.kernel_info);
-		#[cfg(not(target_os = "macos"))]
 		let breakpoints = Arc::new(RwLock::new(Breakpoints::default()));
 		let cpu_affinity: Option<Arc<[_]>> = cpu_affinity.map(Arc::from);
 
@@ -228,7 +221,6 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 				let vcpu_id = vcpu.get_vcpu_id();
 				let vcpu = RwLock::new(vcpu);
 				let stops_s = stops_s.clone();
-				#[cfg(not(target_os = "macos"))]
 				let breakpoints = Arc::clone(&breakpoints);
 				let shared = Arc::new(VcpuWrapperShared {
 					resume: ResumeMarker {
@@ -276,7 +268,6 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 
 							listener.wait();
 						}
-						#[cfg(not(target_os = "macos"))]
 						shared
 							.apply_current_guest_debug(&(*breakpoints).read().unwrap())
 							.expect("GDB target error");
@@ -333,7 +324,6 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 		trace!("tid2vcpu = {tid_to_vcpu:?}");
 
 		GdbVcpuManager {
-			#[cfg(not(target_os = "macos"))]
 			breakpoints,
 			peripherals,
 			kernel_info,
@@ -386,7 +376,6 @@ impl<VCpu: VirtualCPU> VcpuWrapperShared<VCpu> {
 	/// `ResumeMode`, and `breakpoints`.
 	///
 	/// This handles e.g. single-stepping of the vCPU.
-	#[cfg(not(target_os = "macos"))]
 	pub fn apply_current_guest_debug(&self, breakpoints: &Breakpoints) -> HypervisorResult<()> {
 		// SAFETY: we trust the value of `self.resume.mode`.
 		let mode: ResumeMode =
