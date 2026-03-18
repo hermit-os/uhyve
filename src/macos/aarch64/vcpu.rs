@@ -85,7 +85,11 @@ pub struct XhyveCpu {
 	kernel_info: Arc<KernelInfo>,
 	stats: Option<CpuStats>,
 }
+
 unsafe impl Send for XhyveCpu {}
+
+// Necessary in order to be able to read registers of the vcpu for debugging.
+unsafe impl Sync for XhyveCpu {}
 
 impl VirtualCPU for XhyveCpu {
 	fn thread_local_init(&mut self) -> HypervisorResult<()> {
