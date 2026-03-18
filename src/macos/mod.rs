@@ -1,15 +1,20 @@
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
 
+pub(crate) mod gdb;
+
 use core_affinity::CoreId;
 use nix::sys::{
 	pthread::{Pthread, pthread_kill},
 	signal::{SIGUSR1, SigHandler, Signal, signal},
 };
 
-#[cfg(target_arch = "aarch64")]
 pub use crate::macos::aarch64::vcpu::{XhyveCpu, XhyveVm};
 use crate::vm::{UhyveVm, VmResult};
+
+/// TODO: Use proper structure and methods for this
+pub(crate) type DebugExitInfo = xhypervisor::ffi::hv_vcpu_exit_exception_t;
+pub(crate) type Breakpoints = gdb::breakpoints::AllBreakpoints;
 
 /// The signal for kicking vCPUs out of KVM_RUN.
 ///
@@ -37,8 +42,6 @@ impl KickSignal {
 		pthread_kill(pthread, Self::get())
 	}
 }
-
-pub(crate) type DebugExitInfo = ();
 
 impl UhyveVm<XhyveVm> {
 	/// Runs the VM.
