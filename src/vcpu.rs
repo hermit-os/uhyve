@@ -9,12 +9,14 @@ use crate::{gdb::resume::ResumeMode, stats::CpuStats};
 /// Reasons for vCPU exits.
 pub enum VcpuStopReason {
 	/// The vCPU stopped for debugging.
+	#[cfg_attr(target_os = "macos", expect(dead_code))]
 	Debug(DebugExitInfo),
 
 	/// The vCPU exited with the specified exit code.
 	Exit(i32),
 
 	/// The vCPU got kicked.
+	#[cfg_attr(target_os = "macos", expect(dead_code))]
 	Kick,
 }
 
