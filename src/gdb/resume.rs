@@ -8,7 +8,7 @@ use gdbstub::{
 
 use crate::{
 	gdb::{GdbVcpuManager, VcpuWrapper, VcpuWrapperShared},
-	linux::KickSignal,
+	os::KickSignal,
 	vm::VirtualizationBackend,
 };
 
