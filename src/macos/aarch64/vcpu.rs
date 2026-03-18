@@ -327,7 +327,15 @@ impl VirtualCPU for XhyveCpu {
 	}
 
 	fn get_vcpu_id(&self) -> usize {
-		self.id
+		self.id.try_into().unwrap()
+	}
+
+	fn apply_current_guest_debug(
+		&mut self,
+		_breakpoints: &crate::os::Breakpoints,
+		_resume_mode: crate::gdb::resume::ResumeMode,
+	) -> HypervisorResult<()> {
+		todo!()
 	}
 }
 

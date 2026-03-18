@@ -7,10 +7,6 @@ use crate::{HypervisorResult, os::DebugExitInfo};
 use crate::{gdb::resume::ResumeMode, stats::CpuStats};
 
 /// Reasons for vCPU exits.
-#[cfg_attr(
-	target_os = "macos",
-	expect(dead_code, reason = "Not all variants used in macOS.")
-)]
 pub enum VcpuStopReason {
 	/// The vCPU stopped for debugging.
 	Debug(DebugExitInfo),

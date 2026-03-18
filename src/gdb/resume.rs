@@ -8,7 +8,6 @@ use gdbstub::{
 
 use crate::{
 	gdb::{GdbVcpuManager, VcpuWrapper, VcpuWrapperShared},
-	os::KickSignal,
 	vm::VirtualizationBackend,
 };
 
@@ -31,6 +30,7 @@ pub enum ResumeMode {
 impl<Vm: VirtualizationBackend> GdbVcpuManager<Vm> {
 	/// Signal to the vCPU manager that the `gdbstub` finished initializing,
 	/// i.e. exited the `Idle` state and entered the `Running` state.
+	#[cfg_attr(target_os = "macos", allow(dead_code))]
 	pub fn set_finished_initializing(&mut self) {
 		if core::mem::replace(&mut self.is_initializing, false) {
 			for i in &mut self.vcpus {
@@ -44,10 +44,11 @@ impl<Vcpu> VcpuWrapper<Vcpu> {
 	/// Kick the vCPU
 	pub fn kick(&self) {
 		trace!("vcpu: kick! {}", self.tid);
-		KickSignal::pthread_kill(self.pthread.0).unwrap();
+		crate::os::KickSignal::pthread_kill(self.pthread.0).unwrap();
 	}
 
 	/// Resume the vCPU in free-wheeling / non-stepped mode
+	#[cfg_attr(target_os = "macos", allow(dead_code))]
 	fn r#continue(&mut self) {
 		// TODO: refactor to get rid of mutability
 		let old_planned = self.planned_resume_mode.take();
