@@ -31,9 +31,12 @@ pub fn run_hello_world(c: &mut Criterion) {
 		"uhyve release build is required to run this benchmark"
 	);
 
-	let hello_world_path = [env!("CARGO_MANIFEST_DIR"), "data/x86_64/hello_world"]
-		.iter()
-		.collect::<PathBuf>();
+	let hello_world_path = [
+		env!("CARGO_MANIFEST_DIR"),
+		"data/sample-v1-images/x86_64/hello_world",
+	]
+	.iter()
+	.collect::<PathBuf>();
 	assert!(
 		hello_world_path.exists(),
 		"hello_world executable missing from bench_data"
@@ -42,7 +45,7 @@ pub fn run_hello_world(c: &mut Criterion) {
 	let mut group = c.benchmark_group("hello_world");
 	group.sample_size(30);
 
-	group.bench_function("uhyve data/x86_64/hello_world", |b| {
+	group.bench_function("uhyve data/sample-v1-images/x86_64/hello_world", |b| {
 		b.iter(|| {
 			let status = Command::new(&uhyve_path)
 				.arg(&hello_world_path)
@@ -71,7 +74,7 @@ pub fn run_hello_world(c: &mut Criterion) {
 		loader_path.into_os_string().into_string().unwrap()
 	);
 
-	group.bench_function("qemu data/x86_64/hello_world", |b| {
+	group.bench_function("qemu data/sample-v1-imags/x86_64/hello_world", |b| {
 		b.iter(|| {
 			let status = Command::new("qemu-system-x86_64")
 				.arg("-smp")
@@ -117,7 +120,7 @@ pub fn run_rusty_demo(c: &mut Criterion) {
 	let mut group = c.benchmark_group("rusty_demo");
 	group.measurement_time(Duration::from_secs(60));
 
-	group.bench_function("uhyve data/x86_64/rusty_demo", |b| {
+	group.bench_function("uhyve data/sample-v1-images/x86_64/rusty_demo", |b| {
 		b.iter(|| {
 			let status = Command::new(&uhyve_path)
 				.arg(&rusty_demo_path)
@@ -144,7 +147,7 @@ pub fn run_rusty_demo(c: &mut Criterion) {
 		loader_path.into_os_string().into_string().unwrap()
 	);
 
-	group.bench_function("qemu data/x86_64/rusty_demo", |b| {
+	group.bench_function("qemu data/sample-v1-images/x86_64/rusty_demo", |b| {
 		b.iter(|| {
 			let status = Command::new("qemu-system-x86_64")
 				.arg("-smp")
