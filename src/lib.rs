@@ -10,14 +10,12 @@ extern crate log;
 mod arch;
 pub mod consts;
 mod fdt;
-#[cfg(target_os = "linux")]
-pub mod linux;
-#[cfg(target_os = "linux")]
-use linux as os;
-#[cfg(target_os = "macos")]
-pub mod macos;
-#[cfg(target_os = "macos")]
-use macos as os;
+mod gdb;
+
+#[cfg_attr(target_os = "linux", path = "linux/mod.rs")]
+#[cfg_attr(target_os = "macos", path = "macos/mod.rs")]
+pub mod os;
+
 mod hypercall;
 mod isolation;
 pub mod mem;
@@ -73,7 +71,6 @@ pub enum HypervisorError {
 
 impl HypervisorError {
 	/// Report an (target independent) invalid value error e.g. during debug interactions
-	#[cfg_attr(target_os = "macos", expect(unused))]
 	fn backend_invalid_value() -> Self {
 		Self::BackendError({
 			#[cfg(target_os = "linux")]
