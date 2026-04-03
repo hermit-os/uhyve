@@ -10,7 +10,7 @@ use uhyvelib::{
 };
 
 pub fn load_vm_hello_world(c: &mut Criterion) {
-	let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "data/x86_64/hello_world"]
+	let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "data/0.6.0/x86_64/hello_world"]
 		.iter()
 		.collect();
 	let params = Params {
