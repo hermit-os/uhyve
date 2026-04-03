@@ -174,7 +174,7 @@ jobs:
       - name: Generate code coverage
         run: cargo llvm-cov --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           disable_safe_directory: true
           files: lcov.info
