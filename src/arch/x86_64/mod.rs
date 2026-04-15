@@ -8,7 +8,7 @@ use x86_64::structures::paging::{
 	page_table::{FrameError, PageTableEntry},
 };
 
-use crate::{linux::x86_64::kvm_cpu::KVM_32BIT_GAP_START, mem::MmapMemory, paging::PagetableError};
+use crate::{mem::MmapMemory, os::x86_64::kvm_cpu::KVM_32BIT_GAP_START, paging::PagetableError};
 
 pub(crate) const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x0);
 // Right below 3 GiB, aka. 0xBFFF_FFFF
