@@ -1,6 +1,6 @@
 #![cfg_attr(not(target_os = "linux"), expect(unused))]
 
-use std::io;
+use std::{fmt::Debug, io};
 
 pub const BROADCAST_MAC_ADDR: [u8; 6] = [0xff; 6];
 pub const PCI_ETHERNET_CLASS_CODE: u8 = 0x2;
@@ -16,6 +16,7 @@ pub const UHYVE_PCI_CLASS_INFO: [u8; 3] = [
 ];
 
 pub const UHYVE_NET_MTU: usize = 1500;
+pub trait NetworkBackend: Sized + Debug {}
 
 // tap devices on macOS don't seem to be supported directly by Apple
 // TODO: Let mac users investigate if this is possible.

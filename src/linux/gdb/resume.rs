@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::{
+	fmt::Debug,
+	sync::atomic::{AtomicU8, Ordering},
+};
 
 use event_listener::Event;
 use gdbstub::{
@@ -7,9 +10,7 @@ use gdbstub::{
 };
 
 use super::{GdbVcpuManager, VcpuWrapper, VcpuWrapperShared, breakpoints::AllBreakpoints};
-use crate::{
-	HypervisorError, HypervisorResult, linux::KickSignal, vm::VirtualizationBackendInternal,
-};
+use crate::{HypervisorError, HypervisorResult, linux::KickSignal, net::NetworkBackend};
 
 pub(super) struct ResumeMarker {
 	pub(super) mode: AtomicU8,
@@ -27,7 +28,7 @@ pub enum ResumeMode {
 	FreeWheeling,
 }
 
-impl<VirtBackend: VirtualizationBackendInternal> GdbVcpuManager<VirtBackend> {
+impl<NetBackend: NetworkBackend> GdbVcpuManager<NetBackend> {
 	/// Signal to the vCPU manager that the `gdbstub` finished initializing,
 	/// i.e. exited the `Idle` state and entered the `Running` state.
 	pub fn set_finished_initializing(&mut self) {
@@ -110,8 +111,8 @@ impl VcpuWrapperShared {
 	}
 }
 
-impl<VirtBackend: VirtualizationBackendInternal> target_multithread::MultiThreadResume
-	for GdbVcpuManager<VirtBackend>
+impl<NetBackend: NetworkBackend> target_multithread::MultiThreadResume
+	for GdbVcpuManager<NetBackend>
 {
 	fn clear_resume_actions(&mut self) -> Result<(), Self::Error> {
 		self.vcpus
@@ -159,8 +160,8 @@ impl<VirtBackend: VirtualizationBackendInternal> target_multithread::MultiThread
 	}
 }
 
-impl<VirtBackend: VirtualizationBackendInternal> target_multithread::MultiThreadSingleStep
-	for GdbVcpuManager<VirtBackend>
+impl<NetBackend: NetworkBackend> target_multithread::MultiThreadSingleStep
+	for GdbVcpuManager<NetBackend>
 {
 	fn set_resume_action_step(
 		&mut self,
@@ -177,8 +178,8 @@ impl<VirtBackend: VirtualizationBackendInternal> target_multithread::MultiThread
 	}
 }
 
-impl<VirtBackend: VirtualizationBackendInternal> target_multithread::MultiThreadSchedulerLocking
-	for GdbVcpuManager<VirtBackend>
+impl<NetBackend: NetworkBackend> target_multithread::MultiThreadSchedulerLocking
+	for GdbVcpuManager<NetBackend>
 {
 	fn set_resume_action_scheduler_lock(&mut self) -> Result<(), Self::Error> {
 		self.default_resume_mode = ResumeMode::Stopped;

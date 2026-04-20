@@ -39,6 +39,7 @@ use crate::{
 		PthreadWrapper,
 		x86_64::kvm_cpu::{KvmCpu, KvmVm},
 	},
+	net::NetworkBackend,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::{KernelInfo, UhyveVm, VirtualizationBackendInternal, VmPeripherals},
 };
@@ -62,9 +63,9 @@ pub(crate) struct VcpuWrapper {
 }
 
 #[derive(Clone)]
-pub(crate) struct GdbVcpuManager<VirtBackend: VirtualizationBackendInternal> {
+pub(crate) struct GdbVcpuManager<NetBackend: NetworkBackend> {
 	breakpoints: Arc<RwLock<AllBreakpoints>>,
-	pub(crate) peripherals: Arc<VmPeripherals<VirtBackend>>,
+	pub(crate) peripherals: Arc<VmPeripherals<NetBackend>>,
 	kernel_info: Arc<KernelInfo>,
 	pub(crate) stops: async_channel::Receiver<MultiThreadStopReason<u64>>,
 	pub(crate) vcpus: Vec<VcpuWrapper>,
@@ -89,7 +90,7 @@ impl UhyveVm<KvmVm> {
 	pub(crate) fn spawn_cpu_manager_for_gdb(
 		self,
 		cpu_affinity: Option<Vec<CoreId>>,
-	) -> GdbVcpuManager<KvmVm> {
+	) -> GdbVcpuManager<<KvmVm as VirtualizationBackendInternal>::VirtioNetImpl> {
 		use std::os::unix::thread::JoinHandleExt;
 
 		let (stops_s, stops_r) = async_channel::unbounded();
@@ -227,7 +228,7 @@ impl UhyveVm<KvmVm> {
 	}
 }
 
-impl<VirtBackend: VirtualizationBackendInternal> GdbVcpuManager<VirtBackend> {
+impl<NetBackend: NetworkBackend> GdbVcpuManager<NetBackend> {
 	/// Resolves a [`Tid`] from GDB to the associated [`VcpuWrapper`].
 	fn get_vcpu_wrapper(&self, tid: Tid) -> &VcpuWrapper {
 		match self.tid_to_vcpu.get(&(tid.try_into().unwrap())) {
@@ -250,7 +251,7 @@ impl<VirtBackend: VirtualizationBackendInternal> GdbVcpuManager<VirtBackend> {
 	}
 }
 
-impl<VirtBackend: VirtualizationBackendInternal> Target for GdbVcpuManager<VirtBackend> {
+impl<NetBackend: NetworkBackend> Target for GdbVcpuManager<NetBackend> {
 	type Arch = gdbstub_arch::x86::X86_64_SSE;
 	type Error = HypervisorError;
 
@@ -279,8 +280,8 @@ impl<VirtBackend: VirtualizationBackendInternal> Target for GdbVcpuManager<VirtB
 	}
 }
 
-impl<VirtBackend: VirtualizationBackendInternal> target_multithread::MultiThreadBase
-	for GdbVcpuManager<VirtBackend>
+impl<NetBackend: NetworkBackend> target_multithread::MultiThreadBase
+	for GdbVcpuManager<NetBackend>
 {
 	fn read_registers(&mut self, regs: &mut X86_64CoreRegs, tid: Tid) -> TargetResult<(), Self> {
 		regs::read(self.get_vm_cpu(tid).read().unwrap().get_vcpu(), regs)
