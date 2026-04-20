@@ -29,6 +29,7 @@ use crate::{
 	fdt::Fdt,
 	isolation::filemap::{UhyveFileMap, UhyveMapLeaf},
 	mem::MmapMemory,
+	net::NetworkBackend,
 	os::KickSignal,
 	params::{EnvVars, Params},
 	parking::Parker,
@@ -64,7 +65,7 @@ pub type DefaultBackend = crate::macos::XhyveVm;
 /// Trait marking a interface for creating (accelerated) VMs.
 pub(crate) trait VirtualizationBackendInternal: Sized {
 	type VCPU: 'static + VirtualCPU;
-	type VirtioNetImpl: Debug;
+	type VirtioNetImpl: NetworkBackend;
 	const NAME: &str;
 
 	/// Create a new CPU object
@@ -75,14 +76,13 @@ pub(crate) trait VirtualizationBackendInternal: Sized {
 		enable_stats: bool,
 	) -> HypervisorResult<Self::VCPU>;
 
-	fn new(peripherals: Arc<VmPeripherals<Self>>, params: &Params) -> HypervisorResult<Self>;
+	fn new(
+		peripherals: Arc<VmPeripherals<Self::VirtioNetImpl>>,
+		params: &Params,
+	) -> HypervisorResult<Self>;
 
 	fn virtio_net_device(mmap: Arc<MmapMemory>) -> Self::VirtioNetImpl;
 }
-
-// This uses the "private sealed supertrait pattern".
-#[allow(private_bounds)]
-pub trait VirtualizationBackend: Sized + VirtualizationBackendInternal {}
 
 #[derive(Debug, Clone)]
 pub struct VmResult {
@@ -93,12 +93,22 @@ pub struct VmResult {
 
 /// mutable devices that a vCPU interacts with
 #[derive(Debug)]
-pub(crate) struct VmPeripherals<VirtBackend: VirtualizationBackendInternal> {
+pub(crate) struct VmPeripherals<VirtioNetImpl: NetworkBackend> {
 	pub file_mapping: Mutex<UhyveFileMap>,
 	pub mem: Arc<MmapMemory>,
 	pub(crate) serial: UhyveSerial,
-	pub virtio_device: Mutex<VirtBackend::VirtioNetImpl>,
+	pub virtio_device: Mutex<VirtioNetImpl>,
 }
+
+// This uses the "private sealed supertrait pattern".
+#[allow(private_bounds)]
+pub trait VirtualizationBackend: Sized + VirtualizationBackendInternal {}
+
+// TODO: Investigate soundness
+// https://github.com/hermitcore/uhyve/issues/229
+unsafe impl<N: NetworkBackend> Send for VmPeripherals<N> {}
+
+unsafe impl<N: NetworkBackend> Sync for VmPeripherals<N> {}
 
 /// static information that does not change during execution
 #[derive(Debug)]
@@ -197,11 +207,12 @@ pub(crate) fn generate_guest_start_address(
 
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(crate) vcpus: Vec<<VirtBackend as VirtualizationBackendInternal>::VCPU>,
-	pub(crate) peripherals: Arc<VmPeripherals<VirtBackend>>,
+	pub(crate) peripherals: Arc<VmPeripherals<VirtBackend::VirtioNetImpl>>,
 	pub(crate) kernel_info: Arc<KernelInfo>,
 	_virt_backend: VirtBackend,
 }
-impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
+#[allow(private_bounds)]
+impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<VirtBackend> {
 	pub fn new(kernel_path: PathBuf, mut params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
 		let memory_size = params.memory_size.get();
 
@@ -615,7 +626,7 @@ impl<VirtBackend: VirtualizationBackend> UhyveVm<VirtBackend> {
 	}
 }
 
-impl<VirtIf: VirtualizationBackend> fmt::Debug for UhyveVm<VirtIf> {
+impl<VirtIf: VirtualizationBackend + Debug> fmt::Debug for UhyveVm<VirtIf> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		f.debug_struct(&format!("UhyveVm<{}>", VirtIf::NAME))
 			.field("entry_point", &self.kernel_info.entry_point)

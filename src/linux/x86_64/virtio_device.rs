@@ -12,6 +12,7 @@ use uhyve_interface::GuestPhysAddr;
 use vmm_sys_util::eventfd::EventFd;
 
 use crate::{
+	net::NetworkBackend,
 	pci::PciConfigurationAddress,
 	virtio::{
 		DeviceStatus,
@@ -58,6 +59,7 @@ impl VirtQueueInterrupter for EventFdInterrupter {
 pub struct KvmVirtioNetDevice {
 	pub virtio: VirtioNetPciDevice,
 }
+impl NetworkBackend for KvmVirtioNetDevice {}
 impl KvmVirtioNetDevice {
 	pub const fn new(virtio: VirtioNetPciDevice) -> Self {
 		Self { virtio }

@@ -1,4 +1,7 @@
-use std::collections::{HashMap, hash_map::Entry};
+use std::{
+	collections::{HashMap, hash_map::Entry},
+	fmt::Debug,
+};
 
 use gdbstub::target::{self, TargetResult, ext::breakpoints::WatchKind};
 use uhyve_interface::GuestVirtAddr;
@@ -9,7 +12,7 @@ use crate::{
 		virt_to_phys,
 		x86_64::registers::{self, debug::HwBreakpoints},
 	},
-	vm::VirtualizationBackendInternal,
+	net::NetworkBackend,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -40,8 +43,8 @@ impl SwBreakpoint {
 
 pub type SwBreakpoints = HashMap<SwBreakpoint, Vec<u8>>;
 
-impl<VirtBackend: VirtualizationBackendInternal> target::ext::breakpoints::Breakpoints
-	for GdbVcpuManager<VirtBackend>
+impl<NetBackend: NetworkBackend> target::ext::breakpoints::Breakpoints
+	for GdbVcpuManager<NetBackend>
 {
 	#[inline(always)]
 	fn support_sw_breakpoint(
@@ -65,8 +68,8 @@ impl<VirtBackend: VirtualizationBackendInternal> target::ext::breakpoints::Break
 	}
 }
 
-impl<VirtBackend: VirtualizationBackendInternal> target::ext::breakpoints::SwBreakpoint
-	for GdbVcpuManager<VirtBackend>
+impl<NetBackend: NetworkBackend> target::ext::breakpoints::SwBreakpoint
+	for GdbVcpuManager<NetBackend>
 {
 	fn add_sw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
 		let sw_breakpoint = SwBreakpoint::new(addr, kind);
@@ -136,8 +139,8 @@ impl<VirtBackend: VirtualizationBackendInternal> target::ext::breakpoints::SwBre
 	}
 }
 
-impl<VirtBackend: VirtualizationBackendInternal> target::ext::breakpoints::HwBreakpoint
-	for GdbVcpuManager<VirtBackend>
+impl<NetBackend: NetworkBackend> target::ext::breakpoints::HwBreakpoint
+	for GdbVcpuManager<NetBackend>
 {
 	fn add_hw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
 		let hw_breakpoint = match registers::debug::HwBreakpoint::new_breakpoint(addr, kind) {
@@ -172,8 +175,8 @@ impl<VirtBackend: VirtualizationBackendInternal> target::ext::breakpoints::HwBre
 	}
 }
 
-impl<VirtBackend: VirtualizationBackendInternal> target::ext::breakpoints::HwWatchpoint
-	for GdbVcpuManager<VirtBackend>
+impl<NetBackend: NetworkBackend> target::ext::breakpoints::HwWatchpoint
+	for GdbVcpuManager<NetBackend>
 {
 	fn add_hw_watchpoint(
 		&mut self,

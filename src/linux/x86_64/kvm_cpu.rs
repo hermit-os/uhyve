@@ -41,9 +41,10 @@ const KVM_32BIT_GAP_SIZE: usize = 1024 << 20;
 // 3 GiB, aka. 0xC000_0000
 pub(crate) const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
 
+#[derive(Debug)]
 pub struct KvmVm {
 	vm_fd: VmFd,
-	peripherals: Arc<VmPeripherals<Self>>,
+	peripherals: Arc<VmPeripherals<<Self as VirtualizationBackendInternal>::VirtioNetImpl>>,
 }
 
 impl VirtualizationBackendInternal for KvmVm {
@@ -75,7 +76,10 @@ impl VirtualizationBackendInternal for KvmVm {
 		Ok(kvcpu)
 	}
 
-	fn new(peripherals: Arc<VmPeripherals<Self>>, params: &Params) -> HypervisorResult<Self> {
+	fn new(
+		peripherals: Arc<VmPeripherals<Self::VirtioNetImpl>>,
+		params: &Params,
+	) -> HypervisorResult<Self> {
 		let vm = KVM.create_vm().unwrap();
 
 		// Double-check that neither the (first) guest address nor the end of the guest memory
@@ -176,7 +180,7 @@ impl VirtualizationBackend for KvmVm {}
 pub struct KvmCpu {
 	id: usize,
 	vcpu: VcpuFd,
-	peripherals: Arc<VmPeripherals<KvmVm>>,
+	peripherals: Arc<VmPeripherals<<KvmVm as VirtualizationBackendInternal>::VirtioNetImpl>>,
 	// TODO: Remove once the getenv/getargs hypercalls are removed
 	kernel_info: Arc<KernelInfo>,
 	pci_addr: Option<u32>,

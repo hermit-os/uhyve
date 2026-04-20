@@ -1,9 +1,9 @@
 use gdbstub::target::{self, ext::section_offsets::Offsets};
 
-use crate::vm::VirtualizationBackendInternal;
+use crate::net::NetworkBackend;
 
-impl<VirtBackend: VirtualizationBackendInternal> target::ext::section_offsets::SectionOffsets
-	for super::GdbVcpuManager<VirtBackend>
+impl<NetBackend: NetworkBackend> target::ext::section_offsets::SectionOffsets
+	for super::GdbVcpuManager<NetBackend>
 {
 	fn get_section_offsets(&mut self) -> Result<Offsets<u64>, Self::Error> {
 		let offset = self.kernel_info.kernel_address.as_u64();
