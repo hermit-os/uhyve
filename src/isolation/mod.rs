@@ -59,7 +59,7 @@ fn test_split_guest_and_host_path() {
 	for (host_and_guest_string, expected_result) in host_guest_strings
 		.into_iter()
 		.map(split_guest_and_host_path)
-		.zip(results.into_iter())
+		.zip(results)
 	{
 		assert_eq!(
 			host_and_guest_string.expect("Result is an error!"),
