@@ -106,7 +106,7 @@ pub fn run_rusty_demo(c: &mut Criterion) {
 		"uhyve release build is required to run this benchmark"
 	);
 
-	let rusty_demo_path = [env!("CARGO_MANIFEST_DIR"), "data/x86_64/rusty_demo"]
+	let rusty_demo_path = [env!("CARGO_MANIFEST_DIR"), "data/0.6.0/x86_64/rusty_demo"]
 		.iter()
 		.collect::<PathBuf>();
 	assert!(
