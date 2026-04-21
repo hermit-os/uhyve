@@ -444,7 +444,8 @@ impl VirtualCPU for KvmCpu {
 										warn!("Guest tries to access non-present virtio device");
 									}
 								} else {
-									unsafe { *(addr.as_ptr() as *mut u32) = 0xffffffff };
+									warn!("Invalid pci config data port access");
+									addr.fill(0xff);
 								}
 							}
 							PCI_CONFIG_ADDRESS_PORT => {}
