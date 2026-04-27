@@ -68,7 +68,7 @@ uhyve-interface = { version = "0.2.0", path = "uhyve-interface", features = ["st
 virtio-bindings = "~0.2.7"
 vm-fdt = "0.3"
 vm-memory = { version = "0.18", features = ["backend-mmap"] }
-uuid = { version = "1.23.0", features = ["fast-rng", "v4"]}
+uuid = { version = "1.23.1", features = ["fast-rng", "v4"]}
 tar-no-std = { version = "0.4", features = ["alloc"] }
 async-channel = "2.5.0"
 futures-lite = "2.6.1"
