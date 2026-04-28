@@ -5,7 +5,7 @@ use bitflags::bitflags;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 
 use crate::{
-	consts::{PAGETABLES_END, PAGETABLES_OFFSET, PGT_OFFSET},
+	consts::{PAGETABLES_END, PAGETABLES_OFFSET},
 	mem::MmapMemory,
 	paging::{BumpAllocator, PagetableError},
 };
@@ -51,6 +51,8 @@ const PAGE_MAP_BITS: usize = 9;
 
 /// A mask where PAGE_MAP_BITS are set to calculate a table index.
 const PAGE_MAP_MASK: u64 = 0x1FF;
+
+pub const PGT_OFFSET: u64 = 0x10000;
 
 #[inline(always)]
 pub const fn mair(attr: u64, mt: u64) -> u64 {
