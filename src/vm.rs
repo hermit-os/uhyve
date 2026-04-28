@@ -24,7 +24,6 @@ use uhyve_interface::GuestPhysAddr;
 
 use crate::{
 	HypervisorError, V1_ADDR_RANGE, V2_ADDR_RANGE,
-	consts::KERNEL_STACK_SIZE,
 	fdt::Fdt,
 	isolation::filemap::{UhyveFileMap, UhyveMapLeaf},
 	mem::MmapMemory,
@@ -121,6 +120,8 @@ pub(crate) struct KernelInfo {
 pub(crate) const BOOT_INFO_OFFSET: u64 = 0x9000;
 const FDT_OFFSET: u64 = 0x5000;
 pub(crate) const KERNEL_OFFSET: u64 = 0x40000;
+
+const KERNEL_STACK_SIZE: u64 = 0x8000;
 
 /// Returns a guest & start address tuple based on the object file.
 ///
