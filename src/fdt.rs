@@ -7,7 +7,7 @@ use vm_fdt::{FdtWriter, FdtWriterNode, FdtWriterResult};
 
 #[cfg(target_arch = "aarch64")]
 use crate::{
-	consts::{
+	arch::{
 		GICD_BASE_ADDRESS, GICD_SIZE, GICR_BASE_ADDRESS, GICR_SIZE, MSI_BASE_ADDRESS, MSI_SIZE,
 	},
 	params::CpuCount,

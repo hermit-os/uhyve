@@ -9,12 +9,12 @@ use xhypervisor::{
 
 use crate::{
 	HypervisorError, HypervisorResult,
-	aarch64::{
-		MT_DEVICE_GRE, MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_NORMAL, MT_NORMAL_NC, PSR, TCR_FLAGS,
-		TCR_TG1_4K, VA_BITS, mair, tcr_size,
+	arch::{
+		GICD_BASE_ADDRESS, GICR_BASE_ADDRESS, MSI_BASE_ADDRESS, MT_DEVICE_GRE, MT_DEVICE_nGnRE,
+		MT_DEVICE_nGnRnE, MT_NORMAL, MT_NORMAL_NC, PGT_OFFSET, PSR, TCR_FLAGS, TCR_TG1_4K, VA_BITS,
+		mair, tcr_size,
 	},
-	arch::PGT_OFFSET,
-	consts::{BOOT_INFO_OFFSET, GICD_BASE_ADDRESS, GICR_BASE_ADDRESS, MSI_BASE_ADDRESS},
+	consts::BOOT_INFO_OFFSET,
 	hypercall,
 	params::Params,
 	stats::CpuStats,
