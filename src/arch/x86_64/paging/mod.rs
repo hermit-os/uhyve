@@ -19,6 +19,11 @@ const BOOT_GDT_CODE: usize = 1;
 const BOOT_GDT_DATA: usize = 2;
 pub(crate) const BOOT_GDT_MAX: usize = 3;
 
+// The offset of the kernel in the memory.
+// Must be larger than BOOT_INFO_OFFSET + KERNEL_STACK_SIZE
+#[cfg(test)]
+pub(super) const MIN_PHYSMEM_SIZE: usize = 0x43000;
+
 // Constructor for a conventional segment GDT (or LDT) entry
 pub fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {
 	((base & 0xff000000u64) << (56 - 24))
@@ -180,7 +185,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		arch::GDT_OFFSET,
-		consts::{MIN_PHYSMEM_SIZE, PAGETABLES_END, PAGETABLES_OFFSET},
+		consts::{PAGETABLES_END, PAGETABLES_OFFSET},
 		mem::MmapMemory,
 	};
 

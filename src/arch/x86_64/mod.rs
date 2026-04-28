@@ -78,8 +78,8 @@ pub fn init_guest_mem(
 mod tests {
 	use x86_64::structures::paging::PageTableFlags;
 
-	use super::*;
-	use crate::consts::{MIN_PHYSMEM_SIZE, PAGETABLES_END, PAGETABLES_OFFSET};
+	use super::{paging::MIN_PHYSMEM_SIZE, *};
+	use crate::consts::{PAGETABLES_END, PAGETABLES_OFFSET};
 
 	#[test]
 	fn test_virt_to_phys() {
