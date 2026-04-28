@@ -9,12 +9,14 @@ use x86_64::{
 
 use super::PAGE_SIZE;
 use crate::{
-	consts::{
-		BOOT_GDT_CODE, BOOT_GDT_DATA, BOOT_GDT_NULL, GDT_OFFSET, KERNEL_OFFSET, PAGETABLES_END,
-		PAGETABLES_OFFSET, PML4_OFFSET,
-	},
+	consts::{GDT_OFFSET, KERNEL_OFFSET, PAGETABLES_END, PAGETABLES_OFFSET, PML4_OFFSET},
 	paging::BumpAllocator,
 };
+
+const BOOT_GDT_NULL: usize = 0;
+const BOOT_GDT_CODE: usize = 1;
+const BOOT_GDT_DATA: usize = 2;
+pub(crate) const BOOT_GDT_MAX: usize = 3;
 
 // Constructor for a conventional segment GDT (or LDT) entry
 pub fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {

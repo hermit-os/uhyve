@@ -1,6 +1,7 @@
 mod paging;
 pub(crate) mod registers;
 
+pub(crate) use paging::BOOT_GDT_MAX;
 use paging::initialize_pagetables;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 use x86_64::structures::paging::{
@@ -9,7 +10,6 @@ use x86_64::structures::paging::{
 };
 
 use crate::{linux::x86_64::kvm_cpu::KVM_32BIT_GAP_START, mem::MmapMemory, paging::PagetableError};
-
 pub const PAGE_SIZE: usize = 0x1000;
 
 pub(crate) const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x0);
