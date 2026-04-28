@@ -24,7 +24,7 @@ use uhyve_interface::GuestPhysAddr;
 
 use crate::{
 	HypervisorError, V1_ADDR_RANGE, V2_ADDR_RANGE,
-	consts::{BOOT_INFO_OFFSET, FDT_OFFSET, KERNEL_OFFSET, KERNEL_STACK_SIZE},
+	consts::KERNEL_STACK_SIZE,
 	fdt::Fdt,
 	isolation::filemap::{UhyveFileMap, UhyveMapLeaf},
 	mem::MmapMemory,
@@ -116,6 +116,11 @@ pub(crate) struct KernelInfo {
 	/// The location of the whole guest in the physical address space
 	pub guest_address: GuestPhysAddr,
 }
+
+// guest_address + OFFSET
+pub(crate) const BOOT_INFO_OFFSET: u64 = 0x9000;
+const FDT_OFFSET: u64 = 0x5000;
+pub(crate) const KERNEL_OFFSET: u64 = 0x40000;
 
 /// Returns a guest & start address tuple based on the object file.
 ///
@@ -744,7 +749,10 @@ mod tests {
 
 	use hermit_entry::UhyveIfVersion;
 
-	use crate::{RAM_START, V1_MAX_ADDR, consts::KERNEL_OFFSET, vm::generate_guest_start_address};
+	use crate::{
+		RAM_START, V1_MAX_ADDR,
+		vm::{KERNEL_OFFSET, generate_guest_start_address},
+	};
 
 	#[test]
 	fn test_generate_guest_start_address() {

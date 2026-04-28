@@ -9,8 +9,9 @@ use x86_64::{
 
 use super::{GDT_OFFSET, PAGE_SIZE, PML4_OFFSET};
 use crate::{
-	consts::{KERNEL_OFFSET, PAGETABLES_END, PAGETABLES_OFFSET},
+	consts::{PAGETABLES_END, PAGETABLES_OFFSET},
 	paging::BumpAllocator,
+	vm::KERNEL_OFFSET,
 };
 
 const BOOT_GDT_NULL: usize = 0;
