@@ -7,9 +7,9 @@ use x86_64::{
 	},
 };
 
-use super::PAGE_SIZE;
+use super::{GDT_OFFSET, PAGE_SIZE, PML4_OFFSET};
 use crate::{
-	consts::{GDT_OFFSET, KERNEL_OFFSET, PAGETABLES_END, PAGETABLES_OFFSET, PML4_OFFSET},
+	consts::{KERNEL_OFFSET, PAGETABLES_END, PAGETABLES_OFFSET},
 	paging::BumpAllocator,
 };
 
@@ -178,7 +178,8 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		consts::{GDT_OFFSET, MIN_PHYSMEM_SIZE, PAGETABLES_END, PAGETABLES_OFFSET, PML4_OFFSET},
+		arch::GDT_OFFSET,
+		consts::{MIN_PHYSMEM_SIZE, PAGETABLES_END, PAGETABLES_OFFSET},
 		mem::MmapMemory,
 	};
 
