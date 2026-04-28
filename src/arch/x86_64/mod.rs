@@ -10,7 +10,10 @@ use x86_64::structures::paging::{
 };
 
 use crate::{linux::x86_64::kvm_cpu::KVM_32BIT_GAP_START, mem::MmapMemory, paging::PagetableError};
+
 pub const PAGE_SIZE: usize = 0x1000;
+pub(crate) const GDT_OFFSET: u64 = 0x1000;
+pub(crate) const PML4_OFFSET: u64 = 0x10000;
 
 pub(crate) const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x0);
 // Right below 3 GiB, aka. 0xBFFF_FFFF
@@ -76,7 +79,7 @@ mod tests {
 	use x86_64::structures::paging::PageTableFlags;
 
 	use super::*;
-	use crate::consts::{MIN_PHYSMEM_SIZE, PAGETABLES_END, PAGETABLES_OFFSET, PML4_OFFSET};
+	use crate::consts::{MIN_PHYSMEM_SIZE, PAGETABLES_END, PAGETABLES_OFFSET};
 
 	#[test]
 	fn test_virt_to_phys() {

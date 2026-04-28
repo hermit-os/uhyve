@@ -8,8 +8,8 @@ use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
 use crate::{
 	HypervisorResult,
-	arch::BOOT_GDT_MAX,
-	consts::{BOOT_INFO_OFFSET, GDT_OFFSET, PML4_OFFSET, UHYVE_IRQ_NET},
+	arch::{BOOT_GDT_MAX, GDT_OFFSET, PML4_OFFSET},
+	consts::{BOOT_INFO_OFFSET, UHYVE_IRQ_NET},
 	hypercall,
 	linux::KVM,
 	params::Params,
