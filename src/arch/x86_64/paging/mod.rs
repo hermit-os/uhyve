@@ -7,7 +7,13 @@ use x86_64::{
 	},
 };
 
-use crate::{consts::*, paging::BumpAllocator};
+use crate::{
+	consts::{
+		BOOT_GDT_CODE, BOOT_GDT_DATA, BOOT_GDT_NULL, GDT_OFFSET, KERNEL_OFFSET, PAGE_SIZE,
+		PAGETABLES_END, PAGETABLES_OFFSET, PML4_OFFSET,
+	},
+	paging::BumpAllocator,
+};
 
 // Constructor for a conventional segment GDT (or LDT) entry
 pub fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {
@@ -169,7 +175,7 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		consts::{GDT_OFFSET, PAGETABLES_END, PAGETABLES_OFFSET, PML4_OFFSET},
+		consts::{GDT_OFFSET, MIN_PHYSMEM_SIZE, PAGETABLES_END, PAGETABLES_OFFSET, PML4_OFFSET},
 		mem::MmapMemory,
 	};
 

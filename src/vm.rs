@@ -24,7 +24,7 @@ use uhyve_interface::GuestPhysAddr;
 
 use crate::{
 	HypervisorError, V1_ADDR_RANGE, V2_ADDR_RANGE,
-	consts::*,
+	consts::{BOOT_INFO_OFFSET, FDT_OFFSET, KERNEL_OFFSET, KERNEL_STACK_SIZE},
 	fdt::Fdt,
 	isolation::filemap::{UhyveFileMap, UhyveMapLeaf},
 	mem::MmapMemory,
