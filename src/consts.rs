@@ -3,7 +3,6 @@ pub const GDT_OFFSET: u64 = 0x1000;
 pub const FDT_OFFSET: u64 = 0x5000;
 pub const BOOT_INFO_OFFSET: u64 = 0x9000;
 pub const PML4_OFFSET: u64 = 0x10000;
-pub const PGT_OFFSET: u64 = 0x10000;
 pub const PAGETABLES_OFFSET: u64 = 0x11000;
 pub const PAGETABLES_END: u64 = 0x30000;
 pub const KERNEL_OFFSET: u64 = 0x40000;
