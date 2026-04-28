@@ -44,7 +44,7 @@ pub const MT_NORMAL: u64 = 4;
 
 /// Number of Offset bits of a virtual address for a 4 KiB page, which are shifted away to get its Page Frame Number (PFN).
 const PAGE_BITS: usize = 12;
-const PAGE_SIZE: usize = 1 << PAGE_BITS;
+pub const PAGE_SIZE: usize = 1 << PAGE_BITS;
 
 /// Number of bits of the index in each table (L0Table, L1Table, L2Table, L3Table).
 const PAGE_MAP_BITS: usize = 9;

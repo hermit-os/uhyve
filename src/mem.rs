@@ -245,7 +245,7 @@ impl MmapMemory {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::consts::PAGE_SIZE;
+	use crate::arch::PAGE_SIZE;
 
 	#[test]
 	fn test_mmap_memory_readwrite() {

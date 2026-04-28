@@ -10,6 +10,8 @@ use x86_64::structures::paging::{
 
 use crate::{linux::x86_64::kvm_cpu::KVM_32BIT_GAP_START, mem::MmapMemory, paging::PagetableError};
 
+pub const PAGE_SIZE: usize = 0x1000;
+
 pub(crate) const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x0);
 // Right below 3 GiB, aka. 0xBFFF_FFFF
 // Only relevant to x86_64 Linux for now, but that's our only x86_64 target.

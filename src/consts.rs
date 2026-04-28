@@ -1,5 +1,3 @@
-pub const PAGE_SIZE: usize = 0x1000;
-
 pub const BOOT_GDT_NULL: usize = 0;
 pub const BOOT_GDT_CODE: usize = 1;
 pub const BOOT_GDT_DATA: usize = 2;

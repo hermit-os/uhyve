@@ -1,7 +1,7 @@
 #![cfg_attr(target_os = "macos", allow(dead_code))] // no virtio implementation for macos
 use std::{marker::PhantomData, mem, mem::size_of};
 
-use crate::consts::PAGE_SIZE;
+use crate::arch::PAGE_SIZE;
 
 pub const QUEUE_LIMIT: usize = 256;
 
