@@ -54,6 +54,13 @@ const PAGE_MAP_MASK: u64 = 0x1FF;
 
 pub const PGT_OFFSET: u64 = 0x10000;
 
+pub(crate) const GICD_BASE_ADDRESS: u64 = 0x800_0000;
+pub(crate) const GICD_SIZE: usize = 0x10000;
+pub(crate) const GICR_BASE_ADDRESS: u64 = 0x80A_0000;
+pub(crate) const GICR_SIZE: usize = 0xf60000;
+pub(crate) const MSI_BASE_ADDRESS: u64 = 0x808_0000;
+pub(crate) const MSI_SIZE: usize = 0x20000;
+
 #[inline(always)]
 pub const fn mair(attr: u64, mt: u64) -> u64 {
 	attr << (mt * 8)
