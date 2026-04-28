@@ -1,8 +1,3 @@
-pub const BOOT_GDT_NULL: usize = 0;
-pub const BOOT_GDT_CODE: usize = 1;
-pub const BOOT_GDT_DATA: usize = 2;
-pub const BOOT_GDT_MAX: usize = 3;
-
 // guest_address + OFFSET
 pub const GDT_OFFSET: u64 = 0x1000;
 pub const FDT_OFFSET: u64 = 0x5000;
