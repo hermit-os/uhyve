@@ -9,14 +9,17 @@ use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 use crate::{
 	HypervisorResult,
 	arch::{BOOT_GDT_MAX, GDT_OFFSET, PML4_OFFSET},
-	consts::{BOOT_INFO_OFFSET, UHYVE_IRQ_NET},
+	consts::UHYVE_IRQ_NET,
 	hypercall,
 	linux::KVM,
 	params::Params,
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	virtio::*,
-	vm::{KernelInfo, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals},
+	vm::{
+		BOOT_INFO_OFFSET, KernelInfo, VirtualizationBackend, VirtualizationBackendInternal,
+		VmPeripherals,
+	},
 };
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;

@@ -14,12 +14,14 @@ use crate::{
 		MT_DEVICE_nGnRnE, MT_NORMAL, MT_NORMAL_NC, PGT_OFFSET, PSR, TCR_FLAGS, TCR_TG1_4K, VA_BITS,
 		mair, tcr_size,
 	},
-	consts::BOOT_INFO_OFFSET,
 	hypercall,
 	params::Params,
 	stats::CpuStats,
 	vcpu::{VcpuStopReason, VirtualCPU},
-	vm::{KernelInfo, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals},
+	vm::{
+		BOOT_INFO_OFFSET, KernelInfo, VirtualizationBackend, VirtualizationBackendInternal,
+		VmPeripherals,
+	},
 };
 
 pub struct XhyveVm {
