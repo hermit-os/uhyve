@@ -9,9 +9,7 @@ use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 use crate::{
 	HypervisorResult,
 	arch::BOOT_GDT_MAX,
-	consts::{
-		BOOT_INFO_OFFSET, EFER_LMA, EFER_LME, EFER_NXE, GDT_OFFSET, PML4_OFFSET, UHYVE_IRQ_NET,
-	},
+	consts::{BOOT_INFO_OFFSET, GDT_OFFSET, PML4_OFFSET, UHYVE_IRQ_NET},
 	hypercall,
 	linux::KVM,
 	params::Params,
@@ -28,6 +26,10 @@ const MSR_IA32_APICBASE: u32 = 0x0000001b;
 const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 const PCI_CONFIG_DATA_PORT: u16 = 0xCFC;
 const PCI_CONFIG_ADDRESS_PORT: u16 = 0xCF8;
+
+const EFER_LME: u64 = 1 << 8; /* Long mode enable */
+const EFER_LMA: u64 = 1 << 10; /* Long mode active (read-only) */
+const EFER_NXE: u64 = 1 << 11; /* PTE No-Execute bit enable */
 
 // First address that uses more than 32 bits.
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
