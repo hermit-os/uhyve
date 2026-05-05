@@ -25,6 +25,7 @@ pub enum VmExit {
 	PCIRead,
 	PCIWrite,
 	Debug,
+	Hlt,
 	Hypercall(HypercallAddresses),
 }
 

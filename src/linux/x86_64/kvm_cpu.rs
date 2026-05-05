@@ -421,6 +421,10 @@ impl VirtualCPU for KvmCpu {
 					VcpuExit::Hlt => {
 						// Ignore `VcpuExit::Hlt`
 						debug!("{:?}", VcpuExit::Hlt);
+
+						if let Some(s) = self.stats.as_mut() {
+							s.increment_val(VmExit::Hlt)
+						}
 					}
 					VcpuExit::Shutdown => {
 						return Ok(VcpuStopReason::Exit(0));
@@ -535,6 +539,9 @@ impl VirtualCPU for KvmCpu {
 						};
 					}
 					VcpuExit::MmioRead(addr, data) => {
+						if let Some(s) = self.stats.as_mut() {
+							s.increment_val(VmExit::MMIORead)
+						}
 						match addr {
 							0x9_F000..0xA_0000 | 0xF_0000..0x10_0000 => {} // Search for MP floating table
 							IOBASE_U64..IOEND_U64 => virtio_device()
@@ -551,17 +558,22 @@ impl VirtualCPU for KvmCpu {
 							}
 						}
 					}
-					VcpuExit::MmioWrite(addr, data) => match addr {
-						IOBASE_U64..IOEND_U64 => virtio_device()
-							.unwrap()
-							.virtio
-							.handle_write(PciConfigurationAddress(addr as u32), data),
-						_ => {
-							let l = data.len();
-							self.print_registers();
-							panic!("undefined mmio write of {l} bytes to {addr:#x?}");
+					VcpuExit::MmioWrite(addr, data) => {
+						if let Some(s) = self.stats.as_mut() {
+							s.increment_val(VmExit::MMIOWrite)
 						}
-					},
+						match addr {
+							IOBASE_U64..IOEND_U64 => virtio_device()
+								.unwrap()
+								.virtio
+								.handle_write(PciConfigurationAddress(addr as u32), data),
+							_ => {
+								let l = data.len();
+								self.print_registers();
+								panic!("undefined mmio write of {l} bytes to {addr:#x?}");
+							}
+						}
+					}
 					VcpuExit::Debug(debug) => {
 						if let Some(s) = self.stats.as_mut() {
 							s.increment_val(VmExit::Debug)
