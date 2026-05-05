@@ -190,7 +190,7 @@ struct UhyveArgs {
 	#[serde(skip)]
 	#[merge(skip)]
 	#[cfg(feature = "instrument")]
-	pub trace: Option<PathBuf>,
+	pub trace_dir: Option<PathBuf>,
 	/// Network configuration. Specify network mode and device as colon separated string.
 	///
 	/// Example: --net=tap:tap10
@@ -445,7 +445,7 @@ impl From<Args> for Params {
 					gdb_port,
 					config: _,
 					#[cfg(feature = "instrument")]
-					trace,
+					trace_dir,
 					net,
 				},
 			memory:
@@ -508,7 +508,7 @@ impl From<Args> for Params {
 			stats: stats.unwrap_or_default(),
 			env: EnvVars::try_from(env_vars.as_slice()).unwrap(),
 			#[cfg(feature = "instrument")]
-			trace,
+			trace_dir,
 			network: net.map(|net| NetworkMode::try_from(net).unwrap()),
 		}
 	}
@@ -565,7 +565,7 @@ fn run_uhyve() -> i32 {
 	load_vm_config(&mut args);
 
 	#[cfg(feature = "instrument")]
-	if let Some(trace) = args.uhyve.trace.as_ref() {
+	if let Some(trace) = &args.uhyve.trace_dir {
 		let trace_outdir_str = trace.to_str().unwrap();
 		info!("Setting up trace output directory: {}", trace_outdir_str);
 		setup_trace(String::from(trace_outdir_str));
@@ -705,7 +705,7 @@ mod tests {
 				gdb_port: None,
 				config: Some(PathBuf::from("config.txt")),
 				#[cfg(feature = "instrument")]
-				trace: Some(PathBuf::from(".")),
+				trace_dir: Some(PathBuf::from(".")),
 				net: Some(String::from("tap:tap10")),
 			},
 			memory: MemoryArgs {

@@ -76,7 +76,7 @@ pub struct Params {
 
 	/// Store trace dumps in this directory
 	#[cfg(feature = "instrument")]
-	pub trace: Option<PathBuf>,
+	pub trace_dir: Option<PathBuf>,
 
 	/// Networking configuration
 	pub network: Option<NetworkMode>,
@@ -108,7 +108,7 @@ impl Default for Params {
 			env: EnvVars::default(),
 			aslr: true,
 			#[cfg(feature = "instrument")]
-			trace: Default::default(),
+			trace_dir: Default::default(),
 			network: None,
 		}
 	}
