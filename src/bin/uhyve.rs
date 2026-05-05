@@ -23,12 +23,22 @@ use rftrace_frontend as rftrace;
 
 #[cfg(feature = "instrument")]
 fn setup_trace(out_dir: String) {
-	use std::sync::OnceLock;
+	use std::{fs::create_dir_all, path::Path, sync::OnceLock};
 
 	use rftrace::Events;
 
 	static OUT_DIR: OnceLock<String> = OnceLock::new();
 	static mut EVENTS: Option<&mut Events> = None;
+
+	let trace_dir_path = Path::new(&out_dir);
+	let ft = trace_dir_path.metadata().map(|i| i.file_type()).unwrap();
+
+	if !ft.is_dir() {
+		if ft.is_file() {
+			panic!("Error: trace-dir must be a directory");
+		}
+		create_dir_all(trace_dir_path).unwrap();
+	}
 
 	#[allow(static_mut_refs)]
 	extern "C" fn dump_trace() {
