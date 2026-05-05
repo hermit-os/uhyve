@@ -403,7 +403,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 			&kernel_path,
 			&params.output,
 			#[cfg(feature = "instrument")]
-			&params.trace,
+			&params.trace_dir,
 		);
 
 		let (
