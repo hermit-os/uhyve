@@ -445,10 +445,12 @@ impl VirtualCPU for KvmCpu {
 											addr,
 										);
 									} else {
-										warn!("Guest tries to access non-present virtio device");
+										// The access here is fine, because the guest might just be scanning for devices
+										trace!("Guest tries to access non-present virtio device");
 									}
 								} else {
-									warn!("Invalid pci config data port access");
+									// The access here is fine, because the guest might just be scanning for devices
+									trace!("Invalid pci config data port access");
 									addr.fill(0xff);
 								}
 							}
