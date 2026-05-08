@@ -11,13 +11,13 @@ use std::{
 
 use byte_unit::{Byte, Unit};
 use core_affinity::CoreId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[cfg(target_os = "linux")]
 pub use crate::isolation::filemap::UhyveIoMode;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Params {
 	/// Guest RAM size
 	pub memory_size: GuestMemorySize,
@@ -35,6 +35,7 @@ pub struct Params {
 
 	/// Affinity / pinning of guest CPUs to host CPUs
 	// This is allowed to be empty.
+	#[serde(with = "core_ids")]
 	pub cpu_affinity: Vec<CoreId>,
 
 	/// Allows the guest to manage host CPU power state.
@@ -90,6 +91,10 @@ pub struct Params {
 
 	/// Networking configuration
 	pub network: Option<NetworkMode>,
+
+	/// Options for a guest-triggered snapshot.
+	#[serde(skip)]
+	pub snapshot: Option<crate::snapshot::SnapshotOptions>,
 }
 
 impl Default for Params {
@@ -122,11 +127,34 @@ impl Default for Params {
 			#[cfg(feature = "instrument")]
 			trace_dir: Default::default(),
 			network: None,
+			snapshot: None,
 		}
 	}
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+/// Custom serde implementation for `CoreId`
+mod core_ids {
+	use core_affinity::CoreId;
+	use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+	pub fn serialize<S: Serializer>(ids: &[CoreId], serializer: S) -> Result<S::Ok, S::Error> {
+		ids.iter()
+			.map(|core| core.id)
+			.collect::<Vec<_>>()
+			.serialize(serializer)
+	}
+
+	pub fn deserialize<'de, D: Deserializer<'de>>(
+		deserializer: D,
+	) -> Result<Vec<CoreId>, D::Error> {
+		Ok(Vec::<usize>::deserialize(deserializer)?
+			.into_iter()
+			.map(|id| CoreId { id })
+			.collect())
+	}
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub struct CpuCount(NonZero<u32>);
 
 impl CpuCount {
@@ -165,7 +193,7 @@ impl FromStr for CpuCount {
 	}
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GuestMemorySize(pub(crate) Byte);
 
 impl GuestMemorySize {
@@ -190,7 +218,7 @@ impl fmt::Display for GuestMemorySize {
 	}
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub enum Output {
 	#[default]
 	StdIo,
@@ -261,7 +289,7 @@ impl FromStr for GuestMemorySize {
 }
 
 /// Configure the kernels environment variables.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum EnvVars {
 	/// Pass all env vars of the host to the kernel.
 	Host,
@@ -302,7 +330,7 @@ impl<S: AsRef<str> + core::fmt::Debug + PartialEq + PartialEq<&'static str>> Try
 	}
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum NetworkMode {
 	Tap { name: String },
 }
@@ -339,7 +367,7 @@ fn netmode_try_from<S: AsRef<str>>(netmode: S) -> Result<NetworkMode, &'static s
 	}
 }
 /// Specify the way an Hermit image should be handled.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HermitImageMode {
 	/// Let Uhyve handle the image provision by embedding it into the file mapping
 	///
@@ -378,7 +406,7 @@ impl FromStr for HermitImageMode {
 /// Use None if you are using Uhyve as a library, as it is not currently
 /// possible to run UhyveVm::new again if a mechanism like Landlock is enforced.
 #[cfg(target_os = "linux")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum FileSandboxMode {
 	/// Do not enable filesystem isolation features.
 	None,
