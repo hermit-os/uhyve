@@ -5,9 +5,8 @@ use std::{
 	mem::{drop, take},
 	num::NonZero,
 	ops::Add,
-	os::unix::prelude::JoinHandleExt,
 	path::PathBuf,
-	sync::{Arc, Mutex},
+	sync::{Arc, Barrier, Mutex},
 	thread,
 	time::SystemTime,
 };
@@ -21,6 +20,7 @@ use hermit_entry::{
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
 use log::error;
+use nix::sys::pthread::{Pthread, pthread_self};
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
 
@@ -557,68 +557,83 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 		// After spinning up all vCPU threads, the main thread waits for any vCPU to end execution.
 		let main_parker = Parker::current();
 
-		trace!("Starting vCPUs");
-		let threads = self
-			.vcpus
-			.into_iter()
-			.enumerate()
-			.map(|(cpu_id, mut cpu)| {
-				let main_parker = main_parker.clone();
-				let local_cpu_affinity = cpu_affinity
-					.as_ref()
-					.and_then(|core_ids| core_ids.get(cpu_id).copied());
+		let num_vcpus = self.vcpus.len();
 
-				thread::spawn(move || {
-					trace!("Create thread for CPU {cpu_id}");
-					match local_cpu_affinity {
-						Some(core_id) => {
-							debug!("Trying to pin thread {} to CPU {}", cpu_id, core_id.id);
-							core_affinity::set_for_current(core_id); // This does not return an error if it fails :(
+		let pthreads: Mutex<Vec<Pthread>> = Mutex::new(Vec::with_capacity(num_vcpus));
+		let pthreads_published = Barrier::new(num_vcpus + 1);
+
+		let cpu_results = thread::scope(|s| {
+			trace!("Starting vCPUs");
+			let cpu_handles = self
+				.vcpus
+				.into_iter()
+				.enumerate()
+				.map(|(cpu_id, mut cpu)| {
+					let main_parker = main_parker.clone();
+					let local_cpu_affinity = cpu_affinity
+						.as_ref()
+						.and_then(|core_ids| core_ids.get(cpu_id).copied());
+					let pthreads = &pthreads;
+					let pthreads_published = &pthreads_published;
+
+					s.spawn(move || {
+						{
+							pthreads.lock().unwrap().push(pthread_self());
 						}
-						None => debug!("No affinity specified, not binding thread"),
-					}
+						pthreads_published.wait();
 
-					cpu.thread_local_init().expect("Unable to initialize vCPU");
-
-					struct UnparkOnDrop(Parker);
-
-					impl Drop for UnparkOnDrop {
-						fn drop(&mut self) {
-							self.0.unpark();
+						trace!("Create thread for CPU {cpu_id}");
+						match local_cpu_affinity {
+							Some(core_id) => {
+								debug!("Trying to pin thread {} to CPU {}", cpu_id, core_id.id);
+								core_affinity::set_for_current(core_id); // This does not return an error if it fails :(
+							}
+							None => debug!("No affinity specified, not binding thread"),
 						}
-					}
 
-					let _unpark_on_drop = UnparkOnDrop(main_parker);
+						cpu.thread_local_init().expect("Unable to initialize vCPU");
 
-					// jump into the VM and execute code of the guest
-					match cpu.run() {
-						Ok((code, stats)) => (Ok(code), stats),
-						Err(err) => {
-							error!("CPU {cpu_id} crashed with {err:?}");
-							(Err(err), None)
+						struct UnparkOnDrop(Parker);
+
+						impl Drop for UnparkOnDrop {
+							fn drop(&mut self) {
+								self.0.unpark();
+							}
 						}
-					}
+
+						let _unpark_on_drop = UnparkOnDrop(main_parker);
+
+						// jump into the VM and execute code of the guest
+						match cpu.run() {
+							Ok((code, stats)) => (Ok(code), stats),
+							Err(err) => {
+								error!("CPU {cpu_id} crashed with {err:?}");
+								(Err(err), None)
+							}
+						}
+					})
 				})
-			})
-			.collect::<Vec<_>>();
-		trace!("Waiting for first CPU to finish");
+				.collect::<Vec<_>>();
 
-		// Wait for one vCPU to return with an exit code.
-		main_parker.park();
+			pthreads_published.wait();
 
-		trace!("Killing all threads");
-		for thread in &threads {
-			// The following `as _` is necessary because on some platforms, the type (aliases)
-			// - std::os::unix::thread::RawPthread, and
-			// - libc::pthread_t
-			// can differ, and currently do so on x86_64-linux-musl.
-			KickSignal::pthread_kill(thread.as_pthread_t() as _).unwrap();
-		}
+			trace!("Waiting for first CPU to finish");
+			main_parker.park();
 
-		let cpu_results = threads
-			.into_iter()
-			.map(|thread| thread.join().unwrap())
-			.collect::<Vec<_>>();
+			trace!("Killing all threads");
+			for &tid in pthreads.lock().unwrap().iter() {
+				// `pthread_kill` may return ESRCH if the thread already finished;
+				// scoped threads aren't joined until the scope ends, so the id is
+				// still valid, but the kernel may no longer know about it.
+				let _ = KickSignal::pthread_kill(tid);
+			}
+
+			cpu_handles
+				.into_iter()
+				.map(|h| h.join().unwrap())
+				.collect::<Vec<_>>()
+		});
+
 		let code = cpu_results
 			.iter()
 			.find_map(|(ret, _stats)| ret.as_ref().ok().copied().flatten())
