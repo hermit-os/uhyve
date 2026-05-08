@@ -28,19 +28,19 @@ fn multicore_test() {
 		for i in 0..NR_RETRIES {
 			println!("Launching kernel {}", bin_path.display());
 			let params = Params {
-			cpu_count: nr_cpus.try_into().unwrap(),
-			memory_size: Byte::from_u64_with_unit(64, Unit::MiB)
-				.unwrap()
-				.try_into()
-				.unwrap(),
-			output: Output::Buffer,
-			#[cfg(target_os = "linux")]
-			// We are not testing for Landlock here, and running UhyveVm::new
-			// repeatedly causes the creation of a new temporary directory,
-			// which will fail on the second iteration.
-			file_isolation: FileSandboxMode::None,
-			..Default::default()
-		};
+				cpu_count: nr_cpus.try_into().unwrap(),
+				memory_size: Byte::from_u64_with_unit(64, Unit::MiB)
+					.unwrap()
+					.try_into()
+					.unwrap(),
+				output: Output::Buffer,
+				#[cfg(target_os = "linux")]
+				// We are not testing for Landlock here, and running UhyveVm::new
+				// repeatedly causes the creation of a new temporary directory,
+				// which will fail on the second iteration.
+				file_isolation: FileSandboxMode::None,
+				..Default::default()
+			};
 			let vm = UhyveVm::new(bin_path.clone(), params).unwrap();
 			let res = vm.run();
 			check_result_and_print_output(&res, 0);

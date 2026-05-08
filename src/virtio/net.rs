@@ -8,18 +8,20 @@ use std::{
 	sync::{
 		Arc,
 		atomic::{AtomicBool, Ordering},
-		mpsc::{Receiver, Sender, channel},
+		mpsc::{Receiver, Sender, TryRecvError, channel},
 	},
 	thread::{self, JoinHandle},
 };
 
+use serde::{Deserialize, Serialize};
 use virtio_bindings::{
 	bindings::virtio_net::{
 		VIRTIO_NET_F_GUEST_CSUM, VIRTIO_NET_HDR_F_NEEDS_CSUM, virtio_net_hdr_v1,
 	},
 	virtio_config::VIRTIO_F_RING_RESET,
 };
-use virtio_queue::{Error as VirtIOError, Queue, QueueOwnedT, QueueT};
+use virtio_queue::{Error as VirtIOError, Queue, QueueOwnedT, QueueState, QueueT};
+use zerocopy::IntoBytes;
 
 use crate::{
 	mem::MmapMemory,
@@ -77,7 +79,110 @@ struct RxThreadConfig {
 enum ThreadControlMsg {
 	StartTx(Queue),
 	StartRx(Queue, RxThreadConfig),
+	/// Hand the virtqueue back over the provided channel and wait for a `Start*` msg to resume.
+	Pause(Sender<Queue>),
 	Abort,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct QueueStateSnapshot {
+	pub max_size: u16,
+	pub next_avail: u16,
+	pub next_used: u16,
+	pub event_idx_enabled: bool,
+	pub size: u16,
+	pub ready: bool,
+	pub desc_table: u64,
+	pub avail_ring: u64,
+	pub used_ring: u64,
+}
+
+impl From<QueueState> for QueueStateSnapshot {
+	fn from(s: QueueState) -> Self {
+		Self {
+			max_size: s.max_size,
+			next_avail: s.next_avail,
+			next_used: s.next_used,
+			event_idx_enabled: s.event_idx_enabled,
+			size: s.size,
+			ready: s.ready,
+			desc_table: s.desc_table,
+			avail_ring: s.avail_ring,
+			used_ring: s.used_ring,
+		}
+	}
+}
+
+impl From<QueueStateSnapshot> for QueueState {
+	fn from(s: QueueStateSnapshot) -> Self {
+		Self {
+			max_size: s.max_size,
+			next_avail: s.next_avail,
+			next_used: s.next_used,
+			event_idx_enabled: s.event_idx_enabled,
+			size: s.size,
+			ready: s.ready,
+			desc_table: s.desc_table,
+			avail_ring: s.avail_ring,
+			used_ring: s.used_ring,
+		}
+	}
+}
+
+/// Owns the virtio-net RX/TX queues while guest RAM and device state are snapshotted.
+/// Keep it alive until snapshot is done. Queues are returned on drop.
+pub struct VirtioNetSnapshotLock<'a> {
+	device: &'a mut VirtioNetPciDevice,
+	rx: Option<Queue>,
+	tx: Option<Queue>,
+}
+
+impl VirtioNetSnapshotLock<'_> {
+	pub fn snapshot_device(&self) -> VirtioNetPciDeviceSnapshot {
+		let header_caps = self.device.header_caps.as_bytes().to_vec();
+		let rx_queue = self.rx.as_ref().unwrap().state().into();
+		let tx_queue = self.tx.as_ref().unwrap().state().into();
+
+		VirtioNetPciDeviceSnapshot {
+			header_caps,
+			feature_set: self.device.feature_set,
+			config_generation: self.device.config_generation,
+			rx_queue,
+			tx_queue,
+		}
+	}
+}
+
+impl Drop for VirtioNetSnapshotLock<'_> {
+	/// Snapshot is done, return the queues.
+	fn drop(&mut self) {
+		let rx = self.rx.take().unwrap();
+		let tx = self.tx.take().unwrap();
+
+		let config = RxThreadConfig {
+			guest_csum_offload: self.device.is_guest_csum_offload_negotiated(),
+		};
+		self.device
+			.thread_start_channels
+			.0
+			.send(ThreadControlMsg::StartTx(tx))
+			.unwrap();
+		self.device
+			.thread_start_channels
+			.1
+			.send(ThreadControlMsg::StartRx(rx, config))
+			.unwrap();
+	}
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VirtioNetPciDeviceSnapshot {
+	/// Raw bytes of `HeaderConf` (PCI config space + virtio caps + common cfg + dev cfg).
+	pub header_caps: Vec<u8>,
+	pub feature_set: u64,
+	pub config_generation: (bool, u8),
+	pub rx_queue: QueueStateSnapshot,
+	pub tx_queue: QueueStateSnapshot,
 }
 
 /// Struct to manage uhyve's network device.
@@ -168,6 +273,72 @@ impl VirtioNetPciDevice {
 			iface,
 			stop_threads: Arc::new(AtomicBool::new(false)),
 		}
+	}
+
+	/// Pauses the network threads so that the guest memory is not modified during snapshot.
+	pub(crate) fn pause_for_snapshot(&mut self) -> VirtioNetSnapshotLock<'_> {
+		assert!(
+			self.rx_queue.is_none() && self.tx_queue.is_none(),
+			"Snapshot pause invoked whilst snapshot is ongoing"
+		);
+
+		let (tx_return, tx_returned) = channel();
+		let (rx_return, rx_returned) = channel();
+		self.thread_start_channels
+			.0
+			.send(ThreadControlMsg::Pause(tx_return))
+			.unwrap();
+		self.thread_start_channels
+			.1
+			.send(ThreadControlMsg::Pause(rx_return))
+			.unwrap();
+
+		let rx = Some(rx_returned.recv().unwrap());
+		let tx = Some(tx_returned.recv().unwrap());
+
+		VirtioNetSnapshotLock {
+			device: self,
+			rx,
+			tx,
+		}
+	}
+
+	pub fn restore_from_snapshot(
+		&mut self,
+		snapshot: &VirtioNetPciDeviceSnapshot,
+	) -> crate::HypervisorResult<()> {
+		let expected = mem::size_of::<HeaderConf>();
+		if snapshot.header_caps.len() != expected {
+			return Err(crate::HypervisorError::FeatureMismatch(
+				"virtio-net header snapshot size mismatch",
+			));
+		}
+
+		// SAFETY: The VM is not yet running and header_caps is not used yet. We can assume here that snapshot is valid, so this byte copy is safe.
+		unsafe {
+			std::ptr::copy_nonoverlapping(
+				snapshot.header_caps.as_ptr(),
+				(&mut self.header_caps as *mut HeaderConf).cast::<u8>(),
+				expected,
+			);
+		}
+
+		self.feature_set = snapshot.feature_set;
+		self.config_generation = snapshot.config_generation;
+
+		let rx_state: QueueState = snapshot.rx_queue.into();
+		let tx_state: QueueState = snapshot.tx_queue.into();
+
+		self.rx_queue =
+			Some(Queue::try_from(rx_state).map_err(|_| {
+				crate::HypervisorError::FeatureMismatch("invalid rx queue snapshot")
+			})?);
+		self.tx_queue =
+			Some(Queue::try_from(tx_state).map_err(|_| {
+				crate::HypervisorError::FeatureMismatch("invalid tx queue snapshot")
+			})?);
+
+		Ok(())
 	}
 
 	/// VirtIO v1.2 - 4.1.4.3.1 requires that "The device MUST present a changed config_generation
@@ -300,10 +471,29 @@ impl VirtioNetPciDevice {
 				let mut tx_queue = match tx_start_channel_receiver.recv().unwrap() {
 					ThreadControlMsg::Abort => return,
 					ThreadControlMsg::StartTx(tx_queue) => tx_queue,
+					ThreadControlMsg::Pause(_) => {
+						unreachable!("TX thread received Pause before start")
+					}
 					ThreadControlMsg::StartRx(_, _) => unreachable!("TX thread received StartRx"),
 				};
 				debug!("Starting TX thread.");
 				while !stop_threads.load(Ordering::Relaxed) {
+					match tx_start_channel_receiver.try_recv() {
+						Ok(ThreadControlMsg::Pause(queue_return)) => {
+							debug!("Pausing TX thread.");
+							queue_return.send(tx_queue).unwrap();
+							tx_queue = match tx_start_channel_receiver.recv().unwrap() {
+								ThreadControlMsg::StartTx(tx_queue) => tx_queue,
+								ThreadControlMsg::Abort => return,
+								_ => unreachable!("TX thread received invalid resume message"),
+							};
+							debug!("Resuming TX thread.");
+						}
+						Ok(ThreadControlMsg::Abort) | Err(TryRecvError::Disconnected) => return,
+						Ok(_) => unreachable!("TX thread received unexpected control message"),
+						Err(TryRecvError::Empty) => {}
+					}
+
 					if tx_notifier.wait_with_timeout(UHYVE_NET_READ_TIMEOUT) {
 						match send_available_packets(&mut tx, &mut tx_queue, &mmap) {
 							Ok(_) => {}
@@ -325,13 +515,32 @@ impl VirtioNetPciDevice {
 
 			// reads frames from the frame queue and puts them in the virtio queue. Notifies the driver if necessary.
 			thread::spawn(move || {
-				let (mut rx_queue, config) = match rx_start_channel_receiver.recv().unwrap() {
+				let (mut rx_queue, mut config) = match rx_start_channel_receiver.recv().unwrap() {
 					ThreadControlMsg::Abort => return,
 					ThreadControlMsg::StartRx(rx_queue, config) => (rx_queue, config),
+					ThreadControlMsg::Pause(_) => {
+						unreachable!("RX thread received Pause before start")
+					}
 					ThreadControlMsg::StartTx(_) => unreachable!("RX thread received StartTx"),
 				};
 				debug!("Starting RX thread.");
 				while !stop_threads.load(Ordering::Relaxed) {
+					match rx_start_channel_receiver.try_recv() {
+						Ok(ThreadControlMsg::Pause(queue_return)) => {
+							debug!("Pausing RX thread.");
+							queue_return.send(rx_queue).unwrap();
+							(rx_queue, config) = match rx_start_channel_receiver.recv().unwrap() {
+								ThreadControlMsg::StartRx(rx_queue, config) => (rx_queue, config),
+								ThreadControlMsg::Abort => return,
+								_ => unreachable!("RX thread received invalid resume message"),
+							};
+							debug!("Resuming RX thread.");
+						}
+						Ok(ThreadControlMsg::Abort) | Err(TryRecvError::Disconnected) => return,
+						Ok(_) => unreachable!("RX thread received unexpected control message"),
+						Err(TryRecvError::Empty) => {}
+					}
+
 					let mut buf = [0u8; RX_FRAME_CAPACITY];
 					let frame_len = rx.recv(&mut buf, UHYVE_NET_READ_TIMEOUT).unwrap();
 					if frame_len == 0 {

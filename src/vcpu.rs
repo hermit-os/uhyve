@@ -1,5 +1,10 @@
-use std::num::NonZero;
+use std::{
+	fmt::Debug,
+	num::NonZero,
+	sync::{Arc, Barrier, Condvar, Mutex},
+};
 
+use serde::{Serialize, de::DeserializeOwned};
 use uhyve_interface::GuestPhysAddr;
 
 /// The trait and fns that a virtual cpu requires
@@ -20,12 +25,76 @@ pub enum VcpuStopReason {
 	Kick,
 }
 
+/// An action to be executed by a vCPU when it next exits the guest.
+pub(crate) enum MailboxAction<S> {
+	Snapshot {
+		/// Shared collector each vCPU appends its snapshot into.
+		state_target: Arc<Mutex<S>>,
+		/// Released by every vCPU once it has written its state.
+		done_barrier: Arc<Barrier>,
+		/// Released by the backend once it has finished serializing the snapshot.
+		resume_barrier: Arc<Barrier>,
+		/// When false, the vCPU exits after the backend releases `resume_barrier`.
+		resume_after_snapshot: bool,
+	},
+	Quit,
+}
+
+/// Per-vCPU mailbox used by the backend thread to deliver actions to a vCPU.
+///
+/// The idea is to be resilient to spurious kicks. In these cases, the mailbox
+/// is empty and the vCPU can resume.
+pub(crate) struct VcpuMailbox<S> {
+	slot: Mutex<Option<MailboxAction<S>>>,
+	notify: Condvar,
+}
+
+impl<S> VcpuMailbox<S> {
+	/// Stores `action` in the slot, overwriting any previous unread action, and wakes
+	/// any thread blocked in [`Self::wait_for_action`].
+	pub(crate) fn put(&self, action: MailboxAction<S>) {
+		*self.slot.lock().unwrap() = Some(action);
+		self.notify.notify_all();
+	}
+
+	/// Returns the pending action without blocking.
+	pub(crate) fn try_take(&self) -> Option<MailboxAction<S>> {
+		self.slot.lock().unwrap().take()
+	}
+
+	/// Blocks until the slot is populated, then returns the action.
+	///
+	/// Used by a vCPU that has explicitly requested an action (e.g. via the snapshot
+	/// hypercall) and now needs to wait for the backend to deliver it.
+	pub(crate) fn wait_for_action(&self) -> MailboxAction<S> {
+		let mut slot = self.slot.lock().unwrap();
+		while slot.is_none() {
+			slot = self.notify.wait(slot).unwrap();
+		}
+		slot.take().unwrap()
+	}
+}
+
+// Manual impl rather than `#[derive(Default)]`: derive would add an `S: Default` bound
+// even though `Mutex<Option<T>>` and `Condvar` are `Default` for any `T`.
+impl<S> Default for VcpuMailbox<S> {
+	fn default() -> Self {
+		Self {
+			slot: Mutex::new(None),
+			notify: Condvar::new(),
+		}
+	}
+}
+
 // The following duplication of `VirtualCPU` is a work-around
 // for https://github.com/rust-lang/rust/issues/115590
 
 /// Functionality a virtual CPU backend must provide to be used by uhyve
 #[cfg(not(target_os = "macos"))]
 pub trait VirtualCPU: Sized + Send + Sync {
+	/// Per-vCPU portion of a snapshot.
+	type SnapshotState: Send + Debug + Clone + Serialize + DeserializeOwned;
+
 	/// Continues execution.
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason>;
 
@@ -56,6 +125,9 @@ pub trait VirtualCPU: Sized + Send + Sync {
 
 	/// Get the vCPU ID
 	fn get_vcpu_id(&self) -> usize;
+
+	/// Restores this vCPU's architectural state from a snapshot.
+	fn init_from_snapshot(&mut self, state: Self::SnapshotState) -> HypervisorResult<()>;
 }
 
 /// Functionality a virtual CPU backend must provide to be used by uhyve

@@ -535,6 +535,7 @@ impl From<Args> for Params {
 			#[cfg(feature = "instrument")]
 			trace_dir,
 			network: net.map(|net| NetworkMode::try_from(net).unwrap()),
+			snapshot: None,
 		}
 	}
 }

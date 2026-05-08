@@ -116,12 +116,14 @@ pub unsafe fn address_to_hypercall_v2(
 		HypercallAddress::FileStat => Hypercall::FileStat(get_data!()),
 		HypercallAddress::FileFstat => Hypercall::FileFstat(get_data!()),
 		HypercallAddress::Mkdir => Hypercall::Mkdir(get_data!()),
+		HypercallAddress::Snapshot => Hypercall::Snapshot(get_data!()),
 		_ => return None,
 	})
 }
 
 pub(crate) enum HypercallAction {
 	None,
+	Snapshot,
 	Stop(VcpuStopReason),
 }
 
@@ -180,6 +182,10 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 				.serial
 				.output(buf)
 				.unwrap_or_else(|e| error!("{e:?}"))
+		}
+		v2::Hypercall::Snapshot(snapshot_params) => {
+			println!("Got Snapshot call {snapshot_params:?}");
+			return HypercallAction::Snapshot;
 		}
 		_ => panic!("Got unknown hypercall {hypercall:?}"),
 	}
