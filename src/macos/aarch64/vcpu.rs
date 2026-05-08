@@ -14,7 +14,7 @@ use crate::{
 		MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_NORMAL, MT_NORMAL_NC, PSR, TCR_FLAGS, TCR_TG1_4K,
 		VA_BITS, init_guest_mem, mair, tcr_size,
 	},
-	hypercall,
+	hypercall::{self, HypercallAction},
 	mem::MmapMemory,
 	mem_layout::MemoryLayout,
 	os::aarch64::virtio_device::XHyveVirtioNetDevice,
@@ -248,10 +248,9 @@ impl VirtualCPU for XhyveCpu {
 									s.increment_val((&hypercall).into())
 								}
 
-								if let Some(stop) =
-									hypercall::handle_hypercall_v2(&self.peripherals, hypercall)
-								{
-									return Ok(stop);
+								match hypercall::handle_hypercall_v2(&self.peripherals, hypercall) {
+									HypercallAction::Stop(stop) => return Ok(stop),
+									HypercallAction::None => {}
 								}
 							} else if let Some(hypercall) = unsafe {
 								hypercall::address_to_hypercall_v1(
