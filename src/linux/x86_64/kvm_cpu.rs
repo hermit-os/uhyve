@@ -9,7 +9,7 @@ use crate::{
 	HypervisorError, HypervisorResult,
 	arch::{BOOT_GDT_MAX, X86_64MemoryLayout, x86_64::paging::initialize_pagetables},
 	gdb::resume::ResumeMode,
-	hypercall,
+	hypercall::{self, HypercallAction},
 	mem::MmapMemory,
 	mem_layout::MemoryLayout,
 	os::{KVM, KickSignal, x86_64::virtio_device::KvmVirtioNetDevice},
@@ -512,10 +512,9 @@ impl VirtualCPU for KvmCpu {
 								s.increment_val((&hypercall).into())
 							}
 
-							if let Some(stop) =
-								hypercall::handle_hypercall_v2(&self.peripherals, hypercall)
-							{
-								return Ok(stop);
+							match hypercall::handle_hypercall_v2(&self.peripherals, hypercall) {
+								HypercallAction::Stop(stop) => return Ok(stop),
+								HypercallAction::None => {}
 							}
 						} else if let Some(hypercall) = unsafe {
 							// v1 images used to read the address from the 32-bit value written
