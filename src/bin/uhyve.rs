@@ -22,29 +22,28 @@ extern crate rftrace as _;
 use rftrace_frontend as rftrace;
 
 #[cfg(feature = "instrument")]
-fn setup_trace(out_dir: String) {
-	use std::{fs::create_dir_all, path::Path, sync::OnceLock};
+fn setup_trace(out_dir: PathBuf) {
+	use std::{fs::create_dir_all, sync::OnceLock};
 
 	use rftrace::Events;
 
-	static OUT_DIR: OnceLock<String> = OnceLock::new();
+	static OUT_DIR: OnceLock<PathBuf> = OnceLock::new();
 	static mut EVENTS: Option<&mut Events> = None;
 
-	let trace_dir_path = Path::new(&out_dir);
-	let ft = trace_dir_path.metadata().map(|i| i.file_type()).unwrap();
+	let ft = out_dir.metadata().map(|i| i.file_type()).unwrap();
 
 	if !ft.is_dir() {
 		if ft.is_file() {
 			panic!("Error: trace-dir must be a directory");
 		}
-		create_dir_all(trace_dir_path).unwrap();
+		create_dir_all(&out_dir).unwrap();
 	}
 
 	#[allow(static_mut_refs)]
 	extern "C" fn dump_trace() {
 		unsafe {
 			if let Some(e) = &mut EVENTS {
-				rftrace::dump_full_uftrace(e, OUT_DIR.get().unwrap(), "uhyve")
+				rftrace::dump_full_uftrace(e, OUT_DIR.get().unwrap().to_str().unwrap(), "uhyve")
 					.expect("Saving trace failed");
 			}
 		}
@@ -576,9 +575,8 @@ fn run_uhyve() -> i32 {
 
 	#[cfg(feature = "instrument")]
 	if let Some(trace) = &args.uhyve.trace_dir {
-		let trace_outdir_str = trace.to_str().unwrap();
-		info!("Setting up trace output directory: {}", trace_outdir_str);
-		setup_trace(String::from(trace_outdir_str));
+		info!("Setting up trace output directory: {}", trace.display());
+		setup_trace(trace.to_path_buf());
 	}
 
 	let stats = args.uhyve.stats.unwrap_or_default();
