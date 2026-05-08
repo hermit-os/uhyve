@@ -103,6 +103,11 @@ pub unsafe fn address_to_hypercall_v2(
 	})
 }
 
+pub(crate) enum HypercallAction {
+	None,
+	Stop(VcpuStopReason),
+}
+
 /// Given the `peripherals` of the vCPUs, handles an [`v2::Hypercall`], usually performing I/O.
 ///
 /// # Panics
@@ -112,14 +117,14 @@ pub unsafe fn address_to_hypercall_v2(
 pub fn handle_hypercall_v2<N: NetworkBackend>(
 	peripherals: &VmPeripherals<N>,
 	hypercall: v2::Hypercall<'_>,
-) -> Option<VcpuStopReason> {
+) -> HypercallAction {
 	#[cfg(debug_assertions)]
 	trace!("hypercall v2: {:?}", hypercall);
 
 	let file_mapping = || peripherals.file_mapping.lock().unwrap();
 	match hypercall {
 		v2::Hypercall::Exit(sysexit) => {
-			return Some(VcpuStopReason::Exit(sysexit));
+			return HypercallAction::Stop(VcpuStopReason::Exit(sysexit));
 		}
 		v2::Hypercall::FileClose(sysclose) => close(sysclose, &mut file_mapping()),
 		v2::Hypercall::FileLseek(syslseek) => lseek(syslseek, &mut file_mapping()),
@@ -162,7 +167,7 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 		_ => panic!("Got unknown hypercall {hypercall:?}"),
 	}
 
-	None
+	HypercallAction::None
 }
 
 /// Given the `peripherals` of the vCPUs, handles an [`v1::Hypercall`], usually performing I/O.
