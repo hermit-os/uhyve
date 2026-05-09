@@ -1,4 +1,4 @@
-use std::{io, num::NonZero, ops::Add, sync::Arc};
+use std::{io, num::NonZero, ops::Add, os::fd::AsRawFd, sync::Arc};
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
@@ -9,7 +9,7 @@ use crate::{
 	HypervisorResult,
 	arch::{BOOT_GDT_MAX, GDT_OFFSET, PML4_OFFSET},
 	hypercall,
-	linux::{KVM, x86_64::virtio_device::KvmVirtioNetDevice},
+	linux::{KVM, KickSignal, x86_64::virtio_device::KvmVirtioNetDevice},
 	mem::MmapMemory,
 	params::{NetworkMode, Params},
 	pci::{IOBASE_U64, IOEND_U64, PciConfigurationAddress, PciDevice},
@@ -33,6 +33,38 @@ const PCI_CONFIG_ADDRESS_PORT: u16 = 0xCF8;
 const EFER_LME: u64 = 1 << 8; /* Long mode enable */
 const EFER_LMA: u64 = 1 << 10; /* Long mode active (read-only) */
 const EFER_NXE: u64 = 1 << 11; /* PTE No-Execute bit enable */
+
+/// Tells KVM to unblock all signals during `KVM_RUN` for the given vCPU.
+fn unblock_all_signals_for_kvm(vcpu: &VcpuFd) -> nix::Result<()> {
+	// `_IOW(KVMIO=0xAE, 0x8b, kvm_signal_mask)`.
+	const KVM_SET_SIGNAL_MASK: libc::c_ulong = 0x4004_ae8b;
+
+	// `kvm_bindings::kvm_signal_mask` has a `__IncompleteArrayField` for `sigset`
+	// (FAM); the trailing bytes have to be allocated by the caller. We embed an
+	// 8-byte zeroed sigset right after the header.
+	#[repr(C)]
+	struct KvmSignalMaskWithSigset {
+		header: kvm_signal_mask,
+		sigset: [u8; 8],
+	}
+
+	let mut payload = KvmSignalMaskWithSigset {
+		header: kvm_signal_mask::default(),
+		sigset: [0; 8],
+	};
+	payload.header.len = 8;
+
+	// SAFETY: `payload` lays out a valid `kvm_signal_mask` followed by its `len`
+	// trailing sigset bytes; the fd outlives this call.
+	let res = unsafe {
+		libc::ioctl(
+			vcpu.as_raw_fd(),
+			KVM_SET_SIGNAL_MASK,
+			&payload as *const _ as *const libc::c_void,
+		)
+	};
+	nix::errno::Errno::result(res).map(drop)
+}
 
 // First address that uses more than 32 bits.
 const KVM_32BIT_MAX_MEM_SIZE: usize = 1 << 32;
@@ -403,7 +435,9 @@ impl KvmCpu {
 
 impl VirtualCPU for KvmCpu {
 	fn thread_local_init(&mut self) -> HypervisorResult<()> {
-		// no thread-local initialization necessary
+		// Block the kick signal in this vCPU thread (KVM will unblock it during `KVM_RUN`).
+		KickSignal::block_in_current_thread().map_err(io::Error::from)?;
+		unblock_all_signals_for_kvm(&self.vcpu).map_err(io::Error::from)?;
 		Ok(())
 	}
 
@@ -609,7 +643,10 @@ impl VirtualCPU for KvmCpu {
 					}
 				},
 				Err(err) => match err.errno() {
-					libc::EINTR => return Ok(VcpuStopReason::Kick),
+					libc::EINTR => {
+						crate::linux::KickSignal::drain_pending_in_current_thread();
+						return Ok(VcpuStopReason::Kick);
+					}
 					_ => return Err(err.into()),
 				},
 			}

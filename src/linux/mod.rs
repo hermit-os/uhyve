@@ -85,6 +85,40 @@ impl KickSignal {
 		let res = unsafe { libc::pthread_kill(pthread, Self::get()) };
 		nix::errno::Errno::result(res).map(drop)
 	}
+
+	/// Blocks the kick signal in the calling thread.
+	pub(crate) fn block_in_current_thread() -> nix::Result<()> {
+		// `nix::sys::signal::Signal` doesn't support real-time signals yet
+		let mut set: libc::sigset_t = unsafe { std::mem::zeroed() };
+		// SAFETY: `set` is a valid `sigset_t` and `Self::get()` is a valid signal number.
+		let res = unsafe {
+			libc::sigemptyset(&mut set);
+			libc::sigaddset(&mut set, Self::get());
+			libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut())
+		};
+		nix::errno::Errno::result(res).map(drop)
+	}
+
+	/// Drains all pending kick signals from the calling thread's signal queue.
+	pub(crate) fn drain_pending_in_current_thread() {
+		let mut set: libc::sigset_t = unsafe { std::mem::zeroed() };
+		let zero_timeout = libc::timespec {
+			tv_sec: 0,
+			tv_nsec: 0,
+		};
+		// SAFETY: `set`, `info`, `zero_timeout` are valid for the duration of the
+		// call; `Self::get()` is a valid signal number.
+		unsafe {
+			libc::sigemptyset(&mut set);
+			libc::sigaddset(&mut set, Self::get());
+			loop {
+				let mut info: libc::siginfo_t = std::mem::zeroed();
+				if libc::sigtimedwait(&set, &mut info, &zero_timeout) < 0 {
+					break;
+				}
+			}
+		}
+	}
 }
 
 impl UhyveVm<KvmVm> {
