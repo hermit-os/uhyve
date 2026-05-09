@@ -34,7 +34,7 @@ use crate::{
 	mem::MmapMemory,
 	mem_layout::{BootInfoSection, FdtSection, KernelSection, MemoryLayout},
 	net::NetworkBackend,
-	params::{EnvVars, HermitImageMode, NetworkMode, Params},
+	params::{CpuCount, EnvVars, HermitImageMode, NetworkMode, Params},
 	parking::Parker,
 	serial::{Destination, UhyveSerial},
 	stats::{CpuStats, VmStats},
@@ -142,6 +142,162 @@ pub(crate) struct KernelInfo<MemLayout: MemoryLayout> {
 /// It is used to stop a vCPU from another thread.
 pub(crate) struct KickSignal;
 
+/// Loads the kernel image at `kernel_path` and returns its raw ELF bytes.
+/// If the path is a hermit image, it returns the image as the second return value.
+///
+/// Handles both plain ELF files and gzipped Hermit images.
+fn load_kernel_image(
+	kernel_path: &std::path::Path,
+	params: &mut Params,
+	file_mapping: &mut UhyveFileMap,
+) -> HypervisorResult<(Vec<u8>, Option<Vec<u8>>)> {
+	let kernel_data = fs::read(kernel_path)
+		.map_err(|_e| HypervisorError::InvalidKernelPath(kernel_path.to_path_buf()))?;
+
+	// `kernel_data` might be an Hermit image
+	match detect_format(&kernel_data[..]) {
+		None => Err(HypervisorError::InvalidKernelPath(
+			kernel_path.to_path_buf(),
+		)),
+		Some(Format::Elf) => Ok((kernel_data, None)),
+		Some(Format::Gzip) => {
+			let mut hermit_image = None;
+
+			let buf_decompressed = {
+				use io::Read;
+
+				// decompress image
+				let mut buf_decompressed = Vec::new();
+				flate2::bufread::GzDecoder::new(&kernel_data[..])
+					.read_to_end(&mut buf_decompressed)?;
+				drop(kernel_data);
+				buf_decompressed
+			};
+
+			let keep_config_data;
+			let keep_kernel_data;
+
+			let handle = match params.hermit_image_mode {
+				HermitImageMode::External => {
+					// insert Hermit image tree into file map
+					file_mapping.add_hermit_image(&buf_decompressed[..])?;
+					drop(buf_decompressed);
+
+					let config_data = if let Some(UhyveMapLeaf::Virtual(data)) = file_mapping
+						.get_host_path(&("/".to_string() + config::Config::DEFAULT_PATH), true)
+					{
+						keep_config_data = data;
+						&keep_config_data[..]
+					} else {
+						return Err(HypervisorError::HermitImageConfigNotFound);
+					};
+
+					let konfig: config::Config<'_> = toml::from_slice(config_data)?;
+
+					// .kernel
+					let inner_kernel_path = match &konfig {
+						config::Config::V1 { kernel, .. } => kernel,
+					};
+					let raw_kernel = if let Some(UhyveMapLeaf::Virtual(data)) =
+						file_mapping.get_host_path(inner_kernel_path, true)
+					{
+						keep_kernel_data = data;
+						&keep_kernel_data[..]
+					} else {
+						error!("Unable to find kernel in Hermit image");
+						return Err(HypervisorError::InvalidKernelPath(
+							kernel_path.to_path_buf(),
+						));
+					};
+
+					config::ConfigHandle {
+						config: konfig,
+						raw_kernel,
+					}
+				}
+				HermitImageMode::Internal => {
+					match config::parse_tar(hermit_image.insert(buf_decompressed)) {
+						Ok(handle) => handle,
+						Err(e) => {
+							error!("Error during Hermit image parsing: {e}");
+							return Err(HypervisorError::InvalidKernelPath(
+								kernel_path.to_path_buf(),
+							));
+						}
+					}
+				}
+			};
+
+			// handle Hermit image configuration
+			match handle.config {
+				config::Config::V1 {
+					mut input,
+					requirements,
+					kernel: _,
+				} => {
+					// .input
+					if params.kernel_args.is_empty() {
+						params.kernel_args.append(
+							&mut take(&mut input.kernel_args)
+								.into_iter()
+								.map(|i| i.into_owned())
+								.collect(),
+						);
+						if !input.app_args.is_empty() {
+							params.kernel_args.push("--".to_string());
+							params.kernel_args.append(
+								&mut take(&mut input.app_args)
+									.into_iter()
+									.map(|i| i.into_owned())
+									.collect(),
+							)
+						}
+					}
+					debug!("Passing kernel arguments: {:?}", params.kernel_args);
+
+					// don't pass privileged env-var commands through
+					input.env_vars.retain(|i| i.contains('='));
+
+					if let EnvVars::Set(env) = &mut params.env {
+						if let Ok(EnvVars::Set(prev_env_vars)) =
+							EnvVars::try_from(&input.env_vars[..])
+						{
+							// env vars from params take precedence
+							let new_env_vars = take(env);
+							*env = prev_env_vars.into_iter().chain(new_env_vars).collect();
+						} else {
+							warn!("Unable to parse env vars from Hermit image configuration");
+						}
+					} else if input.env_vars.is_empty() {
+						info!("Ignoring Hermit image env vars due to `-e host`");
+					}
+
+					// .requirements
+
+					// TODO: what about default memory size?
+					if let Some(required_memory_size) = requirements.memory
+						&& params.memory_size.0 < required_memory_size
+					{
+						return Err(HypervisorError::InsufficientGuestMemorySize {
+							got: params.memory_size.0,
+							wanted: required_memory_size,
+						});
+					}
+
+					if params.cpu_count.get() < requirements.cpus {
+						return Err(HypervisorError::InsufficientGuestCPUs {
+							got: params.cpu_count.get(),
+							wanted: requirements.cpus,
+						});
+					}
+				}
+			}
+
+			Ok((handle.raw_kernel.to_vec(), hermit_image))
+		}
+	}
+}
+
 pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(crate) vcpus: Vec<<VirtBackend as VirtualizationBackendInternal>::VCPU>,
 	pub(crate) peripherals: Arc<VmPeripherals<VirtBackend::VirtioNetImpl>>,
@@ -154,9 +310,6 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 	pub fn new(kernel_path: PathBuf, mut params: Params) -> HypervisorResult<UhyveVm<VirtBackend>> {
 		let memory_size = params.memory_size.get();
 
-		let kernel_data = fs::read(&kernel_path)
-			.map_err(|_e| HypervisorError::InvalidKernelPath(kernel_path.clone()))?;
-
 		// TODO: file_mapping not in kernel_info
 		let mut file_mapping = UhyveFileMap::new(
 			&params.file_mapping,
@@ -165,144 +318,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 			params.io_mode,
 		);
 
-		let mut hermit_image = None;
-
-		// `kernel_data` might be an Hermit image
-		let elf = match detect_format(&kernel_data[..]) {
-			None => return Err(HypervisorError::InvalidKernelPath(kernel_path.clone())),
-			Some(Format::Elf) => kernel_data,
-			Some(Format::Gzip) => {
-				let buf_decompressed = {
-					use io::Read;
-
-					// decompress image
-					let mut buf_decompressed = Vec::new();
-					flate2::bufread::GzDecoder::new(&kernel_data[..])
-						.read_to_end(&mut buf_decompressed)?;
-					drop(kernel_data);
-					buf_decompressed
-				};
-
-				let keep_config_data;
-				let keep_kernel_data;
-
-				let handle = match params.hermit_image_mode {
-					HermitImageMode::External => {
-						// insert Hermit image tree into file map
-						file_mapping.add_hermit_image(&buf_decompressed[..])?;
-						drop(buf_decompressed);
-
-						let config_data = if let Some(UhyveMapLeaf::Virtual(data)) = file_mapping
-							.get_host_path(&("/".to_string() + config::Config::DEFAULT_PATH), true)
-						{
-							keep_config_data = data;
-							&keep_config_data[..]
-						} else {
-							return Err(HypervisorError::HermitImageConfigNotFound);
-						};
-
-						let konfig: config::Config<'_> = toml::from_slice(config_data)?;
-
-						// .kernel
-						let inner_kernel_path = match &konfig {
-							config::Config::V1 { kernel, .. } => kernel,
-						};
-						let raw_kernel = if let Some(UhyveMapLeaf::Virtual(data)) =
-							file_mapping.get_host_path(inner_kernel_path, true)
-						{
-							keep_kernel_data = data;
-							&keep_kernel_data[..]
-						} else {
-							error!("Unable to find kernel in Hermit image");
-							return Err(HypervisorError::InvalidKernelPath(kernel_path.clone()));
-						};
-
-						config::ConfigHandle {
-							config: konfig,
-							raw_kernel,
-						}
-					}
-					HermitImageMode::Internal => {
-						match config::parse_tar(hermit_image.insert(buf_decompressed)) {
-							Ok(handle) => handle,
-							Err(e) => {
-								error!("Error during Hermit image parsing: {e}");
-								return Err(HypervisorError::InvalidKernelPath(
-									kernel_path.clone(),
-								));
-							}
-						}
-					}
-				};
-
-				// handle Hermit image configuration
-				match handle.config {
-					config::Config::V1 {
-						mut input,
-						requirements,
-						kernel: _,
-					} => {
-						// .input
-						if params.kernel_args.is_empty() {
-							params.kernel_args.append(
-								&mut take(&mut input.kernel_args)
-									.into_iter()
-									.map(|i| i.into_owned())
-									.collect(),
-							);
-							if !input.app_args.is_empty() {
-								params.kernel_args.push("--".to_string());
-								params.kernel_args.append(
-									&mut take(&mut input.app_args)
-										.into_iter()
-										.map(|i| i.into_owned())
-										.collect(),
-								)
-							}
-						}
-						debug!("Passing kernel arguments: {:?}", params.kernel_args);
-
-						// don't pass privileged env-var commands through
-						input.env_vars.retain(|i| i.contains('='));
-
-						if let EnvVars::Set(env) = &mut params.env {
-							if let Ok(EnvVars::Set(prev_env_vars)) =
-								EnvVars::try_from(&input.env_vars[..])
-							{
-								// env vars from params take precedence
-								let new_env_vars = take(env);
-								*env = prev_env_vars.into_iter().chain(new_env_vars).collect();
-							} else {
-								warn!("Unable to parse env vars from Hermit image configuration");
-							}
-						} else if input.env_vars.is_empty() {
-							info!("Ignoring Hermit image env vars due to `-e host`");
-						}
-
-						// .requirements
-
-						// TODO: what about default memory size?
-						if let Some(required_memory_size) = requirements.memory
-							&& params.memory_size.0 < required_memory_size
-						{
-							return Err(HypervisorError::InsufficientGuestMemorySize {
-								got: params.memory_size.0,
-								wanted: required_memory_size,
-							});
-						}
-
-						if params.cpu_count.get() < requirements.cpus {
-							return Err(HypervisorError::InsufficientGuestCPUs {
-								got: params.cpu_count.get(),
-								wanted: requirements.cpus,
-							});
-						}
-					}
-				}
-
-				handle.raw_kernel.to_vec()
-			}
-		};
+		let (elf, hermit_image) = load_kernel_image(&kernel_path, &mut params, &mut file_mapping)?;
 
 		let object: KernelObject<'_> =
 			KernelObject::parse(&elf).map_err(LoadKernelError::ParseKernelError)?;
@@ -393,8 +409,6 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 			legacy_mapping,
 		);
 
-		// create virtio interface
-		let mem = Arc::new(mem);
 		if let Some(version) = hermit_version
 			&& kernel_info.params.network.is_some()
 			&& (version
@@ -407,35 +421,18 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 				"Network requires Kernel 0.13.2 or newer",
 			));
 		}
-		let virtio_device = kernel_info
-			.params
-			.network
-			.as_ref()
-			.map(|mode| Mutex::new(VirtBackend::virtio_net_device(mode.clone(), mem.clone())));
-
-		let peripherals = Arc::new(VmPeripherals {
+		let mem = Arc::new(mem);
+		let peripherals = Self::build_peripherals(
 			mem,
-			// create virtio interface
-			virtio_device,
-			// TODO: file_mapping not in kernel_info
-			file_mapping: Mutex::new(file_mapping),
+			kernel_info.params.network.as_ref(),
+			file_mapping,
 			serial,
-		});
+		);
 
 		let virt_backend = VirtBackend::new(peripherals.clone(), &kernel_info.params)?;
 
-		let cpu_count = kernel_info.params.cpu_count.get();
-
-		let vcpus: Vec<_> = (0..cpu_count as usize)
-			.map(|cpu_id| {
-				virt_backend
-					.new_cpu(cpu_id, kernel_info.clone(), kernel_info.params.stats)
-					.unwrap()
-			})
-			.collect();
-
+		let vcpus = Self::spawn_vcpus(&virt_backend, &kernel_info, kernel_info.params.cpu_count);
 		let freq = vcpus[0].get_cpu_frequency();
-
 		let serial_port = SerialPortBase::new(match uhyve_interface_version.0 {
 			1 => uhyve_interface::v1::HypercallAddress::Uart as _,
 			2 | 3 => uhyve_interface::v2::HypercallAddress::SerialWriteBuffer as _,
@@ -460,7 +457,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 			layout.boot_info(),
 			layout.fdt().0.addr,
 			load_info,
-			cpu_count as u64,
+			vcpus.len() as u64,
 			freq,
 			serial_port,
 		);
@@ -474,6 +471,40 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 			cpu_affinity,
 			_virt_backend: virt_backend,
 		})
+	}
+
+	/// Assembles the [`VmPeripherals`] from already-initialized parts.
+	fn build_peripherals(
+		mem: Arc<MmapMemory>,
+		network: Option<&NetworkMode>,
+		file_mapping: UhyveFileMap,
+		serial: UhyveSerial,
+	) -> Arc<VmPeripherals<VirtBackend::VirtioNetImpl>> {
+		let virtio_device = network
+			.map(|mode| Mutex::new(VirtBackend::virtio_net_device(mode.clone(), mem.clone())));
+
+		Arc::new(VmPeripherals {
+			mem,
+			virtio_device,
+			// TODO: file_mapping not in kernel_info
+			file_mapping: Mutex::new(file_mapping),
+			serial,
+		})
+	}
+
+	/// Creates `cpu_count` vCPUs and their associated mailboxes.
+	fn spawn_vcpus(
+		virt_backend: &VirtBackend,
+		kernel_info: &Arc<KernelInfo<VirtBackend::MemLayout>>,
+		cpu_count: CpuCount,
+	) -> Vec<<VirtBackend as VirtualizationBackendInternal>::VCPU> {
+		(0..cpu_count.get() as usize)
+			.map(|cpu_id| {
+				virt_backend
+					.new_cpu(cpu_id, kernel_info.clone(), kernel_info.params.stats)
+					.unwrap()
+			})
+			.collect()
 	}
 
 	#[cfg(target_os = "linux")]
