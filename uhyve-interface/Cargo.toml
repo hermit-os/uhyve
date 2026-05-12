@@ -12,7 +12,7 @@ categories = ["os"]
 [dependencies]
 hermit-abi = "0.5"
 log = { version = "0.4", optional = true }
-memory_addresses = "0.3"
+memory_addresses = "0.4"
 num_enum = { version = "0.7", default-features = false }
 
 [features]
