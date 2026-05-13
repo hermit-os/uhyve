@@ -11,6 +11,8 @@
 
 pub mod parameters;
 use parameters::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 /// Enum containing all valid port mappings for hypercalls.
 ///
@@ -19,6 +21,7 @@ use parameters::*;
 #[repr(u16)]
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, num_enum::TryFromPrimitive, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum HypercallAddress {
 	/// Port address = `0x400`
 	FileWrite = 0x400,
