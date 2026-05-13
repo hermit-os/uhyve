@@ -6,11 +6,12 @@ use uhyve_interface::GuestPhysAddr;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
 use crate::{
-	HypervisorResult,
+	HypervisorError, HypervisorResult,
 	arch::{BOOT_GDT_MAX, GDT_OFFSET, PML4_OFFSET},
+	gdb::resume::ResumeMode,
 	hypercall,
-	linux::{KVM, x86_64::virtio_device::KvmVirtioNetDevice},
 	mem::MmapMemory,
+	os::{KVM, x86_64::virtio_device::KvmVirtioNetDevice},
 	params::{NetworkMode, Params},
 	pci::{IOBASE_U64, IOEND_U64, PciConfigurationAddress, PciDevice},
 	stats::{CpuStats, VmExit},
@@ -379,10 +380,6 @@ impl KvmCpu {
 		println!("{name}       {seg:?}");
 	}
 
-	pub(crate) fn get_vcpu_id(&self) -> usize {
-		self.id
-	}
-
 	pub(crate) fn get_vcpu(&self) -> &VcpuFd {
 		&self.vcpu
 	}
@@ -394,10 +391,6 @@ impl KvmCpu {
 	/// i.e. when handling an IoOut exit.
 	pub(crate) fn get_hypercall_data_addr_v2(&self) -> GuestPhysAddr {
 		GuestPhysAddr::new(self.vcpu.sync_regs().regs.rdi)
-	}
-
-	pub fn get_root_pagetable(&self) -> GuestPhysAddr {
-		GuestPhysAddr::new(self.vcpu.get_sregs().unwrap().cr3)
 	}
 }
 
@@ -633,6 +626,32 @@ impl VirtualCPU for KvmCpu {
 		Ok((res, self.stats.take()))
 	}
 
+	fn apply_current_guest_debug(
+		&mut self,
+		breakpoints: &crate::os::gdb::breakpoints::AllBreakpoints,
+		resume_mode: ResumeMode,
+	) -> HypervisorResult<()> {
+		use kvm_bindings::{
+			KVM_GUESTDBG_ENABLE, KVM_GUESTDBG_SINGLESTEP, KVM_GUESTDBG_USE_HW_BP,
+			KVM_GUESTDBG_USE_SW_BP, kvm_guest_debug, kvm_guest_debug_arch,
+		};
+		let debugreg = breakpoints.hard.registers();
+		let mut control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_SW_BP | KVM_GUESTDBG_USE_HW_BP;
+		// SAFETY: we trust the value of `self.resume.mode`.
+		if resume_mode == ResumeMode::Step {
+			control |= KVM_GUESTDBG_SINGLESTEP;
+		}
+		let debug_struct = kvm_guest_debug {
+			control,
+			pad: 0,
+			arch: kvm_guest_debug_arch { debugreg },
+		};
+
+		self.vcpu
+			.set_guest_debug(&debug_struct)
+			.map_err(HypervisorError::from)
+	}
+
 	fn print_registers(&self) {
 		let regs = self.vcpu.get_regs().unwrap();
 		let sregs = self.vcpu.get_sregs().unwrap();
@@ -693,5 +712,13 @@ impl VirtualCPU for KvmCpu {
 
 	fn get_cpu_frequency(&self) -> Option<NonZero<u32>> {
 		self.vcpu.get_tsc_khz().map(|f| f.try_into().unwrap()).ok()
+	}
+
+	fn get_root_pagetable(&self) -> GuestPhysAddr {
+		GuestPhysAddr::new(self.vcpu.get_sregs().unwrap().cr3)
+	}
+
+	fn get_vcpu_id(&self) -> usize {
+		self.id
 	}
 }

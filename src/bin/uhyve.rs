@@ -175,9 +175,9 @@ struct UhyveArgs {
 	///
 	/// [default: 6677]
 	#[clap(short = 's', long, env = "HERMIT_GDB_PORT", num_args(0..=1), default_missing_value("6677"))]
+	#[cfg_attr(target_os = "macos", clap(hide(true)))]
 	#[serde(default)]
 	#[merge(strategy = merge::option::overwrite_none)]
-	#[cfg(target_os = "linux")]
 	gdb_port: Option<u16>,
 
 	/// TOML configuration file
@@ -450,7 +450,6 @@ impl From<Args> for Params {
 					file_isolation,
 					#[cfg(target_os = "linux")]
 					io_mode,
-					#[cfg(target_os = "linux")]
 					gdb_port,
 					config: _,
 					#[cfg(feature = "instrument")]
@@ -494,10 +493,7 @@ impl From<Args> for Params {
 			#[cfg(target_os = "linux")]
 			pit: pit.unwrap_or_default(),
 			file_mapping,
-			#[cfg(target_os = "linux")]
 			gdb_port,
-			#[cfg(target_os = "macos")]
-			gdb_port: None,
 			kernel_args,
 			tempdir,
 			#[cfg(target_os = "linux")]
@@ -709,7 +705,6 @@ mod tests {
 				file_isolation: None,
 				#[cfg(target_os = "linux")]
 				io_mode: None,
-				#[cfg(target_os = "linux")]
 				gdb_port: None,
 				config: Some(PathBuf::from("config.txt")),
 				#[cfg(feature = "instrument")]
@@ -777,7 +772,6 @@ mod tests {
 				file_isolation: Some(String::from("strict")),
 				#[cfg(target_os = "linux")]
 				io_mode: Some(String::from("direct")),
-				#[cfg(target_os = "linux")]
 				gdb_port: Some(1),
 				config: Some(PathBuf::from("config.txt")),
 				#[cfg(feature = "instrument")]

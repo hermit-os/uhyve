@@ -14,6 +14,7 @@ use std::{
 
 use align_address::Align;
 use core_affinity::CoreId;
+use gdbstub::{arch::Arch, target::Target};
 use hermit_entry::{
 	Format, HermitVersion, UhyveIfVersion,
 	boot_info::{BootInfo, HardwareInfo, LoadInfo, PlatformInfo, RawBootInfo, SerialPortBase},
@@ -27,10 +28,10 @@ use uhyve_interface::GuestPhysAddr;
 use crate::{
 	HypervisorError, V1_ADDR_RANGE, V2_ADDR_RANGE,
 	fdt::Fdt,
+	gdb::GdbVcpuManager,
 	isolation::filemap::{UhyveFileMap, UhyveMapLeaf},
 	mem::MmapMemory,
 	net::NetworkBackend,
-	os::KickSignal,
 	params::{EnvVars, NetworkMode, Params},
 	parking::Parker,
 	serial::{Destination, UhyveSerial},
@@ -58,9 +59,9 @@ pub enum LoadKernelError {
 type LoadKernelResult<T> = Result<T, LoadKernelError>;
 
 #[cfg(target_os = "linux")]
-pub type DefaultBackend = crate::linux::x86_64::kvm_cpu::KvmVm;
+pub type DefaultBackend = crate::os::x86_64::kvm_cpu::KvmVm;
 #[cfg(target_os = "macos")]
-pub type DefaultBackend = crate::macos::XhyveVm;
+pub type DefaultBackend = crate::os::XhyveVm;
 
 /// Trait marking a interface for creating (accelerated) VMs.
 pub(crate) trait VirtualizationBackendInternal: Sized {
@@ -116,7 +117,7 @@ pub(crate) struct KernelInfo {
 	/// The first instruction after boot
 	pub entry_point: GuestPhysAddr,
 	/// The starting position of the image in physical memory
-	#[cfg_attr(target_os = "macos", expect(dead_code))] // currently only needed in gdb
+	// currently only needed in gdb
 	pub kernel_address: GuestPhysAddr,
 	pub params: Params,
 	pub path: PathBuf,
@@ -129,8 +130,11 @@ pub(crate) struct KernelInfo {
 pub(crate) const BOOT_INFO_OFFSET: u64 = 0x9000;
 const FDT_OFFSET: u64 = 0x5000;
 pub(crate) const KERNEL_OFFSET: u64 = 0x40000;
-
 const KERNEL_STACK_SIZE: u64 = 0x8000;
+/// The signal for kicking vCPUs out of KVM_RUN.
+///
+/// It is used to stop a vCPU from another thread.
+pub(crate) struct KickSignal;
 
 /// Returns a guest & start address tuple based on the object file.
 ///
@@ -464,11 +468,6 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 
 		let cpu_count = kernel_info.params.cpu_count.get();
 
-		assert!(
-			kernel_info.params.gdb_port.is_none() || cfg!(target_os = "linux"),
-			"gdb is only supported on linux (yet)"
-		);
-
 		let vcpus: Vec<_> = (0..cpu_count as usize)
 			.map(|cpu_id| {
 				virt_backend
@@ -551,9 +550,28 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 		}
 	}
 
-	pub fn run_no_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
+	/// Runs the VM.
+	///
+	/// Blocks until the VM has finished execution.
+	pub fn run(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult
+	where
+		GdbVcpuManager<VirtBackend>: Target,
+		<GdbVcpuManager<VirtBackend> as Target>::Error: fmt::Debug,
+		<GdbVcpuManager<VirtBackend> as Target>::Arch: Arch<Usize = u64>,
+	{
 		KickSignal::register_handler().unwrap();
 
+		if self.kernel_info.params.gdb_port.is_none() {
+			self.run_no_gdb(cpu_affinity)
+		} else {
+			if cfg!(target_os = "macos") {
+				warn!("This mode is experimental and doesn't yet work correctly.");
+			}
+			self.run_gdb(cpu_affinity)
+		}
+	}
+
+	fn run_no_gdb(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult {
 		// After spinning up all vCPU threads, the main thread waits for any vCPU to end execution.
 		let main_parker = Parker::current();
 
