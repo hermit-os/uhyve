@@ -18,44 +18,42 @@ use uhyvelib::{
 
 #[cfg(feature = "instrument")]
 extern crate rftrace as _;
-#[cfg(feature = "instrument")]
-use rftrace_frontend as rftrace;
 
 #[cfg(feature = "instrument")]
-fn setup_trace(out_dir: PathBuf) {
-	use std::{fs::create_dir_all, sync::OnceLock};
+mod instrument {
+	use std::{fs::create_dir_all, path::PathBuf};
 
 	use rftrace::Events;
+	use rftrace_frontend as rftrace;
 
-	static OUT_DIR: OnceLock<PathBuf> = OnceLock::new();
-	static mut EVENTS: Option<&mut Events> = None;
-
-	let ft = out_dir.metadata().map(|i| i.file_type()).unwrap();
-
-	if !ft.is_dir() {
-		if ft.is_file() {
-			panic!("Error: trace-dir must be a directory");
-		}
-		create_dir_all(&out_dir).unwrap();
+	pub(crate) struct TraceGuard {
+		events: &'static mut Events,
+		out_dir: PathBuf,
 	}
 
-	#[allow(static_mut_refs)]
-	extern "C" fn dump_trace() {
-		unsafe {
-			if let Some(e) = &mut EVENTS {
-				rftrace::dump_full_uftrace(e, OUT_DIR.get().unwrap().to_str().unwrap(), "uhyve")
-					.expect("Saving trace failed");
+	impl TraceGuard {
+		pub(crate) fn new(out_dir: PathBuf) -> Self {
+			let ft = out_dir.metadata().map(|i| i.file_type()).unwrap();
+
+			if !ft.is_dir() {
+				if ft.is_file() {
+					panic!("Error: trace-dir must be a directory");
+				}
+				create_dir_all(&out_dir).unwrap();
 			}
+
+			let events = rftrace_frontend::init(1000000, true);
+			rftrace::enable();
+
+			Self { events, out_dir }
 		}
 	}
 
-	OUT_DIR.set(out_dir).unwrap();
-	let events = rftrace_frontend::init(1000000, true);
-	rftrace::enable();
-
-	unsafe {
-		EVENTS = Some(events);
-		libc::atexit(dump_trace);
+	impl Drop for TraceGuard {
+		fn drop(&mut self) {
+			rftrace::dump_full_uftrace(self.events, self.out_dir.to_str().unwrap(), "uhyve")
+				.expect("Saving trace failed");
+		}
 	}
 }
 
@@ -574,10 +572,10 @@ fn run_uhyve() -> i32 {
 	load_vm_config(&mut args);
 
 	#[cfg(feature = "instrument")]
-	if let Some(trace) = &args.uhyve.trace_dir {
-		info!("Setting up trace output directory: {}", trace.display());
-		setup_trace(trace.to_path_buf());
-	}
+	let _trace_guard = args.uhyve.trace_dir.as_ref().map(|trace_dir| {
+		info!("Setting up trace output directory: {}", trace_dir.display());
+		instrument::TraceGuard::new(trace_dir.clone())
+	});
 
 	let stats = args.uhyve.stats.unwrap_or_default();
 	let kernel_path = args.guest.kernel.clone();
