@@ -1,6 +1,6 @@
 //! Flattened Device Trees (FDT).
 
-use std::{fmt::Write, ops::Range};
+use core::{fmt::Write, ops::Range};
 
 use uhyve_interface::GuestPhysAddr;
 use vm_fdt::{FdtWriter, FdtWriterNode, FdtWriterResult};
@@ -18,7 +18,7 @@ use crate::{
 pub struct Fdt {
 	writer: FdtWriter,
 	root_node: FdtWriterNode,
-	hermit_image: Option<(u64, u64)>,
+	hermit_image: Option<Range<u64>>,
 	kernel_args: String,
 	app_args: String,
 }
@@ -30,10 +30,11 @@ impl Fdt {
 
 		let hermit_image = if let Some(hermit_image) = hermit_image.clone() {
 			let start = hermit_image.start.as_u64();
-			let length = hermit_image.end.as_u64() - start;
+			let end = hermit_image.end.as_u64();
+			let length = end.checked_sub(start).unwrap();
 			assert_eq!(length % PAGE_SIZE as u64, 0);
 			mem_reserved.push(vm_fdt::FdtReserveEntry::new(start, length)?);
-			Some((start, length))
+			Some(start..end)
 		} else {
 			None
 		};
@@ -67,9 +68,11 @@ impl Fdt {
 		let chosen_node = self.writer.begin_node("chosen")?;
 		self.writer.property_string("bootargs", &bootargs)?;
 
-		if let Some((hermit_image_start, hermit_image_length)) = self.hermit_image {
+		if let Some(hermit_image_range) = self.hermit_image {
 			self.writer
-				.property_array_u64("image_reg", &[hermit_image_start, hermit_image_length])?;
+				.property_u64("linux,initrd-start", hermit_image_range.start)?;
+			self.writer
+				.property_u64("linux,initrd-end", hermit_image_range.end)?;
 		}
 
 		self.writer.end_node(chosen_node)?;
