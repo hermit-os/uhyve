@@ -120,11 +120,11 @@ impl VirtualizationBackendInternal for KvmVm {
 		let memory_size = peripherals.mem.size();
 		let guest_end_addr = peripherals.mem.guest_addr().add(memory_size).as_usize();
 		assert!(
-			!(KVM_32BIT_GAP_START..=KVM_32BIT_MAX_MEM_SIZE).contains(&(guest_phys_addr.as_usize())),
+			!(KVM_32BIT_GAP_START..KVM_32BIT_MAX_MEM_SIZE).contains(&(guest_phys_addr.as_usize())),
 			"Provided guest address {guest_phys_addr:#X} is in reserved virtual memory region between 3 and 4GiB"
 		);
 		assert!(
-			!(KVM_32BIT_GAP_START..=KVM_32BIT_MAX_MEM_SIZE)
+			!(KVM_32BIT_GAP_START..KVM_32BIT_MAX_MEM_SIZE)
 				.contains(&guest_phys_addr.add(memory_size).as_usize()),
 			"Guest end address {guest_end_addr:#X} is in reserved virtual memory region between 3 and 4GiB"
 		);
