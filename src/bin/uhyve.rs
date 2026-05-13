@@ -781,7 +781,7 @@ mod tests {
 				gdb_port: Some(1),
 				config: Some(PathBuf::from("config.txt")),
 				#[cfg(feature = "instrument")]
-				trace: Some(PathBuf::from(".")),
+				trace_dir: Some(PathBuf::from(".")),
 				net: Some(String::from("tap:tap10")),
 			},
 			memory: MemoryArgs {
