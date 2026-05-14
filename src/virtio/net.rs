@@ -259,9 +259,8 @@ impl VirtioNetPciDevice {
 	pub fn read_mac_address_bytes(&self, offset: usize, data: &mut [u8]) {
 		for (d, m) in data
 			.iter_mut()
-			.zip(self.header_caps.dev.mac.iter())
+			.zip(self.header_caps.dev.mac.iter().skip(offset))
 			.take(6)
-			.skip(offset)
 		{
 			*d = *m;
 		}
