@@ -4,7 +4,7 @@ use bitflags::bitflags;
 use zerocopy::{Immutable, IntoBytes};
 
 use crate::{
-	net::{BROADCAST_MAC_ADDR, UHYVE_NET_MTU},
+	net::UHYVE_NET_MTU,
 	pci::PciConfigurationOffset,
 	virtio::{
 		VirtqueueNotification,
@@ -143,7 +143,7 @@ impl NetDevCfg {
 impl Default for NetDevCfg {
 	fn default() -> Self {
 		Self {
-			mac: BROADCAST_MAC_ADDR,
+			mac: [0; 6],
 			status: NetDevStatus::UNINITIALIZED,
 			_max_virtqueue_pairs: 0,
 			mtu: UHYVE_NET_MTU as u16,

@@ -2,7 +2,6 @@
 
 use std::{fmt::Debug, io};
 
-pub const BROADCAST_MAC_ADDR: [u8; 6] = [0xff; 6];
 pub const PCI_ETHERNET_CLASS_CODE: u8 = 0x2;
 pub const PCI_ETHERNET_SUBCLASS: u8 = 0x0;
 pub const PCI_ETHERNET_PROG_IF: u8 = 0;
