@@ -280,7 +280,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 								)
 							}
 						}
-						debug!("Passing kernel arguments: {:?}", &params.kernel_args);
+						debug!("Passing kernel arguments: {:?}", params.kernel_args);
 
 						// don't pass privileged env-var commands through
 						input.env_vars.retain(|i| i.contains('='));
