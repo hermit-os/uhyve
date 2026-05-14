@@ -49,12 +49,17 @@ impl Tap {
 
 		ioctl_write_int!(tun_set_iff, b'T', 202);
 
-		let res =
-			unsafe { tun_set_iff(fd.as_raw_fd(), &config_str as *const ifreq as u64).unwrap() };
+		let res = unsafe {
+			tun_set_iff(fd.as_raw_fd(), &config_str as *const ifreq as u64).unwrap_or_else(|e| {
+				panic!("ioctl(TUNSETIFF) failed when attaching to TAP `{iface_name}`: {e}")
+			})
+		};
 
 		if res < 0 {
 			error!("Can't open TAP device {iface_name} - Error {res}");
-			return Err(Error::other("Can't open TAP device"));
+			return Err(Error::other(format!(
+				"can't open TAP `{iface_name}`: ioctl returned {res:?}",
+			)));
 		}
 
 		// Find MAC address of the TAP device
