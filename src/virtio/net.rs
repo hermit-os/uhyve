@@ -233,15 +233,7 @@ impl VirtioNetPciDevice {
 		{
 			// Step 8: guest OS is ready
 			status_reg.insert(DeviceStatus::DRIVER_OK);
-			debug!("Starting RX & TX Threads");
-			self.thread_start_channels
-				.0
-				.send(ThreadControlMsg::Start)
-				.unwrap();
-			self.thread_start_channels
-				.1
-				.send(ThreadControlMsg::Start)
-				.unwrap();
+			self.release_network_threads().unwrap();
 		} else {
 			error!(
 				"Invalid status register operation (Status register: {:?}, operation: {:b})",
@@ -362,6 +354,25 @@ impl VirtioNetPciDevice {
 
 		self.header_caps.dev.status = NetDevStatus::VIRTIO_NET_S_LINK_UP;
 		self.update_config_generation();
+	}
+
+	pub(crate) fn release_network_threads(&mut self) -> crate::HypervisorResult<()> {
+		assert!(
+			self.header_caps
+				.pci_config_hdr
+				.status
+				.contains(DeviceStatus::DRIVER_OK)
+		);
+		debug!("Starting RX & TX Threads");
+		self.thread_start_channels
+			.0
+			.send(ThreadControlMsg::Start)
+			.unwrap();
+		self.thread_start_channels
+			.1
+			.send(ThreadControlMsg::Start)
+			.unwrap();
+		Ok(())
 	}
 
 	pub fn read_net_status(&self, data: &mut [u8]) {
