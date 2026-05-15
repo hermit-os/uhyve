@@ -586,8 +586,6 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 						{
 							pthreads.lock().unwrap().push(pthread_self());
 						}
-						pthreads_published.wait();
-
 						trace!("Create thread for CPU {cpu_id}");
 						match local_cpu_affinity {
 							Some(core_id) => {
@@ -608,6 +606,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 						}
 
 						let _unpark_on_drop = UnparkOnDrop(main_parker);
+						pthreads_published.wait();
 
 						// jump into the VM and execute code of the guest
 						match cpu.run() {
