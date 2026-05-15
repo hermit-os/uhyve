@@ -189,6 +189,13 @@ fn mount_test() {
 	assert_eq!(contents, "12345");
 }
 
+fn open_read(filename: &str) {
+	let mut file = File::open(filename).unwrap();
+	let mut buf = Vec::new();
+	file.read_to_end(&mut buf).unwrap();
+	assert_eq!(buf, b"Hello, world!\n");
+}
+
 fn main() {
 	let args: Vec<String> = env::args().collect();
 	let testname = &args[1].split('=').collect::<Vec<_>>()[1];
@@ -210,6 +217,7 @@ fn main() {
 		"write_to_fd" => write_to_fd_test(),
 		"lseek_file" => lseek_file(filename),
 		"mounts_test" => mount_test(),
+		"open_read" => open_read(filename),
 		_ => panic!("test not found"),
 	}
 }
