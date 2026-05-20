@@ -170,6 +170,11 @@ impl NetworkInterfaceTX for TapTX {
 		trace!("sending {} bytes on {}", buf.len(), self.name);
 		self.fd.write(buf)
 	}
+
+	#[inline]
+	fn try_as_file(&mut self) -> Option<&mut File> {
+		Some(&mut self.fd)
+	}
 }
 
 pub(crate) fn read_file_with_timeout<F: AsFd + Read>(
