@@ -797,15 +797,17 @@ pub fn send_available_packets(
 	let mut buff = Vec::<u8>::with_capacity(UHYVE_NET_MTU + VIRTIO_NET_HEADER_SZ);
 	while let Some(chain) = queue.iter(&mem.mem).unwrap().next() {
 		buff.clear();
-		let mut reader = chain.clone().reader(&mem.mem).unwrap();
-		let mut packet_reader = reader.split_at(VIRTIO_NET_HEADER_SZ).unwrap();
-
-		let header_bytes_read = reader.read_to_end(&mut buff).unwrap();
-		let packet_bytes_read = packet_reader.read_to_end(&mut buff).unwrap();
-		trace!("received frame of length {packet_bytes_read} from VM");
-
-		let guest_len = header_bytes_read + packet_bytes_read;
-		let tap_frame = &buff[..guest_len];
+		let head_index = chain.head_index();
+		let mut reader = chain.reader(&mem.mem).unwrap();
+		let len = reader.available_bytes();
+		buff.resize(len, 0);
+		let data_len = reader.read(&mut buff[..]).unwrap();
+		buff.truncate(data_len);
+		let tap_frame = &buff[..];
+		trace!(
+			"received frame of length {} from VM",
+			tap_frame.len() - VIRTIO_NET_HEADER_SZ
+		);
 
 		match (*sink).send(tap_frame) {
 			Ok(sent_len) => {
@@ -822,7 +824,7 @@ pub fn send_available_packets(
 			}
 		}
 
-		queue.add_used(&mem.mem, chain.head_index(), guest_len as u32)?;
+		queue.add_used(&mem.mem, head_index, data_len as u32)?;
 	}
 	queue.enable_notification(&mem.mem)?;
 
