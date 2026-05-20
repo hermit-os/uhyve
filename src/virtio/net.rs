@@ -6,7 +6,7 @@ use std::{
 	io::{Read, Write},
 	mem,
 	sync::{
-		Arc, Mutex,
+		Arc,
 		atomic::{AtomicBool, Ordering},
 		mpsc::{Receiver, Sender, channel},
 	},
@@ -75,8 +75,8 @@ struct RxThreadConfig {
 }
 
 enum ThreadControlMsg {
-	StartTx,
-	StartRx(RxThreadConfig),
+	StartTx(Queue),
+	StartRx(Queue, RxThreadConfig),
 	Abort,
 }
 
@@ -88,9 +88,9 @@ pub(crate) struct VirtioNetPciDevice {
 	/// read by read_isr_notify
 	isr_changed: Arc<AtomicBool>,
 	/// received virtqueue
-	rx_queue: Arc<Mutex<Queue>>,
+	rx_queue: Option<Queue>,
 	/// transmitted virtqueue
-	tx_queue: Arc<Mutex<Queue>>,
+	tx_queue: Option<Queue>,
 	guest_mmap: Arc<MmapMemory>,
 	/// Store all negotiated feature sets. Chapter 2.2 virtio v1.2
 	feature_set: u64,
@@ -144,12 +144,8 @@ impl VirtioNetPciDevice {
 
 		// Create invalid virtqueues. Improper, unsafe and poor practice!
 		// Ideally, we would mark and watch the queues as ready.
-		let rx_queue = Arc::new(Mutex::new(
-			Queue::new(header_caps.common_cfg.queue_size).unwrap(),
-		));
-		let tx_queue = Arc::new(Mutex::new(
-			Queue::new(header_caps.common_cfg.queue_size).unwrap(),
-		));
+		let rx_queue = Some(Queue::new(header_caps.common_cfg.queue_size).unwrap());
+		let tx_queue = Some(Queue::new(header_caps.common_cfg.queue_size).unwrap());
 
 		let (tx_sender, tx_receiver) = channel();
 		let (rx_sender, rx_receiver) = channel();
@@ -198,9 +194,9 @@ impl VirtioNetPciDevice {
 	pub fn write_reset_queue(&mut self) {
 		if self.feature_set & (1 << VIRTIO_F_RING_RESET) != 0 {
 			// reset only selected queue
-			let mut queue = match self.header_caps.common_cfg.queue_select {
-				RX_QUEUE => self.rx_queue.lock().unwrap(),
-				TX_QUEUE => self.tx_queue.lock().unwrap(),
+			let queue = match self.header_caps.common_cfg.queue_select {
+				RX_QUEUE => self.rx_queue.as_mut().unwrap(),
+				TX_QUEUE => self.tx_queue.as_mut().unwrap(),
 				_ => panic!("invalid queue selected!"),
 			};
 			queue.reset();
@@ -227,8 +223,8 @@ impl VirtioNetPciDevice {
 			*status_reg = DeviceStatus::UNINITIALIZED;
 			self.header_caps.common_cfg.driver_feature = 0;
 			self.header_caps.common_cfg.queue_select = 0;
-			self.rx_queue.as_ref().lock().unwrap().reset();
-			self.tx_queue.as_ref().lock().unwrap().reset();
+			self.rx_queue.as_mut().unwrap().reset();
+			self.tx_queue.as_mut().unwrap().reset();
 			return;
 		}
 
@@ -297,20 +293,20 @@ impl VirtioNetPciDevice {
 		let (mut rx, mut tx) = std::mem::take(&mut self.iface).split();
 
 		self.tx_thread = Some({
-			let tx_queue = self.tx_queue.clone();
+			//let mut tx_queue = self.tx_queue.take().unwrap();
 			let mmap = Arc::clone(&self.guest_mmap);
 			let tx_start_channel_receiver = self.tx_thread_start_channel_receiver.take().unwrap();
 			let stop_threads = self.stop_threads.clone();
 			thread::spawn(move || {
-				match tx_start_channel_receiver.recv().unwrap() {
+				let mut tx_queue = match tx_start_channel_receiver.recv().unwrap() {
 					ThreadControlMsg::Abort => return,
-					ThreadControlMsg::StartTx => {}
-					ThreadControlMsg::StartRx(_) => unreachable!("TX thread received StartRx"),
-				}
+					ThreadControlMsg::StartTx(tx_queue) => tx_queue,
+					ThreadControlMsg::StartRx(_, _) => unreachable!("TX thread received StartRx"),
+				};
 				debug!("Starting TX thread.");
 				while !stop_threads.load(Ordering::Relaxed) {
 					if tx_notifier.wait_with_timeout(UHYVE_NET_READ_TIMEOUT) {
-						match send_available_packets(&mut tx, &tx_queue, &mmap) {
+						match send_available_packets(&mut tx, &mut tx_queue, &mmap) {
 							Ok(_) => {}
 							Err(VirtIOError::QueueNotReady) => {
 								error!("Sending before queue is ready!")
@@ -323,7 +319,7 @@ impl VirtioNetPciDevice {
 		});
 
 		self.rx_thread = Some({
-			let rx_queue = self.rx_queue.clone();
+			//let mut rx_queue = self.rx_queue.take().unwrap();
 			let alert = Arc::clone(&self.isr_changed);
 			let rx_start_channel_receiver = self.rx_thread_start_channel_receiver.take().unwrap();
 			let mmap = Arc::clone(&self.guest_mmap);
@@ -331,10 +327,10 @@ impl VirtioNetPciDevice {
 
 			// reads frames from the frame queue and puts them in the virtio queue. Notifies the driver if necessary.
 			thread::spawn(move || {
-				let config = match rx_start_channel_receiver.recv().unwrap() {
+				let (mut rx_queue, config) = match rx_start_channel_receiver.recv().unwrap() {
 					ThreadControlMsg::Abort => return,
-					ThreadControlMsg::StartRx(config) => config,
-					ThreadControlMsg::StartTx => unreachable!("RX thread received StartTx"),
+					ThreadControlMsg::StartRx(rx_queue, config) => (rx_queue, config),
+					ThreadControlMsg::StartTx(_) => unreachable!("RX thread received StartTx"),
 				};
 				debug!("Starting RX thread.");
 				while !stop_threads.load(Ordering::Relaxed) {
@@ -354,15 +350,9 @@ impl VirtioNetPciDevice {
 
 					let mmap = mmap.as_ref();
 
-					match write_packet(&rx_queue, frame, mmap, &rx_notifier) {
+					match write_packet(&mut rx_queue, frame, mmap, &rx_notifier) {
 						Ok(data_sent) => {
-							if data_sent
-								&& rx_queue
-									.lock()
-									.unwrap()
-									.needs_notification(&mmap.mem)
-									.unwrap()
-							{
+							if data_sent && rx_queue.needs_notification(&mmap.mem).unwrap() {
 								alert.store(true, Ordering::Release);
 								interrupter.send_interrupt();
 							}
@@ -388,13 +378,16 @@ impl VirtioNetPciDevice {
 		debug!("Starting RX & TX Threads");
 		self.thread_start_channels
 			.0
-			.send(ThreadControlMsg::StartTx)
+			.send(ThreadControlMsg::StartTx(self.tx_queue.take().unwrap()))
 			.unwrap();
 		self.thread_start_channels
 			.1
-			.send(ThreadControlMsg::StartRx(RxThreadConfig {
-				guest_csum_offload: self.is_guest_csum_offload_negotiated(),
-			}))
+			.send(ThreadControlMsg::StartRx(
+				self.rx_queue.take().unwrap(),
+				RxThreadConfig {
+					guest_csum_offload: self.is_guest_csum_offload_negotiated(),
+				},
+			))
 			.unwrap();
 		Ok(())
 	}
@@ -451,9 +444,9 @@ impl VirtioNetPciDevice {
 		let stat = val == 1;
 
 		{
-			let mut queue = match self.header_caps.common_cfg.queue_select {
-				RX_QUEUE => self.rx_queue.lock().unwrap(),
-				TX_QUEUE => self.tx_queue.lock().unwrap(),
+			let queue = match self.header_caps.common_cfg.queue_select {
+				RX_QUEUE => self.rx_queue.as_mut().unwrap(),
+				TX_QUEUE => self.tx_queue.as_mut().unwrap(),
 				_ => {
 					panic!("Cannot enable invalid queue!")
 				}
@@ -481,9 +474,9 @@ impl VirtioNetPciDevice {
 		);
 
 		{
-			let mut queue = match self.header_caps.common_cfg.queue_select {
-				RX_QUEUE => self.rx_queue.as_ref().lock().unwrap(),
-				TX_QUEUE => self.tx_queue.as_ref().lock().unwrap(),
+			let queue = match self.header_caps.common_cfg.queue_select {
+				RX_QUEUE => self.rx_queue.as_mut().unwrap(),
+				TX_QUEUE => self.tx_queue.as_mut().unwrap(),
 				_ => panic!("Invalid queue selected!"),
 			};
 
@@ -712,13 +705,11 @@ fn complete_csum(frame: &mut [u8], eth_len: usize) {
 /// Write host-received packets to the virtio-queue.
 /// Returns true if notification must occur
 pub fn write_packet<NOTIFIER: VirtQueueNotificationWaiter>(
-	rx_queue: &Arc<Mutex<Queue>>,
+	queue: &mut Queue,
 	frame: &[u8],
 	mmap: &MmapMemory,
 	notifier: &NOTIFIER,
 ) -> Result<bool, VirtIOError> {
-	let mut queue = rx_queue.lock().unwrap();
-
 	if !queue.is_valid(&mmap.mem) {
 		error!("Queue is not valid!");
 		return Err(VirtIOError::InvalidSize);
@@ -771,7 +762,7 @@ pub fn write_packet<NOTIFIER: VirtQueueNotificationWaiter>(
 /// Sends packets from the guest to the TAP device
 pub fn send_available_packets(
 	sink: &mut dyn NetworkInterfaceTX,
-	tx_queue_locked: &Arc<Mutex<Queue>>,
+	queue: &mut Queue,
 	mem: &MmapMemory,
 ) -> std::result::Result<bool, VirtIOError> {
 	enum Sink<'a> {
@@ -779,8 +770,6 @@ pub fn send_available_packets(
 		Other(&'a mut dyn NetworkInterfaceTX),
 	}
 
-	trace!("reading frames from VM");
-	let queue = &mut tx_queue_locked.lock().unwrap();
 	if !queue.is_valid(&mem.mem) {
 		error!("Queue is not valid!");
 		return Err(VirtIOError::InvalidSize);
