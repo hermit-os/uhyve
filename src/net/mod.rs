@@ -91,6 +91,13 @@ pub(crate) trait NetworkInterfaceTX: Send {
 	/// **NOTE**: ensure the packet has the appropriate format and header.
 	/// Incorrect packets will be dropped without warning.
 	fn send(&mut self, buf: &[u8]) -> io::Result<usize>;
+
+	/// Attempts to lock the destination as a [`File`](std::fs::File) and provide a handle.
+	///
+	/// This should be faster, but makes debugging harder.
+	fn try_as_file(&mut self) -> Option<&mut std::fs::File> {
+		None
+	}
 }
 
 pub(crate) trait NetworkInterfaceRX: Send {

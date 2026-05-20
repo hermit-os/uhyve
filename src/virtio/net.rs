@@ -3,6 +3,7 @@
 use std::{
 	collections::VecDeque,
 	fmt,
+	fs::File,
 	io::{Read, Write},
 	mem,
 	sync::{
@@ -780,6 +781,11 @@ pub fn send_available_packets(
 	tx_queue_locked: &Arc<Mutex<Queue>>,
 	mem: &MmapMemory,
 ) -> std::result::Result<bool, VirtIOError> {
+	enum Sink<'a> {
+		File(&'a mut File),
+		Other(&'a mut dyn NetworkInterfaceTX),
+	}
+
 	trace!("reading frames from VM");
 	let queue = &mut tx_queue_locked.lock().unwrap();
 	if !queue.is_valid(&mem.mem) {
@@ -793,6 +799,11 @@ pub fn send_available_packets(
 	}
 
 	queue.disable_notification(&mem.mem)?;
+
+	let mut sink = match sink.try_as_file() {
+		Some(sink2) => Sink::File(sink2),
+		None => Sink::Other(sink),
+	};
 
 	let mut buff = Vec::<u8>::with_capacity(UHYVE_NET_MTU + VIRTIO_NET_HEADER_SZ);
 	while let Some(chain) = queue.iter(&mem.mem).unwrap().next() {
@@ -809,7 +820,12 @@ pub fn send_available_packets(
 			tap_frame.len() - VIRTIO_NET_HEADER_SZ
 		);
 
-		match (*sink).send(tap_frame) {
+		let res = match &mut sink {
+			Sink::File(sink) => sink.write(tap_frame),
+			Sink::Other(sink) => sink.send(tap_frame),
+		};
+
+		match res {
 			Ok(sent_len) => {
 				if sent_len != tap_frame.len() {
 					error!(
