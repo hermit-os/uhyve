@@ -1,7 +1,6 @@
 #![cfg_attr(not(target_os = "linux"), expect(unused))]
 
 use std::{
-	collections::VecDeque,
 	fmt,
 	fs::File,
 	io::{Read, Write},
@@ -28,7 +27,7 @@ use crate::{
 	params::NetworkMode,
 	pci::{IOBASE_U64, MemoryBar64, PciConfigurationAddress, PciDevice},
 	virtio::{
-		DeviceStatus, NET_DEVICE_ID, QUEUE_LIMIT,
+		DeviceStatus, NET_DEVICE_ID,
 		capabilities::{ComCfg, FeatureSelector, IsrStatus, NetDevCfg, NetDevStatus},
 		features::{UHYVE_NET_FEATURES_HIGH, UHYVE_NET_FEATURES_LOW_BASE, VIRTIO_CSUM_FEATURE},
 		pci::HeaderConf,
@@ -326,8 +325,6 @@ impl VirtioNetPciDevice {
 		self.rx_thread = Some({
 			let rx_queue = self.rx_queue.clone();
 			let alert = Arc::clone(&self.isr_changed);
-			let mut frame_queue: VecDeque<([u8; RX_FRAME_CAPACITY], usize)> =
-				VecDeque::with_capacity(QUEUE_LIMIT / 2);
 			let rx_start_channel_receiver = self.rx_thread_start_channel_receiver.take().unwrap();
 			let mmap = Arc::clone(&self.guest_mmap);
 			let stop_threads = self.stop_threads.clone();
@@ -341,23 +338,23 @@ impl VirtioNetPciDevice {
 				};
 				debug!("Starting RX thread.");
 				while !stop_threads.load(Ordering::Relaxed) {
-					let mut frame = [0u8; RX_FRAME_CAPACITY];
-					let frame_len = rx.recv(&mut frame, UHYVE_NET_READ_TIMEOUT).unwrap();
+					let mut buf = [0u8; RX_FRAME_CAPACITY];
+					let frame_len = rx.recv(&mut buf, UHYVE_NET_READ_TIMEOUT).unwrap();
 					if frame_len == 0 {
 						continue;
 					}
+					let frame = &mut buf[..frame_len];
 
 					assert!(
 						frame_len <= RX_FRAME_CAPACITY,
 						"Frame larger than receive capacity, was the device reconfigured?"
 					);
 
-					prepare_rx_frame(&mut frame, frame_len, config.guest_csum_offload);
+					prepare_rx_frame(frame, config.guest_csum_offload);
 
 					let mmap = mmap.as_ref();
-					frame_queue.push_back((frame, frame_len));
 
-					match write_packet(&rx_queue, &mut frame_queue, mmap, &rx_notifier) {
+					match write_packet(&rx_queue, frame, mmap, &rx_notifier) {
 						Ok(data_sent) => {
 							if data_sent
 								&& rx_queue
@@ -650,12 +647,8 @@ impl PciDevice for VirtioNetPciDevice {
 }
 
 /// Prepare a host-received frame for delivery to the guest virtio RX queue.
-fn prepare_rx_frame(
-	frame: &mut [u8; RX_FRAME_CAPACITY],
-	frame_len: usize,
-	guest_csum_offload: bool,
-) {
-	if frame_len < VIRTIO_NET_HEADER_SZ {
+fn prepare_rx_frame(frame: &mut [u8], guest_csum_offload: bool) {
+	if frame.len() < VIRTIO_NET_HEADER_SZ {
 		return;
 	}
 
@@ -666,19 +659,19 @@ fn prepare_rx_frame(
 
 	// when the header indicates a partial checksum and the guest does not support csum offload, we have to complete it.
 	if frame[0] & VIRTIO_NET_HDR_F_NEEDS_CSUM as u8 != 0 && !guest_csum_offload {
-		let eth_len = frame_len - VIRTIO_NET_HEADER_SZ;
+		let eth_len = frame.len() - VIRTIO_NET_HEADER_SZ;
 		complete_csum(frame, eth_len);
 	}
 }
 
-fn set_num_buffers(frame: &mut [u8; RX_FRAME_CAPACITY], num_buffers: u16) {
+fn set_num_buffers(frame: &mut [u8], num_buffers: u16) {
 	let num_buffers = num_buffers.to_le_bytes();
 	frame[10] = num_buffers[0];
 	frame[11] = num_buffers[1];
 }
 
 /// Complete a partial checksum in a network frame from the vnet_hdr information.
-fn complete_csum(frame: &mut [u8; RX_FRAME_CAPACITY], eth_len: usize) {
+fn complete_csum(frame: &mut [u8], eth_len: usize) {
 	let csum_start = usize::from(u16::from_le_bytes([frame[6], frame[7]]));
 	let csum_offset = usize::from(u16::from_le_bytes([frame[8], frame[9]]));
 
@@ -720,7 +713,7 @@ fn complete_csum(frame: &mut [u8; RX_FRAME_CAPACITY], eth_len: usize) {
 /// Returns true if notification must occur
 pub fn write_packet<NOTIFIER: VirtQueueNotificationWaiter>(
 	rx_queue: &Arc<Mutex<Queue>>,
-	frame_queue: &mut VecDeque<([u8; RX_FRAME_CAPACITY], usize)>,
+	frame: &[u8],
 	mmap: &MmapMemory,
 	notifier: &NOTIFIER,
 ) -> Result<bool, VirtIOError> {
@@ -738,37 +731,37 @@ pub fn write_packet<NOTIFIER: VirtQueueNotificationWaiter>(
 
 	queue.disable_notification(&mmap.mem)?;
 
-	for (frame, len) in frame_queue.iter() {
-		debug!("Transmitting: writing host-received frame of length {len} into virtqueue");
-		if *len < VIRTIO_NET_HEADER_SZ {
-			warn!("Dropping short host frame: {len} bytes");
-			continue;
-		}
-
-		let desc_chain;
-		loop {
-			if let Some(d) = queue.pop_descriptor_chain(&mmap.mem) {
-				desc_chain = d;
-				break;
-			}
-			queue.enable_notification(&mmap.mem)?;
-			notifier.wait_for_notify();
-			queue.disable_notification(&mmap.mem)?;
-		}
-
-		let mut writer = desc_chain.clone().writer(&mmap.mem).unwrap();
-		writer.write_all(&frame[..*len]).unwrap();
-		trace!(
-			"Transmitting: Putting index {} to used ring (next used: {}, size: {})",
-			desc_chain.head_index(),
-			queue.next_used(),
-			queue.size()
-		);
-		queue
-			.add_used(&mmap.mem, desc_chain.head_index(), *len as u32)
-			.unwrap();
+	debug!(
+		"Transmitting: writing host-received frame of length {} into virtqueue",
+		frame.len()
+	);
+	if frame.len() < VIRTIO_NET_HEADER_SZ {
+		warn!("Dropping short host frame: {} bytes", frame.len());
+		return Ok(true);
 	}
-	frame_queue.clear();
+
+	let desc_chain = loop {
+		if let Some(d) = queue.pop_descriptor_chain(&mmap.mem) {
+			break d;
+		}
+		queue.enable_notification(&mmap.mem)?;
+		notifier.wait_for_notify();
+		queue.disable_notification(&mmap.mem)?;
+	};
+
+	let head_index = desc_chain.head_index();
+	let mut writer = desc_chain.writer(&mmap.mem).unwrap();
+
+	writer.write_all(frame).unwrap();
+	trace!(
+		"Transmitting: Putting index {} to used ring (next used: {}, size: {})",
+		head_index,
+		queue.next_used(),
+		queue.size()
+	);
+	queue
+		.add_used(&mmap.mem, head_index, frame.len() as u32)
+		.unwrap();
 
 	queue.enable_notification(&mmap.mem)?;
 
