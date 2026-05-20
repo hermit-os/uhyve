@@ -24,8 +24,6 @@ pub mod features {
 use bitflags::bitflags;
 use zerocopy::{Immutable, IntoBytes};
 
-pub(crate) const QUEUE_LIMIT: usize = 256;
-
 // A virtqueue notification as described in the Virtio standard v1.2 Sec. 2.9 & 4.1.5.2.
 #[repr(C)]
 #[derive(IntoBytes, Debug, Default, Immutable)]
