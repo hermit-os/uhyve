@@ -79,7 +79,7 @@ zerocopy = { version = "0.8", features = ["derive"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 kvm-bindings = "0.14"
 kvm-ioctls = "0.24"
-landlock = "0.4.4"
+landlock = "0.4.5"
 mac_address = "1.1"
 tun-tap = { version = "0.1", default-features = false }
 vmm-sys-util = "0.15"
