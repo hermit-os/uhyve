@@ -30,6 +30,11 @@ pub enum BuildMode {
 pub const HERMIT_GATEWAY: &str = "10.0.5.2";
 pub const HERMIT_IP: &str = "10.0.5.3";
 
+#[cfg(target_arch = "aarch64")]
+pub const ARCH_NAME: &str = "aarch64";
+#[cfg(target_arch = "x86_64")]
+pub const ARCH_NAME: &str = "x86_64";
+
 /// Uses Cargo to build a kernel in the `tests/test-kernels` directory.
 /// Returns a path to the build binary.
 pub fn build_hermit_bin(kernel: impl AsRef<Path>, mode: BuildMode) -> PathBuf {
@@ -37,6 +42,8 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>, mode: BuildMode) -> PathBuf {
 	// and avoid invoking cargo twice for the same kernel
 	// if we already know it is up-to-date.
 	static BUILT_HERMIT_BINS: OnceLock<Mutex<HashMap<PathBuf, ()>>> = OnceLock::new();
+
+	let target_name = format!("{}-unknown-hermit", ARCH_NAME);
 
 	let kernel = kernel.as_ref();
 	let kernel_src_path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "tests/test-kernels"]
@@ -54,7 +61,7 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>, mode: BuildMode) -> PathBuf {
 			let mut cmd = cmd
 				.arg("build")
 				.arg("-Zbuild-std=std,panic_abort")
-				.arg("--target=x86_64-unknown-hermit")
+				.arg(format!("--target={}", target_name))
 				.arg("--bin")
 				.arg(kernel)
 				.env("HERMIT_IP", HERMIT_IP)
@@ -72,12 +79,18 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>, mode: BuildMode) -> PathBuf {
 			assert!(cmd.success(), "Test binaries could not be built.");
 		});
 
-	let p = if mode == BuildMode::Release {
-		Path::new("target/x86_64-unknown-hermit/release")
-	} else {
-		Path::new("target/x86_64-unknown-hermit/debug")
-	};
-	[&kernel_src_path, p, Path::new(kernel)].iter().collect()
+	let p = format!(
+		"target/{}/{}",
+		target_name,
+		if mode == BuildMode::Release {
+			"release"
+		} else {
+			"debug"
+		}
+	);
+	[&kernel_src_path, Path::new(&p), Path::new(kernel)]
+		.iter()
+		.collect()
 }
 
 /// Internal function for running VMs using a specific Params object.
