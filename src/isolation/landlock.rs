@@ -159,7 +159,7 @@ impl UhyveLandlockWrapper {
 					}),
 			)?
 			.set_compatibility(self.compat_level)
-			.set_no_new_privs(true)
+			.no_new_privs(true)
 			.restrict_self()?;
 
 		debug!(
