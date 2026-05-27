@@ -14,7 +14,7 @@ pub const UHYVE_PCI_CLASS_INFO: [u8; 3] = [
 	PCI_ETHERNET_SUBCLASS,
 ];
 
-pub const UHYVE_NET_MTU: usize = 1500;
+pub const UHYVE_NET_MTU: usize = 0xffff - 14;
 pub trait NetworkBackend: Sized + Debug {}
 
 // tap devices on macOS don't seem to be supported directly by Apple

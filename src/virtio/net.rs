@@ -110,6 +110,22 @@ impl fmt::Debug for VirtioNetPciDevice {
 impl VirtioNetPciDevice {
 	pub fn new(interface_cfg: NetworkMode, guest_mmap: Arc<MmapMemory>) -> VirtioNetPciDevice {
 		let mut header_caps = HeaderConf::new();
+
+		#[cfg(target_os = "linux")]
+		match &interface_cfg {
+			NetworkMode::Tap { name } => {
+				use std::{fs::read, path::Path};
+
+				let tmp = read(Path::new("/sys/class/net").join(name).join("mtu")).ok();
+				header_caps.dev.mtu = tmp
+					.as_ref()
+					.and_then(|i| str::from_utf8(i).ok())
+					.and_then(|i| i.trim().parse::<u16>().ok())
+					.unwrap_or(1500);
+				debug!("MTU: {}", header_caps.dev.mtu);
+			}
+		}
+
 		header_caps.pci_config_hdr.device_id = NET_DEVICE_ID;
 		header_caps.pci_config_hdr.base_address_registers[0] = MemoryBar64::new(IOBASE_U64);
 		header_caps.pci_config_hdr.interrupt_pin = UHYVE_IRQ_NET_PCI_PIN;

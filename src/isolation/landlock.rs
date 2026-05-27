@@ -289,7 +289,9 @@ where
 	let mut uhyve_ro_paths = vec![
 		kernel_path,
 		PathBuf::from("/etc/"),
+		PathBuf::from("/sys/class/net"),
 		PathBuf::from("/sys/devices/system"),
+		PathBuf::from("/sys/devices/virtual/net"),
 		PathBuf::from("/proc/cpuinfo"),
 		PathBuf::from("/proc/stat"),
 	];
