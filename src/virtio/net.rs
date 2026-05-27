@@ -293,7 +293,6 @@ impl VirtioNetPciDevice {
 		let (mut rx, mut tx) = std::mem::take(&mut self.iface).split();
 
 		self.tx_thread = Some({
-			//let mut tx_queue = self.tx_queue.take().unwrap();
 			let mmap = Arc::clone(&self.guest_mmap);
 			let tx_start_channel_receiver = self.tx_thread_start_channel_receiver.take().unwrap();
 			let stop_threads = self.stop_threads.clone();
@@ -319,7 +318,6 @@ impl VirtioNetPciDevice {
 		});
 
 		self.rx_thread = Some({
-			//let mut rx_queue = self.rx_queue.take().unwrap();
 			let alert = Arc::clone(&self.isr_changed);
 			let rx_start_channel_receiver = self.rx_thread_start_channel_receiver.take().unwrap();
 			let mmap = Arc::clone(&self.guest_mmap);
