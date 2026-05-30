@@ -6,12 +6,18 @@ pub(crate) mod pci;
 
 pub mod features {
 	use virtio_bindings::{
-		bindings::virtio_net::{VIRTIO_NET_F_MAC, VIRTIO_NET_F_MTU, VIRTIO_NET_F_STATUS},
+		bindings::virtio_net::{
+			VIRTIO_NET_F_CSUM, VIRTIO_NET_F_GUEST_CSUM, VIRTIO_NET_F_MAC, VIRTIO_NET_F_MTU,
+			VIRTIO_NET_F_STATUS,
+		},
 		virtio_config::VIRTIO_F_VERSION_1,
 	};
 
-	pub const UHYVE_NET_FEATURES_LOW: u32 =
-		1 << VIRTIO_NET_F_MAC | 1 << VIRTIO_NET_F_STATUS | 1 << VIRTIO_NET_F_MTU;
+	pub const UHYVE_NET_FEATURES_LOW_BASE: u32 = 1 << VIRTIO_NET_F_MAC
+		| 1 << VIRTIO_NET_F_STATUS
+		| 1 << VIRTIO_NET_F_MTU
+		| 1 << VIRTIO_NET_F_GUEST_CSUM;
+	pub const VIRTIO_CSUM_FEATURE: u32 = 1 << VIRTIO_NET_F_CSUM;
 	pub const UHYVE_NET_FEATURES_HIGH: u32 = ((1_usize << VIRTIO_F_VERSION_1) >> 32) as u32;
 }
 

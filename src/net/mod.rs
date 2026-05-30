@@ -2,6 +2,10 @@
 
 use std::{fmt::Debug, io};
 
+#[cfg(target_os = "linux")]
+use crate::net::tap::{Tap, TapRX, TapTX};
+use crate::params::NetworkMode;
+
 pub const PCI_ETHERNET_CLASS_CODE: u8 = 0x2;
 pub const PCI_ETHERNET_SUBCLASS: u8 = 0x0;
 pub const PCI_ETHERNET_PROG_IF: u8 = 0;
@@ -21,6 +25,54 @@ pub trait NetworkBackend: Sized + Debug {}
 // TODO: Let mac users investigate if this is possible.
 // #[cfg(target_os = "linux")]
 pub(crate) mod tap;
+
+/// Host network attachment opened during virtio-net device construction.
+#[derive(Default)]
+pub(crate) enum Interface {
+	#[default]
+	None,
+	#[cfg(target_os = "linux")]
+	Tap(Tap),
+}
+impl Interface {
+	pub(crate) fn from_network_mode(mode: NetworkMode) -> Self {
+		match mode {
+			NetworkMode::Tap { name } => {
+				#[cfg(target_os = "linux")]
+				{
+					Self::Tap(Tap::new(&name).expect("Could not create Tap device"))
+				}
+				#[cfg(not(target_os = "linux"))]
+				Self::None
+			}
+		}
+	}
+
+	pub(crate) fn mtu(&self) -> u16 {
+		match self {
+			Self::None => 1500,
+			#[cfg(target_os = "linux")]
+			Self::Tap(tap) => tap.mtu(),
+		}
+	}
+
+	pub(crate) fn mac_address(&self) -> [u8; 6] {
+		match self {
+			Self::None => [0; 6],
+			#[cfg(target_os = "linux")]
+			Self::Tap(tap) => tap.mac_address_as_bytes(),
+		}
+	}
+
+	#[cfg(target_os = "linux")]
+	pub(crate) fn split(self) -> (TapRX, TapTX) {
+		match self {
+			#[cfg(target_os = "linux")]
+			Self::Tap(tap) => tap.split(),
+			Self::None => panic!("cannot split absent network interface"),
+		}
+	}
+}
 
 pub(crate) trait NetworkInterface {
 	type RX: NetworkInterfaceRX;
