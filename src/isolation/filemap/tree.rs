@@ -1,11 +1,13 @@
 use std::{
-	collections::HashMap,
+	collections::{BTreeMap, HashMap},
 	ffi::OsStr,
 	fmt, fs,
 	os::unix::ffi::OsStrExt,
 	path::{Path, PathBuf},
 	sync::Arc,
 };
+
+use uhyve_interface::v2::parameters::FileType;
 
 pub(super) type Directory = HashMap<Box<str>, Node>;
 
@@ -163,6 +165,64 @@ pub fn resolve_guest_path(mut this: &Directory, guest_path: &[u8]) -> Option<Lea
 	}
 
 	None
+}
+
+fn host_file_type(path: &Path) -> FileType {
+	match fs::symlink_metadata(path) {
+		Ok(metadata) if metadata.is_dir() => FileType::Directory,
+		Ok(metadata) if metadata.is_file() => FileType::RegularFile,
+		Ok(metadata) if metadata.file_type().is_symlink() => FileType::SymbolicLink,
+		Ok(_) => FileType::Unknown,
+		Err(_) => FileType::RegularFile,
+	}
+}
+
+fn collect_dir_entries(dir: &Directory) -> BTreeMap<Box<str>, FileType> {
+	dir.iter()
+		.map(|(name, node)| {
+			let file_type = match node {
+				Node::Directory(_) => FileType::Directory,
+				Node::Leaf(Leaf::Virtual(_)) => FileType::RegularFile,
+				Node::Leaf(Leaf::OnHost(host_path)) => host_file_type(host_path),
+			};
+			(name.clone(), file_type)
+		})
+		.collect()
+}
+
+/// A guest directory backed by a host path or by mapped file-map entries.
+pub enum ResolvedDirectory {
+	Host(PathBuf),
+	Mapped(BTreeMap<Box<str>, FileType>),
+}
+
+/// Resolves a guest directory path for `getdents`.
+pub fn resolve_guest_directory(
+	mut this: &Directory,
+	guest_path: &[u8],
+) -> Result<ResolvedDirectory, ()> {
+	let guest_pathstr = prepare_guest_path(guest_path).ok_or(())?;
+
+	if !guest_pathstr.is_empty() {
+		for component in guest_pathstr.split('/') {
+			match this.get(component) {
+				None => return Err(()),
+				Some(Node::Directory(subdir)) => this = subdir,
+				Some(Node::Leaf(leaf)) => {
+					let guest_path_remainder =
+						unsafe { compute_guest_path_remainder(&guest_pathstr, component) };
+					return match leaf {
+						Leaf::OnHost(host_path) if guest_path_remainder.is_empty() => {
+							Ok(ResolvedDirectory::Host(host_path.clone()))
+						}
+						_ => Err(()),
+					};
+				}
+			}
+		}
+	}
+
+	Ok(ResolvedDirectory::Mapped(collect_dir_entries(this)))
 }
 
 /// Returns an iterator over all host directories.

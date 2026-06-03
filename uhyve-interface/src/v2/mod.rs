@@ -27,6 +27,7 @@ pub enum HypercallAddress {
 	FileRead = 0x1130,
 	FileLseek = 0x1140,
 	FileUnlink = 0x1150,
+	Getdents = 0x1160,
 	SharedMemOpen = 0x1200,
 	SharedMemClose = 0x1210,
 }
@@ -41,6 +42,7 @@ into_hypercall_addresses! {
 			FileRead,
 			FileUnlink,
 			FileWrite,
+			Getdents,
 			SerialReadBuffer,
 			SerialReadByte,
 			SerialWriteBuffer,
@@ -61,6 +63,8 @@ pub enum Hypercall<'a> {
 	FileRead(&'a mut ReadParams),
 	FileWrite(&'a mut WriteParams),
 	FileUnlink(&'a mut UnlinkParams),
+	/// Get directory entries from a directory. Similar to linux getdents64.
+	Getdents(&'a mut GetdentParams),
 	/// Write a char to the terminal.
 	SerialWriteByte(u8),
 	/// Write a buffer to the terminal
