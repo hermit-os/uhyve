@@ -118,7 +118,8 @@ fn host_path_concat_remainder(host_path: &Path, guest_path_remainder: &str) -> P
 /// Returns the [`Leaf`] corresponding to given a requested guest_path, if it can exist.
 ///
 /// * `guest_path` - The guest path that is to be looked up in the directory.
-pub fn resolve_guest_path(mut this: &Directory, guest_path: &[u8]) -> Option<Leaf> {
+/// * `follow` - resolve symbolic links in the guest filesystem
+pub fn resolve_guest_path(mut this: &Directory, guest_path: &[u8], follow: bool) -> Option<Leaf> {
 	let guest_pathstr = prepare_guest_path(guest_path)?;
 	for component in guest_pathstr.split('/') {
 		let leaf = match this.get(component) {
@@ -141,10 +142,13 @@ pub fn resolve_guest_path(mut this: &Directory, guest_path: &[u8]) -> Option<Lea
 		return match leaf {
 			Leaf::OnHost(host_path) => {
 				let host_path = host_path_concat_remainder(host_path, guest_path_remainder);
-				// Handle symbolic links
-				let resolved = match fs::canonicalize(&host_path) {
-					Ok(x) => x,
-					Err(_) => host_path,
+				let resolved = if follow {
+					match fs::canonicalize(&host_path) {
+						Ok(x) => x,
+						Err(_) => host_path,
+					}
+				} else {
+					host_path
 				};
 
 				debug!("resolve_guest_path {guest_pathstr:?}: Resolved to host path {resolved:?}");

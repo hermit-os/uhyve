@@ -144,6 +144,10 @@ impl UhyveFileDescriptorLayer {
 	pub fn get_mut(&mut self, fd: GuestFd) -> Option<&mut FdData> {
 		self.fds.get_mut(&fd.get())
 	}
+
+	pub fn get(&self, fd: GuestFd) -> Option<&FdData> {
+		self.fds.get(&fd.get())
+	}
 }
 
 impl Drop for UhyveFileDescriptorLayer {
