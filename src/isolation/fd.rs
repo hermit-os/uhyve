@@ -1,5 +1,5 @@
 use std::{
-	collections::HashMap,
+	collections::{BTreeMap, HashMap},
 	fmt,
 	hash::BuildHasherDefault,
 	os::fd::{FromRawFd, OwnedFd, RawFd},
@@ -7,6 +7,7 @@ use std::{
 };
 
 use nohash::NoHashHasher;
+use uhyve_interface::v2::parameters::FileType;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GuestFd(pub i32);
@@ -51,6 +52,12 @@ pub enum FdData {
 	///
 	/// SAFETY: It is not allowed for `data` to point into guest memory.
 	Virtual { data: Arc<[u8]>, offset: u64 },
+
+	/// A mapped guest directory (not backed by a single host `O_DIRECTORY` fd).
+	MappedDirectory {
+		entries: Arc<BTreeMap<Box<str>, FileType>>,
+		offset: u64,
+	},
 }
 
 impl fmt::Debug for FdData {
@@ -60,6 +67,9 @@ impl fmt::Debug for FdData {
 			FdData::Virtual { data, offset } => {
 				let data_snip = &data[..core::cmp::min(10, data.len())];
 				write!(f, "Virtual({data_snip:?} @ {offset})")
+			}
+			FdData::MappedDirectory { entries, offset } => {
+				write!(f, "MappedDirectory({} entries @ {offset})", entries.len())
 			}
 		}
 	}

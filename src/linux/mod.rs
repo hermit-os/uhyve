@@ -1,6 +1,7 @@
 #[cfg(target_arch = "x86_64")]
 pub mod x86_64;
 
+pub(crate) mod fs;
 pub(crate) mod gdb;
 
 pub(crate) type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;

@@ -1,6 +1,7 @@
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
 
+pub(crate) mod fs;
 pub(crate) mod gdb;
 
 use nix::sys::{

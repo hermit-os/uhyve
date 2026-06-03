@@ -1,8 +1,14 @@
-use core::cmp;
+use core::{
+	cmp,
+	mem::{align_of, offset_of},
+	ptr,
+};
 use std::{
+	collections::BTreeMap,
 	ffi::{CStr, CString, OsStr},
 	io,
 	os::{fd::IntoRawFd, unix::ffi::OsStrExt},
+	sync::Arc,
 };
 
 use uhyve_interface::{
@@ -15,10 +21,11 @@ use crate::{
 	HypervisorResult,
 	isolation::{
 		fd::{FdData, GuestFd, UhyveFileDescriptorLayer},
-		filemap::{UhyveFileMap, UhyveMapLeaf},
+		filemap::{ResolvedDirectory, UhyveFileMap, UhyveMapLeaf},
 	},
 	mem::MmapMemory,
 	net::NetworkBackend,
+	os::fs::raw_getdents,
 	params::EnvVars,
 	vcpu::VcpuStopReason,
 	virt_to_phys,
@@ -98,6 +105,7 @@ pub unsafe fn address_to_hypercall_v2(
 		HypercallAddress::SerialReadBuffer => Hypercall::SerialReadBuffer(get_data!()),
 		HypercallAddress::SerialWriteBuffer => Hypercall::SerialWriteBuffer(get_data!()),
 		HypercallAddress::SerialWriteByte => Hypercall::SerialWriteByte(data.as_u64() as u8),
+		HypercallAddress::Getdents => Hypercall::Getdents(get_data!()),
 		_ => return None,
 	})
 }
@@ -126,6 +134,9 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 		}
 		v2::Hypercall::FileUnlink(sysunlink) => {
 			unlink(&peripherals.mem, sysunlink, &mut file_mapping())
+		}
+		v2::Hypercall::Getdents(sysgetdents) => {
+			getdents(&peripherals.mem, sysgetdents, &mut file_mapping())
 		}
 		v2::Hypercall::SerialWriteByte(buf) => peripherals
 			.serial
@@ -326,6 +337,20 @@ fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap)
 		return;
 	}
 
+	if (flags & O_DIRECTORY) != 0
+		&& let Ok(ResolvedDirectory::Mapped(entries)) = file_map.resolve_guest_directory(guest_path)
+	{
+		sysopen.ret = if let Some(guest_fd) = file_map.fdmap.insert(FdData::MappedDirectory {
+			entries: Arc::new(entries),
+			offset: 0,
+		}) {
+			guest_fd.0
+		} else {
+			-ENOENT
+		};
+		return;
+	}
+
 	/// Attempts to open `host_path_c_string` with `flags` and `mode`. Inserts the fd into `fdmap`
 	/// on success and returns it, else returns the (negative) return value of the underlying `open` call.
 	fn do_open(
@@ -486,6 +511,7 @@ fn read(mem: &MmapMemory, sysread: &mut v2::parameters::ReadParams, file_map: &m
 					};
 					amt as i64
 				}
+				FdData::MappedDirectory { .. } => -EBADF as i64,
 			}
 		} else {
 			warn!("Unable to get host address for read buffer");
@@ -547,7 +573,7 @@ fn write<N: NetworkBackend>(
 			Err(io::Error::other("Bad file descriptor"))
 		}
 
-		Some(FdData::Virtual { .. }) => {
+		Some(FdData::Virtual { .. }) | Some(FdData::MappedDirectory { .. }) => {
 			// virtual fds are read-only
 			syswrite.ret = -EROFS as i64;
 			Err(io::Error::new(
@@ -612,6 +638,151 @@ fn lseek_v1(syslseek: &mut v1::parameters::LseekParams, file_map: &mut UhyveFile
 		.unwrap_or_else(|ret| panic!("Unable to fit return value {} in lseek_v1.", ret));
 }
 
+fn dirent_reclen(name_len: usize) -> usize {
+	let dirent_len = offset_of!(Dirent64, d_name) + name_len + 1;
+	dirent_len.align_up(align_of::<Dirent64>())
+}
+
+/// # Safety
+///
+/// This wraps [`mem::slice_at_mut`]. Refer to the documentation of [`mem::slice_at_mut`] for more information.
+#[expect(clippy::mut_from_ref)]
+unsafe fn getdents_guest_buffer<'a>(
+	mem: &'a MmapMemory,
+	sysgetdents: &GetdentParams,
+) -> Result<&'a mut [u8], GetdentResult> {
+	unsafe { mem.slice_at_mut(sysgetdents.buf, sysgetdents.len as usize) }.map_err(|_| {
+		warn!("Unable to get host address for getdents buffer");
+		GetdentResult::Error(EFAULT)
+	})
+}
+
+fn getdents_errno() -> GetdentResult {
+	GetdentResult::Error(translate_last_errno().unwrap_or(EIO))
+}
+
+/// Reads directory entries from a mapped (non-host) directory into the guest buffer.
+fn getdents_mapped(
+	mem: &MmapMemory,
+	sysgetdents: &mut GetdentParams,
+	entries: &BTreeMap<Box<str>, FileType>,
+	offset: &mut u64,
+) {
+	let mut skip = *offset as usize;
+	let mut iter = entries.iter();
+
+	// Advance past already-read bytes.
+	let first = loop {
+		let Some(entry) = iter.next() else {
+			sysgetdents.ret = GetdentResult::EndOfDirectory;
+			return;
+		};
+		let reclen = dirent_reclen(entry.0.len());
+		if skip >= reclen {
+			skip -= reclen;
+		} else if skip > 0 {
+			sysgetdents.ret = GetdentResult::Error(EINVAL);
+			return;
+		} else {
+			break entry;
+		}
+	};
+
+	// SAFETY: if the guest provides proper parameters, we don't have multiple aliasing. If not, the guest breaks, but Uhyve is fine.
+	let buf = match unsafe { getdents_guest_buffer(mem, sysgetdents) } {
+		Ok(buf) => buf,
+		Err(ret) => {
+			sysgetdents.ret = ret;
+			return;
+		}
+	};
+
+	let mut buf_offset = 0usize;
+	for (name, file_type) in std::iter::once(first).chain(&mut iter) {
+		let namelen = name.len();
+		let next_dirent = buf_offset + dirent_reclen(namelen);
+
+		if next_dirent > buf.len() {
+			break;
+		}
+
+		// SAFETY: `buf` is guest-owned for the duration of the hypercall and does not overlap `name`.
+		unsafe {
+			let target_dirent = buf[buf_offset..].as_mut_ptr().cast::<Dirent64>();
+			target_dirent.write(Dirent64 {
+				d_ino: 1,
+				d_off: 0,
+				d_reclen: dirent_reclen(namelen).try_into().unwrap_or(u16::MAX),
+				d_type: *file_type,
+				d_name: core::marker::PhantomData,
+			});
+			let nameptr = ptr::from_mut(&mut (*target_dirent).d_name).cast::<u8>();
+			ptr::copy_nonoverlapping(name.as_ptr(), nameptr, namelen);
+			nameptr.add(namelen).write(0);
+		}
+
+		buf_offset = next_dirent;
+	}
+
+	sysgetdents.ret = if buf_offset == 0 {
+		GetdentResult::Error(EINVAL)
+	} else {
+		*offset += buf_offset as u64;
+		GetdentResult::Success(buf_offset as u64)
+	};
+}
+
+/// Uhyve guest fd at the start of a guest [`GetdentParams`] (offset 0, per `repr(C)` layout).
+fn getdent_uhyve_fd(sysgetdents: &GetdentParams) -> GuestFd {
+	// Read at offset 0 explicitly: the fd must match what the kernel wrote, independent of
+	// any stale `uhyve-interface` rlib field placement in an incremental build.
+	let fd = unsafe {
+		core::ptr::read_unaligned(core::ptr::from_ref(sysgetdents).cast::<u8>().cast::<i32>())
+	};
+	GuestFd(fd)
+}
+
+/// Handles a getdents hypercall by proxying `getdents64(2)` on the mapped host directory fd.
+fn getdents(mem: &MmapMemory, sysgetdents: &mut GetdentParams, file_map: &mut UhyveFileMap) {
+	let gfd = getdent_uhyve_fd(sysgetdents);
+
+	match file_map.fdmap.get_mut(gfd) {
+		Some(FdData::Raw(host_fd)) => {
+			// SAFETY: if the guest provides proper parameters, we don't have multiple aliasing. If not, the guest breaks, but Uhyve is fine.
+			let buf = match unsafe { getdents_guest_buffer(mem, sysgetdents) } {
+				Ok(buf) => buf,
+				Err(ret) => {
+					sysgetdents.ret = ret;
+					return;
+				}
+			};
+
+			let bytes_read = unsafe { raw_getdents(*host_fd, buf) };
+
+			sysgetdents.ret = if bytes_read < 0 {
+				getdents_errno()
+			} else if bytes_read == 0 {
+				GetdentResult::EndOfDirectory
+			} else {
+				GetdentResult::Success(bytes_read as u64)
+			};
+		}
+		Some(FdData::MappedDirectory { entries, offset }) => {
+			getdents_mapped(mem, sysgetdents, entries, offset);
+		}
+		_ => {
+			warn!(
+				"getdents on invalid fd {gfd} (param.fd={}, buf={:#x}, len={}): {:?}",
+				sysgetdents.fd,
+				sysgetdents.buf.as_u64(),
+				sysgetdents.len,
+				file_map.fdmap,
+			);
+			sysgetdents.ret = GetdentResult::Error(EBADF);
+		}
+	}
+}
+
 /// Handles an lseek syscall on the host.
 fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 	syslseek.offset = match file_map.fdmap.get_mut(GuestFd(syslseek.fd.into_raw_fd())) {
@@ -644,6 +815,18 @@ fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 				tmp
 			}
 		}
+		Some(FdData::MappedDirectory { offset, .. }) => match syslseek.whence as i32 {
+			SEEK_SET if syslseek.offset >= 0 => {
+				*offset = syslseek.offset as u64;
+				syslseek.offset
+			}
+			SEEK_CUR if syslseek.offset >= 0 => {
+				let ret = offset.saturating_add_signed(syslseek.offset);
+				*offset = ret;
+				ret as i64
+			}
+			_ => -EINVAL as i64,
+		},
 		None => {
 			warn!("lseek attempted to use an unknown file descriptor");
 			-EBADF as i64
