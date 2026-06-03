@@ -259,7 +259,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 						drop(buf_decompressed);
 
 						let config_data = if let Some(UhyveMapLeaf::Virtual(data)) = file_mapping
-							.get_host_path(&("/".to_string() + config::Config::DEFAULT_PATH))
+							.get_host_path(&("/".to_string() + config::Config::DEFAULT_PATH), true)
 						{
 							keep_config_data = data;
 							&keep_config_data[..]
@@ -274,7 +274,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 							config::Config::V1 { kernel, .. } => kernel,
 						};
 						let raw_kernel = if let Some(UhyveMapLeaf::Virtual(data)) =
-							file_mapping.get_host_path(inner_kernel_path)
+							file_mapping.get_host_path(inner_kernel_path, true)
 						{
 							keep_kernel_data = data;
 							&keep_kernel_data[..]

@@ -125,3 +125,91 @@ pub struct GetdentParams {
 	/// Return value of the hypercall.
 	pub ret: GetdentResult,
 }
+
+/// Which stat-like operation to perform.
+#[derive(TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy, Debug)]
+#[repr(u32)]
+pub enum StatKind {
+	/// Follow symlinks (like `stat(2)`).
+	Stat = 0,
+	/// Do not follow symlinks (like `lstat(2)`).
+	LStat = 1,
+}
+
+/// Time value used in [`FileAttr`].
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+pub struct Timespec {
+	/// Seconds since the Unix epoch.
+	pub tv_sec: i64,
+	/// Nanoseconds.
+	pub tv_nsec: i32,
+}
+impl Timespec {
+	pub fn from_nsecs(secs: i64, nsecs: i64) -> Option<Self> {
+		nsecs.try_into().ok().map(|nsec| Self {
+			tv_sec: secs,
+			tv_nsec: nsec,
+		})
+	}
+}
+
+/// File metadata returned by [`FileStat`](crate::v2::Hypercall::FileStat).
+///
+/// Layout-compatible with Hermit's `FileAttr`.
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+pub struct FileAttr {
+	pub st_dev: u64,
+	pub st_ino: u64,
+	pub st_nlink: u64,
+	/// `st_mode` from POSIX (`S_IFMT` and permission bits).
+	pub st_mode: u32,
+	pub st_uid: u32,
+	pub st_gid: u32,
+	pub st_rdev: u64,
+	pub st_size: i64,
+	pub st_blksize: i64,
+	pub st_blocks: i64,
+	pub st_atim: Timespec,
+	pub st_mtim: Timespec,
+	pub st_ctim: Timespec,
+}
+
+/// Result of a [`FileStat`](crate::v2::Hypercall::FileStat) hypercall.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(C)]
+pub enum StatResult {
+	/// No result. Guests should set this value before calling the hypercall.
+	None,
+	/// [`FileAttr`] was written to `attr` on success.
+	Success,
+	/// Error with libc errno.
+	Error(i32),
+}
+
+/// Parameters for a [`FileStat`](crate::v2::Hypercall::FileStat) hypercall.
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct StatParams {
+	/// Path to stat. Must be a null-terminated UTF-8 string.
+	pub name: GuestPhysAddr,
+	/// Whether to follow symlinks on the host.
+	pub kind: StatKind,
+	/// Guest buffer to write the resulting [`FileAttr`] into.
+	pub attr: GuestPhysAddr,
+	/// Return value of the hypercall.
+	pub ret: StatResult,
+}
+
+/// Parameters for a [`FileFstat`](crate::v2::Hypercall::FileFstat) hypercall.
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct FstatParams {
+	/// Guest file descriptor (from [`FileOpen`](crate::v2::Hypercall::FileOpen)).
+	pub fd: i32,
+	/// Guest buffer to write the resulting [`FileAttr`] into.
+	pub attr: GuestPhysAddr,
+	/// Return value of the hypercall.
+	pub ret: StatResult,
+}

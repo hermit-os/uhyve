@@ -123,11 +123,9 @@ impl UhyveFileMap {
 		Ok(())
 	}
 
-	/// Returns the host_path on the host filesystem given a requested guest_path, if it exists.
-	///
-	/// * `guest_path` - The guest path that is to be looked up in the map.
-	pub fn get_host_path(&self, guest_path: &str) -> Option<UhyveMapLeaf> {
-		tree::resolve_guest_path(&self.root, guest_path.as_bytes())
+	/// Resolves a guest path to a file-map leaf.
+	pub fn get_host_path(&self, guest_path: &str, follow: bool) -> Option<UhyveMapLeaf> {
+		tree::resolve_guest_path(&self.root, guest_path.as_bytes(), follow)
 	}
 
 	/// Resolves a guest directory path for `getdents`.

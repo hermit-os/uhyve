@@ -28,6 +28,8 @@ pub enum HypercallAddress {
 	FileLseek = 0x1140,
 	FileUnlink = 0x1150,
 	Getdents = 0x1160,
+	FileStat = 0x1170,
+	FileFstat = 0x1180,
 	SharedMemOpen = 0x1200,
 	SharedMemClose = 0x1210,
 }
@@ -43,6 +45,8 @@ into_hypercall_addresses! {
 			FileUnlink,
 			FileWrite,
 			Getdents,
+			FileStat,
+			FileFstat,
 			SerialReadBuffer,
 			SerialReadByte,
 			SerialWriteBuffer,
@@ -65,6 +69,10 @@ pub enum Hypercall<'a> {
 	FileUnlink(&'a mut UnlinkParams),
 	/// Get directory entries from a directory. Similar to linux getdents64.
 	Getdents(&'a mut GetdentParams),
+	/// Read file metadata. Similar to `stat(2)` / `lstat(2)`.
+	FileStat(&'a mut StatParams),
+	/// Read file metadata for an open descriptor. Similar to `fstat(2)`.
+	FileFstat(&'a mut FstatParams),
 	/// Write a char to the terminal.
 	SerialWriteByte(u8),
 	/// Write a buffer to the terminal
