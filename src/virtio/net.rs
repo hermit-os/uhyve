@@ -308,7 +308,7 @@ impl VirtioNetPciDevice {
 		self.rx_thread = Some({
 			let rx_queue = self.rx_queue.clone();
 			let alert = Arc::clone(&self.isr_changed);
-			let mut frame_queue: VecDeque<([u8; 1500], usize)> =
+			let mut frame_queue: VecDeque<([u8; UHYVE_NET_MTU], usize)> =
 				VecDeque::with_capacity(QUEUE_LIMIT / 2);
 			let rx_start_channel_receiver = self.rx_thread_start_channel_receiver.take().unwrap();
 			let mmap = Arc::clone(&self.guest_mmap);
