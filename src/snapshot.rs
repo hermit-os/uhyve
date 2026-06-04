@@ -69,6 +69,18 @@ impl GuestSnapshotStore {
 		}
 	}
 
+	#[allow(private_bounds)]
+	pub fn save_to_disk<B: VirtualizationBackendInternal + Send + 'static>(
+		&self,
+		path: &Path,
+	) -> HypervisorResult<()> {
+		let snapshot = self.take_snapshot::<B>();
+		let snapshot_bytes =
+			bitcode::serialize(&snapshot).map_err(HypervisorError::SnapshotSerialize)?;
+		fs::write(path, snapshot_bytes).map_err(HypervisorError::IOError)?;
+		Ok(())
+	}
+
 	pub fn snapshot_ready(&self) -> bool {
 		self.inner.lock().unwrap().is_some()
 	}
