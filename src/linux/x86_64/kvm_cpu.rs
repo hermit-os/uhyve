@@ -461,6 +461,9 @@ impl VirtualCPU for KvmCpu {
 						}
 					}
 					VcpuExit::Shutdown => {
+						if let Some(s) = self.stats.as_mut() {
+							s.increment_val(VmExit::Shutdown)
+						}
 						return Ok(VcpuStopReason::Exit(0));
 					}
 					VcpuExit::IoIn(port, addr) => {
