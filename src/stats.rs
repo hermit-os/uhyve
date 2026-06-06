@@ -20,6 +20,7 @@ pub enum HypercallAddresses {
 /// Possible causes a VM exit (guest -> host transition)
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum VmExit {
+	Shutdown,
 	MMIORead,
 	MMIOWrite,
 	PCIRead,
