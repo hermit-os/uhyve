@@ -11,6 +11,7 @@ jobs:
   test:
     name: Test
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -28,6 +29,7 @@ jobs:
   integration-tests:
     name: Integration Tests
     runs-on: [self-hosted]
+    timeout-minutes: 10
     steps:
       - name: Install gdb, libclang
         run: |
@@ -40,11 +42,12 @@ jobs:
         with:
           toolchain-file: 'tests/test-kernels/rust-toolchain.toml'
       - name: Integration Tests
-        run: timeout 15m cargo test --test '*' --no-fail-fast
+        run: cargo test --test '*' --no-fail-fast
 
   run_images:
     name: Run images
     runs-on: [self-hosted]
+    timeout-minutes: 10
     steps:
       - name: Install libclang
         run: |
@@ -87,6 +90,7 @@ jobs:
 
   clippy:
     name: Clippy
+    timeout-minutes: 10
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -111,6 +115,7 @@ jobs:
   clippy-test-kernel:
     name: Clippy test-kernels
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -125,6 +130,7 @@ jobs:
   coverage:
     name: Coverage
     runs-on: [self-hosted]
+    timeout-minutes: 10
     steps:
       - name: Install gdb, libclang
         run: |
