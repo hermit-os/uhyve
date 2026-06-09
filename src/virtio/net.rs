@@ -324,6 +324,9 @@ impl VirtioNetPciDevice {
 				while !stop_threads.load(Ordering::Relaxed) {
 					let mut buf = [0u8; UHYVE_NET_MTU];
 					let len = rx.recv(&mut buf, UHYVE_NET_READ_TIMEOUT).unwrap();
+					if len == 0 {
+						continue;
+					}
 					let mmap = mmap.as_ref();
 					frame_queue.push_back((buf, len));
 
