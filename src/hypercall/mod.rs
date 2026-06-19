@@ -1,20 +1,13 @@
-use core::{
-	cmp,
-	mem::{align_of, offset_of},
-	ptr,
-};
+use core::cmp;
 use std::{
-	collections::BTreeMap,
 	ffi::{CStr, CString, OsStr},
 	io,
-	os::{
-		fd::{IntoRawFd, RawFd},
-		unix::ffi::OsStrExt,
-	},
+	os::{fd::IntoRawFd, unix::ffi::OsStrExt},
 	sync::Arc,
 };
 
-use align_address::Align;
+use fstat::{fstat, stat};
+use getdents::getdents;
 use uhyve_interface::{
 	GuestPhysAddr,
 	v1::{self, MAX_ARGC_ENVC},
@@ -29,12 +22,14 @@ use crate::{
 	},
 	mem::MmapMemory,
 	net::NetworkBackend,
-	os::fs::raw_getdents,
 	params::EnvVars,
 	vcpu::VcpuStopReason,
 	virt_to_phys,
 	vm::{KernelInfo, VmPeripherals},
 };
+
+mod fstat;
+mod getdents;
 
 /// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
 /// parameter that was sent to that address by the guest.
@@ -288,133 +283,6 @@ fn translate_last_errno() -> Option<i32> {
 unsafe fn decode_guest_path(mem: &MmapMemory, path_addr: GuestPhysAddr) -> Option<&str> {
 	let requested_path_ptr = mem.host_address(path_addr).unwrap() as *const i8;
 	unsafe { CStr::from_ptr(requested_path_ptr) }.to_str().ok()
-}
-
-fn virtual_file_attr(data: &[u8]) -> FileAttr {
-	FileAttr {
-		st_mode: (libc::S_IFREG | 0o444).into(),
-		st_nlink: 1,
-		st_size: data.len().try_into().unwrap_or(i64::MAX),
-		st_blksize: 4096,
-		st_blocks: (data.len() as i64).saturating_add(511) / 512,
-		..Default::default()
-	}
-}
-
-fn mapped_directory_attr() -> FileAttr {
-	FileAttr {
-		st_mode: (libc::S_IFDIR | 0o755).into(),
-		st_nlink: 2,
-		st_blksize: 4096,
-		..Default::default()
-	}
-}
-
-fn host_stat_path(path: &std::path::Path, kind: StatKind) -> Result<FileAttr, i32> {
-	let path = CString::new(path.as_os_str().as_bytes()).map_err(|_| EINVAL)?;
-	let mut st = unsafe { core::mem::zeroed() };
-	let ret = unsafe {
-		match kind {
-			StatKind::Stat => libc::stat(path.as_c_str().as_ptr(), &mut st),
-			StatKind::LStat => libc::lstat(path.as_c_str().as_ptr(), &mut st),
-		}
-	};
-	if ret < 0 {
-		return Err(translate_last_errno().unwrap_or(EIO));
-	}
-	Ok(crate::os::fs::host_stat_to_file_attr(st))
-}
-
-fn host_fstat(fd: RawFd) -> Result<FileAttr, i32> {
-	let mut st = unsafe { core::mem::zeroed() };
-	let ret = unsafe { libc::fstat(fd, &mut st) };
-	if ret < 0 {
-		return Err(translate_last_errno().unwrap_or(EIO));
-	}
-	Ok(crate::os::fs::host_stat_to_file_attr(st))
-}
-
-fn fstat_attr_for_fd_data(fdata: &FdData) -> Result<FileAttr, i32> {
-	match fdata {
-		FdData::Raw(fd) => host_fstat(*fd),
-		FdData::Virtual { data, .. } => Ok(virtual_file_attr(data)),
-		FdData::MappedDirectory { .. } => Ok(mapped_directory_attr()),
-	}
-}
-
-fn write_stat_attr(mem: &MmapMemory, attr_addr: GuestPhysAddr, attr: FileAttr) -> StatResult {
-	match unsafe { mem.get_ref_mut(attr_addr) } {
-		Ok(guest_attr) => {
-			*guest_attr = attr;
-			StatResult::Success
-		}
-		Err(_) => {
-			warn!("Unable to get host address for stat buffer");
-			StatResult::Error(EFAULT)
-		}
-	}
-}
-
-/// Handles a stat/lstat hypercall.
-fn stat(mem: &MmapMemory, sysstat: &mut StatParams, file_map: &UhyveFileMap) {
-	let guest_path = if let Some(guest_path) = unsafe { decode_guest_path(mem, sysstat.name) } {
-		guest_path
-	} else {
-		error!("The kernel requested stat() on a non-UTF8 path: Rejecting...");
-		sysstat.ret = StatResult::Error(EINVAL);
-		return;
-	};
-
-	let attr = match sysstat.kind {
-		StatKind::Stat => file_map.get_host_path(guest_path, true),
-		StatKind::LStat => file_map.get_host_path(guest_path, false),
-	}
-	.map(|leaf| match leaf {
-		UhyveMapLeaf::OnHost(host_path) => host_stat_path(&host_path, sysstat.kind),
-		UhyveMapLeaf::Virtual(data) => Ok(virtual_file_attr(&data)),
-	})
-	.or_else(|| {
-		file_map
-			.resolve_guest_directory(guest_path)
-			.ok()
-			.map(|resolved| match resolved {
-				ResolvedDirectory::Host(host_path) => host_stat_path(&host_path, sysstat.kind),
-				ResolvedDirectory::Mapped(_) => Ok(mapped_directory_attr()),
-			})
-	});
-
-	sysstat.ret = match attr {
-		Some(Ok(attr)) => write_stat_attr(mem, sysstat.attr, attr),
-		Some(Err(errno)) => StatResult::Error(errno),
-		None => {
-			debug!("stat {guest_path:?}: path not found in file map");
-			StatResult::Error(ENOENT)
-		}
-	}
-}
-
-/// Handles an fstat hypercall.
-fn fstat(mem: &MmapMemory, sysfstat: &mut FstatParams, file_map: &UhyveFileMap) {
-	if sysfstat.fd < 0 {
-		sysfstat.ret = StatResult::Error(EBADF);
-		return;
-	}
-	let gfd = GuestFd(sysfstat.fd);
-	// Stdio fds are not guest-managed; fstat would leak host metadata (st_dev, st_rdev, …).
-	if gfd.is_standard() {
-		sysfstat.ret = StatResult::Error(EBADF);
-		return;
-	}
-	let attr = file_map.fdmap.get(gfd).map(fstat_attr_for_fd_data);
-
-	match attr {
-		Some(Ok(attr)) => sysfstat.ret = write_stat_attr(mem, sysfstat.attr, attr),
-		Some(Err(errno)) => sysfstat.ret = StatResult::Error(errno),
-		None => {
-			debug!("fstat on invalid fd {gfd}");
-			sysfstat.ret = StatResult::Error(EBADF);
-		}
-	}
 }
 
 /// unlink deletes a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
@@ -771,151 +639,6 @@ fn lseek_v1(syslseek: &mut v1::parameters::LseekParams, file_map: &mut UhyveFile
 		.offset
 		.try_into()
 		.unwrap_or_else(|ret| panic!("Unable to fit return value {} in lseek_v1.", ret));
-}
-
-fn dirent_reclen(name_len: usize) -> usize {
-	let dirent_len = offset_of!(Dirent64, d_name) + name_len + 1;
-	dirent_len.align_up(align_of::<Dirent64>())
-}
-
-/// # Safety
-///
-/// This wraps [`mem::slice_at_mut`]. Refer to the documentation of [`mem::slice_at_mut`] for more information.
-#[expect(clippy::mut_from_ref)]
-unsafe fn getdents_guest_buffer<'a>(
-	mem: &'a MmapMemory,
-	sysgetdents: &GetdentParams,
-) -> Result<&'a mut [u8], GetdentResult> {
-	unsafe { mem.slice_at_mut(sysgetdents.buf, sysgetdents.len as usize) }.map_err(|_| {
-		warn!("Unable to get host address for getdents buffer");
-		GetdentResult::Error(EFAULT)
-	})
-}
-
-fn getdents_errno() -> GetdentResult {
-	GetdentResult::Error(translate_last_errno().unwrap_or(EIO))
-}
-
-/// Reads directory entries from a mapped (non-host) directory into the guest buffer.
-fn getdents_mapped(
-	mem: &MmapMemory,
-	sysgetdents: &mut GetdentParams,
-	entries: &BTreeMap<Box<str>, FileType>,
-	offset: &mut u64,
-) {
-	let mut skip = *offset as usize;
-	let mut iter = entries.iter();
-
-	// Advance past already-read bytes.
-	let first = loop {
-		let Some(entry) = iter.next() else {
-			sysgetdents.ret = GetdentResult::EndOfDirectory;
-			return;
-		};
-		let reclen = dirent_reclen(entry.0.len());
-		if skip >= reclen {
-			skip -= reclen;
-		} else if skip > 0 {
-			sysgetdents.ret = GetdentResult::Error(EINVAL);
-			return;
-		} else {
-			break entry;
-		}
-	};
-
-	// SAFETY: if the guest provides proper parameters, we don't have multiple aliasing. If not, the guest breaks, but Uhyve is fine.
-	let buf = match unsafe { getdents_guest_buffer(mem, sysgetdents) } {
-		Ok(buf) => buf,
-		Err(ret) => {
-			sysgetdents.ret = ret;
-			return;
-		}
-	};
-
-	let mut buf_offset = 0usize;
-	for (name, file_type) in std::iter::once(first).chain(&mut iter) {
-		let namelen = name.len();
-		let next_dirent = buf_offset + dirent_reclen(namelen);
-
-		if next_dirent > buf.len() {
-			break;
-		}
-
-		// SAFETY: `buf` is guest-owned for the duration of the hypercall and does not overlap `name`.
-		unsafe {
-			let target_dirent = buf[buf_offset..].as_mut_ptr().cast::<Dirent64>();
-			target_dirent.write(Dirent64 {
-				d_ino: 1,
-				d_off: 0,
-				d_reclen: dirent_reclen(namelen).try_into().unwrap_or(u16::MAX),
-				d_type: *file_type,
-				d_name: core::marker::PhantomData,
-			});
-			let nameptr = ptr::from_mut(&mut (*target_dirent).d_name).cast::<u8>();
-			ptr::copy_nonoverlapping(name.as_ptr(), nameptr, namelen);
-			nameptr.add(namelen).write(0);
-		}
-
-		buf_offset = next_dirent;
-	}
-
-	sysgetdents.ret = if buf_offset == 0 {
-		GetdentResult::Error(EINVAL)
-	} else {
-		*offset += buf_offset as u64;
-		GetdentResult::Success(buf_offset as u64)
-	};
-}
-
-/// Uhyve guest fd at the start of a guest [`GetdentParams`] (offset 0, per `repr(C)` layout).
-fn getdent_uhyve_fd(sysgetdents: &GetdentParams) -> GuestFd {
-	// Read at offset 0 explicitly: the fd must match what the kernel wrote, independent of
-	// any stale `uhyve-interface` rlib field placement in an incremental build.
-	let fd = unsafe {
-		core::ptr::read_unaligned(core::ptr::from_ref(sysgetdents).cast::<u8>().cast::<i32>())
-	};
-	GuestFd(fd)
-}
-
-/// Handles a getdents hypercall by proxying `getdents64(2)` on the mapped host directory fd.
-fn getdents(mem: &MmapMemory, sysgetdents: &mut GetdentParams, file_map: &mut UhyveFileMap) {
-	let gfd = getdent_uhyve_fd(sysgetdents);
-
-	match file_map.fdmap.get_mut(gfd) {
-		Some(FdData::Raw(host_fd)) => {
-			// SAFETY: if the guest provides proper parameters, we don't have multiple aliasing. If not, the guest breaks, but Uhyve is fine.
-			let buf = match unsafe { getdents_guest_buffer(mem, sysgetdents) } {
-				Ok(buf) => buf,
-				Err(ret) => {
-					sysgetdents.ret = ret;
-					return;
-				}
-			};
-
-			let bytes_read = unsafe { raw_getdents(*host_fd, buf) };
-
-			sysgetdents.ret = if bytes_read < 0 {
-				getdents_errno()
-			} else if bytes_read == 0 {
-				GetdentResult::EndOfDirectory
-			} else {
-				GetdentResult::Success(bytes_read as u64)
-			};
-		}
-		Some(FdData::MappedDirectory { entries, offset }) => {
-			getdents_mapped(mem, sysgetdents, entries, offset);
-		}
-		_ => {
-			warn!(
-				"getdents on invalid fd {gfd} (param.fd={}, buf={:#x}, len={}): {:?}",
-				sysgetdents.fd,
-				sysgetdents.buf.as_u64(),
-				sysgetdents.len,
-				file_map.fdmap,
-			);
-			sysgetdents.ret = GetdentResult::Error(EBADF);
-		}
-	}
 }
 
 /// Handles an lseek syscall on the host.
