@@ -406,7 +406,9 @@ impl VirtioNetPciDevice {
 	}
 
 	pub fn read_net_status(&self, data: &mut [u8]) {
-		data.copy_from_slice(&self.header_caps.dev.status.bits().to_le_bytes())
+		let bytes = self.header_caps.dev.status.bits().to_le_bytes();
+		let len = data.len().min(bytes.len());
+		data[..len].copy_from_slice(&bytes[..len]);
 	}
 
 	pub fn read_mtu(&self, data: &mut [u8]) {
