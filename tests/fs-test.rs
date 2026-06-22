@@ -14,7 +14,10 @@ use common::{
 };
 use rand::{RngExt, distr::Alphanumeric};
 use tempfile::TempDir;
-use uhyvelib::{params::Params, vm::UhyveVm};
+use uhyvelib::{
+	params::{Output, Params},
+	vm::UhyveVm,
+};
 
 /// Verifies successful file creation on the host OS and its contents.
 pub fn verify_file_equals(testfile: &PathBuf, contents: &str) {
@@ -134,6 +137,7 @@ fn generate_params(
 			test_name,
 			&guest_path.unwrap_or(PathBuf::from("./no_guest_path_needed")),
 		),
+		output: Output::Buffer,
 		..Default::default()
 	}
 }
