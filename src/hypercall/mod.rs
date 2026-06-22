@@ -1,8 +1,10 @@
 use core::cmp;
 use std::{
+	collections::BTreeMap,
 	ffi::{CStr, CString, OsStr},
-	io,
+	fs, io,
 	os::{fd::IntoRawFd, unix::ffi::OsStrExt},
+	path::Path,
 	sync::Arc,
 };
 
@@ -11,14 +13,17 @@ use getdents::getdents;
 use uhyve_interface::{
 	GuestPhysAddr,
 	v1::{self, MAX_ARGC_ENVC},
-	v2::{self, parameters::*},
+	v2::{
+		self,
+		parameters::{FileType, *},
+	},
 };
 
 use crate::{
 	HypervisorResult,
 	isolation::{
 		fd::{FdData, GuestFd, UhyveFileDescriptorLayer},
-		filemap::{ResolvedDirectory, UhyveFileMap, UhyveMapLeaf},
+		filemap::{Directory, Node, NodeStatRef, UhyveFileMap, UhyveMapLeaf},
 	},
 	mem::MmapMemory,
 	net::NetworkBackend,
@@ -285,6 +290,29 @@ unsafe fn decode_guest_path(mem: &MmapMemory, path_addr: GuestPhysAddr) -> Optio
 	unsafe { CStr::from_ptr(requested_path_ptr) }.to_str().ok()
 }
 
+fn collect_dir_entries(dir: &Directory) -> BTreeMap<Box<str>, FileType> {
+	fn host_file_type(path: &Path) -> FileType {
+		match fs::symlink_metadata(path) {
+			Ok(metadata) if metadata.is_dir() => FileType::Directory,
+			Ok(metadata) if metadata.is_file() => FileType::RegularFile,
+			Ok(metadata) if metadata.file_type().is_symlink() => FileType::SymbolicLink,
+			Ok(_) => FileType::Unknown,
+			Err(_) => FileType::RegularFile,
+		}
+	}
+
+	dir.iter()
+		.map(|(name, node)| {
+			let file_type = match node {
+				Node::Directory(_) => FileType::Directory,
+				Node::Leaf(UhyveMapLeaf::Virtual(_)) => FileType::RegularFile,
+				Node::Leaf(UhyveMapLeaf::OnHost(host_path)) => host_file_type(host_path),
+			};
+			(name.clone(), file_type)
+		})
+		.collect()
+}
+
 /// unlink deletes a name from the filesystem. This is used to handle `unlink` syscalls from the guest.
 ///
 /// Note for when using Landlock: Unlinking files results in them being veiled. If a
@@ -340,20 +368,6 @@ fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap)
 		return;
 	}
 
-	if (flags & O_DIRECTORY) != 0
-		&& let Ok(ResolvedDirectory::Mapped(entries)) = file_map.resolve_guest_directory(guest_path)
-	{
-		sysopen.ret = if let Some(guest_fd) = file_map.fdmap.insert(FdData::MappedDirectory {
-			entries: Arc::new(entries),
-			offset: 0,
-		}) {
-			guest_fd.0
-		} else {
-			-ENOENT
-		};
-		return;
-	}
-
 	/// Attempts to open `host_path_c_string` with `flags` and `mode`. Inserts the fd into `fdmap`
 	/// on success and returns it, else returns the (negative) return value of the underlying `open` call.
 	fn do_open(
@@ -376,16 +390,16 @@ fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap)
 		}
 	}
 
-	sysopen.ret = if let Some(host_path) = file_map.get_host_path(guest_path, true) {
+	sysopen.ret = if let Some(host_node) = file_map.get_host_stat_node(guest_path, true) {
 		debug!("{guest_path:#?} found in file map.");
-		match host_path {
-			UhyveMapLeaf::OnHost(host_path) => {
+		match host_node {
+			NodeStatRef::OnHost(host_path) => {
 				// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 				// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 				let host_path_c_string = CString::new(host_path.as_os_str().as_bytes()).unwrap();
 				do_open(&mut file_map.fdmap, host_path_c_string, flags, sysopen.mode)
 			}
-			UhyveMapLeaf::Virtual(data) => {
+			NodeStatRef::VirtualFile(data) => {
 				if let Some(guest_fd) = file_map.fdmap.insert(FdData::Virtual {
 					// The following only clones a pointer, and increases an `Arc` refcount.
 					data: data.clone(),
@@ -394,6 +408,21 @@ fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap)
 					guest_fd.0
 				} else {
 					-ENOENT
+				}
+			}
+			NodeStatRef::VirtualDirectory(dir) => {
+				if (flags & O_DIRECTORY) != 0 {
+					if let Some(guest_fd) = file_map.fdmap.insert(FdData::MappedDirectory {
+						entries: Arc::new(collect_dir_entries(dir)),
+						offset: 0,
+					}) {
+						guest_fd.0
+					} else {
+						-ENOENT
+					}
+				} else {
+					debug!("{guest_path:#?}: Tried to open directory as file...");
+					-EINVAL
 				}
 			}
 		}

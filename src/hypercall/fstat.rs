@@ -9,7 +9,7 @@ use crate::{
 	hypercall::{decode_guest_path, translate_last_errno},
 	isolation::{
 		fd::{FdData, GuestFd},
-		filemap::{ResolvedDirectory, UhyveFileMap, UhyveMapLeaf},
+		filemap::{NodeStatRef, UhyveFileMap},
 	},
 	mem::MmapMemory,
 };
@@ -82,59 +82,47 @@ fn write_stat_attr(mem: &MmapMemory, attr_addr: GuestPhysAddr, attr: FileAttr) -
 
 /// Handles a stat/lstat hypercall.
 pub(crate) fn stat(mem: &MmapMemory, sysstat: &mut StatParams, file_map: &UhyveFileMap) {
-	let Some(guest_path) = (unsafe { decode_guest_path(mem, sysstat.name) }) else {
-		error!("The kernel requested stat() on a non-UTF8 path: Rejecting...");
-		sysstat.ret = StatResult::Error(EINVAL);
-		return;
-	};
-
-	sysstat.ret = match file_map
-		.get_host_path(guest_path, matches!(sysstat.kind, StatKind::Stat))
-		.map(|leaf| match leaf {
-			UhyveMapLeaf::OnHost(host_path) => host_stat_path(&host_path, sysstat.kind),
-			UhyveMapLeaf::Virtual(data) => Ok(virtual_file_attr(&data)),
+	sysstat.ret = unsafe { decode_guest_path(mem, sysstat.name) }
+		.ok_or_else(|| {
+			error!("The kernel requested stat() on a non-UTF8 path: Rejecting...");
+			EINVAL
 		})
-		.or_else(|| {
+		.and_then(|guest_path| {
 			file_map
-				.resolve_guest_directory(guest_path)
-				.ok()
-				.map(|resolved| match resolved {
-					ResolvedDirectory::Host(host_path) => host_stat_path(&host_path, sysstat.kind),
-					ResolvedDirectory::Mapped(_) => Ok(mapped_directory_attr()),
+				.get_host_stat_node(guest_path, matches!(sysstat.kind, StatKind::Stat))
+				.ok_or_else(|| {
+					debug!("stat {guest_path:?}: path not found in file map");
+					ENOENT
 				})
 		})
-		.unwrap_or(Err(ENOENT))
-	{
-		Ok(attr) => write_stat_attr(mem, sysstat.attr, attr),
-		Err(errno) => {
-			if errno == ENOENT {
-				debug!("stat {guest_path:?}: path not found in file map");
-			}
-			StatResult::Error(errno)
-		}
-	};
+		.and_then(|node| match node {
+			NodeStatRef::VirtualDirectory(_) => Ok(mapped_directory_attr()),
+			NodeStatRef::VirtualFile(v) => Ok(virtual_file_attr(v)),
+			NodeStatRef::OnHost(host_path) => host_stat_path(&host_path, sysstat.kind),
+		})
+		.map_or_else(StatResult::Error, |attr| {
+			write_stat_attr(mem, sysstat.attr, attr)
+		});
 }
 
 /// Handles an fstat hypercall.
 pub(crate) fn fstat(mem: &MmapMemory, sysfstat: &mut FstatParams, file_map: &UhyveFileMap) {
-	if sysfstat.fd < 0 {
-		sysfstat.ret = StatResult::Error(EBADF);
-		return;
-	}
 	let gfd = GuestFd(sysfstat.fd);
 	// Stdio fds are not guest-managed; fstat would leak host metadata (st_dev, st_rdev, …).
-	if gfd.is_standard() {
+	if sysfstat.fd < 0 || gfd.is_standard() {
 		sysfstat.ret = StatResult::Error(EBADF);
 		return;
 	}
-	let attr = file_map.fdmap.get(gfd).map(fstat_attr_for_fd_data);
 
-	sysfstat.ret = match attr {
-		Some(Ok(attr)) => write_stat_attr(mem, sysfstat.attr, attr),
-		Some(Err(errno)) => StatResult::Error(errno),
-		None => {
+	sysfstat.ret = file_map
+		.fdmap
+		.get(gfd)
+		.ok_or_else(|| {
 			debug!("fstat on invalid fd {gfd}");
-			StatResult::Error(EBADF)
-		}
-	}
+			EBADF
+		})
+		.and_then(fstat_attr_for_fd_data)
+		.map_or_else(StatResult::Error, |attr| {
+			write_stat_attr(mem, sysfstat.attr, attr)
+		});
 }

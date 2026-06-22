@@ -12,7 +12,7 @@ use crate::isolation::{
 mod tests;
 mod tree;
 
-pub use tree::{Leaf as UhyveMapLeaf, ResolvedDirectory};
+pub(crate) use tree::{Directory, Leaf as UhyveMapLeaf, Node, NodeStatRef};
 
 /// Defines cache-related behaviors that will be forced upon [`crate::hypercall::open`],
 /// primarily useful for e.g. I/O benchmarking.
@@ -128,9 +128,13 @@ impl UhyveFileMap {
 		tree::resolve_guest_path(&self.root, guest_path.as_bytes(), follow)
 	}
 
-	/// Resolves a guest directory path for `getdents`.
-	pub fn resolve_guest_directory(&self, guest_path: &str) -> Result<tree::ResolvedDirectory, ()> {
-		tree::resolve_guest_directory(&self.root, guest_path.as_bytes())
+	/// Resolves a guest path to a file-map node.
+	pub(crate) fn get_host_stat_node(
+		&self,
+		guest_path: &str,
+		follow: bool,
+	) -> Option<NodeStatRef<'_>> {
+		tree::resolve_guest_stat_node(&self.root, guest_path.as_bytes(), follow)
 	}
 
 	/// Returns an array of all host paths (for Landlock).
