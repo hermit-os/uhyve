@@ -36,11 +36,12 @@ fn mapped_directory_attr() -> FileAttr {
 
 fn host_stat_path(path: &std::path::Path, kind: StatKind) -> Result<FileAttr, i32> {
 	let path = CString::new(path.as_os_str().as_bytes()).map_err(|_| EINVAL)?;
+	let path = path.as_c_str().as_ptr();
 	let mut st = unsafe { core::mem::zeroed() };
 	let ret = unsafe {
 		match kind {
-			StatKind::Stat => libc::stat(path.as_c_str().as_ptr(), &mut st),
-			StatKind::LStat => libc::lstat(path.as_c_str().as_ptr(), &mut st),
+			StatKind::Stat => libc::stat(path, &mut st),
+			StatKind::LStat => libc::lstat(path, &mut st),
 		}
 	};
 	if ret < 0 {
@@ -81,40 +82,37 @@ fn write_stat_attr(mem: &MmapMemory, attr_addr: GuestPhysAddr, attr: FileAttr) -
 
 /// Handles a stat/lstat hypercall.
 pub(crate) fn stat(mem: &MmapMemory, sysstat: &mut StatParams, file_map: &UhyveFileMap) {
-	let guest_path = if let Some(guest_path) = unsafe { decode_guest_path(mem, sysstat.name) } {
-		guest_path
-	} else {
+	let Some(guest_path) = (unsafe { decode_guest_path(mem, sysstat.name) }) else {
 		error!("The kernel requested stat() on a non-UTF8 path: Rejecting...");
 		sysstat.ret = StatResult::Error(EINVAL);
 		return;
 	};
 
-	let attr = match sysstat.kind {
-		StatKind::Stat => file_map.get_host_path(guest_path, true),
-		StatKind::LStat => file_map.get_host_path(guest_path, false),
-	}
-	.map(|leaf| match leaf {
-		UhyveMapLeaf::OnHost(host_path) => host_stat_path(&host_path, sysstat.kind),
-		UhyveMapLeaf::Virtual(data) => Ok(virtual_file_attr(&data)),
-	})
-	.or_else(|| {
-		file_map
-			.resolve_guest_directory(guest_path)
-			.ok()
-			.map(|resolved| match resolved {
-				ResolvedDirectory::Host(host_path) => host_stat_path(&host_path, sysstat.kind),
-				ResolvedDirectory::Mapped(_) => Ok(mapped_directory_attr()),
-			})
-	});
-
-	match attr {
-		Some(Ok(attr)) => sysstat.ret = write_stat_attr(mem, sysstat.attr, attr),
-		Some(Err(errno)) => sysstat.ret = StatResult::Error(errno),
-		None => {
-			debug!("stat {guest_path:?}: path not found in file map");
-			sysstat.ret = StatResult::Error(ENOENT);
+	sysstat.ret = match file_map
+		.get_host_path(guest_path, matches!(sysstat.kind, StatKind::Stat))
+		.map(|leaf| match leaf {
+			UhyveMapLeaf::OnHost(host_path) => host_stat_path(&host_path, sysstat.kind),
+			UhyveMapLeaf::Virtual(data) => Ok(virtual_file_attr(&data)),
+		})
+		.or_else(|| {
+			file_map
+				.resolve_guest_directory(guest_path)
+				.ok()
+				.map(|resolved| match resolved {
+					ResolvedDirectory::Host(host_path) => host_stat_path(&host_path, sysstat.kind),
+					ResolvedDirectory::Mapped(_) => Ok(mapped_directory_attr()),
+				})
+		})
+		.unwrap_or(Err(ENOENT))
+	{
+		Ok(attr) => write_stat_attr(mem, sysstat.attr, attr),
+		Err(errno) => {
+			if errno == ENOENT {
+				debug!("stat {guest_path:?}: path not found in file map");
+			}
+			StatResult::Error(errno)
 		}
-	}
+	};
 }
 
 /// Handles an fstat hypercall.
