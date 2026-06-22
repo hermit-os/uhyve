@@ -28,14 +28,10 @@ pub struct UhyveIoMode {
 #[cfg(target_os = "linux")]
 impl From<Option<String>> for UhyveIoMode {
 	fn from(s: Option<String>) -> Self {
-		let (prefix, flags) = s
-			.unwrap_or_default()
-			.to_lowercase()
-			.split_once("=")
-			.map(|(prefix, flags)| (prefix.to_string(), flags.to_string()))
-			.unwrap_or_default();
+		let s = s.unwrap_or_default().to_lowercase();
+		let (prefix, flags) = s.split_once("=").unwrap_or_default();
 		let flags: Vec<_> = flags.split(',').collect();
-		match prefix.as_str() {
+		match prefix {
 			"host" => {
 				let direct = flags.contains(&"direct");
 				let sync = flags.contains(&"sync");

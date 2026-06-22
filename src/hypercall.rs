@@ -695,9 +695,7 @@ fn copy_env(env: &EnvVars, syscmdval: &v1::parameters::CmdvalParams, mem: &MmapM
 		.expect("Systemcall parameters for Cmdval are invalid") as *const GuestPhysAddr;
 
 	let env: Vec<(String, String)> = match env {
-		EnvVars::Host => std::env::vars_os()
-			.map(|(a, b)| (a.into_string().unwrap(), b.into_string().unwrap()))
-			.collect(),
+		EnvVars::Host => std::env::vars().collect(),
 		EnvVars::Set(map) => map
 			.iter()
 			.map(|(a, b)| (a.to_owned(), b.to_owned()))
