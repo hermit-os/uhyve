@@ -1,11 +1,25 @@
 use std::{
 	env,
+	ffi::CString,
 	fs::{File, OpenOptions, read_to_string, remove_file},
 	io::{SeekFrom, prelude::*},
+	os::fd::{AsRawFd, FromRawFd, IntoRawFd},
+	ptr,
 };
 
 #[cfg(target_os = "hermit")]
 use hermit as _;
+use uhyve_interface::{
+	GuestVirtAddr,
+	v2::{
+		Hypercall,
+		parameters::{
+			Dirent64, FileAttr, FileType, FstatParams, GetdentParams, GetdentResult, O_DIRECTORY,
+			O_RDONLY, OpenParams, StatKind, StatParams, StatResult, Timespec,
+		},
+	},
+};
+use uhyve_test_kernels::hypercall::{uhyve_hypercall, virtual_to_physical};
 
 /// Create (+ open), write, close, read, close, remove.
 fn create_rw_remove_file(filename: &str) {
@@ -100,12 +114,6 @@ fn open_read_only_write(filename: &str) {
 }
 
 fn write_to_fd_test() {
-	use std::{
-		fs::File,
-		io::Write,
-		os::fd::{FromRawFd, IntoRawFd},
-	};
-
 	println!("Running write_to_fd_test.");
 	let mut stdout = unsafe { File::from_raw_fd(1) };
 	stdout.write_all(b"Wrote to stdout manually!\n").unwrap();
@@ -196,6 +204,117 @@ fn open_read(filename: &str) {
 	assert_eq!(buf, b"Hello, world!\n");
 }
 
+/// Opens a mapped directory and reads its entries via the Getdents hypercall directly.
+fn hypercall_getdents(dirname: &str) {
+	println!("Running hypercall_getdents with dirname {dirname}.");
+
+	let path = CString::new(dirname).unwrap();
+	let name_phys = virtual_to_physical(GuestVirtAddr::from_ptr(path.as_ptr())).unwrap();
+	let mut open_params = OpenParams {
+		name: name_phys,
+		flags: O_RDONLY | O_DIRECTORY,
+		mode: 0,
+		ret: -1,
+	};
+	uhyve_hypercall(Hypercall::FileOpen(&mut open_params));
+	let fd = open_params.ret; // copy out of packed struct before use
+	assert!(fd >= 0, "FileOpen for directory failed: {fd}");
+	// Wrap in File so the fd is closed on drop.
+	let dir = unsafe { File::from_raw_fd(fd) };
+
+	let buf = [0u8; 1024];
+	let buf_phys = virtual_to_physical(GuestVirtAddr::from_ptr(buf.as_ptr())).unwrap();
+	let mut getdent_params = GetdentParams {
+		fd: dir.as_raw_fd(),
+		buf: buf_phys,
+		len: buf.len() as u64,
+		ret: GetdentResult::None,
+	};
+	uhyve_hypercall(Hypercall::Getdents(&mut getdent_params));
+
+	let GetdentResult::Success(buflen) = getdent_params.ret else {
+		panic!(
+			"Getdents hypercall not successful: {:?}",
+			getdent_params.ret
+		);
+	};
+
+	// Reads a dirent from the returned buffer.
+	let read_dirent = |offset: usize| -> (&Dirent64, &str) {
+		let ptr = buf[offset..].as_ptr();
+		let dirent = unsafe { &*ptr.cast::<Dirent64>() };
+		let name_ptr = unsafe { ptr.add(core::mem::offset_of!(Dirent64, d_name)) };
+		let name_len = (0usize..)
+			.take_while(|&i| unsafe { *name_ptr.add(i) } != 0)
+			.count();
+		let name = std::str::from_utf8(unsafe { core::slice::from_raw_parts(name_ptr, name_len) })
+			.expect("dirent name is not valid UTF-8");
+		(dirent, name)
+	};
+
+	let mut dirents = Vec::new();
+	let (first, first_name) = read_dirent(0);
+	dirents.push((first_name, first));
+	let (second, second_name) = read_dirent(first.d_reclen as usize);
+	dirents.push((second_name, second));
+	let (third, third_name) = read_dirent((first.d_reclen + second.d_reclen) as usize);
+	dirents.push((third_name, third));
+	assert_eq!(
+		first.d_reclen + second.d_reclen + third.d_reclen,
+		buflen as u16
+	);
+	for (entry_name, dirent) in dirents {
+		println!("Directory contains {entry_name}");
+		if entry_name == "." || entry_name == ".." {
+			assert_eq!(dirent.d_type, FileType::Directory);
+		}
+	}
+}
+
+enum StatMode {
+	Stat,
+	Fstat,
+}
+
+fn hypercall_stat(filename: &str, mode: StatMode) {
+	println!("Running hypercall_stat with filename {filename}.");
+	let attr = FileAttr::default();
+	let attr_phys = virtual_to_physical(GuestVirtAddr::from_ptr(ptr::addr_of!(attr))).unwrap();
+
+	let ret = match mode {
+		StatMode::Stat => {
+			let path = CString::new(filename).unwrap();
+			let name_phys = virtual_to_physical(GuestVirtAddr::from_ptr(path.as_ptr())).unwrap();
+
+			let mut stat_params = StatParams {
+				name: name_phys,
+				kind: StatKind::Stat,
+				attr: attr_phys,
+				ret: StatResult::None,
+			};
+			uhyve_hypercall(Hypercall::FileStat(&mut stat_params));
+			stat_params.ret
+		}
+		StatMode::Fstat => {
+			let file = File::open(filename).unwrap();
+
+			let mut stat_params = FstatParams {
+				fd: file.as_raw_fd(),
+				attr: attr_phys,
+				ret: StatResult::None,
+			};
+			uhyve_hypercall(Hypercall::FileFstat(&mut stat_params));
+			stat_params.ret
+		}
+	};
+	assert_eq!(ret, StatResult::Success);
+	dbg!(&attr);
+	assert_ne!(attr, FileAttr::default());
+	assert_ne!(attr.st_blocks, 0);
+	assert_ne!(attr.st_atim, Timespec::default());
+	assert_ne!(attr.st_size, 0);
+}
+
 fn main() {
 	let args: Vec<String> = env::args().collect();
 	let testname = &args[1].split('=').collect::<Vec<_>>()[1];
@@ -218,6 +337,9 @@ fn main() {
 		"lseek_file" => lseek_file(filename),
 		"mounts_test" => mount_test(),
 		"open_read" => open_read(filename),
+		"hypercall_getdents" => hypercall_getdents(filename),
+		"hypercall_stat" => hypercall_stat(filename, StatMode::Stat),
+		"hypercall_fstat" => hypercall_stat(filename, StatMode::Fstat),
 		_ => panic!("test not found"),
 	}
 }
