@@ -49,7 +49,6 @@ hermit-abi = "0.5"
 hermit-entry = { version = "0.10.10", features = ["loader"] }
 libc = "0.2"
 log = "0.4"
-mac_address = "1.1"
 merge = "0.2"
 nix = { version = "0.31", features = ["mman", "pthread", "signal", "net", "ioctl", "poll"] }
 nohash = "0.2"
@@ -58,7 +57,6 @@ rftrace-frontend = { version = "0.3", optional = true }
 rand = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 shell-words = "1"
-sysinfo = { version = "0.39.4", default-features = false, features = ["system"] }
 tempfile = "3.27"
 thiserror = "2.0.18"
 time = "0.3"
@@ -80,8 +78,6 @@ zerocopy = { version = "0.8", features = ["derive"] }
 kvm-bindings = "0.14"
 kvm-ioctls = "0.25"
 landlock = "0.4.4"
-mac_address = "1.1"
-tun-tap = { version = "0.1", default-features = false }
 vmm-sys-util = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -89,7 +85,6 @@ xhypervisor = { version = "0.3.0", features = ["macos_15_0_0"] }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = { version = "0.15", default-features = false }
-raw-cpuid = "11"
 memory_addresses = { version = "0.4", default-features = false, features = [
   "conversions",
   "x86_64",
