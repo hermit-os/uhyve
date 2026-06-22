@@ -464,3 +464,64 @@ fn lseek_test() {
 	let res = run_vm_in_thread(bin_path, params);
 	check_result_and_print_output(&res, 0);
 }
+
+/// Tests the Getdents hypercall: opens a mapped directory and reads its entries.
+#[test]
+fn getdents_test() {
+	env_logger_build();
+
+	let test_name: &'static str = "hypercall_getdents";
+	let host_dir_path = get_fs_fixture_path().join("testdir1");
+	let guest_dir_path = PathBuf::from("/testdir_getdents");
+	let filemap_params = create_filemap_params(&host_dir_path, &guest_dir_path);
+	let params = generate_params(filemap_params.into(), test_name, guest_dir_path.into());
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
+	println!("params: {params:?}");
+	let res = run_vm_in_thread(bin_path, params);
+	check_result_and_print_output(&res, 0);
+	for entry in [".", "..", "testfile_a.txt"] {
+		assert!(
+			res.output
+				.as_ref()
+				.unwrap()
+				.contains(&format!("Directory contains {entry}"))
+		);
+	}
+}
+
+/// Tests the FileStat hypercall directly: stats a mapped file and checks the metadata.
+#[test]
+fn hypercall_stat_test() {
+	env_logger_build();
+
+	let test_name: &'static str = "hypercall_stat";
+	let host_file_path = get_fs_fixture_path()
+		.join("testdir1")
+		.join("testfile_a.txt");
+	let guest_file_path = PathBuf::from("/testfile_stat.txt");
+	let filemap_params = create_filemap_params(&host_file_path, &guest_file_path);
+	let params = generate_params(filemap_params.into(), test_name, guest_file_path.into());
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
+	let res = run_vm_in_thread(bin_path, params);
+	check_result_and_print_output(&res, 0);
+}
+
+/// Tests the FileFstat hypercall directly: opens a mapped file then reads its metadata via fstat.
+#[test]
+fn hypercall_fstat_test() {
+	env_logger_build();
+
+	let test_name: &'static str = "hypercall_fstat";
+	let host_file_path = get_fs_fixture_path()
+		.join("testdir1")
+		.join("testfile_a.txt");
+	let guest_file_path = PathBuf::from("/testdir/testfile_fstat.txt");
+	let filemap_params = create_filemap_params(&host_file_path, &guest_file_path);
+	let params = generate_params(filemap_params.into(), test_name, guest_file_path.into());
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
+	let res = run_vm_in_thread(bin_path, params);
+	check_result_and_print_output(&res, 0);
+}
