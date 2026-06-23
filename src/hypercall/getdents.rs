@@ -111,23 +111,13 @@ fn getdents_mapped(
 	};
 }
 
-/// Uhyve guest fd at the start of a guest [`GetdentParams`] (offset 0, per `repr(C)` layout).
-fn getdent_uhyve_fd(sysgetdents: &GetdentParams) -> GuestFd {
-	// Read at offset 0 explicitly: the fd must match what the kernel wrote, independent of
-	// any stale `uhyve-interface` rlib field placement in an incremental build.
-	let fd = unsafe {
-		core::ptr::read_unaligned(core::ptr::from_ref(sysgetdents).cast::<u8>().cast::<i32>())
-	};
-	GuestFd(fd)
-}
-
 /// Handles a getdents hypercall by proxying `getdents64(2)` on the mapped host directory fd.
 pub(crate) fn getdents(
 	mem: &MmapMemory,
 	sysgetdents: &mut GetdentParams,
 	file_map: &mut UhyveFileMap,
 ) {
-	let gfd = getdent_uhyve_fd(sysgetdents);
+	let gfd = GuestFd(sysgetdents.fd);
 
 	match file_map.fdmap.get_mut(gfd) {
 		Some(FdData::Raw(host_fd)) => {
