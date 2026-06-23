@@ -61,7 +61,7 @@ tempfile = "3.27"
 thiserror = "2.0.18"
 time = "0.3"
 toml = "1"
-uhyve-interface = { version = "0.2.0", path = "uhyve-interface", features = ["std"] }
+uhyve-interface = { version = "0.3.0", path = "uhyve-interface", features = ["std"] }
 virtio-bindings = "~0.2.7"
 vm-fdt = "0.3"
 vm-memory = { version = "0.18", features = ["backend-mmap"] }
