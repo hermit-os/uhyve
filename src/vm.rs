@@ -174,7 +174,12 @@ pub(crate) fn generate_guest_start_address(
 			range.0,
 			range.1.checked_sub(mem_size).unwrap_or_else(|| {
 				let (lb, ub) = range;
-				panic!("Out of range [{lb:#x}, {ub:#x}) due to memory size {mem_size:#x}.")
+				let hint = match interface_version.0 {
+					1 => " (More than 3GiB memory is not supported for Hermit <= 0.13.2)",
+					2 => "",
+					_ => unimplemented!(),
+				};
+				panic!("Out of range [{lb:#x}, {ub:#x}) due to memory size {mem_size:#x}.{hint}")
 			}),
 		)
 	};
