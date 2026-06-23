@@ -30,6 +30,7 @@ pub enum HypercallAddress {
 	Getdents = 0x1160,
 	FileStat = 0x1170,
 	FileFstat = 0x1180,
+	Mkdir = 0x1190,
 	SharedMemOpen = 0x1200,
 	SharedMemClose = 0x1210,
 }
@@ -45,6 +46,7 @@ into_hypercall_addresses! {
 			FileUnlink,
 			FileWrite,
 			Getdents,
+			Mkdir,
 			FileStat,
 			FileFstat,
 			SerialReadBuffer,
@@ -73,6 +75,8 @@ pub enum Hypercall<'a> {
 	FileStat(&'a mut StatParams),
 	/// Read file metadata for an open descriptor. Similar to `fstat(2)`.
 	FileFstat(&'a mut FstatParams),
+	/// Create a new directory.
+	Mkdir(&'a mut MkdirParams),
 	/// Write a char to the terminal.
 	SerialWriteByte(u8),
 	/// Write a buffer to the terminal
