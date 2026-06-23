@@ -1869,7 +1869,7 @@ dependencies = [
 
 [[package]]
 name = "uhyve-interface"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aarch64",
  "hermit-abi",

@@ -60,4 +60,4 @@ compile_error!("Using uhyve-interface on a non-64-bit system is not (yet?) suppo
 
 /// The version of the Uhyve interface. Note: This is not the same as the semver of the crate but
 /// should be increased on every version bump that changes the API.
-pub const UHYVE_INTERFACE_VERSION: u32 = 2;
+pub const UHYVE_INTERFACE_VERSION: u32 = 3;

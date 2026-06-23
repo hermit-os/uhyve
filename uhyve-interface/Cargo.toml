@@ -1,6 +1,6 @@
 [package]
 name = "uhyve-interface"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 authors = ["The Hermit Project Developers"]
 description = "The interface between uhyve and a guest VM"
