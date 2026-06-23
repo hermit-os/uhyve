@@ -126,6 +126,30 @@ pub struct GetdentParams {
 	pub ret: GetdentResult,
 }
 
+/// Result of a [`Mkdir`](crate::v2::Hypercall::Mkdir) hypercall.
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+pub enum MkdirResult {
+	/// No result. Guests should set this value before calling the hypercall.
+	None,
+	/// Directory was created.
+	Success,
+	/// Error with libc errno.
+	Error(i32),
+}
+
+/// Parameters for a [`Mkdir`](crate::v2::Hypercall::Mkdir) hypercall.
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MkdirParams {
+	/// Path to create. Zero terminated C-String.
+	pub path: GuestPhysAddr,
+	/// Length of the path buffer.
+	pub len: u64,
+	/// Return value of the hypercall.
+	pub ret: MkdirResult,
+}
+
 /// Which stat-like operation to perform.
 #[derive(TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy, Debug)]
 #[repr(u32)]
