@@ -99,3 +99,4 @@ memory_addresses = { version = "0.4", default-features = false, features = [
 criterion = "0.8"
 home = "0.5"
 regex = { version = "1.12.3", default-features = false, features = ["unicode-perl"] }
+uhyve-interface = { version = "0.3.0", path = "uhyve-interface", features = ["std"] }

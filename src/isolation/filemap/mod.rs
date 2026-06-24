@@ -192,6 +192,22 @@ impl UhyveFileMap {
 		}
 	}
 
+	/// Reserves and registers a temporary directory for an unmapped guest path,
+	/// mirroring [`Self::create_temporary_file`]. Returns the host path as a [`CString`]
+	/// so that the caller can create it on the host.
+	///
+	/// * `guest_path` - The requested guest path.
+	pub fn create_temporary_directory(&mut self, guest_path: &str) -> Option<CString> {
+		let host_path = self.tempdir.path().join(Uuid::new_v4().to_string());
+		trace!("create_temporary_directory (host_path): {host_path:#?}");
+		let ret = CString::new(host_path.as_os_str().as_bytes()).unwrap();
+		if self.create_leaf(guest_path, UhyveMapLeaf::OnHost(host_path)) {
+			Some(ret)
+		} else {
+			None
+		}
+	}
+
 	/// Attempt to remove a file. Note that this will fail on non-empty directories.
 	pub fn unlink(&mut self, guest_path: &str) -> Result<Option<PathBuf>, ()> {
 		tree::unlink(&mut self.root, guest_path.as_bytes())

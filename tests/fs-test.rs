@@ -14,8 +14,13 @@ use common::{
 };
 use rand::{RngExt, distr::Alphanumeric};
 use tempfile::TempDir;
+use uhyve_interface::{v1, v2};
 use uhyvelib::{
 	params::{Output, Params},
+	stats::{
+		HypercallAddresses::{V1, V2},
+		VmExit,
+	},
 	vm::UhyveVm,
 };
 
@@ -138,6 +143,7 @@ fn generate_params(
 			&guest_path.unwrap_or(PathBuf::from("./no_guest_path_needed")),
 		),
 		output: Output::Buffer,
+		stats: true,
 		..Default::default()
 	}
 }
@@ -408,6 +414,75 @@ fn fd_write_to_fd() {
 			.as_ref()
 			.unwrap()
 			.contains("Wrote to stderr manually!")
+	);
+}
+
+/// Tests the Mkdir hypercall: the guest creates a directory inside a mapped host
+/// directory and populates it with files. The host then verifies the result.
+#[test]
+fn hypercall_mkdir_test() {
+	env_logger_build();
+
+	let test_name: &'static str = "hypercall_mkdir";
+
+	let (host_mount, _tmpdir) = create_tmp_mount();
+	let guest_mount = PathBuf::from("/uhyve_mount");
+	let guest_new_dir = guest_mount.join("new_directory");
+
+	let filemap_params = create_filemap_params(&host_mount, &guest_mount);
+	let params = generate_params(filemap_params.into(), test_name, guest_new_dir.into());
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
+	let res = run_vm_in_thread(bin_path, params);
+	check_result_and_print_output(&res, 0);
+
+	let stats = res.stats.as_ref().unwrap();
+	assert_eq!(
+		stats.count_of(VmExit::Hypercall(V2(v2::HypercallAddress::Mkdir))),
+		1
+	);
+	assert_eq!(
+		stats.count_of(VmExit::Hypercall(V1(v1::HypercallAddress::FileOpen))),
+		3
+	);
+
+	// Verify the directory and its contents.
+	let host_new_dir = host_mount.join("new_directory");
+	assert!(
+		host_new_dir.is_dir(),
+		"directory was not created on the host: {host_new_dir:?}"
+	);
+	for i in 0..3 {
+		let file = host_new_dir.join(format!("file_{i}.txt"));
+		assert!(file.exists(), "{file:?} was not created");
+		assert_eq!(
+			read_to_string(&file).unwrap(),
+			format!("contents of file {i}")
+		);
+	}
+}
+
+/// Like [`hypercall_mkdir_test`], but the target directory is unmapped.
+#[test]
+fn hypercall_mkdir_unmapped_test() {
+	env_logger_build();
+
+	let test_name: &'static str = "hypercall_mkdir";
+	let guest_new_dir = PathBuf::from("/root/new_directory");
+	let params = generate_params(None, test_name, guest_new_dir.into());
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
+	let res = run_vm_in_thread(bin_path, params);
+	check_result_and_print_output(&res, 0);
+
+	let stats = res.stats.as_ref().unwrap();
+	assert_eq!(
+		stats.count_of(VmExit::Hypercall(V2(v2::HypercallAddress::Mkdir))),
+		1
+	);
+	assert_eq!(
+		stats.count_of(VmExit::Hypercall(V1(v1::HypercallAddress::FileOpen))),
+		3
 	);
 }
 
