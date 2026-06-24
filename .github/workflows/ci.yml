@@ -26,6 +26,22 @@ jobs:
     env:
       RUST_BACKTRACE: 1
 
+  test-features:
+    name: Test all features
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-none
+          components: llvm-tools
+      - name: Test
+        run: |
+          cargo test --lib --all-features
+    env:
+      RUST_BACKTRACE: 1
+
   integration-tests:
     name: Integration Tests
     runs-on: [self-hosted]
