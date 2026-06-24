@@ -118,6 +118,14 @@ impl VmStats {
 
 		stats
 	}
+
+	/// Returns the total number of times the given [`VmExit`] occurred across all CPUs.
+	pub fn count_of(&self, exit: VmExit) -> usize {
+		self.vm_exits
+			.get(&exit)
+			.map(|per_cpu| per_cpu.values().sum())
+			.unwrap_or(0)
+	}
 }
 impl Display for VmStats {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
