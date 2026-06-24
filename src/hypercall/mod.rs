@@ -10,6 +10,7 @@ use std::{
 
 use fstat::{fstat, stat};
 use getdents::getdents;
+use mkdir::mkdir;
 use uhyve_interface::{
 	GuestPhysAddr,
 	v1::{self, MAX_ARGC_ENVC},
@@ -35,6 +36,7 @@ use crate::{
 
 mod fstat;
 mod getdents;
+mod mkdir;
 
 /// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
 /// parameter that was sent to that address by the guest.
@@ -112,6 +114,7 @@ pub unsafe fn address_to_hypercall_v2(
 		HypercallAddress::Getdents => Hypercall::Getdents(get_data!()),
 		HypercallAddress::FileStat => Hypercall::FileStat(get_data!()),
 		HypercallAddress::FileFstat => Hypercall::FileFstat(get_data!()),
+		HypercallAddress::Mkdir => Hypercall::Mkdir(get_data!()),
 		_ => return None,
 	})
 }
@@ -146,6 +149,7 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 		}
 		v2::Hypercall::FileStat(sysstat) => stat(&peripherals.mem, sysstat, &file_mapping()),
 		v2::Hypercall::FileFstat(sysfstat) => fstat(&peripherals.mem, sysfstat, &file_mapping()),
+		v2::Hypercall::Mkdir(sysmkdir) => mkdir(&peripherals.mem, sysmkdir, &mut file_mapping()),
 		v2::Hypercall::SerialWriteByte(buf) => peripherals
 			.serial
 			.output(&[buf])

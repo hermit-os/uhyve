@@ -14,8 +14,9 @@ use uhyve_interface::{
 	v2::{
 		Hypercall,
 		parameters::{
-			Dirent64, FileAttr, FileType, FstatParams, GetdentParams, GetdentResult, O_DIRECTORY,
-			O_RDONLY, OpenParams, StatKind, StatParams, StatResult, Timespec,
+			Dirent64, FileAttr, FileType, FstatParams, GetdentParams, GetdentResult, MkdirParams,
+			MkdirResult, O_DIRECTORY, O_RDONLY, OpenParams, StatKind, StatParams, StatResult,
+			Timespec,
 		},
 	},
 };
@@ -271,6 +272,31 @@ fn hypercall_getdents(dirname: &str) {
 	}
 }
 
+/// Creates a directory via the Mkdir hypercall directly, then populates it with a few files.
+fn hypercall_mkdir(dirname: &str) {
+	println!("Running hypercall_mkdir with dirname {dirname}.");
+
+	let path = CString::new(dirname).unwrap();
+	let path_phys = virtual_to_physical(GuestVirtAddr::from_ptr(path.as_ptr())).unwrap();
+	let mut mkdir_params = MkdirParams {
+		path: path_phys,
+		len: dirname.len() as u64 + 1,
+		ret: MkdirResult::None,
+	};
+	uhyve_hypercall(Hypercall::Mkdir(&mut mkdir_params));
+
+	let MkdirResult::Success = mkdir_params.ret else {
+		panic!("Mkdir hypercall not successful: {:?}", mkdir_params.ret);
+	};
+
+	// Create a few files inside the newly created directory.
+	for i in 0..3 {
+		let file_path = format!("{dirname}/file_{i}.txt");
+		let mut file = File::create(&file_path).unwrap();
+		write!(file, "contents of file {i}").unwrap();
+	}
+}
+
 enum StatMode {
 	Stat,
 	Fstat,
@@ -340,6 +366,7 @@ fn main() {
 		"hypercall_getdents" => hypercall_getdents(filename),
 		"hypercall_stat" => hypercall_stat(filename, StatMode::Stat),
 		"hypercall_fstat" => hypercall_stat(filename, StatMode::Fstat),
+		"hypercall_mkdir" => hypercall_mkdir(filename),
 		_ => panic!("test not found"),
 	}
 }
