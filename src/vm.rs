@@ -165,7 +165,7 @@ pub(crate) fn generate_guest_start_address(
 	let (guest_address_lb, guest_address_ub): (u64, u64) = {
 		let range = match interface_version.0 {
 			1 => V1_ADDR_RANGE,
-			2 => V2_ADDR_RANGE,
+			2 | 3 => V2_ADDR_RANGE,
 			_ => unimplemented!(),
 		};
 		// KERNEL_OFFSET will be added again later for the start address, later.
@@ -529,7 +529,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 
 		let serial_port = SerialPortBase::new(match uhyve_interface_version.0 {
 			1 => uhyve_interface::v1::HypercallAddress::Uart as _,
-			2 => uhyve_interface::v2::HypercallAddress::SerialWriteBuffer as _,
+			2 | 3 => uhyve_interface::v2::HypercallAddress::SerialWriteBuffer as _,
 			uhifv => {
 				unimplemented!(
 					"Kernel uses unsupported uhyve-interface version {}. Is Uhyve too old?",
