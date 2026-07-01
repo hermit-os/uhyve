@@ -3,7 +3,7 @@ exclude = ["tests/test-kernels", "hermit-rs", "hermit-rs/*", "kernel"]
 
 [package]
 name = "uhyve"
-version = "0.9.0"
+version = "0.9.1"
 authors = ["The Hermit Project Developers"]
 edition = "2024"
 description = "A specialized hypervisor for Hermit"

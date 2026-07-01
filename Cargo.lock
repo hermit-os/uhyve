@@ -1815,7 +1815,7 @@ checksum = "756daf9b1013ebe47a8776667b466417e2d4c5679d441c26230efd9ef78692db"
 
 [[package]]
 name = "uhyve"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "align-address 0.4.0",
  "async-channel",
