@@ -1,5 +1,5 @@
+pub(crate) mod breakpoints;
 mod paging;
-pub(crate) mod registers;
 
 pub(crate) use paging::BOOT_GDT_MAX;
 use paging::initialize_pagetables;
