@@ -9,7 +9,7 @@ use nix::sys::{
 	signal::{SIGUSR1, SigHandler, Signal, signal},
 };
 
-pub use crate::os::aarch64::vcpu::{XhyveCpu, XhyveVm};
+pub use crate::os::aarch64::vcpu::XhyveVm;
 use crate::vm::KickSignal;
 
 /// TODO: Use proper structure and methods for this

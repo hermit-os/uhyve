@@ -17,8 +17,8 @@ use byte_unit::{Byte, Unit};
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
+	UhyveVm, VmResult,
 	params::{Output, Params},
-	vm::VmResult,
 };
 
 #[derive(PartialEq, Eq)]
@@ -99,7 +99,6 @@ pub fn build_hermit_bin(kernel: impl AsRef<Path>, mode: BuildMode) -> PathBuf {
 ///
 /// This also checks whether a logger has been configured.
 fn run_vm(kernel_path: PathBuf, params: Params) -> VmResult {
-	use uhyvelib::vm::UhyveVm;
 	// This helps us ensure consistency across integration tests.
 	env_logger::try_init().expect_err("Caller has not initialized a logger yet.");
 	println!("Launching kernel {}", kernel_path.display());

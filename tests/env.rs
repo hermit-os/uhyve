@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use byte_unit::{Byte, Unit};
 use common::{BuildMode, build_hermit_bin, check_result_and_print_output, env_logger_build};
 use uhyvelib::{
+	UhyveVm,
 	params::{EnvVars, Output, Params},
-	vm::UhyveVm,
 };
 
 #[test]

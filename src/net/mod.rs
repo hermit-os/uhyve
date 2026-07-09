@@ -6,7 +6,6 @@ use std::{fmt::Debug, io};
 use crate::net::tap::{Tap, TapRX, TapTX};
 use crate::params::NetworkMode;
 
-pub const PCI_ETHERNET_CLASS_CODE: u8 = 0x2;
 pub const PCI_ETHERNET_SUBCLASS: u8 = 0x0;
 pub const PCI_ETHERNET_PROG_IF: u8 = 0;
 pub const PCI_ETHERNET_REVISION_ID: u8 = 0;

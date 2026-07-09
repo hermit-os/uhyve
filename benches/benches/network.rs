@@ -13,8 +13,8 @@ use regex::Regex;
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
+	UhyveVm,
 	params::{NetworkMode, Output, Params},
-	vm::UhyveVm,
 };
 
 use crate::common::{

@@ -12,8 +12,8 @@ use thiserror::Error;
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
+	UhyveVm,
 	params::{CpuCount, EnvVars, GuestMemorySize, HermitImageMode, NetworkMode, Output, Params},
-	vm::UhyveVm,
 };
 
 #[cfg(feature = "instrument")]

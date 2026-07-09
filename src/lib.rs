@@ -12,23 +12,25 @@ mod arch;
 pub mod consts;
 mod fdt;
 mod gdb;
-
-#[cfg_attr(target_os = "linux", path = "linux/mod.rs")]
-#[cfg_attr(target_os = "macos", path = "macos/mod.rs")]
-pub mod os;
-
 mod hypercall;
 mod isolation;
-pub mod mem;
+pub(crate) mod mem;
+pub(crate) mod net;
+#[cfg_attr(target_os = "linux", path = "linux/mod.rs")]
+#[cfg_attr(target_os = "macos", path = "macos/mod.rs")]
+pub(crate) mod os;
 pub(crate) mod paging;
 pub mod params;
 mod parking;
+mod pci;
 mod serial;
 pub mod stats;
 mod vcpu;
+mod virtio;
 pub mod vm;
-
-pub use arch::*;
+pub(crate) use arch::*;
+pub use stats::VmStats;
+pub use vm::{DefaultBackend, UhyveVm, VmResult};
 
 #[derive(Debug, Error)]
 pub enum HypervisorError {
@@ -88,7 +90,3 @@ impl HypervisorError {
 }
 
 pub type HypervisorResult<T> = Result<T, HypervisorError>;
-
-pub mod net;
-mod pci;
-mod virtio;

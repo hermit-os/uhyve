@@ -14,8 +14,8 @@ use common::{
 };
 use regex::Regex;
 use uhyvelib::{
+	UhyveVm,
 	params::{NetworkMode, Output, Params},
-	vm::UhyveVm,
 };
 
 static NETWORK_TEST_MUTEX: Mutex<()> = Mutex::new(());
