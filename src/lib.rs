@@ -29,12 +29,12 @@ use thiserror::Error;
 extern crate log;
 
 mod arch;
-pub mod consts;
 mod fdt;
 mod gdb;
 mod hypercall;
 mod isolation;
 pub(crate) mod mem;
+mod mem_layout;
 pub(crate) mod net;
 #[cfg_attr(target_os = "linux", path = "linux/mod.rs")]
 #[cfg_attr(target_os = "macos", path = "macos/mod.rs")]

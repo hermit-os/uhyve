@@ -1,13 +1,18 @@
-use std::mem::size_of;
+use std::{fmt::Display, mem::size_of};
 
 use align_address::Align;
 use bitflags::bitflags;
+use hermit_entry::{UhyveIfVersion, elf::KernelObject};
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 
 use crate::{
-	consts::{PAGETABLES_END, PAGETABLES_OFFSET},
 	mem::MmapMemory,
+	mem_layout::{
+		BootInfoSection, FdtSection, MemoryLayout, PagetableSection, Section, StackSection,
+		generate_guest_start_address,
+	},
 	paging::{BumpAllocator, PagetableError},
+	params::Params,
 };
 
 pub(crate) const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x1000_0000);
@@ -16,6 +21,7 @@ pub(crate) const V1_ADDR_RANGE: (u64, u64) = (RAM_START.as_u64(), V1_MAX_ADDR);
 pub(crate) const V2_ADDR_RANGE: (u64, u64) = (0x0001_0000_0000u64, 0x0010_0000_0000u64);
 
 const SIZE_4KIB: u64 = 0x1000;
+pub(crate) const GUEST_PAGE_SIZE: u64 = SIZE_4KIB;
 
 // PageTableEntry Flags
 /// Present + 4KiB + device memory + inner_sharable + accessed
@@ -51,8 +57,6 @@ const PAGE_MAP_BITS: usize = 9;
 
 /// A mask where PAGE_MAP_BITS are set to calculate a table index.
 const PAGE_MAP_MASK: u64 = 0x1FF;
-
-pub const PGT_OFFSET: u64 = 0x10000;
 
 pub(crate) const GICD_BASE_ADDRESS: u64 = 0x800_0000;
 pub(crate) const GICD_SIZE: usize = 0x10000;
@@ -176,63 +180,43 @@ pub(crate) fn virt_to_phys(
 	Ok(pte.address() + (addr.as_u64() & !((!0u64) << PAGE_BITS)))
 }
 
-pub fn init_guest_mem(
-	mem: &mut [u8],
-	guest_address: GuestPhysAddr,
-	length: u64,
-	_legacy_mapping: bool,
-) {
-	let mem_addr = std::ptr::addr_of_mut!(mem[0]);
+pub(crate) fn init_guest_mem(mem: &mut MmapMemory, layout: &Aarch64MemoryLayout, length: u64) {
+	const PT_SIZE: usize = 512 * size_of::<u64>();
+	assert!(mem.guest_addr() + mem.size() >= layout.pgt_address() + PT_SIZE);
 
-	assert!(mem.len() >= PGT_OFFSET as usize + 512 * size_of::<u64>());
-
-	let pgt_slice = unsafe {
-		std::slice::from_raw_parts_mut(mem_addr.offset(PGT_OFFSET as isize) as *mut u64, 512)
-	};
+	let pgt_slice = unsafe { mem.get_ref_mut::<[u64; 512]>(layout.pgt_address()).unwrap() };
 	pgt_slice.fill(0);
-	pgt_slice[511] = (guest_address + PGT_OFFSET) | PT_PT | PT_SELF;
+	pgt_slice[511] = layout.pgt_address() | PT_PT | PT_SELF;
 
 	let mut boot_frame_allocator = BumpAllocator::<SIZE_4KIB>::new(
-		guest_address + PAGETABLES_OFFSET,
-		(PAGETABLES_END - PAGETABLES_OFFSET) / SIZE_4KIB,
+		layout.pagetables().0.start(),
+		layout.pagetables().0.length as u64 / SIZE_4KIB,
 	);
 
 	// Hypercalls are MMIO reads/writes in the lowest 4KiB of address space.
 	// Thus, we need to provide pagetable entries for this region.
 	let pgd0_addr = boot_frame_allocator.allocate().unwrap().as_u64();
 	pgt_slice[0] = pgd0_addr | PT_PT;
-	let pgd0_slice = unsafe {
-		std::slice::from_raw_parts_mut(
-			mem_addr.offset((pgd0_addr - guest_address.as_u64()) as isize) as *mut u64,
-			512,
-		)
-	};
+
+	let pgd0_slice = unsafe { mem.get_ref_mut::<[u64; 512]>(pgd0_addr.into()).unwrap() };
 	pgd0_slice.fill(0);
 	let pud0_addr = boot_frame_allocator.allocate().unwrap().as_u64();
 	pgd0_slice[0] = pud0_addr | PT_PT;
 
-	let pud0_slice = unsafe {
-		std::slice::from_raw_parts_mut(
-			mem_addr.offset((pud0_addr - guest_address.as_u64()) as isize) as *mut u64,
-			512,
-		)
-	};
+	let pud0_slice = unsafe { mem.get_ref_mut::<[u64; 512]>(pud0_addr.into()).unwrap() };
 	pud0_slice.fill(0);
 	let pmd0_addr = boot_frame_allocator.allocate().unwrap().as_u64();
 	pud0_slice[0] = pmd0_addr | PT_PT;
 
-	let pmd0_slice = unsafe {
-		std::slice::from_raw_parts_mut(
-			mem_addr.offset((pmd0_addr - guest_address.as_u64()) as isize) as *mut u64,
-			512,
-		)
-	};
+	let pmd0_slice = unsafe { mem.get_ref_mut::<[u64; 512]>(pmd0_addr.into()).unwrap() };
 	pmd0_slice.fill(0);
 	// Hypercall/IO mapping
-	pmd0_slice[0] = guest_address | PT_MEM_CD;
+	pmd0_slice[0] = layout.guest_address() | PT_MEM_CD;
 
-	for frame_addr in (guest_address.align_down(SIZE_4KIB).as_u64()
-		..(guest_address + length).align_up(SIZE_4KIB).as_u64())
+	for frame_addr in (layout.guest_address().align_down(SIZE_4KIB).as_u64()
+		..(layout.guest_address() + length)
+			.align_up(SIZE_4KIB)
+			.as_u64())
 		.step_by(SIZE_4KIB as usize)
 	{
 		let frame_addr_usz = frame_addr as usize;
@@ -258,12 +242,7 @@ pub fn init_guest_mem(
 						false,
 					)
 				};
-				let pd_slice = unsafe {
-					core::slice::from_raw_parts_mut(
-						mem_addr.offset((pd_addr - guest_address.as_u64()) as isize) as *mut u64,
-						512,
-					)
-				};
+				let pd_slice = unsafe { mem.get_ref_mut::<[u64; 512]>(pd_addr.into()).unwrap() };
 				if new {
 					pd_slice.fill(0);
 					prev_slice[idx] = pd_addr | PT_PT;
@@ -282,5 +261,134 @@ pub fn init_guest_mem(
 				// and each 16 * 4 KByte area have the same access property
 				PT_MEM_CONTIGUOUS
 			};
+	}
+}
+
+/// aarch64 Memory Layout.
+///
+/// It looks as follows:
+///
+/// ```txt
+///     0x0000_0000 ┌──────────────────────────┐
+///                 │ Hypercalls               │
+///                 ├──────────────────────────┤
+///                 │ not present              │
+///                 │                          │
+///    guest_address├──────────────────────────┤ ▲ ▲ ▲ ▲
+///                 │                          │ │ │ │ │ FDT_OFFSET
+///                 ├──────────────────────────┤ │ │ │ ▼
+///                 │ Device Tree (FDT) (4KiB) │ │ │ │ BOOT_INFO_OFFSET
+///                 ├──────────────────────────┤ │ │ ▼
+///                 │ Boot Info         (1KiB) │ │ │
+///                 ├──────────────────────────┤ │ │
+///                 │                          │ │ │PAGETABLES_OFFSET
+///                 ├──────────────────────────┤ │ ▼
+///                 │                          │ │
+///                 │ Pagetables               │ │
+///                 │                          │ │
+///    stack_address├──────────────────────────┤ │
+///                 │ Stack                    │ │KERNEL_OFFSET
+///   kernel_address├──────────────────────────┤ ▼
+///                 │ Kernel                   │
+///   entry_point──►│                          │
+///                 │                          │
+///                 ├──────────────────────────┤
+///                 │ Kernel Memory            │
+///                 │                          │
+///                 └──────────────────────────┘
+/// ```
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct Aarch64MemoryLayout {
+	guest_address: GuestPhysAddr,
+	kernel_address: GuestPhysAddr,
+}
+impl Aarch64MemoryLayout {
+	const FDT_OFFSET: u64 = 0x1000;
+	const FDT_SIZE: usize = 4 * PAGE_SIZE;
+	const BOOT_INFO_OFFSET: u64 = Self::FDT_OFFSET + Self::FDT_SIZE as u64;
+
+	const PAGETABLES_OFFSET: u64 = 0x11000;
+	const PAGETABLES_END: u64 = Self::KERNEL_OFFSET - Self::KERNEL_STACK_SIZE;
+	const KERNEL_STACK_SIZE: u64 = 0x8000;
+	pub(crate) const KERNEL_OFFSET: u64 = 0x40000;
+
+	pub const PGT_OFFSET: u64 = 0x10000;
+
+	pub fn pgt_address(&self) -> GuestPhysAddr {
+		self.guest_address() + Self::PGT_OFFSET
+	}
+}
+impl MemoryLayout for Aarch64MemoryLayout {
+	fn new(params: &Params, object: &KernelObject<'_>) -> Self {
+		let uhyve_interface_version = object
+			.uhyve_interface_version()
+			.unwrap_or(UhyveIfVersion(1));
+
+		let memory_size = params.memory_size.get();
+
+		let (guest_address, kernel_address) = generate_guest_start_address(
+			uhyve_interface_version,
+			params.aslr,
+			object.mem_size(),
+			object.start_addr(),
+			memory_size,
+			Self::KERNEL_OFFSET,
+		);
+
+		assert!(
+			kernel_address.as_u64() > Self::KERNEL_STACK_SIZE,
+			"there should be enough space for the boot stack before the kernel start address",
+		);
+
+		Self {
+			guest_address,
+			kernel_address,
+		}
+	}
+
+	fn guest_address(&self) -> GuestPhysAddr {
+		self.guest_address
+	}
+
+	fn stack(&self) -> StackSection {
+		StackSection(Section {
+			addr: self.kernel_address - Self::KERNEL_STACK_SIZE,
+			length: Self::KERNEL_STACK_SIZE as usize,
+		})
+	}
+
+	fn fdt(&self) -> FdtSection {
+		FdtSection(Section {
+			addr: self.guest_address + Self::FDT_OFFSET,
+			length: Self::FDT_SIZE,
+		})
+	}
+
+	fn boot_info(&self) -> BootInfoSection {
+		BootInfoSection(Section {
+			addr: self.guest_address + Self::BOOT_INFO_OFFSET,
+			length: PAGE_SIZE,
+		})
+	}
+
+	fn kernel_address(&self) -> GuestPhysAddr {
+		self.kernel_address
+	}
+
+	fn pagetables(&self) -> crate::mem_layout::PagetableSection {
+		PagetableSection(Section {
+			addr: self.guest_address + Self::PAGETABLES_OFFSET,
+			length: (Self::PAGETABLES_END - Self::PAGETABLES_OFFSET) as usize,
+		})
+	}
+}
+impl Display for Aarch64MemoryLayout {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		writeln!(f, "Memory Layout:")?;
+		writeln!(f, "guest_address:     {:12x}", self.guest_address())?;
+		writeln!(f, "boot_info_address: {:12x}", self.boot_info().0.addr)?;
+		writeln!(f, "fdt_address:       {:12x}", self.fdt().0.addr)?;
+		writeln!(f, "stack_address:     {:12x}", self.stack().0.addr)?;
+		writeln!(f, "kernel_address:    {:12x}", self.kernel_address())
 	}
 }
