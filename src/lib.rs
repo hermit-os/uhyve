@@ -1,3 +1,23 @@
+//! # Uhyve Library
+//!
+//! Uhyve is specialized a hypervisor for the [Hermit Unikernel](https://github.com/hermit-os).
+//!
+//! The hypervisor implementation is centered around the [`UhyveVm`] struct. Usage is quite straigthforward:
+//!
+//! ```no_run
+//! use uhyvelib::{UhyveVm, params::{Output, Params}};
+//! let vm = UhyveVm::new(
+//!     "path/to/hermit/binary".into(),
+//!     Params {
+//!         output: Output::StdIo,
+//!         ..Default::default()
+//!     },
+//! )
+//! .unwrap();
+//! let res = vm.run(None);
+//! println!("VM returned {}", res.code);
+//! ```
+
 #![warn(rust_2018_idioms)]
 #![allow(clippy::useless_conversion)]
 

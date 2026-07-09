@@ -1,3 +1,5 @@
+//! Parameters for [`UhyveVm`s](crate::UhyveVm).
+
 use std::{
 	collections::HashMap,
 	convert::Infallible,

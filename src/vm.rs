@@ -1,3 +1,5 @@
+//! [`UhyveVm`] implementation & related code.
+
 use std::{
 	env,
 	fmt::{self, Debug},
