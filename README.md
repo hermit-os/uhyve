@@ -4,7 +4,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/uhyve.svg)](https://crates.io/crates/uhyve)
 [![Zulip Badge](https://img.shields.io/badge/chat-hermit-57A37C?logo=zulip)](https://hermit.zulipchat.com/)
-[![DOI](https://zenodo.org/badge/14639288.svg)](https://doi.org/10.5281/zenodo.14639288)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21072196.svg)](https://doi.org/10.5281/zenodo.21072196)
 
 Uhyve is a minimal, special-purpose hypervisor for the [Hermit kernel](https://github.com/hermit-os/kernel).
 
@@ -41,7 +41,7 @@ lsmod | grep kvm
 
 > [!WARNING]
 > Currently, Uhyve is mainly developed for Linux.
-> The macOS version has not been tested extensively and does not support all features of the Linux version.
+> The macOS version has **not** been tested extensively and does not support all features of the Linux version.
 
 You can install Apple's [Xcode Command Line Tools](https://developer.apple.com/xcode/resources) using the following command:
 
@@ -106,7 +106,6 @@ uhyve /path/to/the/unikernel/binary
 > This repository ships a few binaries that can be used for testing.
 >
 > If you want to compile Hermit binaries yourself (or create your own), take a look at the following repositories:
-> - [hermit-os/hermit-rs](https://github.com/hermit-os/hermit-rs)
 > - [hermit-os/hermit-rs-template](https://github.com/hermit-os/hermit-rs-template)
 > - [hermit-os/hermit-c](https://github.com/hermit-os/hermit-c)
 
@@ -158,10 +157,6 @@ Our wiki contains instructions on working with Uhyve's source code, including se
 development environment, as well as profiling, testing and debugging Uhyve.
 
 [uhyve-wiki]: https://github.com/hermit-os/uhyve/wiki
-
-### Known issues
-
- * Uhyve isn't able to pass more than 128 environment variables to the unikernel.
 
 ## Licensing
 
