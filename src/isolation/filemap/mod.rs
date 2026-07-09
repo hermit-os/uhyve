@@ -14,7 +14,7 @@ mod tree;
 
 pub(crate) use tree::{Directory, Leaf as UhyveMapLeaf, Node, NodeStatRef};
 
-/// Defines cache-related behaviors that will be forced upon [`crate::hypercall::open`],
+/// Defines cache-related behaviors that will be forced upon `open`,
 /// primarily useful for e.g. I/O benchmarking.
 #[cfg(target_os = "linux")]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

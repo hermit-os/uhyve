@@ -99,7 +99,7 @@ pub struct Dirent64 {
 	/// Filename (null-terminated)
 	pub d_name: PhantomData<u8>,
 }
-/// Result of a [`Getdent`](crate::v2::Hypercall::Getdent) hypercall.
+/// Result of a [`Getdents`](crate::v2::Hypercall::Getdents) hypercall.
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub enum GetdentResult {
@@ -112,7 +112,7 @@ pub enum GetdentResult {
 	/// Error with libc errno.
 	Error(i32),
 }
-/// Parameters for a [`Getdent`](crate::v2::Hypercall::Getdent) hypercall.
+/// Parameters for a [`Getdents`](crate::v2::Hypercall::Getdents) hypercall.
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct GetdentParams {
