@@ -1,3 +1,5 @@
+//! VM run statistics
+
 use std::{
 	collections::HashMap,
 	fmt::Display,
