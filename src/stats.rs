@@ -87,6 +87,7 @@ impl CpuStats {
 	}
 }
 
+/// Statistics about a VM run.
 #[derive(Debug, Clone)]
 pub struct VmStats {
 	/// Number of Vm exits per CPU
