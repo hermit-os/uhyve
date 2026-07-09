@@ -13,8 +13,8 @@ use common::{
 };
 use tempfile::TempDir;
 use uhyvelib::{
+	UhyveVm,
 	params::{Output, Params},
-	vm::UhyveVm,
 };
 
 #[test]

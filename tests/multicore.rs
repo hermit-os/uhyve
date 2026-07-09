@@ -8,8 +8,8 @@ use regex::Regex;
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
+	UhyveVm,
 	params::{Output, Params},
-	vm::UhyveVm,
 };
 
 #[test]

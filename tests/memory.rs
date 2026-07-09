@@ -6,7 +6,7 @@ use common::{
 	BuildMode, build_hermit_bin, check_result_and_print_output, env_logger_build,
 	run_vm_with_custom_memory,
 };
-use uhyvelib::vm::VmResult;
+use uhyvelib::VmResult;
 
 /// Runs the `hello_world` kernel with the given memory size.
 #[inline]

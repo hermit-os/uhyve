@@ -5,8 +5,8 @@ use criterion::{Criterion, criterion_group};
 #[cfg(target_os = "linux")]
 use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
+	DefaultBackend, UhyveVm,
 	params::{Output, Params},
-	vm::{DefaultBackend, UhyveVm},
 };
 
 pub fn load_vm_hello_world(c: &mut Criterion) {

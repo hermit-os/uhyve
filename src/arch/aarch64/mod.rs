@@ -19,7 +19,7 @@ const SIZE_4KIB: u64 = 0x1000;
 
 // PageTableEntry Flags
 /// Present + 4KiB + device memory + inner_sharable + accessed
-pub const PT_DEVICE: u64 = 0b11100000111;
+pub const _PT_DEVICE: u64 = 0b11100000111;
 /// Present + 4KiB + normal + inner_sharable + accessed
 pub const PT_PT: u64 = 0b11100010011;
 /// Present + 4KiB + normal + inner_sharable + accessed
@@ -72,10 +72,10 @@ pub const fn mair(attr: u64, mt: u64) -> u64 {
 pub const TCR_IRGN_WBWA: u64 = ((1) << 8) | ((1) << 24);
 pub const TCR_ORGN_WBWA: u64 = ((1) << 10) | ((1) << 26);
 pub const TCR_SHARED: u64 = ((3) << 12) | ((3) << 28);
-pub const TCR_TBI0: u64 = 1 << 37;
-pub const TCR_TBI1: u64 = 1 << 38;
-pub const TCR_ASID16: u64 = 1 << 36;
-pub const TCR_TG1_16K: u64 = 1 << 30;
+pub const _TCR_TBI0: u64 = 1 << 37;
+pub const _TCR_TBI1: u64 = 1 << 38;
+pub const _TCR_ASID16: u64 = 1 << 36;
+pub const _TCR_TG1_16K: u64 = 1 << 30;
 pub const TCR_TG1_4K: u64 = 0 << 30;
 pub const TCR_FLAGS: u64 = TCR_IRGN_WBWA | TCR_ORGN_WBWA | TCR_SHARED;
 

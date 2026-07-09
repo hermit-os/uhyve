@@ -8,8 +8,8 @@ use common::{
 	get_fs_fixture_path, remove_file_if_exists, run_simple_vm,
 };
 use uhyvelib::{
+	UhyveVm,
 	params::{Output, Params},
-	vm::UhyveVm,
 };
 
 #[test]

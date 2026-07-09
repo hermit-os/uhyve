@@ -581,7 +581,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 	}
 
 	#[cfg(target_os = "linux")]
-	pub fn landlock_init(
+	pub(crate) fn landlock_init(
 		file_sandbox_mode: &FileSandboxMode,
 		file_map: &UhyveFileMap,
 		kernel_path: &std::path::Path,

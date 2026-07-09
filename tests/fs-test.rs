@@ -16,12 +16,12 @@ use rand::{RngExt, distr::Alphanumeric};
 use tempfile::TempDir;
 use uhyve_interface::{v1, v2};
 use uhyvelib::{
+	UhyveVm,
 	params::{Output, Params},
 	stats::{
 		HypercallAddresses::{V1, V2},
 		VmExit,
 	},
-	vm::UhyveVm,
 };
 
 /// Verifies successful file creation on the host OS and its contents.
