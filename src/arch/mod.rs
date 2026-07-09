@@ -1,9 +1,3 @@
-use thiserror::Error;
-
-#[derive(Error, Debug)]
-#[error("Frequency detection failed")]
-pub struct FrequencyDetectionFailed;
-
 #[cfg(target_arch = "x86_64")]
 pub mod x86_64;
 
