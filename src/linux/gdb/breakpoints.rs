@@ -9,7 +9,7 @@ use uhyve_interface::GuestVirtAddr;
 use crate::{
 	arch::{
 		virt_to_phys,
-		x86_64::registers::{self, debug::HwBreakpoints},
+		x86_64::breakpoints::{HwBreakpoint, HwBreakpoints},
 	},
 	gdb::GdbVcpuManager,
 	os::KvmVm,
@@ -132,7 +132,7 @@ impl target::ext::breakpoints::SwBreakpoint for GdbVcpuManager<KvmVm> {
 
 impl target::ext::breakpoints::HwBreakpoint for GdbVcpuManager<KvmVm> {
 	fn add_hw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
-		let hw_breakpoint = match registers::debug::HwBreakpoint::new_breakpoint(addr, kind) {
+		let hw_breakpoint = match HwBreakpoint::new_breakpoint(addr, kind) {
 			Some(hw_breakpoint) => hw_breakpoint,
 			None => return Ok(false),
 		};
@@ -148,7 +148,7 @@ impl target::ext::breakpoints::HwBreakpoint for GdbVcpuManager<KvmVm> {
 	}
 
 	fn remove_hw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
-		let hw_breakpoint = match registers::debug::HwBreakpoint::new_breakpoint(addr, kind) {
+		let hw_breakpoint = match HwBreakpoint::new_breakpoint(addr, kind) {
 			Some(hw_breakpoint) => hw_breakpoint,
 			None => return Ok(false),
 		};
@@ -171,7 +171,7 @@ impl target::ext::breakpoints::HwWatchpoint for GdbVcpuManager<KvmVm> {
 		len: u64,
 		kind: WatchKind,
 	) -> TargetResult<bool, Self> {
-		let hw_breakpoint = match registers::debug::HwBreakpoint::new_watchpoint(addr, len, kind) {
+		let hw_breakpoint = match HwBreakpoint::new_watchpoint(addr, len, kind) {
 			Some(hw_breakpoint) => hw_breakpoint,
 			None => return Ok(false),
 		};
@@ -192,7 +192,7 @@ impl target::ext::breakpoints::HwWatchpoint for GdbVcpuManager<KvmVm> {
 		len: u64,
 		kind: WatchKind,
 	) -> TargetResult<bool, Self> {
-		let hw_breakpoint = match registers::debug::HwBreakpoint::new_watchpoint(addr, len, kind) {
+		let hw_breakpoint = match HwBreakpoint::new_watchpoint(addr, len, kind) {
 			Some(hw_breakpoint) => hw_breakpoint,
 			None => return Ok(false),
 		};
