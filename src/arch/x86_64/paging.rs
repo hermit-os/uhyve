@@ -7,22 +7,14 @@ use x86_64::{
 	},
 };
 
-use super::{GDT_OFFSET, PAGE_SIZE, PML4_OFFSET};
 use crate::{
-	consts::{PAGETABLES_END, PAGETABLES_OFFSET},
-	paging::BumpAllocator,
-	vm::KERNEL_OFFSET,
+	mem::MmapMemory, mem_layout::MemoryLayout, paging::BumpAllocator, x86_64::X86_64MemoryLayout,
 };
 
 const BOOT_GDT_NULL: usize = 0;
 const BOOT_GDT_CODE: usize = 1;
 const BOOT_GDT_DATA: usize = 2;
 pub(crate) const BOOT_GDT_MAX: usize = 3;
-
-// The offset of the kernel in the memory.
-// Must be larger than BOOT_INFO_OFFSET + KERNEL_STACK_SIZE
-#[cfg(test)]
-pub(super) const MIN_PHYSMEM_SIZE: usize = 0x43000;
 
 // Constructor for a conventional segment GDT (or LDT) entry
 pub fn create_gdt_entry(flags: u64, base: u64, limit: u64) -> u64 {
@@ -65,59 +57,51 @@ unsafe impl PageTableFrameMapping for UhyvePageTableFrameMapper<'_> {
 /// `mem` and `GuestPhysAddr` must be 2MiB page aligned.
 /// length is the size of the identity mapped region in bytes.
 pub fn initialize_pagetables(
-	mem: &mut [u8],
-	guest_address: GuestPhysAddr,
+	mem: &mut MmapMemory,
+	layout: &X86_64MemoryLayout,
 	length: u64,
 	// TODO: deprecate the legacy_mapping option once hermit pre 0.10.0 isn't a thing anymore.
 	legacy_mapping: bool,
 ) {
+	let pagetable_layout = layout.pagetables().0;
 	assert!(
-		mem.len() >= PAGETABLES_OFFSET as usize + 2 * PAGE_SIZE,
-		"Insufficient memory for at least a single three-level pagetable mapping"
+		layout.pagetables().0.end() <= mem.guest_addr() + mem.size(),
+		"Insufficient memory for pagetable mapping"
 	);
-	let mem_addr = std::ptr::addr_of_mut!(mem[0]);
 
-	let (gdt_entry, pml4);
-	// Safety:
-	// We only operate in `mem`, which is plain bytes and we have ownership of
-	// these and it is asserted to be large enough.
-	unsafe {
-		gdt_entry = mem_addr
-			.add(GDT_OFFSET as usize)
-			.cast::<[u64; 3]>()
-			.as_mut()
-			.unwrap();
-
-		pml4 = mem_addr
-			.add(PML4_OFFSET as usize)
-			.cast::<PageTable>()
-			.as_mut()
-			.unwrap();
-	}
-
+	// Safety: we have ownership of mem and during the lifetime of this slice we don't create other references into the memory.
+	let gdt_entry = unsafe { mem.get_ref_mut::<[u64; 3]>(layout.gdt_address()).unwrap() };
 	// initialize GDT
 	gdt_entry[BOOT_GDT_NULL] = 0;
 	gdt_entry[BOOT_GDT_CODE] = create_gdt_entry(0xA09B, 0, 0xFFFFF);
 	gdt_entry[BOOT_GDT_DATA] = create_gdt_entry(0xC093, 0, 0xFFFFF);
 
+	let pml4 = unsafe { mem.get_ref_mut::<PageTable>(layout.pml4_address()).unwrap() };
 	// recursive pagetable setup
 	pml4[511].set_addr(
-		(guest_address + PML4_OFFSET).into(),
+		layout.pml4_address().into(),
 		PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
 	);
 
 	let mut boot_frame_allocator = BumpAllocator::new(
-		guest_address + PAGETABLES_OFFSET,
-		(PAGETABLES_END - PAGETABLES_OFFSET) / Size4KiB::SIZE,
+		layout.pagetables().0.start(),
+		pagetable_layout.length as u64 / Size4KiB::SIZE,
 	);
-	let page_mapper = UhyvePageTableFrameMapper { mem, guest_address };
+	let page_mapper = UhyvePageTableFrameMapper {
+		// Safety: we have ownership of mem and during the lifetime of this slice we don't create other references into the memory.
+		mem: unsafe {
+			mem.slice_at_mut(pagetable_layout.addr, pagetable_layout.length)
+				.unwrap()
+		},
+		guest_address: pagetable_layout.addr,
+	};
 	// Safety: pml4 is zero initialized and page_mapper operates in a correct environment
 	let mut pagetable_mapping = unsafe { MappedPageTable::new(pml4, page_mapper) };
 
 	let mapping_range = if legacy_mapping {
 		debug!("Legacy mapping of the initial memory");
-		let start_page = guest_address;
-		let kernel_start = VirtAddr::new((guest_address + KERNEL_OFFSET).as_u64());
+		let start_page = layout.guest_address();
+		let kernel_start = VirtAddr::new(layout.kernel_address().as_u64());
 		let end_page = Page::from_page_table_indices_2mib(
 			kernel_start.p4_index(),
 			kernel_start.p3_index(),
@@ -125,17 +109,18 @@ pub fn initialize_pagetables(
 		);
 		let end = u64::max(
 			end_page.start_address().as_u64(),
-			guest_address.as_u64() + length,
+			layout.guest_address().as_u64() + length,
 		);
 		start_page.as_u64()..=end
 	} else {
-		guest_address.as_u64()..=guest_address.as_u64() + length
+		layout.guest_address().as_u64()..=layout.guest_address().as_u64() + length
 	};
 
 	// Map the kernel
 	debug!(
-		"identity mapping from {guest_address:?} to {:?}",
-		guest_address + length
+		"identity mapping from {:?} to {:?}",
+		layout.guest_address(),
+		layout.guest_address() + length
 	);
 	for addr in mapping_range.step_by(Size2MiB::SIZE as usize) {
 		let ga = GuestPhysAddr::new(addr);
@@ -183,11 +168,7 @@ mod tests {
 	use uhyve_interface::GuestVirtAddr;
 
 	use super::*;
-	use crate::{
-		arch::GDT_OFFSET,
-		consts::{PAGETABLES_END, PAGETABLES_OFFSET},
-		mem::MmapMemory,
-	};
+	use crate::mem::MmapMemory;
 
 	#[test]
 	fn test_pagetable_initialization() {
@@ -202,25 +183,24 @@ mod tests {
 			GuestPhysAddr::new(0x111ff000),
 			GuestPhysAddr::new(0xe1120000),
 		];
+
 		for &guest_address in gaddrs.iter() {
 			println!("\n\n---------------------------------------");
 			println!("testing guest address {guest_address:?}");
-			let mem = MmapMemory::new(MIN_PHYSMEM_SIZE * 2, guest_address, true, true);
-			initialize_pagetables(
-				unsafe {
-					mem.slice_at_mut(guest_address, MIN_PHYSMEM_SIZE * 2)
-						.unwrap()
-				},
+			let mut mem = MmapMemory::new(
+				X86_64MemoryLayout::MIN_PHYSMEM_SIZE * 2,
 				guest_address,
-				0x20_0000 * 4,
-				false,
+				true,
+				true,
 			);
+			let layout = X86_64MemoryLayout::simple_layout(guest_address);
+			initialize_pagetables(&mut mem, &layout, 0x20_0000 * 4, false);
 
 			/// Checks if `address` is in the pagetables.
 			fn check_and_print(
 				address: GuestVirtAddr,
-				phys_addr_offset: GuestPhysAddr,
 				mem: &MmapMemory,
+				layout: &X86_64MemoryLayout,
 			) {
 				let idx4 = address.p4_index();
 				let idx3 = address.p3_index();
@@ -231,16 +211,14 @@ mod tests {
 					u16::from(idx3),
 					u16::from(idx2)
 				);
-				let pml4 = unsafe { mem.get_ref(phys_addr_offset + PML4_OFFSET).unwrap() };
+				let pml4 = unsafe { mem.get_ref(layout.pml4_address()).unwrap() };
 				pretty_print_pagetable(pml4);
 
 				// Check PDPTE address
 				let addr_pdpte = &pml4[idx4];
 				debug!("addr_ptpde: {addr_pdpte:?}");
-				assert!(
-					addr_pdpte.addr().as_u64() - phys_addr_offset.as_u64() >= PAGETABLES_OFFSET
-				);
-				assert!(addr_pdpte.addr().as_u64() - phys_addr_offset.as_u64() <= PAGETABLES_END);
+				assert!(addr_pdpte.addr().as_u64() >= layout.pagetables().0.start().as_u64());
+				assert!(addr_pdpte.addr().as_u64() <= layout.pagetables().0.end().as_u64());
 				assert!(
 					addr_pdpte
 						.flags()
@@ -250,8 +228,8 @@ mod tests {
 				let pdpte = unsafe { mem.get_ref(addr_pdpte.addr().into()).unwrap() };
 				pretty_print_pagetable(pdpte);
 				let addr_pde = &pdpte[idx3];
-				assert!(addr_pde.addr().as_u64() - phys_addr_offset.as_u64() >= PAGETABLES_OFFSET);
-				assert!(addr_pde.addr().as_u64() - phys_addr_offset.as_u64() <= PAGETABLES_END);
+				assert!(addr_pde.addr().as_u64() >= layout.pagetables().0.start().as_u64());
+				assert!(addr_pde.addr().as_u64() <= layout.pagetables().0.end().as_u64());
 				assert!(
 					addr_pde
 						.flags()
@@ -263,21 +241,17 @@ mod tests {
 				assert_eq!(pde[idx2].addr().as_u64(), address.as_u64());
 			}
 
-			check_and_print(
-				GuestVirtAddr::new(guest_address.as_u64()),
-				guest_address,
-				&mem,
-			);
+			check_and_print(GuestVirtAddr::new(guest_address.as_u64()), &mem, &layout);
 			check_and_print(
 				GuestVirtAddr::new(guest_address.as_u64() + 3 * 0x20_0000),
-				guest_address,
 				&mem,
+				&layout,
 			);
 
 			// Test GDT
 			let gdt_results = [0x0, 0xAF9B000000FFFF, 0xCF93000000FFFF];
 			for (i, res) in gdt_results.iter().enumerate() {
-				let gdt_addr = guest_address + GDT_OFFSET as usize + i * 8;
+				let gdt_addr = layout.gdt_address() + i * 8;
 				let gdt_entry = u64::from_le_bytes(unsafe {
 					mem.slice_at(gdt_addr, 8).unwrap().try_into().unwrap()
 				});

@@ -27,6 +27,7 @@ use crate::{
 		filemap::{Directory, Node, NodeStatRef, UhyveFileMap, UhyveMapLeaf},
 	},
 	mem::MmapMemory,
+	mem_layout::MemoryLayout,
 	net::NetworkBackend,
 	params::EnvVars,
 	vcpu::VcpuStopReason,
@@ -184,9 +185,9 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 ///
 /// When a hypercall returns an error, or the hypercall is invalid, this function might panic
 /// (particularly on failing write calls).
-pub fn handle_hypercall_v1<N: NetworkBackend>(
+pub fn handle_hypercall_v1<N: NetworkBackend, L: MemoryLayout>(
 	peripherals: &VmPeripherals<N>,
-	kernel_info: &KernelInfo,
+	kernel_info: &KernelInfo<L>,
 	root_pt: impl FnOnce() -> HypervisorResult<GuestPhysAddr>,
 	hypercall: v1::Hypercall<'_>,
 ) -> Option<HypervisorResult<VcpuStopReason>> {

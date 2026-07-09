@@ -10,20 +10,18 @@ use xhypervisor::{
 use crate::{
 	HypervisorError, HypervisorResult,
 	arch::{
-		GICD_BASE_ADDRESS, GICR_BASE_ADDRESS, MSI_BASE_ADDRESS, MT_DEVICE_GRE, MT_DEVICE_nGnRE,
-		MT_DEVICE_nGnRnE, MT_NORMAL, MT_NORMAL_NC, PGT_OFFSET, PSR, TCR_FLAGS, TCR_TG1_4K, VA_BITS,
-		mair, tcr_size,
+		Aarch64MemoryLayout, GICD_BASE_ADDRESS, GICR_BASE_ADDRESS, MSI_BASE_ADDRESS, MT_DEVICE_GRE,
+		MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_NORMAL, MT_NORMAL_NC, PSR, TCR_FLAGS, TCR_TG1_4K,
+		VA_BITS, init_guest_mem, mair, tcr_size,
 	},
 	hypercall,
 	mem::MmapMemory,
+	mem_layout::MemoryLayout,
 	os::aarch64::virtio_device::XHyveVirtioNetDevice,
 	params::{NetworkMode, Params},
 	stats::CpuStats,
 	vcpu::{VcpuStopReason, VirtualCPU},
-	vm::{
-		BOOT_INFO_OFFSET, KernelInfo, VirtualizationBackend, VirtualizationBackendInternal,
-		VmPeripherals,
-	},
+	vm::{KernelInfo, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals},
 };
 
 pub struct XhyveVm {
@@ -37,12 +35,13 @@ pub struct XhyveVm {
 impl VirtualizationBackendInternal for XhyveVm {
 	type VCPU = XhyveCpu;
 	type VirtioNetImpl = XHyveVirtioNetDevice;
+	type MemLayout = Aarch64MemoryLayout;
 	const NAME: &str = "XhyveVm";
 
 	fn new_cpu(
 		&self,
 		id: usize,
-		kernel_info: Arc<KernelInfo>,
+		kernel_info: Arc<KernelInfo<Self::MemLayout>>,
 		enable_stats: bool,
 	) -> HypervisorResult<XhyveCpu> {
 		Ok(XhyveCpu {
@@ -81,6 +80,15 @@ impl VirtualizationBackendInternal for XhyveVm {
 		Ok(Self { peripherals, gic })
 	}
 
+	fn init_guest_mem(
+		mem: &mut MmapMemory,
+		layout: &Self::MemLayout,
+		memory_size: u64,
+		_legacy_mapping: bool,
+	) {
+		init_guest_mem(mem, layout, memory_size)
+	}
+
 	fn virtio_net_device(_mode: NetworkMode, _memory: Arc<MmapMemory>) -> Self::VirtioNetImpl {
 		unimplemented!();
 	}
@@ -93,7 +101,7 @@ pub struct XhyveCpu {
 	vcpu: Option<xhypervisor::VirtualCpu>,
 	peripherals: Arc<VmPeripherals<<XhyveVm as VirtualizationBackendInternal>::VirtioNetImpl>>,
 	// TODO: Remove once the getenv/getargs hypercalls are removed
-	kernel_info: Arc<KernelInfo>,
+	kernel_info: Arc<KernelInfo<<XhyveVm as VirtualizationBackendInternal>::MemLayout>>,
 	stats: Option<CpuStats>,
 }
 
@@ -109,8 +117,7 @@ impl VirtualCPU for XhyveCpu {
 
 		let KernelInfo {
 			entry_point,
-			stack_address,
-			guest_address,
+			layout,
 			..
 		} = &*self.kernel_info;
 
@@ -121,8 +128,8 @@ impl VirtualCPU for XhyveCpu {
 		let pstate: PSR = PSR::D_BIT | PSR::A_BIT | PSR::I_BIT | PSR::F_BIT | PSR::MODE_EL1H;
 		vcpu.write_register(Register::CPSR, pstate.bits())?;
 		vcpu.write_register(Register::PC, entry_point.as_u64())?;
-		vcpu.write_system_register(SystemRegister::SP_EL1, stack_address.as_u64())?;
-		vcpu.write_register(Register::X0, (*guest_address + BOOT_INFO_OFFSET).as_u64())?;
+		vcpu.write_system_register(SystemRegister::SP_EL1, layout.stack().0.addr.as_u64())?;
+		vcpu.write_register(Register::X0, (layout.boot_info().0.addr).as_u64())?;
 		vcpu.write_register(Register::X1, self.id.into())?;
 
 		/*
@@ -166,10 +173,7 @@ impl VirtualCPU for XhyveCpu {
 
 		// Load TTBRx
 		vcpu.write_system_register(SystemRegister::TTBR1_EL1, 0)?;
-		vcpu.write_system_register(
-			SystemRegister::TTBR0_EL1,
-			(*guest_address + PGT_OFFSET).as_u64(),
-		)?;
+		vcpu.write_system_register(SystemRegister::TTBR0_EL1, layout.pgt_address().as_u64())?;
 
 		/*
 		* Prepare system control register (SCTRL)
@@ -236,7 +240,7 @@ impl VirtualCPU for XhyveCpu {
 							if let Some(hypercall) = unsafe {
 								hypercall::address_to_hypercall_v2(
 									&self.peripherals.mem,
-									addr - self.kernel_info.guest_address.as_u64(),
+									addr - self.kernel_info.layout.guest_address().as_u64(),
 									data_addr,
 								)
 							} {
@@ -252,7 +256,7 @@ impl VirtualCPU for XhyveCpu {
 							} else if let Some(hypercall) = unsafe {
 								hypercall::address_to_hypercall_v1(
 									&self.peripherals.mem,
-									(addr - self.kernel_info.guest_address.as_u64())
+									(addr - self.kernel_info.layout.guest_address().as_u64())
 										.try_into()
 										.unwrap(),
 									data_addr,

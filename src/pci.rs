@@ -7,7 +7,7 @@ use uhyve_interface::GuestPhysAddr;
 use zerocopy::{Immutable, IntoBytes};
 
 use crate::{
-	consts::GUEST_PAGE_SIZE,
+	arch::GUEST_PAGE_SIZE,
 	net::{PCI_ETHERNET_REVISION_ID, UHYVE_PCI_CLASS_INFO},
 	virtio::{DeviceStatus, VIRTIO_VENDOR_ID},
 };

@@ -382,7 +382,7 @@ pub struct GdbVcpuManager<Vm: VirtualizationBackend> {
 
 	pub(crate) peripherals:
 		Arc<VmPeripherals<<Vm as VirtualizationBackendInternal>::VirtioNetImpl>>,
-	pub(crate) kernel_info: Arc<KernelInfo>,
+	pub(crate) kernel_info: Arc<KernelInfo<Vm::MemLayout>>,
 	pub(crate) stops: async_channel::Receiver<MultiThreadStopReason<u64>>,
 	pub(crate) vcpus: Vec<VcpuWrapper<<Vm as VirtualizationBackendInternal>::VCPU>>,
 	/// This does look odd, but GDB appears to truncate thread-ids to 32bit

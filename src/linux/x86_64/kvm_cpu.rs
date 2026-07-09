@@ -7,20 +7,18 @@ use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
 use crate::{
 	HypervisorError, HypervisorResult,
-	arch::{BOOT_GDT_MAX, GDT_OFFSET, PML4_OFFSET},
+	arch::{BOOT_GDT_MAX, X86_64MemoryLayout, x86_64::paging::initialize_pagetables},
 	gdb::resume::ResumeMode,
 	hypercall,
 	mem::MmapMemory,
+	mem_layout::MemoryLayout,
 	os::{KVM, KickSignal, x86_64::virtio_device::KvmVirtioNetDevice},
 	params::{NetworkMode, Params},
 	pci::{IOBASE_U64, IOEND_U64, PciConfigurationAddress, PciDevice},
 	stats::{CpuStats, VmExit},
 	vcpu::{VcpuStopReason, VirtualCPU},
 	virtio::net::VirtioNetPciDevice,
-	vm::{
-		BOOT_INFO_OFFSET, KernelInfo, VirtualizationBackend, VirtualizationBackendInternal,
-		VmPeripherals,
-	},
+	vm::{KernelInfo, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals},
 };
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
@@ -83,12 +81,13 @@ pub struct KvmVm {
 impl VirtualizationBackendInternal for KvmVm {
 	type VCPU = KvmCpu;
 	type VirtioNetImpl = KvmVirtioNetDevice;
+	type MemLayout = X86_64MemoryLayout;
 	const NAME: &str = "KvmVm";
 
 	fn new_cpu(
 		&self,
 		id: usize,
-		kernel_info: Arc<KernelInfo>,
+		kernel_info: Arc<KernelInfo<Self::MemLayout>>,
 		enable_stats: bool,
 	) -> HypervisorResult<KvmCpu> {
 		let vcpu = self.vm_fd.create_vcpu(id as u64)?;
@@ -205,6 +204,15 @@ impl VirtualizationBackendInternal for KvmVm {
 		})
 	}
 
+	fn init_guest_mem(
+		mem: &mut MmapMemory,
+		layout: &Self::MemLayout,
+		memory_size: u64,
+		legacy_mapping: bool,
+	) {
+		initialize_pagetables(mem, layout, memory_size, legacy_mapping);
+	}
+
 	fn virtio_net_device(mode: NetworkMode, memory: Arc<MmapMemory>) -> Self::VirtioNetImpl {
 		KvmVirtioNetDevice::new(VirtioNetPciDevice::new(mode, memory))
 	}
@@ -217,7 +225,7 @@ pub struct KvmCpu {
 	vcpu: VcpuFd,
 	peripherals: Arc<VmPeripherals<<KvmVm as VirtualizationBackendInternal>::VirtioNetImpl>>,
 	// TODO: Remove once the getenv/getargs hypercalls are removed
-	kernel_info: Arc<KernelInfo>,
+	kernel_info: Arc<KernelInfo<<KvmVm as VirtualizationBackendInternal>::MemLayout>>,
 	pci_addr: Option<u32>,
 	stats: Option<CpuStats>,
 }
@@ -226,8 +234,7 @@ impl KvmCpu {
 	fn init(&mut self) -> HypervisorResult<()> {
 		self.setup_long_mode(
 			self.kernel_info.entry_point,
-			self.kernel_info.stack_address,
-			self.kernel_info.guest_address,
+			self.kernel_info.layout,
 			self.id,
 		)?;
 		self.setup_cpuid()?;
@@ -348,8 +355,7 @@ impl KvmCpu {
 	fn setup_long_mode(
 		&self,
 		entry_point: GuestPhysAddr,
-		stack_address: GuestPhysAddr,
-		guest_address: GuestPhysAddr,
+		layout: X86_64MemoryLayout,
 		cpu_id: usize,
 	) -> Result<(), kvm_ioctls::Error> {
 		let mut sregs = self.vcpu.get_sregs()?;
@@ -360,7 +366,7 @@ impl KvmCpu {
 			| Cr0Flags::PAGING;
 		sregs.cr0 = cr0.bits();
 
-		sregs.cr3 = (guest_address + PML4_OFFSET).as_u64();
+		sregs.cr3 = layout.pml4_address().as_u64();
 
 		let cr4 = Cr4Flags::PHYSICAL_ADDRESS_EXTENSION;
 		sregs.cr4 = cr4.bits();
@@ -391,16 +397,16 @@ impl KvmCpu {
 		// Read-Write, accessed. L bit must not be set.
 		(seg.type_, seg.selector, seg.l) = (3, 1 << 4, 0);
 		(sregs.ds, sregs.es, sregs.ss) = (seg, seg, seg);
-		sregs.gdt.base = (guest_address + GDT_OFFSET).as_u64();
+		sregs.gdt.base = layout.gdt_address().as_u64();
 		sregs.gdt.limit = ((std::mem::size_of::<u64>() * BOOT_GDT_MAX) - 1) as u16;
 		self.vcpu.set_sregs(&sregs)?;
 
 		let regs = kvm_regs {
 			rflags: 2,
 			rip: entry_point.as_u64(),
-			rdi: (guest_address + BOOT_INFO_OFFSET).as_u64(),
+			rdi: layout.boot_info().0.addr.as_u64(),
 			rsi: cpu_id.try_into().unwrap(),
-			rsp: stack_address.as_u64(),
+			rsp: layout.stack().0.addr.as_u64(),
 			..Default::default()
 		};
 		self.vcpu.set_regs(&regs)?;

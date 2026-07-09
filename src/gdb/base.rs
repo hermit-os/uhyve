@@ -14,7 +14,7 @@ use gdbstub::{
 #[cfg(not(target_os = "macos"))]
 use uhyve_interface::GuestVirtAddr;
 
-use crate::{HypervisorError, gdb::GdbVcpuManager, vm::DefaultBackend};
+use crate::{HypervisorError, gdb::GdbVcpuManager, mem_layout::MemoryLayout, vm::DefaultBackend};
 #[cfg(not(target_os = "macos"))]
 use crate::{os::gdb::regs, vcpu::VirtualCPU, virt_to_phys};
 
@@ -179,7 +179,7 @@ impl target_multithread::MultiThreadBase for GdbVcpuManager<DefaultBackend> {
 
 impl SectionOffsets for crate::gdb::GdbVcpuManager<DefaultBackend> {
 	fn get_section_offsets(&mut self) -> Result<Offsets<u64>, Self::Error> {
-		let offset = self.kernel_info.kernel_address.as_u64();
+		let offset = self.kernel_info.layout.kernel_address().as_u64();
 		Ok(Offsets::Sections {
 			text: offset,
 			data: offset,
