@@ -149,16 +149,17 @@ impl MmapMemory {
 	///
 	/// # Safety
 	///
-	/// This is unsafe, as can create multiple aliasing. During the lifetime of
-	/// the returned slice, the memory must not be altered to prevent undfined
-	/// behaviour.
-	pub unsafe fn slice_at(&self, addr: GuestPhysAddr, len: usize) -> Result<&[u8], MemoryError> {
+	/// - This can create multiple aliasing. During the lifetime of the returned slice, the memory must
+	///   not be altered to prevent undfined behaviour.
+	/// - `addr` must have proper alignment of `T`
+	pub unsafe fn slice_at<T>(&self, addr: GuestPhysAddr, len: usize) -> Result<&[T], MemoryError> {
 		let guest_addr = self.addr_to_mem_region_addr(addr)?;
-		if self.check_range(guest_addr, len)? {
+		let len_bytes = len * size_of::<T>();
+		if self.check_range(guest_addr, len_bytes)? {
 			Ok(unsafe {
 				std::slice::from_raw_parts_mut(
-					self.region_mmap().get_host_address(guest_addr).unwrap(),
-					len,
+					self.region_mmap().get_host_address(guest_addr).unwrap() as *mut T,
+					len_bytes,
 				)
 			})
 		} else {
@@ -170,21 +171,22 @@ impl MmapMemory {
 	///
 	/// # Safety
 	///
-	/// This is unsafe, as it can create multiple aliasing. During the lifetime of
-	/// the returned slice, the memory must not be altered to prevent undfined
-	/// behavior.
+	/// - This can create multiple aliasing. During the lifetime of the returned slice, the memory must
+	///   not be altered to prevent undfined behaviour.
+	/// - `addr` must have proper alignment of `T`
 	#[expect(clippy::mut_from_ref)]
-	pub unsafe fn slice_at_mut(
+	pub unsafe fn slice_at_mut<T>(
 		&self,
 		addr: GuestPhysAddr,
 		len: usize,
-	) -> Result<&mut [u8], MemoryError> {
+	) -> Result<&mut [T], MemoryError> {
 		let guest_addr = self.addr_to_mem_region_addr(addr)?;
-		if self.check_range(guest_addr, len)? {
+		let len_bytes = len * size_of::<T>();
+		if self.check_range(guest_addr, len_bytes)? {
 			Ok(unsafe {
 				std::slice::from_raw_parts_mut(
-					self.region_mmap().get_host_address(guest_addr).unwrap(),
-					len,
+					self.region_mmap().get_host_address(guest_addr).unwrap() as *mut T,
+					len_bytes,
 				)
 			})
 		} else {
