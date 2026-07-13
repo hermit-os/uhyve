@@ -71,7 +71,7 @@ async-channel = "2.5.0"
 futures-lite = "2.6.1"
 event-listener = "5.4.1"
 bitflags = "2.13"
-virtio-queue = "0.17"
+virtio-queue = "0.18"
 zerocopy = { version = "0.8", features = ["derive"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
