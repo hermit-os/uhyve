@@ -8,8 +8,8 @@ use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 use crate::{
 	mem::MmapMemory,
 	mem_layout::{
-		BootInfoSection, FdtSection, MemoryLayout, PagetableSection, Section, StackSection,
-		generate_guest_start_address,
+		BootInfoSection, FdtSection, KernelSection, MemoryLayout, PagetableSection, Section,
+		StackSection, generate_guest_start_address,
 	},
 	paging::{BumpAllocator, PagetableError},
 	params::Params,
@@ -301,6 +301,7 @@ pub(crate) fn init_guest_mem(mem: &mut MmapMemory, layout: &Aarch64MemoryLayout,
 pub(crate) struct Aarch64MemoryLayout {
 	guest_address: GuestPhysAddr,
 	kernel_address: GuestPhysAddr,
+	kernel_len: usize,
 }
 impl Aarch64MemoryLayout {
 	const FDT_OFFSET: u64 = 0x1000;
@@ -343,6 +344,7 @@ impl MemoryLayout for Aarch64MemoryLayout {
 		Self {
 			guest_address,
 			kernel_address,
+			kernel_len: object.mem_size(),
 		}
 	}
 
@@ -371,8 +373,11 @@ impl MemoryLayout for Aarch64MemoryLayout {
 		})
 	}
 
-	fn kernel_address(&self) -> GuestPhysAddr {
-		self.kernel_address
+	fn kernel(&self) -> KernelSection {
+		KernelSection(Section {
+			addr: self.kernel_address,
+			length: self.kernel_len,
+		})
 	}
 
 	fn pagetables(&self) -> crate::mem_layout::PagetableSection {
@@ -389,6 +394,11 @@ impl Display for Aarch64MemoryLayout {
 		writeln!(f, "boot_info_address: {:12x}", self.boot_info().0.addr)?;
 		writeln!(f, "fdt_address:       {:12x}", self.fdt().0.addr)?;
 		writeln!(f, "stack_address:     {:12x}", self.stack().0.addr)?;
-		writeln!(f, "kernel_address:    {:12x}", self.kernel_address())
+		writeln!(f, "kernel_address:    {:12x}", self.kernel().0.addr)?;
+		writeln!(
+			f,
+			"guest_heap:        {:12x}",
+			self.kernel().0.addr + self.kernel_len
+		)
 	}
 }

@@ -19,7 +19,6 @@ impl Section {
 		self.addr
 	}
 	// "no code using it on aarch64 (yet)"
-	#[cfg_attr(target_arch = "aarch64", expect(dead_code))]
 	pub fn end(&self) -> GuestPhysAddr {
 		self.addr + self.length
 	}
@@ -29,6 +28,7 @@ pub(crate) struct FdtSection(pub Section);
 pub(crate) struct BootInfoSection(pub Section);
 pub(crate) struct StackSection(pub Section);
 pub(crate) struct PagetableSection(pub Section);
+pub(crate) struct KernelSection(pub Section);
 
 pub trait MemoryLayout: Display + Debug {
 	fn new(params: &Params, object: &KernelObject<'_>) -> Self;
@@ -36,8 +36,8 @@ pub trait MemoryLayout: Display + Debug {
 	/// The location of the whole guest in the physical address space
 	fn guest_address(&self) -> GuestPhysAddr;
 
-	/// The starting position of the image in physical memory
-	fn kernel_address(&self) -> GuestPhysAddr;
+	/// The location of the kernel image in physical memory
+	fn kernel(&self) -> KernelSection;
 
 	fn stack(&self) -> StackSection;
 

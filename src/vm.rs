@@ -32,7 +32,7 @@ use crate::{
 	gdb::GdbVcpuManager,
 	isolation::filemap::{UhyveFileMap, UhyveMapLeaf},
 	mem::MmapMemory,
-	mem_layout::{BootInfoSection, FdtSection, MemoryLayout},
+	mem_layout::{BootInfoSection, FdtSection, KernelSection, MemoryLayout},
 	net::NetworkBackend,
 	params::{EnvVars, HermitImageMode, NetworkMode, Params},
 	parking::Parker,
@@ -347,12 +347,8 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 				entry_point,
 			},
 			kernel_end_address,
-		) = load_kernel_to_mem(
-			&object,
-			&mut mem,
-			layout.kernel_address() - layout.guest_address(),
-		)
-		.expect("Unable to load Kernel {kernel_path}");
+		) = load_kernel_to_mem(&object, &mut mem, &layout.kernel())
+			.expect("Unable to load Kernel {kernel_path}");
 
 		// Allocate memory for hermit image
 		let hermit_image = hermit_image.map(|hermit_image| {
@@ -686,7 +682,7 @@ fn write_fdt_into_mem(
 
 	debug!("fdt.len() = {}", fdt.len());
 	assert!(fdt.len() < fdt_section.0.length);
-	let fdt_target = unsafe { mem.slice_at_mut(fdt_section.0.addr, fdt.len()).unwrap() };
+	let fdt_target = unsafe { &mut mem.section_slice_mut(fdt_section.0).unwrap()[0..fdt.len()] };
 	fdt_target.copy_from_slice(&fdt);
 }
 
@@ -724,9 +720,9 @@ fn write_boot_info_to_mem(
 fn load_kernel_to_mem(
 	object: &KernelObject<'_>,
 	mem: &mut MmapMemory,
-	relative_offset: u64,
+	kernel_section: &KernelSection,
 ) -> LoadKernelResult<(LoadedKernel, GuestPhysAddr)> {
-	let kernel_end_address = mem.guest_addr() + relative_offset + object.mem_size();
+	let kernel_end_address = kernel_section.0.end();
 
 	if kernel_end_address > mem.guest_addr() + mem.size() {
 		return Err(LoadKernelError::InsufficientMemory);
@@ -734,10 +730,9 @@ fn load_kernel_to_mem(
 
 	Ok((
 		object.load_kernel(
-			// Safety: Slice only lives during this fn call, so no aliasing happens
-			&mut unsafe { mem.as_slice_uninit_mut() }
-				[relative_offset as usize..relative_offset as usize + object.mem_size()],
-			relative_offset + mem.guest_addr().as_u64(),
+			// Safety: Slice only lives during this fn call, so no aliasing happens.
+			unsafe { mem.section_slice_mut(kernel_section.0).unwrap() },
+			kernel_section.0.addr.as_u64(),
 		),
 		kernel_end_address,
 	))

@@ -179,7 +179,7 @@ impl target_multithread::MultiThreadBase for GdbVcpuManager<DefaultBackend> {
 
 impl SectionOffsets for crate::gdb::GdbVcpuManager<DefaultBackend> {
 	fn get_section_offsets(&mut self) -> Result<Offsets<u64>, Self::Error> {
-		let offset = self.kernel_info.layout.kernel_address().as_u64();
+		let offset = self.kernel_info.layout.kernel().0.addr.as_u64();
 		Ok(Offsets::Sections {
 			text: offset,
 			data: offset,

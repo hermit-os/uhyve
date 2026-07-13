@@ -1,4 +1,4 @@
-use std::{mem::MaybeUninit, ops::Range};
+use std::ops::Range;
 #[cfg(target_os = "linux")]
 use std::{os::raw::c_void, ptr::NonNull};
 
@@ -10,6 +10,8 @@ use vm_memory::{
 	Address, GuestAddress, GuestMemoryBackend, GuestMemoryMmap, GuestMemoryRegion, GuestRegionMmap,
 	MemoryRegionAddress, mmap::MmapRegionBuilder,
 };
+
+use crate::mem_layout::Section;
 
 #[derive(Error, Debug)]
 pub enum MemoryError {
@@ -112,16 +114,6 @@ impl MmapMemory {
 	#[expect(clippy::mut_from_ref)]
 	pub unsafe fn as_slice_mut(&self) -> &mut [u8] {
 		unsafe { std::slice::from_raw_parts_mut(self.host_start(), self.size()) }
-	}
-
-	/// # Safety
-	///
-	/// Same as [`as_slice_mut`], but for `MaybeUninit<u8>`. Actually the memory is initialized, as Mmap zero initializes it, but some fns like [`hermit_entry::elf::load_kernel`] require [`MaybeUninit`]s.
-	#[expect(clippy::mut_from_ref)]
-	pub unsafe fn as_slice_uninit_mut(&self) -> &mut [MaybeUninit<u8>] {
-		unsafe {
-			std::slice::from_raw_parts_mut(self.host_start() as *mut MaybeUninit<u8>, self.size())
-		}
 	}
 
 	/// Converts `addr` to a `MemoryRegionAddress` that is relative to the internally used memory.
@@ -255,6 +247,20 @@ impl MmapMemory {
 	// TODO: Eliminate usages in favor of `address_range`
 	pub fn address_range_u64(&self) -> Range<u64> {
 		self.guest_addr().as_u64()..self.guest_addr().as_u64() + self.size() as u64
+	}
+
+	/// Convenience wrapper around [`slice_at`] to work directly on [`Section`]s. Same safety rules apply.
+	#[expect(dead_code)] // not yet used.
+	pub unsafe fn section_slice<T>(&self, section: Section) -> Result<&[T], MemoryError> {
+		assert_eq!(section.length % size_of::<T>(), 0);
+		unsafe { self.slice_at(section.start(), section.length / size_of::<T>()) }
+	}
+
+	/// Convenience wrapper around [`slice_at_mut`] to work directly on [`Section`]s. Same safety rules apply.
+	#[expect(clippy::mut_from_ref)]
+	pub unsafe fn section_slice_mut<T>(&self, section: Section) -> Result<&mut [T], MemoryError> {
+		assert_eq!(section.length % size_of::<T>(), 0);
+		unsafe { self.slice_at_mut(section.start(), section.length / size_of::<T>()) }
 	}
 }
 
