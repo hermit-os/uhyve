@@ -101,7 +101,7 @@ pub fn initialize_pagetables(
 	let mapping_range = if legacy_mapping {
 		debug!("Legacy mapping of the initial memory");
 		let start_page = layout.guest_address();
-		let kernel_start = VirtAddr::new(layout.kernel_address().as_u64());
+		let kernel_start = VirtAddr::new(layout.kernel().0.addr.as_u64());
 		let end_page = Page::from_page_table_indices_2mib(
 			kernel_start.p4_index(),
 			kernel_start.p3_index(),
