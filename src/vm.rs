@@ -368,7 +368,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 		});
 
 		let legacy_mapping = if let Some(version) = hermit_version {
-			// actually, all versions that have the tag in the elf are valid, but an explicit check doesn't hurt
+			// actually, all versions that have the tag in the elf don't use legacy mapping, but an explicit check doesn't hurt
 			version
 				< HermitVersion {
 					major: 0,
