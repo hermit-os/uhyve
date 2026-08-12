@@ -64,7 +64,7 @@ fn network_guest_receive_test() {
 		stream.write_all(b"exit").unwrap();
 	});
 
-	let res = UhyveVm::new(bin_path, params).unwrap().run(None);
+	let res = UhyveVm::new(bin_path, params).unwrap().run();
 	check_result_and_print_output(&res, 0);
 
 	t.join().unwrap();
@@ -133,7 +133,7 @@ fn network_guest_send_test() {
 		}
 	});
 
-	let res = UhyveVm::new(bin_path, params).unwrap().run(None);
+	let res = UhyveVm::new(bin_path, params).unwrap().run();
 	check_result_and_print_output(&res, 0);
 
 	t.join().unwrap();
@@ -193,7 +193,7 @@ fn network_receive_large() {
 		println!("Throughput (sending): {mbit:.2} Mbit/s");
 	});
 
-	let res = UhyveVm::new(kernel_path.clone(), params).unwrap().run(None);
+	let res = UhyveVm::new(kernel_path.clone(), params).unwrap().run();
 
 	check_result_and_print_output(&res, 0);
 	println!("Kernel Output:\n{}", res.output.as_ref().unwrap());
@@ -266,7 +266,7 @@ fn network_send_large() {
 		received
 	});
 
-	let res = UhyveVm::new(kernel_path.clone(), params).unwrap().run(None);
+	let res = UhyveVm::new(kernel_path.clone(), params).unwrap().run();
 
 	let received = t.join().unwrap();
 

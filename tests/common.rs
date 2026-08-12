@@ -102,7 +102,7 @@ fn run_vm(kernel_path: PathBuf, params: Params) -> VmResult {
 	// This helps us ensure consistency across integration tests.
 	env_logger::try_init().expect_err("Caller has not initialized a logger yet.");
 	println!("Launching kernel {}", kernel_path.display());
-	UhyveVm::new(kernel_path, params).unwrap().run(None)
+	UhyveVm::new(kernel_path, params).unwrap().run()
 }
 
 /// Small wrapper around [`Uhyve::run`] with default parameters for a small and

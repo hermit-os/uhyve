@@ -32,7 +32,7 @@ fn selective_env_test() {
 		..Default::default()
 	};
 	let vm = UhyveVm::new(bin_path, params).unwrap();
-	let res = vm.run(None);
+	let res = vm.run();
 	check_result_and_print_output(&res, 0);
 	for (key, value) in env_vars.iter() {
 		assert!(
@@ -61,7 +61,7 @@ fn host_env_test() {
 		..Default::default()
 	};
 	let vm = UhyveVm::new(bin_path, params).unwrap();
-	let res = vm.run(None);
+	let res = vm.run();
 	check_result_and_print_output(&res, 0);
 
 	let common_env_vars = ["PWD", "CARGO_MANIFEST_DIR"];

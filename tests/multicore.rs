@@ -42,7 +42,7 @@ fn multicore_test() {
 			..Default::default()
 		};
 			let vm = UhyveVm::new(bin_path.clone(), params).unwrap();
-			let res = vm.run(None);
+			let res = vm.run();
 			check_result_and_print_output(&res, 0);
 
 			let outp = res.output.unwrap();

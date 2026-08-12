@@ -146,6 +146,7 @@ pub struct UhyveVm<VirtBackend: VirtualizationBackend> {
 	pub(crate) vcpus: Vec<<VirtBackend as VirtualizationBackendInternal>::VCPU>,
 	pub(crate) peripherals: Arc<VmPeripherals<VirtBackend::VirtioNetImpl>>,
 	pub(crate) kernel_info: Arc<KernelInfo<VirtBackend::MemLayout>>,
+	cpu_affinity: Vec<CoreId>,
 	_virt_backend: VirtBackend,
 }
 #[allow(private_bounds)]
@@ -360,6 +361,8 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 			.expect("Unable to load Hermit image {kernel_path}")
 		});
 
+		let cpu_affinity = core::mem::take(&mut params.cpu_affinity);
+
 		let kernel_info = Arc::new(KernelInfo {
 			entry_point: entry_point.into(),
 			layout,
@@ -468,6 +471,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 			peripherals,
 			kernel_info,
 			vcpus,
+			cpu_affinity,
 			_virt_backend: virt_backend,
 		})
 	}
@@ -500,13 +504,19 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 	/// Runs the VM.
 	///
 	/// Blocks until the VM has finished execution.
-	pub fn run(self, cpu_affinity: Option<Vec<CoreId>>) -> VmResult
+	pub fn run(mut self) -> VmResult
 	where
 		GdbVcpuManager<VirtBackend>: Target,
 		<GdbVcpuManager<VirtBackend> as Target>::Error: fmt::Debug,
 		<GdbVcpuManager<VirtBackend> as Target>::Arch: Arch<Usize = u64>,
 	{
 		KickSignal::register_handler().unwrap();
+
+		let cpu_affinity = if self.cpu_affinity.is_empty() {
+			None
+		} else {
+			Some(core::mem::take(&mut self.cpu_affinity))
+		};
 
 		if self.kernel_info.params.gdb_port.is_none() {
 			self.run_no_gdb(cpu_affinity)

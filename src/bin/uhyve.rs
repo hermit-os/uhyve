@@ -295,8 +295,8 @@ struct CpuArgs {
 
 impl CpuArgs {
 	#[cfg_attr(test, allow(unreachable_code))]
-	fn get_affinity(self, app: &mut Command) -> Option<Vec<CoreId>> {
-		self.affinity.map(|affinity| {
+	fn get_affinity(&self, app: &mut Command) -> Option<Vec<CoreId>> {
+		self.affinity.clone().map(|affinity| {
 			if let Err(e) = affinity.validate() {
 				app.error(ErrorKind::ValueValidation, e).exit()
 			}
@@ -501,6 +501,8 @@ impl From<Args> for Params {
 			ksm: ksm.unwrap_or_default(),
 			aslr: !no_aslr.unwrap_or_default(),
 			cpu_count: cpu_count.unwrap_or_default(),
+			// This is set elsewhere using `args.cpu.get_affinity(&mut app).unwrap_or(Vec::new())`.
+			cpu_affinity: Default::default(),
 			#[cfg(target_os = "linux")]
 			cpu_pm: cpu_pm.unwrap_or_default(),
 			#[cfg(target_os = "linux")]
@@ -595,12 +597,13 @@ fn run_uhyve() -> i32 {
 
 	let stats = args.uhyve.stats.unwrap_or_default();
 	let kernel_path = args.guest.kernel.clone();
-	let affinity = args.cpu.clone().get_affinity(&mut app);
-	let params = Params::from(args);
+	let affinity = args.cpu.get_affinity(&mut app).unwrap_or(Vec::new());
+	let mut params = Params::from(args);
+	params.cpu_affinity = affinity;
 
 	let vm = UhyveVm::new(kernel_path, params).unwrap_or_else(|e| panic!("Error: {e}"));
 
-	let res = vm.run(affinity);
+	let res = vm.run();
 	if stats && let Some(stats) = res.stats {
 		println!("Run statistics:");
 		println!("{stats}");

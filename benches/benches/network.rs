@@ -131,7 +131,7 @@ fn network_receive_bench(kernel_path: PathBuf) -> u64 {
 		debug!("Throughput (sending): {mbit:.2} Mbit/s");
 	});
 
-	let res = UhyveVm::new(kernel_path.clone(), params).unwrap().run(None);
+	let res = UhyveVm::new(kernel_path.clone(), params).unwrap().run();
 
 	check_result_and_print_output(&res, 0);
 
@@ -197,7 +197,7 @@ fn network_send_bench(kernel_path: PathBuf) -> u64 {
 		debug!("Throughput (receiving): {mbit:.2} Mbit/s");
 	});
 
-	let res = UhyveVm::new(kernel_path.clone(), params).unwrap().run(None);
+	let res = UhyveVm::new(kernel_path.clone(), params).unwrap().run();
 
 	check_result_and_print_output(&res, 0);
 

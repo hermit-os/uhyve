@@ -14,7 +14,7 @@
 //!     },
 //! )
 //! .unwrap();
-//! let res = vm.run(None);
+//! let res = vm.run();
 //! println!("VM returned {}", res.code);
 //! ```
 
