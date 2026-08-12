@@ -22,7 +22,7 @@ fn split_guest_and_host_path(mapping: &str) -> Result<(PathBuf, PathBuf), ErrorK
 	let guest_str = mappingiter.next().ok_or(ErrorKind::InvalidInput)?;
 
 	// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
-	// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
+	// been implemented yet. See: https://github.com/rust-lang/rust/issues/134694
 	let host_path = clean(canonicalize(host_str).unwrap_or_else(|_| absolute(host_str).unwrap()));
 
 	let guest_path = clean(guest_str);
