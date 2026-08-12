@@ -91,7 +91,7 @@ unsafe fn compute_guest_path_remainder<'a>(guest_path: &'a str, component: &'a s
 /// and without a leading slash.
 fn prepare_guest_path(guest_path: &[u8]) -> Option<String> {
 	// TODO: Replace clean-path in favor of Path::normalize_lexically, which has not
-	// been implemented yet. See: https://github.com/rust-lang/libs-team/issues/396
+	// been implemented yet. See: https://github.com/rust-lang/rust/issues/134694
 	//
 	// NOTE: Although we use `Path`/`PathBuf` here, these are not semantically correct,
 	// given that the meaning of a path on the guest and the host can differ.
