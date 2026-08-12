@@ -759,6 +759,7 @@ fn load_hermit_image_to_mem(
 
 	let aligned_image_len = hermit_image.len().align_up(PAGE_SIZE);
 	let image_start_address = mem.guest_addr() + relative_offset;
+	let image_actual_end_address = image_start_address + hermit_image.len() as u64;
 	let image_end_address = image_start_address + aligned_image_len as u64;
 
 	if image_end_address > mem.guest_addr() + mem.size() {
@@ -791,5 +792,5 @@ fn load_hermit_image_to_mem(
 		warn!("Hermit image mprotect(2) failed: {e}");
 	}
 
-	Some(image_start_address..image_end_address)
+	Some(image_start_address..image_actual_end_address)
 }

@@ -2,6 +2,7 @@
 
 use core::{fmt::Write, ops::Range};
 
+use align_address::Align as _;
 use uhyve_interface::GuestPhysAddr;
 use vm_fdt::{FdtWriter, FdtWriterNode, FdtWriterResult};
 
@@ -32,8 +33,10 @@ impl Fdt {
 			let start = hermit_image.start.as_u64();
 			let end = hermit_image.end.as_u64();
 			let length = end.checked_sub(start).unwrap();
-			assert_eq!(length % PAGE_SIZE as u64, 0);
-			mem_reserved.push(vm_fdt::FdtReserveEntry::new(start, length)?);
+			mem_reserved.push(vm_fdt::FdtReserveEntry::new(
+				start,
+				length.align_up(PAGE_SIZE as u64),
+			)?);
 			Some(start..end)
 		} else {
 			None
