@@ -51,7 +51,7 @@ fn serial_file_output_test() {
 		..Default::default()
 	};
 	let vm = UhyveVm::new(bin_path, params).unwrap();
-	let res = vm.run(None);
+	let res = vm.run();
 	check_result_and_print_output(&res, 0);
 
 	assert!(output_path.exists());

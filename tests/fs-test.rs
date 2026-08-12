@@ -378,7 +378,7 @@ fn open_read_only_write() {
 
 	std::thread::spawn(move || {
 		let vm = UhyveVm::new(bin_path, params).unwrap();
-		vm.run(None)
+		vm.run()
 	})
 	.join()
 	.expect_err("Uhyve should've crashed on write");

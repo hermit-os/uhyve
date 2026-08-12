@@ -36,7 +36,7 @@ fn gdb() -> io::Result<()> {
 			},
 		)
 		.unwrap();
-		let res = vm.run(None);
+		let res = vm.run();
 		check_result_and_print_output(&res, 0);
 	});
 

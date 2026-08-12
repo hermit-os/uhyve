@@ -26,7 +26,7 @@ pub fn load_vm_hello_world(c: &mut Criterion) {
 		b.iter(|| {
 			let vm = UhyveVm::<DefaultBackend>::new(path.clone(), params.clone())
 				.expect("Unable to create VM");
-			vm.run(None);
+			vm.run();
 		})
 	});
 }

@@ -10,6 +10,7 @@ use std::{
 };
 
 use byte_unit::{Byte, Unit};
+use core_affinity::CoreId;
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -31,6 +32,10 @@ pub struct Params {
 
 	/// Number of guest CPUs
 	pub cpu_count: CpuCount,
+
+	/// Affinity / pinning of guest CPUs to host CPUs
+	// This is allowed to be empty.
+	pub cpu_affinity: Vec<CoreId>,
 
 	/// Allows the guest to manage host CPU power state.
 	///
@@ -98,6 +103,7 @@ impl Default for Params {
 			#[cfg(target_os = "linux")]
 			pit: false,
 			cpu_count: Default::default(),
+			cpu_affinity: Default::default(),
 			#[cfg(target_os = "linux")]
 			cpu_pm: false,
 			gdb_port: Default::default(),
