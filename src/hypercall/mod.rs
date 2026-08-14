@@ -546,6 +546,7 @@ fn read(mem: &MmapMemory, sysread: &mut v2::parameters::ReadParams, file_map: &m
 							amt,
 						)
 					};
+					*offset += amt as u64;
 					amt as i64
 				}
 				FdData::MappedDirectory { .. } => -EBADF as i64,
