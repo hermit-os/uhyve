@@ -678,10 +678,11 @@ fn write_fdt_into_mem(
 		fdt = fdt.mounts(mounts).unwrap();
 	}
 
+	fdt = fdt.cpus(params.cpu_count).unwrap();
+
 	#[cfg(target_arch = "aarch64")]
 	{
 		fdt = fdt.gic().unwrap();
-		fdt = fdt.cpus(params.cpu_count).unwrap();
 		fdt = fdt.timer().unwrap();
 	}
 

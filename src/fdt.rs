@@ -6,14 +6,11 @@ use align_address::Align as _;
 use uhyve_interface::GuestPhysAddr;
 use vm_fdt::{FdtWriter, FdtWriterNode, FdtWriterResult};
 
-use crate::PAGE_SIZE;
 #[cfg(target_arch = "aarch64")]
-use crate::{
-	arch::{
-		GICD_BASE_ADDRESS, GICD_SIZE, GICR_BASE_ADDRESS, GICR_SIZE, MSI_BASE_ADDRESS, MSI_SIZE,
-	},
-	params::CpuCount,
+use crate::arch::{
+	GICD_BASE_ADDRESS, GICD_SIZE, GICR_BASE_ADDRESS, GICR_SIZE, MSI_BASE_ADDRESS, MSI_SIZE,
 };
+use crate::{PAGE_SIZE, params::CpuCount};
 
 /// A builder for an FDT.
 pub struct Fdt {
@@ -102,13 +99,15 @@ impl Fdt {
 		Ok(self)
 	}
 
-	#[cfg(target_arch = "aarch64")]
 	fn cpu(&mut self, id: u32) -> FdtWriterResult<()> {
 		let node_name = format!("cpu@{id}");
 
 		let cpu_node = self.writer.begin_node(&node_name)?;
+
+		#[cfg(target_arch = "aarch64")]
 		self.writer
 			.property_string("compatible", "arm,cortex-a72")?;
+
 		self.writer.property_string("device_type", "cpu")?;
 		self.writer.end_node(cpu_node)?;
 
@@ -131,7 +130,6 @@ impl Fdt {
 		Ok(())
 	}
 
-	#[cfg(target_arch = "aarch64")]
 	pub fn cpus(mut self, cpu_count: CpuCount) -> FdtWriterResult<Self> {
 		let node_name = "cpus";
 
