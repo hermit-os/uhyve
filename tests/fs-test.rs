@@ -346,7 +346,7 @@ fn fd_open_remove_before_and_after_closing() {
 
 	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
 	let res = run_vm_in_thread(bin_path, params);
-	assert_ne!(res.code, 0);
+	check_result_and_print_output(&res, -1);
 }
 
 /// fd sandbox test: Unlinks an open file on the host twice, before the
