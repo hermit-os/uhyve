@@ -779,7 +779,7 @@ dependencies = [
  "log",
  "plain",
  "serde",
- "tar-no-std",
+ "tar-no-std 0.4.2",
  "time",
  "toml",
 ]
@@ -1685,6 +1685,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tar-no-std"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ce14e67325dafcde4b79b521f01769db00660c87e3ed4ad9da8006fcee272bf"
+dependencies = [
+ "bitflags 2.13.1",
+ "log",
+ "num-traits",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1860,7 +1871,7 @@ dependencies = [
  "rftrace-frontend",
  "serde",
  "shell-words",
- "tar-no-std",
+ "tar-no-std 0.5.0",
  "tempfile",
  "thiserror",
  "time",
