@@ -49,11 +49,11 @@ pub struct LseekParams {
 	pub fd: i32,
 }
 
-/// Parameters for a [`SerialWriteBuffer`](crate::v1::Hypercall::SerialWriteBuffer) hypercall.
+/// Parameters for a [`SerialWriteBuffer`](crate::v2::Hypercall::SerialWriteBuffer) hypercall.
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct SerialWriteBufferParams {
-	/// Length of the buffer.
+	/// Length of the `buf`fer.
 	pub len: u64,
 	/// Address of the buffer to be printed.
 	pub buf: GuestPhysAddr,
@@ -63,9 +63,9 @@ pub struct SerialWriteBufferParams {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct SerialReadBufferParams {
-	/// length of `buf`.
+	/// Length of the `buf`fer.
 	pub maxlen: u64,
-	/// Amount of bytes acutally written.
+	/// Amount of bytes actually written.
 	pub len: u64,
 	/// Address to write to.
 	pub buf: GuestPhysAddr,
@@ -120,7 +120,7 @@ pub struct GetdentParams {
 	pub fd: i32,
 	/// Buffer to write to.
 	pub buf: GuestPhysAddr,
-	/// Length of the buffer.
+	/// Length of the `buf`fer.
 	pub len: u64,
 	/// Return value of the hypercall.
 	pub ret: GetdentResult,
