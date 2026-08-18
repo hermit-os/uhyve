@@ -130,6 +130,9 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 	peripherals: &VmPeripherals<N>,
 	hypercall: v2::Hypercall<'_>,
 ) -> Option<VcpuStopReason> {
+	#[cfg(debug_assertions)]
+	trace!("hypercall v2: {:?}", hypercall);
+
 	let file_mapping = || peripherals.file_mapping.lock().unwrap();
 	match hypercall {
 		v2::Hypercall::Exit(sysexit) => {
@@ -191,8 +194,10 @@ pub fn handle_hypercall_v1<N: NetworkBackend, L: MemoryLayout>(
 	root_pt: impl FnOnce() -> HypervisorResult<GuestPhysAddr>,
 	hypercall: v1::Hypercall<'_>,
 ) -> Option<HypervisorResult<VcpuStopReason>> {
-	let file_mapping = || peripherals.file_mapping.lock().unwrap();
+	#[cfg(debug_assertions)]
+	trace!("hypercall v1: {:?}", hypercall);
 
+	let file_mapping = || peripherals.file_mapping.lock().unwrap();
 	match hypercall {
 		v1::Hypercall::Cmdsize(syssize) => {
 			syssize.update(&kernel_info.path, &kernel_info.params.kernel_args)
