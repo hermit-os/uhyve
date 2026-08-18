@@ -487,13 +487,12 @@ impl VirtualCPU for KvmCpu {
 									}
 								} else {
 									// The access here is fine, because the guest might just be scanning for devices
-									trace!("Invalid pci config data port access");
 									addr.fill(0xff);
 								}
 							}
 							PCI_CONFIG_ADDRESS_PORT => {}
 							port => {
-								warn!("guest read from unknown I/O port {port:#x}");
+								warn!("Guest read from unknown I/O port {port:#x}");
 							}
 						}
 					}
@@ -572,7 +571,7 @@ impl VirtualCPU for KvmCpu {
 									}
 								}
 								port => {
-									warn!("guest wrote to unknown I/O port {port:#x}");
+									warn!("Guest wrote to unknown I/O port {port:#x}");
 								}
 							}
 						};
