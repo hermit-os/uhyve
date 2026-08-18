@@ -334,10 +334,25 @@ fn fd_open_remove_close() {
 	check_result_and_print_output(&res, 0);
 }
 
-/// fd sandbox test: Unlinks a file with a still-open file descriptor.
+/// fd sandbox of host test: Unlinks a file with a still-open file descriptor.
 /// Then unlinks again, after the file descriptor is closed.
 #[test]
-fn fd_open_remove_before_and_after_closing() {
+fn fd_open_remove_before_and_after_closing_host() {
+	env_logger_build();
+
+	let test_name: &'static str = "fd_open_remove_before_and_after_closing";
+	let (filemap, guest_file_path, _tmpdir) = create_filemap(test_name);
+	let params = generate_params(Some(filemap), test_name, guest_file_path.into());
+
+	let bin_path: PathBuf = build_hermit_bin("fs_tests", BuildMode::Debug);
+	let res = run_vm_in_thread(bin_path, params);
+	check_result_and_print_output(&res, -1);
+}
+
+/// fd sandbox of guest test: Unlinks a file with a still-open file descriptor.
+/// Then unlinks again, after the file descriptor is closed.
+#[test]
+fn fd_open_remove_before_and_after_closing_guest() {
 	env_logger_build();
 
 	let test_name: &'static str = "fd_open_remove_before_and_after_closing";
