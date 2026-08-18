@@ -60,6 +60,11 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 		// The following is mostly an inlined version of [`gdbstub::stub::GdbStub::run_blocking`],
 		// specialized for our use case -- which requires the ability to react to input from both
 		// GDB and Uhyve asynchronously (see also `enum UhyveOrGdb` below in particular).
+		//
+		// NOTE regarding the exit code:
+		// GDB truncates the exit code into an `u8`, but Uhyve and Hermit expect an `i32`.
+		// Therefore, we save the exit code here, and override the one we got from GDB with it.
+		let mut exit_code_extra = None;
 		let exit_code = loop {
 			gdb = match gdb {
 				GdbStubStateMachine::Idle(mut gdb) => {
@@ -131,7 +136,11 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 								.expect("GDB incoming_data error")
 						}
 						UhyveOrGdb::Uhyve(stop_reason) => {
-							let stop_reason = stop_reason.expect("error during stop packet recv");
+							let (stop_reason, maybe_exit_code) =
+								stop_reason.expect("error during stop packet recv");
+							if let Some(exit_code) = maybe_exit_code {
+								exit_code_extra = Some(exit_code);
+							}
 							gdb.report_stop(&mut vcpu_manager, stop_reason)
 								.expect("GDB report_stop error")
 						}
@@ -151,7 +160,7 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 		};
 
 		VmResult {
-			code: exit_code,
+			code: exit_code_extra.unwrap_or(exit_code),
 			output,
 			stats: None,
 		}
@@ -248,18 +257,26 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 							#[cfg(target_os = "macos")]
 							VcpuStopReason::Debug(_debug) => todo!(),
 							#[cfg(not(target_os = "macos"))]
-							VcpuStopReason::Debug(debug) => crate::os::debug_info_to_stop_reason(
-								debug,
-								tid.try_into().unwrap(),
-								&(*breakpoints).read().unwrap(),
+							VcpuStopReason::Debug(debug) => (
+								crate::os::debug_info_to_stop_reason(
+									debug,
+									tid.try_into().unwrap(),
+									&(*breakpoints).read().unwrap(),
+								),
+								None,
 							),
-							VcpuStopReason::Exit(code) => MultiThreadStopReason::Exited(code as _),
+							VcpuStopReason::Exit(code) => {
+								(MultiThreadStopReason::Exited(code as _), Some(code))
+							}
 							VcpuStopReason::Kick => {
 								trace!("vcpu {} got kicked (recv)", tid);
-								MultiThreadStopReason::SignalWithThread {
-									tid: tid.try_into().unwrap(),
-									signal: Signal::SIGINT,
-								}
+								(
+									MultiThreadStopReason::SignalWithThread {
+										tid: tid.try_into().unwrap(),
+										signal: Signal::SIGINT,
+									},
+									None,
+								)
 							}
 						};
 						// Make sure that no matter the reason, we have to be explicitly resumed after this
@@ -268,7 +285,12 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 							.resume
 							.mode
 							.store(ResumeMode::Stopped as u8, Ordering::Release);
-						block_on(stops_s.send(stop_reason)).expect("unable to send info to GDB");
+						// In case of failure (because all other threads are already shutdown)
+						// don't panic.
+						if block_on(stops_s.send(stop_reason)).is_err() {
+							trace!("vcpu {}: unable to send stop reason", tid);
+							break;
+						}
 					}
 				});
 				let pthread = join_handle.as_pthread_t();
@@ -383,7 +405,7 @@ pub struct GdbVcpuManager<Vm: VirtualizationBackend> {
 	pub(crate) peripherals:
 		Arc<VmPeripherals<<Vm as VirtualizationBackendInternal>::VirtioNetImpl>>,
 	pub(crate) kernel_info: Arc<KernelInfo<Vm::MemLayout>>,
-	pub(crate) stops: async_channel::Receiver<MultiThreadStopReason<u64>>,
+	pub(crate) stops: async_channel::Receiver<(MultiThreadStopReason<u64>, Option<i32>)>,
 	pub(crate) vcpus: Vec<VcpuWrapper<<Vm as VirtualizationBackendInternal>::VCPU>>,
 	/// This does look odd, but GDB appears to truncate thread-ids to 32bit
 	pub(crate) tid_to_vcpu: HashMap<NonZero<u32>, usize>,
