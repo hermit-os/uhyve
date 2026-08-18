@@ -131,9 +131,11 @@ pub struct GetdentParams {
 #[derive(Debug, Copy, Clone)]
 pub struct MkdirParams {
 	/// Path to create. Zero terminated C-String.
-	pub path: GuestPhysAddr,
+	pub name: GuestPhysAddr,
 	/// Return value of the hypercall, `0` on success and `-errno` on failure.
 	pub ret: i32,
+	/// Access permissions upon creating the directory.
+	pub mode: u16,
 }
 
 /// Which stat-like operation to perform.

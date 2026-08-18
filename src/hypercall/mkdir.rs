@@ -14,7 +14,7 @@ use crate::{
 /// within mapped host directories. Unmapped paths are redirected into the sandboxed
 /// temporary directory. Virtual paths are rejected.
 pub(crate) fn mkdir(mem: &MmapMemory, sysmkdir: &mut MkdirParams, file_map: &mut UhyveFileMap) {
-	let host_path_c_res = match unsafe { decode_guest_path(mem, sysmkdir.path) } {
+	let host_path_c_res = match unsafe { decode_guest_path(mem, sysmkdir.name) } {
 		None => {
 			error!("The kernel requested to mkdir() a non-UTF8 path: Rejecting...");
 			Err(EINVAL)
@@ -45,7 +45,7 @@ pub(crate) fn mkdir(mem: &MmapMemory, sysmkdir: &mut MkdirParams, file_map: &mut
 		Err(errno) => -errno,
 		// Attempts `mkdir(host_path)` on the host, mapping the outcome to guest errno value fit for [`MkdirParams::ret`].
 		Ok(host_path_c) => {
-			if unsafe { libc::mkdir(host_path_c.as_ptr(), 0o777) } < 0 {
+			if unsafe { libc::mkdir(host_path_c.as_ptr(), sysmkdir.mode.into()) } < 0 {
 				-translate_last_errno().unwrap_or(EIO)
 			} else {
 				0

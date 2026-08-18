@@ -278,7 +278,8 @@ fn hypercall_mkdir(dirname: &str) {
 	let path = CString::new(dirname).unwrap();
 	let path_phys = virtual_to_physical(GuestVirtAddr::from_ptr(path.as_ptr())).unwrap();
 	let mut mkdir_params = MkdirParams {
-		path: path_phys,
+		name: path_phys,
+		mode: 0o777,
 		ret: 0,
 	};
 	uhyve_hypercall(Hypercall::Mkdir(&mut mkdir_params));
