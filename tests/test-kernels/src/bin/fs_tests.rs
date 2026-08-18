@@ -15,8 +15,7 @@ use uhyve_interface::{
 		Hypercall,
 		parameters::{
 			Dirent64, FileAttr, FileType, FstatParams, GetdentParams, GetdentResult, MkdirParams,
-			MkdirResult, O_DIRECTORY, O_RDONLY, OpenParams, StatKind, StatParams, StatResult,
-			Timespec,
+			O_DIRECTORY, O_RDONLY, OpenParams, StatKind, StatParams, StatResult, Timespec,
 		},
 	},
 };
@@ -280,12 +279,11 @@ fn hypercall_mkdir(dirname: &str) {
 	let path_phys = virtual_to_physical(GuestVirtAddr::from_ptr(path.as_ptr())).unwrap();
 	let mut mkdir_params = MkdirParams {
 		path: path_phys,
-		len: dirname.len() as u64 + 1,
-		ret: MkdirResult::None,
+		ret: 0,
 	};
 	uhyve_hypercall(Hypercall::Mkdir(&mut mkdir_params));
 
-	let MkdirResult::Success = mkdir_params.ret else {
+	if mkdir_params.ret != 0 {
 		panic!("Mkdir hypercall not successful: {:?}", mkdir_params.ret);
 	};
 
