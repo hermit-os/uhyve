@@ -460,6 +460,7 @@ impl VirtualCPU for KvmCpu {
 						}
 					}
 					VcpuExit::Shutdown => {
+						debug!("{:?}", VcpuExit::Shutdown);
 						if let Some(s) = self.stats.as_mut() {
 							s.increment_val(VmExit::Shutdown)
 						}
@@ -646,6 +647,7 @@ impl VirtualCPU for KvmCpu {
 				},
 				Err(err) => match err.errno() {
 					libc::EINTR => {
+						debug!("Kick upon interrupt");
 						KickSignal::drain_pending_in_current_thread();
 						return Ok(VcpuStopReason::Kick);
 					}
@@ -669,6 +671,7 @@ impl VirtualCPU for KvmCpu {
 		if let Some(stats) = self.stats.as_mut() {
 			stats.stop_time_measurement();
 		}
+		trace!("run exited with {:?}, {:?}", res, self.stats);
 		Ok((res, self.stats.take()))
 	}
 
