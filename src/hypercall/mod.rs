@@ -19,7 +19,7 @@ mod fstat;
 mod getdents;
 
 use by_fd::{close_v2, close_v3, fsync, lseek, lseek_v1, read, read_v1, write, write_v1};
-use by_path::{mkdir, open_v2, open_v3, unlink_v2, unlink_v3};
+use by_path::{mkdir_v2, mkdir_v3, open_v2, open_v3, unlink_v2, unlink_v3};
 use fstat::{fstat_v2, stat_v2, stat_v3};
 use getdents::{getdents_v2, getdents_v3};
 
@@ -218,7 +218,7 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 		}
 		v2::Hypercall::FileStat(sysstat) => stat_v2(&peripherals.mem, sysstat, &file_mapping()),
 		v2::Hypercall::FileFstat(sysfstat) => fstat_v2(&peripherals.mem, sysfstat, &file_mapping()),
-		v2::Hypercall::Mkdir(sysmkdir) => mkdir(&peripherals.mem, sysmkdir, &mut file_mapping()),
+		v2::Hypercall::Mkdir(sysmkdir) => mkdir_v2(&peripherals.mem, sysmkdir, &mut file_mapping()),
 		v2::Hypercall::SerialWriteByte(buf) => peripherals
 			.serial
 			.output(&[buf])
@@ -266,6 +266,7 @@ pub fn handle_hypercall_v3<N: NetworkBackend>(
 			getdents_v3(&peripherals.mem, sysgetdents, &mut file_mapping())
 		}
 		v3::Hypercall::FileStat(sysstat) => stat_v3(&peripherals.mem, sysstat, &file_mapping()),
+		v3::Hypercall::Mkdir(sysmkdir) => mkdir_v3(&peripherals.mem, sysmkdir, &mut file_mapping()),
 		_ => unimplemented!("hypercall {hypercall:?}"),
 	}
 	HypercallAction::None

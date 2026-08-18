@@ -281,48 +281,62 @@ pub(super) fn open_v3(
 	sysopen.ret = RawResult::encode(result.map(|gfd| gfd.0).map_err(v3_errno)).unwrap();
 }
 
-/// Attempts `mkdir(host_path)` on the host, mapping the outcome to a [`MkdirResult`].
-fn host_mkdir(host_path_c: &CString) -> MkdirResult {
-	// SAFETY: `host_path_c` is a valid, null-terminated C string.
-	if unsafe { libc::mkdir(host_path_c.as_ptr(), 0o777) } < 0 {
-		MkdirResult::Error(translate_last_errno().unwrap_or(EIO))
-	} else {
-		MkdirResult::Success
-	}
-}
-
-/// Handles a mkdir hypercall by creating a directory on the host.
+/// Creates a directory on the host for the guest path at `name`.
 ///
 /// The guest path is resolved through the file map, so directories can only be created
 /// within mapped host directories. Unmapped paths are redirected into the sandboxed
 /// temporary directory. Virtual paths are rejected.
-pub(super) fn mkdir(mem: &MmapMemory, sysmkdir: &mut MkdirParams, file_map: &mut UhyveFileMap) {
-	let guest_path = match unsafe { decode_guest_path(mem, sysmkdir.path) } {
-		Ok(guest_path) => guest_path,
-		Err(errno) => {
-			sysmkdir.ret = MkdirResult::Error(errno);
-			return;
-		}
-	};
+///
+/// `name` is the guest address of the null-terminated path. Returns the guest errno on failure.
+fn mkdir(
+	mem: &MmapMemory,
+	name: GuestPhysAddr,
+	mode: u32,
+	file_map: &mut UhyveFileMap,
+) -> Result<(), i32> {
+	let mode = libc::mode_t::try_from(mode).map_err(|_| EINVAL)?;
+	let guest_path = unsafe { decode_guest_path(mem, name) }?;
 
-	sysmkdir.ret = match file_map.get_host_path(guest_path, false) {
+	let host_path_c = match file_map.get_host_path(guest_path, false) {
 		Some(UhyveMapLeaf::OnHost(host_path)) => {
 			// We can safely unwrap, as a resolved host path never contains internal NUL bytes.
-			let host_path_c = CString::new(host_path.as_os_str().as_bytes()).unwrap();
-			host_mkdir(&host_path_c)
+			CString::new(host_path.as_os_str().as_bytes()).unwrap()
 		}
 		Some(UhyveMapLeaf::Virtual(_)) => {
 			debug!("mkdir {guest_path:?}: target is a read-only virtual file, rejecting...");
-			MkdirResult::Error(EROFS)
+			return Err(EROFS);
 		}
 		None => {
 			debug!("mkdir {guest_path:?}: not mapped, creating a temporary directory...");
-			match file_map.create_temporary_directory(guest_path) {
-				Some(host_path_c) => host_mkdir(&host_path_c),
-				None => MkdirResult::Error(EINVAL),
-			}
+			file_map
+				.create_temporary_directory(guest_path)
+				.ok_or(EINVAL)?
 		}
 	};
+
+	if unsafe { libc::mkdir(host_path_c.as_ptr(), mode) } < 0 {
+		Err(translate_last_errno().unwrap_or(EIO))
+	} else {
+		Ok(())
+	}
+}
+
+/// Handler for a v2 [`Mkdir`](uhyve_interface::v2::Hypercall::Mkdir) hypercall.
+pub(super) fn mkdir_v2(mem: &MmapMemory, sysmkdir: &mut MkdirParams, file_map: &mut UhyveFileMap) {
+	sysmkdir.ret = match mkdir(mem, sysmkdir.path, 0o777, file_map) {
+		Ok(()) => MkdirResult::Success,
+		Err(errno) => MkdirResult::Error(errno),
+	};
+}
+
+/// Handler for a [`Mkdir`](v3::Hypercall::Mkdir) hypercall.
+pub(super) fn mkdir_v3(
+	mem: &MmapMemory,
+	sysmkdir: &mut v3::parameters::MkdirParams,
+	file_map: &mut UhyveFileMap,
+) {
+	let result = mkdir(mem, sysmkdir.path, sysmkdir.mode, file_map);
+	sysmkdir.ret = RawResult::encode(result.map_err(v3_errno)).unwrap();
 }
 
 #[cfg(test)]
