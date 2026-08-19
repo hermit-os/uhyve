@@ -6,7 +6,7 @@ use std::{
 use uhyve_interface::{GuestPhysAddr, v2::parameters::*};
 
 use crate::{
-	hypercall::{decode_guest_path, translate_last_errno},
+	hypercall::{by_path::decode_guest_path, translate_last_errno},
 	isolation::{
 		fd::{FdData, GuestFd},
 		filemap::{NodeStatRef, UhyveFileMap},
