@@ -1,3 +1,4 @@
+#[cfg_attr(target_os = "macos", expect(dead_code))]
 pub(crate) mod breakpoints;
 
 use std::{fmt::Display, mem::size_of};
