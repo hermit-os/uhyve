@@ -20,7 +20,9 @@ use crate::{
 	params::{NetworkMode, Params},
 	stats::CpuStats,
 	vcpu::{VcpuStopReason, VirtualCPU},
-	vm::{KernelInfo, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals},
+	vm::{
+		KernelInfo, KickSignal, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals,
+	},
 };
 
 pub struct XhyveVm {
@@ -122,6 +124,7 @@ impl VirtualCPU for XhyveCpu {
 
 		// Initialize CPU
 		let vcpu = xhypervisor::VirtualCpu::new(self.id)?;
+		KickSignal::register_vcpu(vcpu.get_handle());
 
 		/* pstate = all interrupts masked */
 		let pstate: PSR = PSR::D_BIT | PSR::A_BIT | PSR::I_BIT | PSR::F_BIT | PSR::MODE_EL1H;
@@ -283,19 +286,23 @@ impl VirtualCPU for XhyveCpu {
 								) {
 									return stop;
 								}
-								// increase the pc to the instruction after the exception to continue execution
-								vcpu.write_register(Register::PC, pc + 4)?;
 							} else {
 								error!("Unable to handle exception {exception:?}");
 								self.print_registers();
 								return Err(xhypervisor::Error::Error.into());
 							}
+
+							// Unlike KVM, Hypervisor.framework leaves the program
+							// counter on the faulting instruction, so every handled
+							// hypercall has to be stepped over here.
+							vcpu.write_register(Register::PC, pc + 4)?;
 						} else {
 							error!("Unsupported exception class: 0x{ec:x}");
 							self.print_registers();
 							return Err(xhypervisor::Error::Error.into());
 						}
 					}
+					VirtualCpuExitReason::Cancelled => return Ok(VcpuStopReason::Kick),
 					_ => {
 						error!("Unknown exit reason: {reason:?}");
 						return Err(xhypervisor::Error::Error.into());
