@@ -60,6 +60,13 @@ impl KickSignal {
 		nix::errno::Errno::result(res).map(drop)
 	}
 
+	/// Forces every vCPU out of the hypervisor.
+	///
+	/// Nothing to do on KVM: `KickSignal::pthread_kill` already achieves this.
+	/// Each vCPU thread unblocks the kick signal for the duration of `KVM_RUN`,
+	/// which then returns `EINTR`. Only macOS needs a separate call for this.
+	pub(crate) fn kick_all_vcpus() {}
+
 	/// Blocks the kick signal in the calling thread.
 	pub(crate) fn block_in_current_thread() -> nix::Result<()> {
 		// `nix::sys::signal::Signal` doesn't support real-time signals yet
