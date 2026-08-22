@@ -8,8 +8,8 @@ use uhyve_interface::GuestVirtAddr;
 
 use crate::{
 	arch::{
+		breakpoints::{HwBreakpoint, HwBreakpoints},
 		virt_to_phys,
-		x86_64::breakpoints::{HwBreakpoint, HwBreakpoints},
 	},
 	gdb::GdbVcpuManager,
 	os::KvmVm,
@@ -29,10 +29,25 @@ pub struct SwBreakpoint {
 }
 
 impl SwBreakpoint {
-	const OPCODE: u8 = 0xcc;
-
 	pub fn new(addr: u64, kind: usize) -> Self {
 		Self { addr, kind }
+	}
+
+	/// Overwrites `instructions` with the architecture's trap instruction.
+	#[cfg(target_arch = "x86_64")]
+	fn write_trap(instructions: &mut [u8]) {
+		// `int3`
+		instructions.fill(0xcc);
+	}
+
+	/// Overwrites `instructions` with the architecture's trap instruction.
+	#[cfg(target_arch = "aarch64")]
+	fn write_trap(instructions: &mut [u8]) {
+		// `brk #0`. AArch64 instructions are always four bytes wide, so unlike
+		// x86's single-byte `int3` this cannot be filled byte-wise.
+		for instruction in instructions.as_chunks_mut::<4>().0 {
+			*instruction = 0xd420_0000u32.to_le_bytes();
+		}
 	}
 }
 
@@ -85,7 +100,7 @@ impl target::ext::breakpoints::SwBreakpoint for GdbVcpuManager<KvmVm> {
 			}
 			.unwrap();
 			entry.insert(instructions.into());
-			instructions.fill(SwBreakpoint::OPCODE);
+			SwBreakpoint::write_trap(instructions);
 			Ok(true)
 		} else {
 			Ok(false)
