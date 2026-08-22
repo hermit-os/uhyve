@@ -22,14 +22,13 @@ use hermit_entry::{
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
 use log::error;
-use nix::sys::pthread::pthread_self;
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
 
 use crate::{
 	HypervisorError, PAGE_SIZE,
 	fdt::Fdt,
-	gdb::{GdbVcpuManager, PthreadWrapper},
+	gdb::GdbVcpuManager,
 	isolation::filemap::{UhyveFileMap, UhyveMapLeaf},
 	mem::MmapMemory,
 	mem_layout::{BootInfoSection, FdtSection, KernelSection, MemoryLayout},
@@ -38,7 +37,7 @@ use crate::{
 	parking::Parker,
 	serial::{Destination, UhyveSerial},
 	stats::{CpuStats, VmStats},
-	vcpu::VirtualCPU,
+	vcpu::{KickHandle, VirtualCPU},
 };
 #[cfg(target_os = "linux")]
 use crate::{
@@ -572,8 +571,9 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 
 		let num_vcpus = self.vcpus.len();
 
-		let pthreads: Mutex<Vec<PthreadWrapper>> = Mutex::new(Vec::with_capacity(num_vcpus));
-		let pthreads_published = Barrier::new(num_vcpus + 1);
+		let kick_handles: Mutex<Vec<<VirtBackend::VCPU as VirtualCPU>::KickHandle>> =
+			Mutex::new(Vec::with_capacity(num_vcpus));
+		let kick_handles_published = Barrier::new(num_vcpus + 1);
 
 		let cpu_results = thread::scope(|s| {
 			trace!("Starting vCPUs");
@@ -586,16 +586,10 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 					let local_cpu_affinity = cpu_affinity
 						.as_ref()
 						.and_then(|core_ids| core_ids.get(cpu_id).copied());
-					let pthreads = &pthreads;
-					let pthreads_published = &pthreads_published;
+					let kick_handles = &kick_handles;
+					let kick_handles_published = &kick_handles_published;
 
 					s.spawn(move || {
-						{
-							pthreads
-								.lock()
-								.unwrap()
-								.push(PthreadWrapper(pthread_self()));
-						}
 						trace!("Create thread for CPU {cpu_id}");
 						match local_cpu_affinity {
 							Some(core_id) => {
@@ -606,6 +600,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 						}
 
 						cpu.thread_local_init().expect("Unable to initialize vCPU");
+						kick_handles.lock().unwrap().push(cpu.create_kick_handle());
 
 						struct UnparkOnDrop(Parker);
 
@@ -616,7 +611,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 						}
 
 						let _unpark_on_drop = UnparkOnDrop(main_parker);
-						pthreads_published.wait();
+						kick_handles_published.wait();
 
 						// jump into the VM and execute code of the guest
 						match cpu.run() {
@@ -630,17 +625,17 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 				})
 				.collect::<Vec<_>>();
 
-			pthreads_published.wait();
+			kick_handles_published.wait();
 
 			trace!("Waiting for first CPU to finish");
 			main_parker.park();
 
 			trace!("Killing all threads");
-			for &PthreadWrapper(tid) in pthreads.lock().unwrap().iter() {
+			for kick_handle in kick_handles.lock().unwrap().iter() {
 				// `pthread_kill` may return ESRCH if the thread already finished;
 				// scoped threads aren't joined until the scope ends, so the id is
 				// still valid, but the kernel may no longer know about it.
-				let _ = KickSignal::pthread_kill(tid);
+				let _ = kick_handle.kick();
 			}
 
 			cpu_handles
