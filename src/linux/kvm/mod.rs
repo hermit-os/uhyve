@@ -7,20 +7,21 @@ use std::{
 
 use kvm_bindings::*;
 use kvm_ioctls::{Kvm, VcpuExit, VcpuFd, VmFd};
+use nix::sys::pthread::pthread_self;
 use uhyve_interface::GuestPhysAddr;
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::kvm::{self as arch, PortWrite};
 use crate::{
 	HypervisorResult,
-	gdb::resume::ResumeMode,
+	gdb::{PthreadWrapper, resume::ResumeMode},
 	hypercall::{self, GuestHypercall, HypercallAction},
 	mem::MmapMemory,
 	os::KickSignal,
 	params::{NetworkMode, Params},
 	pci::{IOBASE_U64, IOEND_U64, PciConfigurationAddress, PciDevice},
 	stats::{CpuStats, VmExit},
-	vcpu::{VcpuStopReason, VirtualCPU},
+	vcpu::{KickHandle, VcpuStopReason, VirtualCPU},
 	virtio::net::VirtioNetPciDevice,
 	vm::{KernelInfo, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals},
 };
@@ -32,6 +33,16 @@ mod virtio_device;
 use virtio_device::KvmVirtioNetDevice;
 
 pub(crate) static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
+
+/// Kicks a [`KvmCpu`] out of `KVM_RUN` by signalling its thread.
+#[derive(Clone, Copy, Debug)]
+pub struct KvmKickHandle(PthreadWrapper);
+
+impl KickHandle for KvmKickHandle {
+	fn kick(&self) -> nix::Result<()> {
+		KickSignal::pthread_kill(self.0.0)
+	}
+}
 
 /// Tells KVM to unblock all signals during `KVM_RUN` for the given vCPU.
 fn unblock_all_signals_for_kvm(vcpu: &VcpuFd) -> nix::Result<()> {
@@ -178,11 +189,17 @@ impl KvmCpu {
 	}
 }
 impl VirtualCPU for KvmCpu {
+	type KickHandle = KvmKickHandle;
+
 	fn thread_local_init(&mut self) -> HypervisorResult<()> {
 		// Block the kick signal in this vCPU thread (KVM will unblock it during `KVM_RUN`).
 		KickSignal::block_in_current_thread().map_err(io::Error::from)?;
 		unblock_all_signals_for_kvm(&self.vcpu).map_err(io::Error::from)?;
 		Ok(())
+	}
+
+	fn create_kick_handle(&self) -> KvmKickHandle {
+		KvmKickHandle(PthreadWrapper(pthread_self()))
 	}
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {

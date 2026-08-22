@@ -8,6 +8,7 @@ use gdbstub::{
 
 use crate::{
 	gdb::{GdbVcpuManager, VcpuWrapper, VcpuWrapperShared},
+	vcpu::{KickHandle as _, VirtualCPU},
 	vm::VirtualizationBackend,
 };
 
@@ -39,11 +40,11 @@ impl<Vm: VirtualizationBackend> GdbVcpuManager<Vm> {
 	}
 }
 
-impl<Vcpu> VcpuWrapper<Vcpu> {
+impl<Vcpu: VirtualCPU> VcpuWrapper<Vcpu> {
 	/// Kick the vCPU
 	pub fn kick(&self) {
 		trace!("vcpu: kick! {}", self.tid);
-		crate::vm::KickSignal::pthread_kill(self.pthread.0).unwrap();
+		self.kick_handle.kick().unwrap();
 	}
 
 	/// Resume the vCPU in free-wheeling / non-stepped mode

@@ -1,10 +1,12 @@
 use std::{num::NonZero, sync::Arc};
 
 use log::debug;
+use nix::sys::pthread::pthread_self;
 use uhyve_interface::{GuestPhysAddr, v1};
 use xhypervisor::{
-	self, Gic, MemPerm, Register, SystemRegister, VirtualCpuExitReason, create_vm, map_mem,
-	protect_mem,
+	self, Gic, MemPerm, Register, SystemRegister, VirtualCpuExitReason, create_vm,
+	ffi::{HV_SUCCESS, hv_vcpu_t, hv_vcpus_exit},
+	map_mem, protect_mem,
 };
 
 use crate::{
@@ -14,14 +16,17 @@ use crate::{
 		MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_NORMAL, MT_NORMAL_NC, PSR, TCR_FLAGS, TCR_TG1_4K,
 		VA_BITS, init_guest_mem, mair, tcr_size,
 	},
+	gdb::PthreadWrapper,
 	hypercall::{self, GuestHypercall, HypercallAction},
 	mem::MmapMemory,
 	mem_layout::MemoryLayout,
 	os::aarch64::virtio_device::XHyveVirtioNetDevice,
 	params::{NetworkMode, Params},
 	stats::CpuStats,
-	vcpu::{VcpuStopReason, VirtualCPU},
-	vm::{KernelInfo, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals},
+	vcpu::{KickHandle, VcpuStopReason, VirtualCPU},
+	vm::{
+		KernelInfo, KickSignal, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals,
+	},
 };
 
 pub struct XhyveVm {
@@ -96,6 +101,26 @@ impl VirtualizationBackendInternal for XhyveVm {
 
 impl VirtualizationBackend for XhyveVm {}
 
+/// Kicks an [`XhyveCpu`] out of `hv_vcpu_run` and interrupts blocking syscalls on its thread.
+#[derive(Clone, Copy, Debug)]
+pub struct XhyveKickHandle {
+	pthread: PthreadWrapper,
+	vcpu: hv_vcpu_t,
+}
+
+impl KickHandle for XhyveKickHandle {
+	fn kick(&self) -> nix::Result<()> {
+		// A guest that executed `WFI` waits inside Hypervisor.framework, which only
+		// `hv_vcpus_exit` reaches, not the kick signal.
+		// SAFETY: `self.vcpu` was created by `hv_vcpu_create` and is never destroyed.
+		let ret = unsafe { hv_vcpus_exit(&self.vcpu, 1) };
+		if ret != HV_SUCCESS {
+			warn!("hv_vcpus_exit failed: {ret:#x}");
+		}
+		KickSignal::pthread_kill(self.pthread.0)
+	}
+}
+
 pub struct XhyveCpu {
 	id: u32,
 	vcpu: Option<xhypervisor::VirtualCpu>,
@@ -112,6 +137,8 @@ pub struct XhyveCpu {
 unsafe impl Send for XhyveCpu {}
 
 impl VirtualCPU for XhyveCpu {
+	type KickHandle = XhyveKickHandle;
+
 	fn thread_local_init(&mut self) -> HypervisorResult<()> {
 		debug!("Initialize VirtualCPU {}", self.id);
 
@@ -221,6 +248,17 @@ impl VirtualCPU for XhyveCpu {
 		Ok(())
 	}
 
+	fn create_kick_handle(&self) -> XhyveKickHandle {
+		XhyveKickHandle {
+			pthread: PthreadWrapper(pthread_self()),
+			vcpu: self
+				.vcpu
+				.as_ref()
+				.expect("vCPU isn't initialized!")
+				.get_handle(),
+		}
+	}
+
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		if let Some(vcpu) = &mut self.vcpu {
 			loop {
@@ -293,6 +331,7 @@ impl VirtualCPU for XhyveCpu {
 							return Err(xhypervisor::Error::Error.into());
 						}
 					}
+					VirtualCpuExitReason::Cancelled => return Ok(VcpuStopReason::Kick),
 					_ => {
 						error!("Unknown exit reason: {reason:?}");
 						return Err(xhypervisor::Error::Error.into());

@@ -16,8 +16,15 @@ pub enum VcpuStopReason {
 	Exit(i32),
 
 	/// The vCPU got kicked.
-	#[cfg_attr(target_os = "macos", expect(dead_code))]
 	Kick,
+}
+
+/// Identifies a vCPU that can be kicked from any thread.
+pub trait KickHandle: Send + Copy {
+	/// Forces the vCPU out of the hypervisor, so that it returns [`VcpuStopReason::Kick`].
+	///
+	/// [`KickSignal::register_handler`](crate::vm::KickSignal::register_handler) must have been called before.
+	fn kick(&self) -> nix::Result<()>;
 }
 
 // The following duplication of `VirtualCPU` is a work-around
@@ -26,6 +33,8 @@ pub enum VcpuStopReason {
 /// Functionality a virtual CPU backend must provide to be used by uhyve
 #[cfg(not(target_os = "macos"))]
 pub trait VirtualCPU: Sized + Send + Sync {
+	type KickHandle: KickHandle;
+
 	/// Continues execution.
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason>;
 
@@ -51,6 +60,11 @@ pub trait VirtualCPU: Sized + Send + Sync {
 	/// Perform thread-local initializations for this vcpu
 	fn thread_local_init(&mut self) -> HypervisorResult<()>;
 
+	/// Returns the handle to kick this vCPU out of the running state.
+	///
+	/// Must be called on the vCPU's thread, after [`Self::thread_local_init`].
+	fn create_kick_handle(&self) -> Self::KickHandle;
+
 	/// Get the address to the root page table
 	fn get_root_pagetable(&self) -> GuestPhysAddr;
 
@@ -61,6 +75,8 @@ pub trait VirtualCPU: Sized + Send + Sync {
 /// Functionality a virtual CPU backend must provide to be used by uhyve
 #[cfg(target_os = "macos")]
 pub trait VirtualCPU: Sized + Send {
+	type KickHandle: KickHandle;
+
 	/// Continues execution.
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason>;
 
@@ -86,6 +102,11 @@ pub trait VirtualCPU: Sized + Send {
 
 	/// Perform thread-local initializations for this vcpu
 	fn thread_local_init(&mut self) -> HypervisorResult<()>;
+
+	/// Returns the handle to kick this vCPU.
+	///
+	/// Must be called on the vCPU's thread, after [`Self::thread_local_init`].
+	fn create_kick_handle(&self) -> Self::KickHandle;
 
 	/// Get the address to the root page table
 	#[expect(dead_code)]

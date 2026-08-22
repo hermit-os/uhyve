@@ -12,7 +12,7 @@ use std::{
 	collections::HashMap,
 	io,
 	net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream},
-	sync::{Arc, RwLock},
+	sync::{Arc, RwLock, mpsc},
 };
 
 use async_io::block_on;
@@ -200,6 +200,7 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 				});
 				let shared2 = Arc::clone(&shared);
 				let cpu_affinity = cpu_affinity.clone();
+				let (kick_handle_s, kick_handle_r) = mpsc::sync_channel(1);
 				let join_handle = std::thread::spawn(move || {
 					let tid = derive_tid(pthread_self());
 					let local_cpu_affinity = cpu_affinity
@@ -217,15 +218,17 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 					drop(cpu_affinity);
 
 					#[cfg(target_os = "macos")]
-					vcpu.thread_local_init().expect("Unable to initialize vCPU");
+					{
+						vcpu.thread_local_init().expect("Unable to initialize vCPU");
+						kick_handle_s.send(vcpu.create_kick_handle()).unwrap();
+					}
 
 					#[cfg(not(target_os = "macos"))]
-					shared
-						.vcpu
-						.write()
-						.unwrap()
-						.thread_local_init()
-						.expect("Unable to initialize vCPU");
+					{
+						let mut vcpu = shared.vcpu.write().unwrap();
+						vcpu.thread_local_init().expect("Unable to initialize vCPU");
+						kick_handle_s.send(vcpu.create_kick_handle()).unwrap();
+					}
 
 					loop {
 						loop {
@@ -296,7 +299,7 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 				let pthread = join_handle.as_pthread_t() as Pthread;
 				VcpuWrapper {
 					shared: shared2,
-					pthread: PthreadWrapper(pthread),
+					kick_handle: kick_handle_r.recv().unwrap(),
 					tid: derive_tid(pthread),
 					planned_resume_mode: None,
 				}
@@ -387,10 +390,10 @@ impl<VCpu: VirtualCPU> VcpuWrapperShared<VCpu> {
 }
 
 /// Data per each Vcpu for the GDBstub server.
-pub(crate) struct VcpuWrapper<VCpu> {
+pub(crate) struct VcpuWrapper<VCpu: VirtualCPU> {
 	pub(crate) shared: Arc<VcpuWrapperShared<VCpu>>,
 
-	pub(crate) pthread: PthreadWrapper,
+	pub(crate) kick_handle: VCpu::KickHandle,
 	/// This does look odd, but GDB appears to truncate thread-ids to 32bit
 	pub(crate) tid: NonZero<u32>,
 
