@@ -296,7 +296,7 @@ fn translate_last_errno() -> Option<i32> {
 /// The calling convention of hypercalls ensures that the given address doesn't alias with anything mutable.
 /// The return value is only valid for the duration of the hypercall.
 unsafe fn decode_guest_path(mem: &MmapMemory, path_addr: GuestPhysAddr) -> Option<&str> {
-	let requested_path_ptr = mem.host_address(path_addr).unwrap() as *const i8;
+	let requested_path_ptr = mem.host_address(path_addr).unwrap() as *const libc::c_char;
 	unsafe { CStr::from_ptr(requested_path_ptr) }.to_str().ok()
 }
 

@@ -1,3 +1,5 @@
+#[cfg(target_arch = "aarch64")]
+pub mod aarch64;
 #[cfg(target_arch = "x86_64")]
 pub mod x86_64;
 
@@ -14,7 +16,12 @@ use kvm_ioctls::Kvm;
 use libc::{SIGRTMAX, SIGRTMIN};
 use nix::sys::pthread::Pthread;
 
-use crate::{os::x86_64::kvm_cpu::KvmVm, vm::KickSignal};
+// Re-exported for the descendant `gdb` module, which is architecture-agnostic.
+#[cfg(target_arch = "aarch64")]
+pub(crate) use crate::os::aarch64::kvm_cpu::KvmVm;
+#[cfg(target_arch = "x86_64")]
+pub(crate) use crate::os::x86_64::kvm_cpu::KvmVm;
+use crate::vm::KickSignal;
 
 static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
 
@@ -88,6 +95,7 @@ impl KickSignal {
 	}
 }
 
+#[cfg(target_arch = "x86_64")]
 pub(crate) fn debug_info_to_stop_reason(
 	debug: DebugExitInfo,
 	tid: Tid,
@@ -102,5 +110,27 @@ pub(crate) fn debug_info_to_stop_reason(
 		}
 		BP_VECTOR => MultiThreadStopReason::SwBreak(tid),
 		vector => unreachable!("unknown KVM exception vector: {}", vector),
+	}
+}
+
+#[cfg(target_arch = "aarch64")]
+pub(crate) fn debug_info_to_stop_reason(
+	debug: DebugExitInfo,
+	tid: Tid,
+	breakpoints: &Breakpoints,
+) -> MultiThreadStopReason<u64> {
+	// `hsr` holds the ESR value of the trapped exception; its top 6 bits are the
+	// exception class. See ARM DDI 0487, "ESR_EL2, Exception Syndrome Register".
+	const EC_BREAKPOINT: u32 = 0x30;
+	const EC_SOFTWARE_STEP: u32 = 0x32;
+	const EC_WATCHPOINT: u32 = 0x34;
+	const EC_BRK: u32 = 0x3c;
+
+	match debug.hsr >> 26 {
+		EC_SOFTWARE_STEP => MultiThreadStopReason::DoneStep,
+		EC_BREAKPOINT => MultiThreadStopReason::HwBreak(tid),
+		EC_WATCHPOINT => breakpoints.hard.watch_stop_reason(tid, debug.far),
+		EC_BRK => MultiThreadStopReason::SwBreak(tid),
+		ec => unreachable!("unknown KVM debug exception class: {:#x}", ec),
 	}
 }
