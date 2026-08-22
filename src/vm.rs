@@ -604,6 +604,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 				// still valid, but the kernel may no longer know about it.
 				let _ = KickSignal::pthread_kill(tid);
 			}
+			KickSignal::kick_all_vcpus();
 
 			cpu_handles
 				.into_iter()

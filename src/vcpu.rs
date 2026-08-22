@@ -16,7 +16,6 @@ pub enum VcpuStopReason {
 	Exit(i32),
 
 	/// The vCPU got kicked.
-	#[cfg_attr(target_os = "macos", expect(dead_code))]
 	Kick,
 }
 
