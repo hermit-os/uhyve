@@ -295,9 +295,17 @@ fn translate_last_errno() -> Option<i32> {
 ///
 /// The calling convention of hypercalls ensures that the given address doesn't alias with anything mutable.
 /// The return value is only valid for the duration of the hypercall.
-unsafe fn decode_guest_path(mem: &MmapMemory, path_addr: GuestPhysAddr) -> Option<&str> {
-	let requested_path_ptr = mem.host_address(path_addr).unwrap() as *const i8;
-	unsafe { CStr::from_ptr(requested_path_ptr) }.to_str().ok()
+pub(crate) unsafe fn decode_guest_path(mem: &MmapMemory, path_addr: GuestPhysAddr) -> Option<&str> {
+	let guest_start = mem.guest_addr().as_u64();
+	let path_u64 = path_addr.as_u64();
+	let offset = path_u64.checked_sub(guest_start)?;
+	let mem_size = mem.size() as u64;
+	if offset >= mem_size {
+		return None;
+	}
+	let remaining_len = (mem_size - offset) as usize;
+	let slice = unsafe { mem.slice_at::<u8>(path_addr, remaining_len).ok()? };
+	CStr::from_bytes_until_nul(slice).ok()?.to_str().ok()
 }
 
 fn collect_dir_entries(dir: &Directory) -> BTreeMap<Box<str>, FileType> {
