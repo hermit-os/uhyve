@@ -18,7 +18,7 @@ mod cmdval_copy;
 mod fstat;
 mod getdents;
 
-use by_fd::{close, lseek, lseek_v1, read, read_v1, write, write_v1};
+use by_fd::{close, fsync, lseek, lseek_v1, read, read_v1, write, write_v1};
 use by_path::{mkdir, open, unlink};
 use fstat::{fstat, stat};
 use getdents::getdents;
@@ -135,6 +135,7 @@ pub unsafe fn address_to_hypercall_v2(
 		HypercallAddress::FileStat => Hypercall::FileStat(get_data!()),
 		HypercallAddress::FileFstat => Hypercall::FileFstat(get_data!()),
 		HypercallAddress::Mkdir => Hypercall::Mkdir(get_data!()),
+		HypercallAddress::FileFsync => Hypercall::FileFsync(get_data!()),
 		_ => return None,
 	})
 }
@@ -178,6 +179,7 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 		v2::Hypercall::FileStat(sysstat) => stat(&peripherals.mem, sysstat, &file_mapping()),
 		v2::Hypercall::FileFstat(sysfstat) => fstat(&peripherals.mem, sysfstat, &file_mapping()),
 		v2::Hypercall::Mkdir(sysmkdir) => mkdir(&peripherals.mem, sysmkdir, &mut file_mapping()),
+		v2::Hypercall::FileFsync(sysfsync) => fsync(sysfsync, &file_mapping()),
 		v2::Hypercall::SerialWriteByte(buf) => peripherals
 			.serial
 			.output(&[buf])

@@ -293,6 +293,27 @@ pub(super) fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 	};
 }
 
+/// Handler for a [`FileFsync`](v2::Hypercall::FileFsync) hypercall.
+pub(super) fn fsync(sysfsync: &mut FsyncParams, file_map: &UhyveFileMap) {
+	let Some(fddata) = file_map.fdmap.get(GuestFd(sysfsync.fd)) else {
+		sysfsync.ret = -EBADF;
+		return;
+	};
+
+	let FdData::Raw(host_fd) = fddata else {
+		sysfsync.ret = 0;
+		return;
+	};
+
+	let result = unsafe { libc::fsync(*host_fd) };
+
+	sysfsync.ret = if result < 0 {
+		-translate_last_errno().unwrap_or(1)
+	} else {
+		0
+	};
+}
+
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
