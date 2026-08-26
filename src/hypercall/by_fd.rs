@@ -4,6 +4,7 @@ use std::{io, os::fd::IntoRawFd};
 use uhyve_interface::{
 	GuestPhysAddr, v1,
 	v2::{self, parameters::*},
+	v3::{parameters::FsyncParams, util::RawResult},
 };
 
 use crate::{
@@ -290,6 +291,27 @@ pub(super) fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 			warn!("lseek attempted to use an unknown file descriptor");
 			-EBADF as i64
 		}
+	};
+}
+
+/// Handler for a [`FileFsync`](v3::Hypercall::FileFsync) hypercall.
+pub(super) fn fsync(sysfsync: &mut FsyncParams, file_map: &UhyveFileMap) {
+	let Some(fddata) = file_map.fdmap.get(GuestFd(sysfsync.fd)) else {
+		sysfsync.ret = RawResult::encode_err(EBADF).unwrap();
+		return;
+	};
+
+	let FdData::Raw(host_fd) = fddata else {
+		sysfsync.ret = RawResult::ok();
+		return;
+	};
+
+	let result = unsafe { libc::fsync(*host_fd) };
+
+	sysfsync.ret = if result < 0 {
+		RawResult::encode_err(translate_last_errno().unwrap()).unwrap()
+	} else {
+		RawResult::ok()
 	};
 }
 
