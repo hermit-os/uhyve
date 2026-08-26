@@ -70,6 +70,25 @@ impl<R: AbiResult> RawResult<R> {
 		R::decode(self.0).ok_or(DecodeError::Invalid)
 	}
 }
+impl<T> RawResult<Result<T, Errno>>
+where
+	Result<T, Errno>: AbiResult,
+{
+	/// Encodes `Err(errno)` for an errno from [`hermit_abi::errno`](mod@hermit_abi::errno),
+	/// failing if `errno` is not in `1..=i32::MAX`.
+	pub fn encode_err(errno: i32) -> Result<Self, NotRepresentable> {
+		let errno = u32::try_from(errno)
+			.ok()
+			.and_then(Errno::new)
+			.ok_or(NotRepresentable)?;
+		Self::encode(Err(errno))
+	}
+}
+impl RawResult<Result<(), Errno>> {
+	pub fn ok() -> Self {
+		Self::encode(Ok(())).unwrap()
+	}
+}
 impl<R: AbiResult> Default for RawResult<R> {
 	fn default() -> Self {
 		Self(R::UNSET, PhantomData)

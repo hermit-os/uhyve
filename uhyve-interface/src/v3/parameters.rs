@@ -385,3 +385,16 @@ pub struct StatParams {
 	/// Return value of the hypercall.
 	pub ret: RawResult<Result<(), Errno>>,
 }
+
+/// Parameters for a [`FileFsync`](crate::v2::Hypercall::FileFsync) hypercall.
+///
+/// Guest writes end up in the host's page cache, so this is the only place a
+/// flush means anything: it is the host that owns the file.
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct FsyncParams {
+	/// Guest file descriptor (from [`FileOpen`](crate::v2::Hypercall::FileOpen)).
+	pub fd: i32,
+	/// Return value of the hypercall.
+	pub ret: RawResult<Result<(), Errno>>,
+}
