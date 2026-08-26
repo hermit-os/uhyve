@@ -35,6 +35,7 @@ pub enum HypercallAddress {
 	FileStat = 0x1170,
 	FileFstat = 0x1180,
 	Mkdir = 0x1190,
+	FileFsync = 0x11A0,
 	SharedMemOpen = 0x1200,
 	SharedMemClose = 0x1210,
 	Snapshot = 0x1400,
@@ -50,6 +51,7 @@ into_hypercall_addresses! {
 			FileRead,
 			FileUnlink,
 			FileWrite,
+			FileFsync,
 			Getdents,
 			Mkdir,
 			FileStat,
@@ -83,6 +85,8 @@ pub enum Hypercall<'a> {
 	FileFstat(&'a mut FstatParams),
 	/// Create a new directory.
 	Mkdir(&'a mut MkdirParams),
+	/// Flush a file to the storage it lives on.
+	FileFsync(&'a mut FsyncParams),
 	/// Write a char to the terminal.
 	SerialWriteByte(u8),
 	/// Write a buffer to the terminal
