@@ -116,6 +116,7 @@ pub unsafe fn address_to_hypercall_v2(
 		HypercallAddress::FileStat => Hypercall::FileStat(get_data!()),
 		HypercallAddress::FileFstat => Hypercall::FileFstat(get_data!()),
 		HypercallAddress::Mkdir => Hypercall::Mkdir(get_data!()),
+		HypercallAddress::FileFsync => Hypercall::FileFsync(get_data!()),
 		_ => return None,
 	})
 }
@@ -154,6 +155,7 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 		v2::Hypercall::FileStat(sysstat) => stat(&peripherals.mem, sysstat, &file_mapping()),
 		v2::Hypercall::FileFstat(sysfstat) => fstat(&peripherals.mem, sysfstat, &file_mapping()),
 		v2::Hypercall::Mkdir(sysmkdir) => mkdir(&peripherals.mem, sysmkdir, &mut file_mapping()),
+		v2::Hypercall::FileFsync(sysfsync) => fsync(sysfsync, &file_mapping()),
 		v2::Hypercall::SerialWriteByte(buf) => peripherals
 			.serial
 			.output(&[buf])
@@ -803,4 +805,25 @@ fn copy_env(env: &EnvVars, syscmdval: &v1::parameters::CmdvalParams, mem: &MmapM
 		env_dest[key.len() + 1..len].copy_from_slice(value.as_bytes());
 		env_dest[len] = 0;
 	}
+}
+
+/// Handler for a [`FileFsync`](v2::Hypercall::FileFsync) hypercall.
+fn fsync(sysfsync: &mut FsyncParams, file_map: &UhyveFileMap) {
+	let Some(fddata) = file_map.fdmap.get(GuestFd(sysfsync.fd)) else {
+		sysfsync.ret = -EBADF;
+		return;
+	};
+
+	let FdData::Raw(host_fd) = fddata else {
+		sysfsync.ret = 0;
+		return;
+	};
+
+	let result = unsafe { libc::fsync(*host_fd) };
+
+	sysfsync.ret = if result < 0 {
+		-translate_last_errno().unwrap_or(1)
+	} else {
+		0
+	};
 }
