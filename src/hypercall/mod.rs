@@ -693,7 +693,7 @@ fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 			}
 		}
 		Some(FdData::Virtual { data, offset }) => {
-			#[forbid(unused_variables, unreachable_patterns)]
+			#[forbid(unused_variables)]
 			let tmp: i64 = match syslseek.whence as i32 {
 				SEEK_SET => 0,
 				SEEK_CUR => *offset as i64,

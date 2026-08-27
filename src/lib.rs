@@ -20,6 +20,7 @@
 
 #![warn(rust_2018_idioms)]
 #![allow(clippy::useless_conversion)]
+#![deny(unreachable_patterns)]
 
 use std::path::PathBuf;
 
