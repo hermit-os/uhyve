@@ -38,6 +38,7 @@ pub enum HypercallAddress {
 	Getdents = 0x2210,
 	SharedMemOpen = 0x2300,
 	SharedMemClose = 0x2310,
+	Snapshot = 0x2400,
 }
 
 into_hypercall_addresses! {
@@ -58,6 +59,7 @@ into_hypercall_addresses! {
 			SerialReadByte,
 			SerialWriteBuffer,
 			SerialWriteByte,
+			Snapshot
 		}
 	}
 }
@@ -89,7 +91,11 @@ pub enum Hypercall<'a> {
 	/// Read a single byte from the terminal
 	SerialReadByte,
 	/// Read a buffer from the terminal
-	SerialReadBuffer(&'a SerialReadBufferParams),
+	SerialReadBuffer(&'a mut SerialReadBufferParams),
+	/// Take a snapshot of the VM.
+	///
+	/// This is only allowed, once the Kernel has finished booting, as the hypervisor might assume some devices being fully initialized.
+	Snapshot(&'a mut SnapshotParams),
 }
 impl<'a> Hypercall<'a> {
 	/// Get a hypercall's port address.
