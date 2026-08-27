@@ -398,3 +398,51 @@ pub struct FsyncParams {
 	/// Return value of the hypercall.
 	pub ret: RawResult<Result<(), Errno>>,
 }
+
+/// Result of a [`Snapshot`](crate::v3::Hypercall::Snapshot) hypercall.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SnapshotResult {
+	/// The snapshot was taken and execution continues.
+	Continued,
+	/// Execution resumes from a restored snapshot.
+	Restored,
+	/// Error with libc errno.
+	Err(Errno),
+}
+/// Encoded as `0` when continued, `1` when restored and `-errno` on error.
+impl AbiResult for SnapshotResult {
+	type Repr = i32;
+	const UNSET: i32 = i32::MIN;
+
+	fn encode(self) -> Result<i32, NotRepresentable> {
+		Ok(match self {
+			Self::Continued => 0,
+			Self::Restored => 1,
+			Self::Err(errno) => -(errno.get() as i32),
+		})
+	}
+
+	fn decode(raw: i32) -> Option<Self> {
+		match raw {
+			0 => Some(Self::Continued),
+			1 => Some(Self::Restored),
+			raw if raw < 0 => Errno::from_raw(raw.into()).map(Self::Err),
+			_ => None,
+		}
+	}
+}
+
+/// Parameters for a [`Snapshot`](crate::v2::Hypercall::Snapshot) hypercall.
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct SnapshotParams {
+	/// Is true, if the snapshot was restored. False if we continue execution. And
+	/// `Err(ERANGE)` if the provided buffers are not large enough.
+	pub result: RawResult<SnapshotResult>,
+	/// New HERMIT_IP to use. Only to be used in the `Restored` case.
+	pub new_hermit_ip: MutSizedGuestBuffer,
+	/// New arguments. Only to be used in the `Restored` case. The guest has to ensure that it's length fits the expected application parameters.
+	pub new_args: MutSizedGuestBuffer,
+	/// New System Time
+	pub systemtime: Timespec,
+}
