@@ -174,15 +174,15 @@ impl HwBreakpoints {
 			.flatten()
 			.find(|watchpoint| watchpoint.covers(addr));
 
-		match watchpoint.map(|watchpoint| watchpoint.condition) {
-			Some(Condition::Data { kind, .. }) => MultiThreadStopReason::Watch { tid, kind, addr },
-			// The guest trapped on a watchpoint we no longer track. Report the
-			// access rather than dropping the stop on the floor.
-			_ => MultiThreadStopReason::Watch {
-				tid,
-				kind: WatchKind::ReadWrite,
-				addr,
+		MultiThreadStopReason::Watch {
+			tid,
+			kind: match watchpoint.map(|watchpoint| watchpoint.condition) {
+				Some(Condition::Data { kind, .. }) => kind,
+				// The guest trapped on a watchpoint we no longer track. Report the
+				// access rather than dropping the stop on the floor.
+				_ => WatchKind::ReadWrite,
 			},
+			addr,
 		}
 	}
 }
