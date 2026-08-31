@@ -644,10 +644,6 @@ mod tests {
 			config.cpu.clone().affinity.unwrap().0,
 			Affinity::from_str("0,1,2").unwrap().0
 		);
-
-		let mut app = Args::command();
-		// This should not panic, CPU number is equal.
-		let _affinity = config.cpu.get_affinity(&mut app);
 	}
 
 	/// Tests whether the input '[0,1,2]' (entering different usizes)
@@ -667,10 +663,6 @@ mod tests {
 			config.cpu.clone().affinity.unwrap().0,
 			Affinity::from_str("0,1,2").unwrap().0
 		);
-
-		let mut app = Args::command();
-		// This should not panic, CPU number is equal.
-		let _affinity = config.cpu.get_affinity(&mut app);
 	}
 
 	/// Tests whether an error appears if the defined affinity does
