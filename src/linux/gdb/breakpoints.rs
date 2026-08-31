@@ -45,9 +45,7 @@ impl SwBreakpoint {
 	fn write_trap(instructions: &mut [u8]) {
 		// `brk #0`. AArch64 instructions are always four bytes wide, so unlike
 		// x86's single-byte `int3` this cannot be filled byte-wise.
-		for instruction in instructions.as_chunks_mut::<4>().0 {
-			*instruction = 0xd420_0000u32.to_le_bytes();
-		}
+		instructions[..4].copy_from_slice(&0xd420_0000u32.to_le_bytes());
 	}
 }
 

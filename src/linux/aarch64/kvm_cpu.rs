@@ -410,6 +410,8 @@ impl VirtualCPU for KvmCpu {
 						}
 					}
 					VcpuExit::SystemEvent(KVM_SYSTEM_EVENT_SHUTDOWN, _) => {
+						debug!("{:?}", KVM_SYSTEM_EVENT_SHUTDOWN);
+
 						if let Some(s) = self.stats.as_mut() {
 							s.increment_val(VmExit::Shutdown)
 						}
