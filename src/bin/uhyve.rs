@@ -298,6 +298,9 @@ impl CpuArgs {
 	fn get_affinity(&self, app: &mut Command) -> Option<Vec<CoreId>> {
 		self.affinity.clone().map(|affinity| {
 			if let Err(e) = affinity.validate() {
+				#[cfg(test)]
+				panic!("{e}");
+
 				app.error(ErrorKind::ValueValidation, e).exit()
 			}
 			let affinity_num_vals = affinity.0.len();
