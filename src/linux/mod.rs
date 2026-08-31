@@ -133,6 +133,7 @@ pub(crate) fn debug_info_to_stop_reason(
 	const EC_WATCHPOINT: u32 = 0x34;
 	const EC_BRK: u32 = 0x3c;
 
+	#[forbid(unused_variables)]
 	match debug.hsr >> 26 {
 		EC_SOFTWARE_STEP => MultiThreadStopReason::DoneStep,
 		EC_BREAKPOINT => MultiThreadStopReason::HwBreak(tid),

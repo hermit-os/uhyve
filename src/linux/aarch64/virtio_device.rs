@@ -16,6 +16,7 @@ impl KvmVirtioNetDevice {
 	pub fn setup(&mut self, _vm: &kvm_ioctls::VmFd) {
 		// This requires wiring the virtqueue notifications and interrupts up to
 		// the GIC. See linux::x86_64::virtio_device for the x86 equivalent.
+		error!("Virtio devices are currently not supported on aarch64!");
 		unimplemented!()
 	}
 }
