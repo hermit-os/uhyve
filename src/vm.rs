@@ -60,8 +60,10 @@ pub enum LoadKernelError {
 
 type LoadKernelResult<T> = Result<T, LoadKernelError>;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 pub type DefaultBackend = crate::os::x86_64::kvm_cpu::KvmVm;
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+pub type DefaultBackend = crate::os::aarch64::kvm_cpu::KvmVm;
 #[cfg(target_os = "macos")]
 pub type DefaultBackend = crate::os::XhyveVm;
 
@@ -602,6 +604,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 				// still valid, but the kernel may no longer know about it.
 				let _ = KickSignal::pthread_kill(tid);
 			}
+			KickSignal::kick_all_vcpus();
 
 			cpu_handles
 				.into_iter()

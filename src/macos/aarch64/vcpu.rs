@@ -4,7 +4,6 @@ use log::debug;
 use uhyve_interface::{GuestPhysAddr, v1};
 use xhypervisor::{
 	self, Gic, MemPerm, Register, SystemRegister, VirtualCpuExitReason, create_vm, map_mem,
-	protect_mem,
 };
 
 use crate::{
@@ -21,7 +20,9 @@ use crate::{
 	params::{NetworkMode, Params},
 	stats::CpuStats,
 	vcpu::{VcpuStopReason, VirtualCPU},
-	vm::{KernelInfo, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals},
+	vm::{
+		KernelInfo, KickSignal, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals,
+	},
 };
 
 pub struct XhyveVm {
@@ -70,9 +71,9 @@ impl VirtualizationBackendInternal for XhyveVm {
 			peripherals.mem.guest_addr().as_u64(),
 			MemPerm::ExecReadWrite,
 		)?;
-		// protect the first page for hypercall
-		// Apple uses on aarch64 default page size of 16K
-		protect_mem(peripherals.mem.guest_addr().as_u64(), 0x4000, MemPerm::None)?;
+		// The hypercall window is identity mapped below `RAM_START` and is never
+		// mapped here, so accesses to it already trap. Guest memory itself must
+		// stay readable -- the FDT lives in its first pages.
 
 		trace!("Create GIC...");
 		let gic = Gic::new(GICD_BASE_ADDRESS, GICR_BASE_ADDRESS, MSI_BASE_ADDRESS)?;
@@ -123,6 +124,7 @@ impl VirtualCPU for XhyveCpu {
 
 		// Initialize CPU
 		let vcpu = xhypervisor::VirtualCpu::new(self.id)?;
+		KickSignal::register_vcpu(vcpu.get_handle());
 
 		/* pstate = all interrupts masked */
 		let pstate: PSR = PSR::D_BIT | PSR::A_BIT | PSR::I_BIT | PSR::F_BIT | PSR::MODE_EL1H;
@@ -238,9 +240,11 @@ impl VirtualCPU for XhyveCpu {
 
 							let data_addr = GuestPhysAddr::new(vcpu.read_register(Register::X8)?);
 							if let Some(hypercall) = unsafe {
+								// The hypercall window is identity mapped, so the
+								// faulting address is the hypercall address itself.
 								hypercall::address_to_hypercall_v2(
 									&self.peripherals.mem,
-									addr - self.kernel_info.layout.guest_address().as_u64(),
+									addr,
 									data_addr,
 								)
 							} {
@@ -256,9 +260,7 @@ impl VirtualCPU for XhyveCpu {
 							} else if let Some(hypercall) = unsafe {
 								hypercall::address_to_hypercall_v1(
 									&self.peripherals.mem,
-									(addr - self.kernel_info.layout.guest_address().as_u64())
-										.try_into()
-										.unwrap(),
+									addr.try_into().unwrap(),
 									data_addr,
 								)
 							} {
@@ -284,19 +286,23 @@ impl VirtualCPU for XhyveCpu {
 								) {
 									return stop;
 								}
-								// increase the pc to the instruction after the exception to continue execution
-								vcpu.write_register(Register::PC, pc + 4)?;
 							} else {
 								error!("Unable to handle exception {exception:?}");
 								self.print_registers();
 								return Err(xhypervisor::Error::Error.into());
 							}
+
+							// Unlike KVM, Hypervisor.framework leaves the program
+							// counter on the faulting instruction, so every handled
+							// hypercall has to be stepped over here.
+							vcpu.write_register(Register::PC, pc + 4)?;
 						} else {
 							error!("Unsupported exception class: 0x{ec:x}");
 							self.print_registers();
 							return Err(xhypervisor::Error::Error.into());
 						}
 					}
+					VirtualCpuExitReason::Cancelled => return Ok(VcpuStopReason::Kick),
 					_ => {
 						error!("Unknown exit reason: {reason:?}");
 						return Err(xhypervisor::Error::Error.into());
