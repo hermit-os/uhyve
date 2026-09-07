@@ -16,7 +16,8 @@ In contrast, the unikernels under `data` are prebuilt binaries that are intended
 
 ### Updating the sample unikernels
 
-The images are built from the examples of the [hermit-rs repository] and [hermit-c repository].
+The images are built from the examples of the [hermit-rs repository] (`hello_world`, `rusty_demo` in the `examples` folder)
+and [hermit-c repository] (`src/hello_world.c`).
 
 1. Adjust `uhyve-interface` and push to a remote tree, modify local `kernel` tree's `Cargo.toml` to use updated `uhyve-interface` version, adjust the kernel and implement all the necessary changes (to `uhyve-interface` and Uhyve itself). Some further modifications might be required to:
   - Hypercall-handling functions called by `r#continue`/creating a new function
