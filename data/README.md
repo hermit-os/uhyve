@@ -20,10 +20,10 @@ The images are built from the examples of the [hermit-rs repository] (`hello_wor
 and [hermit-c repository] (`src/hello_world.c`).
 
 1. Adjust `uhyve-interface` and push to a remote tree, modify local `kernel` tree's `Cargo.toml` to use updated `uhyve-interface` version, adjust the kernel and implement all the necessary changes (to `uhyve-interface` and Uhyve itself). Some further modifications might be required to:
-  - Hypercall-handling functions called by `r#continue`/creating a new function
-  - Serial port
-  - `src/stats.rs` (so that we can maintain statistics of how many hypercalls were called for a given run)
-  - Pay attention to memory range-related changes and ASLR.
+   - Hypercall-handling functions called by `r#continue`/creating a new function
+   - Serial port
+   - `src/stats.rs` (so that we can maintain statistics of how many hypercalls were called for a given run)
+   - Pay attention to memory range-related changes and ASLR.
 
    It is standard practice to maintain backwards compatibility with older versions, primarily by "translating" 'old structs' into 'new structs'.
    Such an example can be found here: https://github.com/hermit-os/uhyve/blob/c5d573701e479e4ae1c8974bec80742ee928cff0/src/hypercall.rs#L425-L448
@@ -36,7 +36,7 @@ and [hermit-c repository] (`src/hello_world.c`).
 3.
    ```
    cd tests/test-kernels
-   HERMIT_MANIFEST_DIR=/path/to/modified/kernel cargo build -Zbuild-std=std,panic_abort --target=x86_64-unknown-hermit
+   HERMIT_MANIFEST_DIR=/path/to/modified/kernel cargo build -Zbuild-std=std,panic_abort --target=$(uname -m)-unknown-hermit
    ```
    Draft pull requests can use the draft `uhyve-interface` changes by [overriding dependencies](https://doc.rust-lang.org/cargo/reference/overriding-dependencies.html) (e.g. `[patch.crates-io]`).
 
@@ -58,20 +58,21 @@ and [hermit-c repository] (`src/hello_world.c`).
 
 10. Adjust `test-kernels` to use a version of Hermit that bundles a kernel with the newly merged `uhyve-interface` modifications.
 
-Step 11: <concrete build instructions for new Hermit unikernel images for `data/`>
-
-See: https://github.com/hermit-os/hermit-rs/blob/0e68850e7b848656f8704b6c1fdc3a09685cb4de/hermit/build.rs#L43-L57
+11. Build new Hermit unikernel images from the examples of the [hermit-rs repository] (`hello_world`, `rusty_demo` in the `examples` folder)
+and [hermit-c repository] (`src/hello_world.c`), as described in step 3 above.
+   Then, copy the resulting binaries into `data/${HERMIT_KERNEL_VERSION}/$(uname -m)`, whereas
+   `HERMIT_KERNEL_VERSION="$(cargo metadata -m "$HERMIT_MANIFEST_DIR/Cargo.toml" --format-version 1 | jq -r '.workspace_members | map(select(contains("hermit-kernel@")) | split("@")[1])[0]')"`
 
 For reproducibility reasons, we include the **permalink** to the source code used to compile the binary, as well as the toolchain version that we used.
 
 ### Unikernel image list
 
-| File                      | Link                                                                                                      | Toolchain version                                                                           |
-| ------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `data/x86_64/hello_world` | https://github.com/hermit-os/hermit-rs/tree/996086ee72178d0d463be20a5ce22a6daf81666f/examples/hello_world | rust version 1.93.0-nightly (2286e5d22 2025-11-13) (`nightly-x86_64-unknown-linux-gnu`)     |
-| `data/x86_64/rusty_demo`  | https://github.com/hermit-os/hermit-rs/tree/996086ee72178d0d463be20a5ce22a6daf81666f/examples/demo        | rust version 1.93.0-nightly (2286e5d22 2025-11-13) (`nightly-x86_64-unknown-linux-gnu`)     |
-| `data/x86_64/hello_c`     |                                                                                                           |                                                                                             |
-| `data/aarch64/hello_world`| https://github.com/hermit-os/hermit-rs/tree/996086ee72178d0d463be20a5ce22a6daf81666f/examples/demo        | rust version 1.93.0-nightly (2286e5d22 2025-11-13) (`nightly-x86_64-unknown-linux-gnu`)     |
+| File                              | Link                                                                                                           | Toolchain version                                                                          |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `data/0.6.0/x86_64/hello_world`   | https://github.com/hermit-os/hermit-rs/tree/996086ee72178d0d463be20a5ce22a6daf81666f/examples/hello_world      | rust version 1.93.0-nightly (2286e5d22 2025-11-13) (`nightly-x86_64-unknown-linux-gnu`)    |
+| `data/0.6.0/x86_64/rusty_demo`    | https://github.com/hermit-os/hermit-rs/tree/996086ee72178d0d463be20a5ce22a6daf81666f/examples/demo             | rust version 1.93.0-nightly (2286e5d22 2025-11-13) (`nightly-x86_64-unknown-linux-gnu`)    |
+| `data/0.6.0/x86_64/hello_c`       | https://github.com/hermit-os/hermit-playground/blob/b9ce9ae534972b014ad04d32349656c6c47b642b/usr/tests/hello.c |                                                                                            |
+| `data/0.11.0/aarch64/hello_world` | https://github.com/hermit-os/hermit-rs/tree/996086ee72178d0d463be20a5ce22a6daf81666f/examples/demo             | rust version 1.93.0-nightly (2286e5d22 2025-11-13) (`nightly-x86_64-unknown-linux-gnu`)    |
 
 [Hermit kernel]: https://github.com/hermit-os/kernel
 [hermit-c repository]: https://github.com/hermit-os/hermit-c
