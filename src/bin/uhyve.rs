@@ -1,6 +1,12 @@
 #![warn(rust_2018_idioms)]
 
-use std::{fs, num::ParseIntError, path::PathBuf, process, str::FromStr};
+use std::{
+	fs,
+	num::ParseIntError,
+	path::{Path, PathBuf},
+	process,
+	str::FromStr,
+};
 
 use clap::{Command, CommandFactory, Parser, error::ErrorKind};
 use core_affinity::CoreId;
@@ -14,6 +20,8 @@ use uhyvelib::params::FileSandboxMode;
 use uhyvelib::{
 	UhyveVm,
 	params::{CpuCount, EnvVars, GuestMemorySize, HermitImageMode, NetworkMode, Output, Params},
+	snapshot::{GuestSnapshotStore, SnapshotOptions},
+	vm::DefaultBackend,
 };
 
 #[cfg(feature = "instrument")]
@@ -535,6 +543,7 @@ impl From<Args> for Params {
 			#[cfg(feature = "instrument")]
 			trace_dir,
 			network: net.map(|net| NetworkMode::try_from(net).unwrap()),
+			snapshot: None,
 		}
 	}
 }
@@ -595,11 +604,18 @@ fn run_uhyve() -> i32 {
 		instrument::TraceGuard::new(trace_dir.clone())
 	});
 
+	let snapshot_store = GuestSnapshotStore::new();
+	let snapshot_options = SnapshotOptions {
+		store: snapshot_store.clone(),
+		resume_after_snapshot: true,
+	};
+
 	let stats = args.uhyve.stats.unwrap_or_default();
 	let kernel_path = args.guest.kernel.clone();
 	let affinity = args.cpu.get_affinity(&mut app).unwrap_or(Vec::new());
 	let mut params = Params::from(args);
 	params.cpu_affinity = affinity;
+	params.snapshot = Some(snapshot_options);
 
 	let vm = UhyveVm::new(kernel_path, params).unwrap_or_else(|e| panic!("Error: {e}"));
 
@@ -607,6 +623,11 @@ fn run_uhyve() -> i32 {
 	if stats && let Some(stats) = res.stats {
 		println!("Run statistics:");
 		println!("{stats}");
+	}
+	if snapshot_store.snapshot_ready() {
+		snapshot_store
+			.save_to_disk::<DefaultBackend>(Path::new("uhyve.snapshot"))
+			.unwrap();
 	}
 	res.code
 }

@@ -4,7 +4,11 @@ use std::{fmt::Debug, io};
 
 #[cfg(target_os = "linux")]
 use crate::net::tap::{Tap, TapRX, TapTX};
-use crate::params::NetworkMode;
+use crate::{
+	HypervisorResult,
+	params::NetworkMode,
+	virtio::net::{VirtioNetPciDeviceSnapshot, VirtioNetSnapshotLock},
+};
 
 pub const PCI_ETHERNET_SUBCLASS: u8 = 0x0;
 pub const PCI_ETHERNET_PROG_IF: u8 = 0;
@@ -18,7 +22,18 @@ pub const UHYVE_PCI_CLASS_INFO: [u8; 3] = [
 ];
 
 pub const UHYVE_NET_MTU: usize = 1500;
-pub trait NetworkBackend: Sized + Debug {}
+
+/// Host-side virtio-net device used by [`crate::vm::VmPeripherals`].
+pub trait NetworkBackend: Sized + Debug {
+	/// Pauses the network device for snapshotting, so that no memory is manipulated during the
+	/// snapshot. The device resumes when the returned guard is dropped.
+	fn lock_for_snapshot(&mut self) -> VirtioNetSnapshotLock<'_>;
+
+	fn setup_from_snapshot(
+		&mut self,
+		snapshot: &VirtioNetPciDeviceSnapshot,
+	) -> HypervisorResult<()>;
+}
 
 // tap devices on macOS don't seem to be supported directly by Apple
 // TODO: Let mac users investigate if this is possible.

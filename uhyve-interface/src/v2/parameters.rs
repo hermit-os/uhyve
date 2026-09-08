@@ -237,3 +237,27 @@ pub struct FstatParams {
 	/// Return value of the hypercall.
 	pub ret: StatResult,
 }
+
+/// Parameters for a [`Snapshot`](crate::v2::Hypercall::Snapshot) hypercall.
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct SnapshotParams {
+	/// Is true, if the snapshot was restored. False if we continue execution.
+	pub restored: bool,
+	/// New HERMIT_IP to use. Only used if `restored` is true.
+	pub new_hermit_ip: Option<[u8; 256]>,
+	/// Memory address of new arguments.
+	pub new_args: GuestPhysAddr,
+	/// Length of new_args in bytes. The hypervisor will update this value to the actual length of the new arguments. Is 0 if no new arguments are provided.
+	pub new_args_len: u64,
+}
+impl Default for SnapshotParams {
+	fn default() -> Self {
+		Self {
+			restored: false,
+			new_hermit_ip: None,
+			new_args: GuestPhysAddr::zero(),
+			new_args_len: 0,
+		}
+	}
+}

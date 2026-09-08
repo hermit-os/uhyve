@@ -179,7 +179,7 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 		let vcpus = self
 			.vcpus
 			.into_iter()
-			.map(|mut vcpu| {
+			.map(|(mut vcpu, _mailbox)| {
 				let vcpu_id = vcpu.get_vcpu_id();
 
 				#[cfg(not(target_os = "macos"))]

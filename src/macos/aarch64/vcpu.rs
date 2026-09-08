@@ -1,6 +1,10 @@
-use std::{num::NonZero, sync::Arc};
+use std::{
+	num::NonZero,
+	sync::{Arc, Mutex, mpsc::Sender},
+};
 
 use log::debug;
+use serde::{Deserialize, Serialize};
 use uhyve_interface::{GuestPhysAddr, v1};
 use xhypervisor::{
 	self, Gic, MemPerm, Register, SystemRegister, VirtualCpuExitReason, create_vm, map_mem,
@@ -20,9 +24,18 @@ use crate::{
 	os::aarch64::virtio_device::XHyveVirtioNetDevice,
 	params::{NetworkMode, Params},
 	stats::CpuStats,
-	vcpu::{VcpuStopReason, VirtualCPU},
-	vm::{KernelInfo, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals},
+	vcpu::{VcpuMailbox, VcpuStopReason, VirtualCPU},
+	vm::{
+		BackendAction, KernelInfo, VirtualizationBackend, VirtualizationBackendInternal,
+		VmPeripherals,
+	},
 };
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct XhyveVmBackendState;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct XhyveCpuSnapshot;
 
 pub struct XhyveVm {
 	peripherals: Arc<VmPeripherals<<Self as VirtualizationBackendInternal>::VirtioNetImpl>>,
@@ -36,6 +49,7 @@ impl VirtualizationBackendInternal for XhyveVm {
 	type VCPU = XhyveCpu;
 	type VirtioNetImpl = XHyveVirtioNetDevice;
 	type MemLayout = Aarch64MemoryLayout;
+	type SnapshotState = XhyveVmBackendState;
 	const NAME: &str = "XhyveVm";
 
 	fn new_cpu(
@@ -43,6 +57,8 @@ impl VirtualizationBackendInternal for XhyveVm {
 		id: usize,
 		kernel_info: Arc<KernelInfo<Self::MemLayout>>,
 		enable_stats: bool,
+		vm_action_tx: Sender<BackendAction>,
+		mailbox: Arc<VcpuMailbox<Vec<XhyveCpuSnapshot>>>,
 	) -> HypervisorResult<XhyveCpu> {
 		Ok(XhyveCpu {
 			id: id.try_into().unwrap(),
@@ -54,7 +70,20 @@ impl VirtualizationBackendInternal for XhyveVm {
 			} else {
 				None
 			},
+			vm_action_tx,
+			mailbox,
 		})
+	}
+
+	fn new_cpu_from_snapshot(
+		&self,
+		_kernel_info: Arc<KernelInfo>,
+		_enable_stats: bool,
+		_vm_action_tx: Sender<BackendAction>,
+		_mailbox: Arc<VcpuMailbox<Vec<XhyveCpuSnapshot>>>,
+		_cpu_snapshot: XhyveCpuSnapshot,
+	) -> HypervisorResult<XhyveCpu> {
+		unimplemented!();
 	}
 
 	fn new(
@@ -92,9 +121,24 @@ impl VirtualizationBackendInternal for XhyveVm {
 	fn virtio_net_device(_mode: NetworkMode, _memory: Arc<MmapMemory>) -> Self::VirtioNetImpl {
 		unimplemented!();
 	}
+
+	fn snapshot_backend(&self) -> HypervisorResult<Self::SnapshotState> {
+		unimplemented!();
+	}
+
+	fn from_snapshot(
+		_peripherals: Arc<VmPeripherals<Self::VirtioNetImpl>>,
+		_vm_state: &Self::SnapshotState,
+	) -> HypervisorResult<Self> {
+		Err(HypervisorError::FeatureMismatch(
+			"restore from snapshot is not supported on the macOS backend",
+		))
+	}
 }
 
-impl VirtualizationBackend for XhyveVm {}
+impl VirtualizationBackend for XhyveVm {
+	type SnapshotState = XhyveVmBackendState;
+}
 
 pub struct XhyveCpu {
 	id: u32,
@@ -103,6 +147,10 @@ pub struct XhyveCpu {
 	// TODO: Remove once the getenv/getargs hypercalls are removed
 	kernel_info: Arc<KernelInfo<<XhyveVm as VirtualizationBackendInternal>::MemLayout>>,
 	stats: Option<CpuStats>,
+	#[expect(dead_code, reason = "Snapshotting is not implemented on MacOS")]
+	vm_action_tx: Sender<BackendAction>,
+	#[expect(dead_code, reason = "Snapshotting is not implemented on MacOS")]
+	mailbox: Arc<VcpuMailbox<Vec<XhyveCpuSnapshot>>>,
 }
 
 /// `XhyveCpu` can be sent across threads as long as `thread_local_init` wasn't called yet.
@@ -112,6 +160,12 @@ pub struct XhyveCpu {
 unsafe impl Send for XhyveCpu {}
 
 impl VirtualCPU for XhyveCpu {
+	type SnapshotState = XhyveCpuSnapshot;
+
+	fn init_from_snapshot(&mut self, _state: Self::SnapshotState) -> HypervisorResult<()> {
+		unimplemented!();
+	}
+
 	fn thread_local_init(&mut self) -> HypervisorResult<()> {
 		debug!("Initialize VirtualCPU {}", self.id);
 
@@ -240,7 +294,7 @@ impl VirtualCPU for XhyveCpu {
 							if let Some(hypercall) = unsafe {
 								hypercall::address_to_hypercall_v2(
 									&self.peripherals.mem,
-									addr - self.kernel_info.layout.guest_address().as_u64(),
+									addr - self.kernel_info.layout().guest_address().as_u64(),
 									data_addr,
 								)
 							} {
@@ -248,15 +302,17 @@ impl VirtualCPU for XhyveCpu {
 									s.increment_val((&hypercall).into())
 								}
 
-								if let Some(stop) =
-									hypercall::handle_hypercall_v2(&self.peripherals, hypercall)
-								{
-									return Ok(stop);
+								match hypercall::handle_hypercall_v2(&self.peripherals, hypercall) {
+									hypercall::HypercallAction::Stop(stop) => return Ok(stop),
+									hypercall::HypercallAction::Snapshot => {
+										unimplemented!()
+									}
+									hypercall::HypercallAction::None => {}
 								}
 							} else if let Some(hypercall) = unsafe {
 								hypercall::address_to_hypercall_v1(
 									&self.peripherals.mem,
-									(addr - self.kernel_info.layout.guest_address().as_u64())
+									(addr - self.kernel_info.layout().guest_address().as_u64())
 										.try_into()
 										.unwrap(),
 									data_addr,

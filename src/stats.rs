@@ -6,13 +6,14 @@ use std::{
 	time::{Duration, Instant},
 };
 
+use serde::{Deserialize, Serialize};
 use uhyve_interface::{
 	v1::{self, HypercallAddress as AddressV1},
 	v2::{self, HypercallAddress as AddressV2},
 };
 
 /// Possible hypercalls that can cause an exit.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deserialize, Serialize)]
 #[repr(u64)]
 pub enum HypercallAddresses {
 	V1(AddressV1),
@@ -20,7 +21,7 @@ pub enum HypercallAddresses {
 }
 
 /// Possible causes a VM exit (guest -> host transition)
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VmExit {
 	Shutdown,
 	MMIORead,
@@ -56,11 +57,13 @@ impl<'a> From<&v2::Hypercall<'a>> for VmExit {
 	}
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct CpuStats {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CpuStats {
 	id: usize,
 	vm_exits: HashMap<VmExit, usize>,
+	#[serde(skip)]
 	runtime: Option<Duration>,
+	#[serde(skip)]
 	start_time: Option<Instant>,
 }
 impl CpuStats {

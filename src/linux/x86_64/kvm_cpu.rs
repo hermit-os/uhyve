@@ -1,7 +1,14 @@
-use std::{io, num::NonZero, ops::Add, os::fd::AsRawFd, sync::Arc};
+use std::{
+	io,
+	num::NonZero,
+	ops::Add,
+	os::fd::AsRawFd,
+	sync::{Arc, mpsc::Sender},
+};
 
 use kvm_bindings::*;
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
+use serde::{Deserialize, Serialize};
 use uhyve_interface::GuestPhysAddr;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
@@ -9,16 +16,19 @@ use crate::{
 	HypervisorError, HypervisorResult,
 	arch::{BOOT_GDT_MAX, X86_64MemoryLayout, x86_64::paging::initialize_pagetables},
 	gdb::resume::ResumeMode,
-	hypercall,
+	hypercall::{self, HypercallAction},
 	mem::MmapMemory,
 	mem_layout::MemoryLayout,
 	os::{KVM, KickSignal, x86_64::virtio_device::KvmVirtioNetDevice},
 	params::{NetworkMode, Params},
 	pci::{IOBASE_U64, IOEND_U64, PciConfigurationAddress, PciDevice},
 	stats::{CpuStats, VmExit},
-	vcpu::{VcpuStopReason, VirtualCPU},
+	vcpu::{MailboxAction, VcpuMailbox, VcpuStopReason, VirtualCPU},
 	virtio::net::VirtioNetPciDevice,
-	vm::{KernelInfo, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals},
+	vm::{
+		BackendAction, KernelInfo, VirtualizationBackend, VirtualizationBackendInternal,
+		VmPeripherals,
+	},
 };
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
@@ -72,16 +82,66 @@ const KVM_32BIT_GAP_SIZE: usize = 1024 << 20;
 // 3 GiB, aka. 0xC000_0000
 pub(crate) const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE;
 
+/// KVM VM state in a snapshot excluding per-vCPU registers (those live in [`crate::vm::Snapshot::cpus`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KvmVmBackendState {
+	pub params: Params,
+	/// PIC master/slave (when `params.pit`) + IOAPIC, in restore order.
+	#[serde(default)]
+	pub irq_chips: Vec<kvm_irqchip>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VCpuState {
+	id: usize,
+	regs: kvm_regs,
+	sregs: kvm_sregs,
+	pci_addr: Option<u32>,
+	stats: Option<CpuStats>,
+	cpuid2: Vec<kvm_cpuid_entry2>,
+	#[serde(default)]
+	lapic: Option<kvm_lapic_state>,
+}
+
 #[derive(Debug)]
 pub struct KvmVm {
 	vm_fd: VmFd,
 	peripherals: Arc<VmPeripherals<<Self as VirtualizationBackendInternal>::VirtioNetImpl>>,
+	// vm_action_rx: Receiver<BackendAction>,
+	params: Params,
+}
+
+fn read_irq_chip(vm: &VmFd, chip_id: u32) -> HypervisorResult<kvm_irqchip> {
+	let mut irqchip = kvm_irqchip {
+		chip_id,
+		..Default::default()
+	};
+	vm.get_irqchip(&mut irqchip)?;
+	Ok(irqchip)
+}
+
+/// PIC (if enabled) + IOAPIC, in the order required for [`restore_irq_chips`].
+fn snapshot_irq_chips(vm: &VmFd, pit_enabled: bool) -> HypervisorResult<Vec<kvm_irqchip>> {
+	let mut chips = Vec::new();
+	if pit_enabled {
+		chips.push(read_irq_chip(vm, KVM_IRQCHIP_PIC_MASTER)?);
+		chips.push(read_irq_chip(vm, KVM_IRQCHIP_PIC_SLAVE)?);
+	}
+	chips.push(read_irq_chip(vm, KVM_IRQCHIP_IOAPIC)?);
+	Ok(chips)
+}
+
+fn restore_irq_chips(vm: &VmFd, chips: &[kvm_irqchip]) -> HypervisorResult<()> {
+	for chip in chips {
+		vm.set_irqchip(chip)?;
+	}
+	Ok(())
 }
 
 impl VirtualizationBackendInternal for KvmVm {
 	type VCPU = KvmCpu;
 	type VirtioNetImpl = KvmVirtioNetDevice;
 	type MemLayout = X86_64MemoryLayout;
+	type SnapshotState = KvmVmBackendState;
 	const NAME: &str = "KvmVm";
 
 	fn new_cpu(
@@ -89,6 +149,8 @@ impl VirtualizationBackendInternal for KvmVm {
 		id: usize,
 		kernel_info: Arc<KernelInfo<Self::MemLayout>>,
 		enable_stats: bool,
+		vm_action_tx: Sender<BackendAction>,
+		mailbox: Arc<VcpuMailbox<Vec<VCpuState>>>,
 	) -> HypervisorResult<KvmCpu> {
 		let vcpu = self.vm_fd.create_vcpu(id as u64)?;
 		let mut kvcpu = KvmCpu {
@@ -102,9 +164,45 @@ impl VirtualizationBackendInternal for KvmVm {
 			} else {
 				None
 			},
+			vm_action_tx,
+			mailbox,
 		};
 		kvcpu.init()?;
 
+		Ok(kvcpu)
+	}
+
+	fn new_cpu_from_snapshot(
+		&self,
+		kernel_info: Arc<KernelInfo<Self::MemLayout>>,
+		enable_stats: bool,
+		vm_action_tx: Sender<BackendAction>,
+		mailbox: Arc<VcpuMailbox<Vec<VCpuState>>>,
+		cpu_snapshot: VCpuState,
+	) -> HypervisorResult<KvmCpu> {
+		let id = cpu_snapshot.id;
+		let vcpu = self.vm_fd.create_vcpu(id as u64)?;
+		let mut kvcpu = KvmCpu {
+			id,
+			vcpu,
+			peripherals: self.peripherals.clone(),
+			kernel_info,
+			pci_addr: None,
+			stats: if enable_stats {
+				Some(CpuStats::new(id))
+			} else {
+				None
+			},
+			vm_action_tx,
+			mailbox,
+		};
+		kvcpu.vcpu.set_mp_state(kvm_mp_state {
+			mp_state: KVM_MP_STATE_HALTED,
+		})?;
+		kvcpu.init_from_snapshot(cpu_snapshot)?;
+		kvcpu.vcpu.set_mp_state(kvm_mp_state {
+			mp_state: KVM_MP_STATE_RUNNABLE,
+		})?;
 		Ok(kvcpu)
 	}
 
@@ -201,6 +299,8 @@ impl VirtualizationBackendInternal for KvmVm {
 		Ok(Self {
 			vm_fd: vm,
 			peripherals,
+			// vm_action_rx,
+			params: params.clone(),
 		})
 	}
 
@@ -216,9 +316,117 @@ impl VirtualizationBackendInternal for KvmVm {
 	fn virtio_net_device(mode: NetworkMode, memory: Arc<MmapMemory>) -> Self::VirtioNetImpl {
 		KvmVirtioNetDevice::new(VirtioNetPciDevice::new(mode, memory))
 	}
+
+	fn snapshot_backend(&self) -> HypervisorResult<Self::SnapshotState> {
+		Ok(KvmVmBackendState {
+			params: self.params.clone(),
+			irq_chips: snapshot_irq_chips(&self.vm_fd, self.params.pit)?,
+		})
+	}
+
+	fn from_snapshot(
+		peripherals: Arc<VmPeripherals<KvmVirtioNetDevice>>,
+		vm_state: &KvmVmBackendState,
+	) -> HypervisorResult<Self> {
+		let vm = KVM.create_vm().unwrap();
+
+		// Double-check that neither the (first) guest address nor the end of the guest memory
+		// overlap with the gap that we reserved between 3GiB and 4GiB.
+		let guest_phys_addr = peripherals.mem.guest_addr();
+		let memory_size = peripherals.mem.size();
+		let guest_end_addr = peripherals.mem.guest_addr().add(memory_size).as_usize();
+		assert!(
+			!(KVM_32BIT_GAP_START..KVM_32BIT_MAX_MEM_SIZE).contains(&(guest_phys_addr.as_usize())),
+			"Provided guest address {guest_phys_addr:#X} is in reserved virtual memory region between 3 and 4GiB"
+		);
+		assert!(
+			!(KVM_32BIT_GAP_START..KVM_32BIT_MAX_MEM_SIZE)
+				.contains(&guest_phys_addr.add(memory_size).as_usize()),
+			"Guest end address {guest_end_addr:#X} is in reserved virtual memory region between 3 and 4GiB"
+		);
+
+		let kvm_mem = kvm_userspace_memory_region {
+			slot: 0,
+			flags: 0, // Can be KVM_MEM_LOG_DIRTY_PAGES and KVM_MEM_READONLY
+			memory_size: memory_size as u64,
+			guest_phys_addr: guest_phys_addr.as_u64(),
+			userspace_addr: peripherals.mem.host_start() as u64,
+		};
+		unsafe { vm.set_user_memory_region(kvm_mem) }?;
+
+		trace!("Initialize interrupt controller");
+
+		// create basic interrupt controller
+		vm.create_irq_chip()?;
+
+		if vm_state.params.pit {
+			vm.create_pit2(kvm_pit_config::default()).unwrap();
+		}
+
+		// enable x2APIC support
+		let mut cap: kvm_enable_cap = kvm_bindings::kvm_enable_cap {
+			cap: KVM_CAP_X2APIC_API,
+			flags: 0,
+			..Default::default()
+		};
+		cap.args[0] =
+			(KVM_X2APIC_API_USE_32BIT_IDS | KVM_X2APIC_API_DISABLE_BROADCAST_QUIRK).into();
+		vm.enable_cap(&cap)
+			.expect("Unable to enable x2apic support");
+
+		// currently, we support only system, which provides the
+		// cpu feature TSC_DEADLINE
+		cap = kvm_bindings::kvm_enable_cap {
+			cap: KVM_CAP_TSC_DEADLINE_TIMER,
+			..Default::default()
+		};
+		cap.args[0] = 0;
+		vm.enable_cap(&cap)
+			.expect_err("Processor feature `tsc deadline` isn't supported!");
+
+		cap = kvm_bindings::kvm_enable_cap {
+			cap: KVM_CAP_IRQFD,
+			..Default::default()
+		};
+		vm.enable_cap(&cap)
+			.expect_err("The support of KVM_CAP_IRQFD is currently required");
+
+		if vm_state.params.cpu_pm {
+			let mut disable_exits = KVM
+				.check_extension_raw(KVM_CAP_X86_DISABLE_EXITS.into())
+				.cast_unsigned();
+			disable_exits &= KVM_X86_DISABLE_EXITS_MWAIT
+				| KVM_X86_DISABLE_EXITS_HLT
+				| KVM_X86_DISABLE_EXITS_PAUSE
+				| KVM_X86_DISABLE_EXITS_CSTATE;
+			cap = kvm_bindings::kvm_enable_cap {
+				cap: KVM_CAP_X86_DISABLE_EXITS,
+				flags: 0,
+				..Default::default()
+			};
+			cap.args[0] = disable_exits.into();
+			if let Err(err) = vm.enable_cap(&cap) {
+				error!("kvm: cannot disable KVM exits: {err}");
+			}
+		}
+
+		restore_irq_chips(&vm, &vm_state.irq_chips)?;
+
+		if let Some(virtiodevice) = &peripherals.virtio_device {
+			virtiodevice.lock().unwrap().setup_after_snapshot(&vm)?;
+		}
+
+		Ok(Self {
+			vm_fd: vm,
+			peripherals,
+			params: vm_state.params.clone(),
+		})
+	}
 }
 
-impl VirtualizationBackend for KvmVm {}
+impl VirtualizationBackend for KvmVm {
+	type SnapshotState = KvmVmBackendState;
+}
 
 pub struct KvmCpu {
 	id: usize,
@@ -228,13 +436,15 @@ pub struct KvmCpu {
 	kernel_info: Arc<KernelInfo<<KvmVm as VirtualizationBackendInternal>::MemLayout>>,
 	pci_addr: Option<u32>,
 	stats: Option<CpuStats>,
+	vm_action_tx: Sender<BackendAction>,
+	mailbox: Arc<VcpuMailbox<Vec<VCpuState>>>,
 }
 
 impl KvmCpu {
 	fn init(&mut self) -> HypervisorResult<()> {
 		self.setup_long_mode(
 			self.kernel_info.entry_point,
-			self.kernel_info.layout,
+			*self.kernel_info.layout(),
 			self.id,
 		)?;
 		self.setup_cpuid()?;
@@ -430,13 +640,87 @@ impl KvmCpu {
 	pub(crate) fn get_hypercall_data_addr_v2(&self) -> GuestPhysAddr {
 		GuestPhysAddr::new(self.vcpu.sync_regs().regs.rdi)
 	}
+
+	fn snapshot(&self) -> HypervisorResult<VCpuState> {
+		let mut regs = self.vcpu.get_regs()?;
+		// We have to increment the rip to the instruction after the hypercall that
+		// triggered the snapshot. Hypercall instruction: out dx, eax => 1 Bytes
+		regs.rip += 1;
+		let sregs = self.vcpu.get_sregs()?;
+		let cpuid2: Vec<kvm_cpuid_entry2> = self
+			.vcpu
+			.get_cpuid2(KVM_MAX_CPUID_ENTRIES)?
+			.as_slice()
+			.to_vec();
+		// let msrs = self.vcpu.get_msrs(msrs);
+
+		let state = VCpuState {
+			id: self.id,
+			regs,
+			sregs,
+			stats: self.stats.clone(),
+			pci_addr: self.pci_addr,
+			cpuid2,
+			lapic: Some(self.vcpu.get_lapic()?),
+		};
+		// dbg!(&state);
+		Ok(state)
+	}
+
+	/// Processes a mailbox action.
+	///
+	/// Returns `Ok(Some(VcpuStopReason::Exit(_)))` if the vCPU should terminate, otherwise
+	/// `Ok(None)` after performing the requested action.
+	fn handle_mailbox_action(
+		&mut self,
+		action: MailboxAction<Vec<VCpuState>>,
+	) -> HypervisorResult<Option<VcpuStopReason>> {
+		match action {
+			MailboxAction::Quit => Ok(Some(VcpuStopReason::Exit(0))),
+			MailboxAction::Snapshot {
+				state_target,
+				done_barrier,
+				resume_barrier,
+				resume_after_snapshot,
+			} => {
+				debug!("CPU {} starting snapshot", self.id);
+				let snapshot = self.snapshot()?;
+				state_target.lock().unwrap().push(snapshot);
+				drop(state_target);
+				done_barrier.wait();
+				resume_barrier.wait();
+				if resume_after_snapshot {
+					Ok(None)
+				} else {
+					Ok(Some(VcpuStopReason::Exit(0)))
+				}
+			}
+		}
+	}
 }
 
 impl VirtualCPU for KvmCpu {
+	type SnapshotState = VCpuState;
+
 	fn thread_local_init(&mut self) -> HypervisorResult<()> {
 		// Block the kick signal in this vCPU thread (KVM will unblock it during `KVM_RUN`).
 		KickSignal::block_in_current_thread().map_err(io::Error::from)?;
 		unblock_all_signals_for_kvm(&self.vcpu).map_err(io::Error::from)?;
+		Ok(())
+	}
+
+	fn init_from_snapshot(&mut self, state: VCpuState) -> HypervisorResult<()> {
+		let cpuid = CpuId::from_entries(&state.cpuid2)
+			.map_err(|e| io::Error::other(format!("CpuId::from_entries: {e:?}")))?;
+		self.vcpu.set_cpuid2(&cpuid)?;
+		self.vcpu.set_regs(&state.regs)?;
+		self.vcpu.set_sregs(&state.sregs)?;
+		if let Some(ref lapic) = state.lapic {
+			self.vcpu.set_lapic(lapic)?;
+		}
+
+		self.pci_addr = state.pci_addr;
+		self.stats = state.stats;
 		Ok(())
 	}
 
@@ -512,10 +796,19 @@ impl VirtualCPU for KvmCpu {
 								s.increment_val((&hypercall).into())
 							}
 
-							if let Some(stop) =
-								hypercall::handle_hypercall_v2(&self.peripherals, hypercall)
-							{
-								return Ok(stop);
+							match hypercall::handle_hypercall_v2(&self.peripherals, hypercall) {
+								HypercallAction::Stop(stop) => return Ok(stop),
+								HypercallAction::Snapshot => {
+									let params_addr = self.get_hypercall_data_addr_v2();
+									self.vm_action_tx
+										.send(BackendAction::Snapshot { params_addr })
+										.unwrap();
+									let action = self.mailbox.wait_for_action();
+									if let Some(stop) = self.handle_mailbox_action(action)? {
+										return Ok(stop);
+									}
+								}
+								HypercallAction::None => {}
 							}
 						} else if let Some(hypercall) = unsafe {
 							// v1 images used to read the address from the 32-bit value written
@@ -660,12 +953,26 @@ impl VirtualCPU for KvmCpu {
 		if let Some(stats) = self.stats.as_mut() {
 			stats.start_time_measurement();
 		}
-		let res = match self.r#continue()? {
-			VcpuStopReason::Debug(_) => {
-				unreachable!("reached debug exit without running in debugging mode")
-			}
-			VcpuStopReason::Exit(code) => Some(code),
-			VcpuStopReason::Kick => None,
+		let res = 'outer: loop {
+			match self.r#continue()? {
+				VcpuStopReason::Debug(_) => {
+					unreachable!("reached debug exit without running in debugging mode")
+				}
+				VcpuStopReason::Exit(code) => break 'outer Some(code),
+				VcpuStopReason::Kick => match self.mailbox.try_take() {
+					None => continue 'outer,
+					Some(action) => {
+						if let Some(stop) = self.handle_mailbox_action(action)? {
+							match stop {
+								VcpuStopReason::Exit(code) => break 'outer Some(code),
+								VcpuStopReason::Debug(_) | VcpuStopReason::Kick => {
+									continue 'outer;
+								}
+							}
+						}
+					}
+				},
+			};
 		};
 		if let Some(stats) = self.stats.as_mut() {
 			stats.stop_time_measurement();
