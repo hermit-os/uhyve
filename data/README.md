@@ -14,7 +14,7 @@ The unikernels under `tests/test-kernels` are continuously compiled against the 
 
 In contrast, the unikernels under `data` are prebuilt binaries that are intended as "demos". The CI uses them to test runtime parameters such as `--stats` or `--file-isolation`. They are "older" on purpose; only to be updated only if a major, backwards incompatible change in the kernel takes place. Implicitly, they also test Uhyve's backwards compatibility with older versions of the kernel (that may, in turn, rely upon an older version of `uhyve-interface` as well).
 
-### Updating the sample unikernels
+### Updating the sample unikernels on `uhyve-interface` changes
 
 The images are built from the examples of the [hermit-rs repository] (`hello_world`, `rusty_demo` in the `examples` folder)
 and [hermit-c repository] (`src/hello_world.c`).
