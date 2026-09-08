@@ -931,6 +931,7 @@ checksum = "a33ce19da78c437cf69f8c3265a77ca61e08395678b7b9eac42039add3f4f4fb"
 dependencies = [
  "align-address 0.4.0",
  "cfg-if",
+ "serde",
  "x86",
  "x86_64",
 ]
@@ -1826,6 +1827,7 @@ dependencies = [
  "log",
  "memory_addresses 0.4.0",
  "num_enum",
+ "serde",
  "x86_64",
 ]
 

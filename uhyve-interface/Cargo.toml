@@ -14,9 +14,11 @@ hermit-abi = "0.5"
 log = { version = "0.4", optional = true }
 memory_addresses = "0.4"
 num_enum = { version = "0.7", default-features = false }
+serde = { version = "1.0", optional = true, default-features = false, features = ["derive"] }
 
 [features]
 std = ["dep:log"]
+serde = ["dep:serde", "memory_addresses/serde"]
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = { version = "0.15", default-features = false }
