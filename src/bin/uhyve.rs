@@ -297,6 +297,9 @@ impl CpuArgs {
 	#[cfg_attr(test, allow(unreachable_code))]
 	fn get_affinity(&self, app: &mut Command) -> Option<Vec<CoreId>> {
 		self.affinity.clone().map(|affinity| {
+			// NOTE: If we are inside an unit test, we should never make any assumptions about how many
+			// CPU cores the current machine has
+			#[cfg(not(test))]
 			if let Err(e) = affinity.validate() {
 				app.error(ErrorKind::ValueValidation, e).exit()
 			}
@@ -334,6 +337,7 @@ enum ParseAffinityError {
 	ParseParts,
 }
 
+#[cfg(not(test))]
 #[derive(Error, Debug)]
 #[error("Available cores: {available_cores:?}, requested affinities: {requested_affinities:?}")]
 struct InvalidAffinityValueError {
@@ -368,6 +372,7 @@ impl FromStr for Affinity {
 
 impl Affinity {
 	/// Validates the core affinity against currently available cores
+	#[cfg(not(test))]
 	fn validate(&self) -> Result<(), InvalidAffinityValueError> {
 		let available_cores = core_affinity::get_core_ids().unwrap();
 
