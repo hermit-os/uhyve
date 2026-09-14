@@ -6,7 +6,7 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       timezone: "Europe/Berlin"
     groups:
       gdbstub:
@@ -24,11 +24,11 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/tests/test-kernels"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       timezone: "Europe/Berlin"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       timezone: "Europe/Berlin"
