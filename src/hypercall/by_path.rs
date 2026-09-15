@@ -23,13 +23,27 @@ use crate::{
 
 /// Decodes a guest path given at address `path_addr` in `mem`.
 ///
+/// Returns `None` if `path_addr` is outside guest memory, the path is not
+/// null-terminated within guest memory, or the bytes are not valid UTF-8.
+/// Scanning is limited to guest memory so a missing terminator cannot leak
+/// host memory past the VM mapping.
+///
 /// # Safety
 ///
 /// The calling convention of hypercalls ensures that the given address doesn't alias with anything mutable.
 /// The return value is only valid for the duration of the hypercall.
 pub(super) unsafe fn decode_guest_path(mem: &MmapMemory, path_addr: GuestPhysAddr) -> Option<&str> {
-	let requested_path_ptr = mem.host_address(path_addr).unwrap() as *const i8;
-	unsafe { CStr::from_ptr(requested_path_ptr) }.to_str().ok()
+	let mem_end = mem.address_range().end;
+	if path_addr >= mem_end {
+		return None;
+	}
+	// Bytes remaining in guest memory from `path_addr` through the last mapped byte.
+	let max_len = (mem_end.as_u64() - path_addr.as_u64()) as usize;
+	// SAFETY: `max_len` is within the guest mapping by construction above.
+	let bytes = unsafe { mem.slice_at::<u8>(path_addr, max_len) }.ok()?;
+	// Reject paths that are not null-terminated inside guest memory.
+	let cstr = CStr::from_bytes_until_nul(bytes).ok()?;
+	cstr.to_str().ok()
 }
 
 fn collect_dir_entries(dir: &Directory) -> BTreeMap<Box<str>, FileType> {
@@ -238,3 +252,72 @@ pub(super) fn mkdir(mem: &MmapMemory, sysmkdir: &mut MkdirParams, file_map: &mut
 		}
 	};
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::arch::PAGE_SIZE;
+
+	fn guest_mem_with(bytes: &[u8]) -> (MmapMemory, GuestPhysAddr) {
+		let guest_base = GuestPhysAddr::new(0x1000);
+		let mem = MmapMemory::new(PAGE_SIZE, guest_base, false, false);
+		let path_offset = 0x100usize;
+		let path_addr = guest_base + path_offset as u64;
+		unsafe {
+			mem.as_slice_mut()[path_offset..path_offset + bytes.len()].copy_from_slice(bytes);
+		}
+		(mem, path_addr)
+	}
+
+	#[test]
+	fn decode_guest_path_reads_null_terminated_path() {
+		let (mem, path_addr) = guest_mem_with(b"/tmp/foo\0");
+		let path = unsafe { decode_guest_path(&mem, path_addr) };
+		assert_eq!(path, Some("/tmp/foo"));
+	}
+
+	#[test]
+	fn decode_guest_path_rejects_missing_nul_within_guest_memory() {
+		// Fill the entire remaining guest mapping with non-NUL bytes so
+		// `CStr::from_ptr` would otherwise walk past the VM into host memory.
+		let guest_base = GuestPhysAddr::new(0x1000);
+		let mem = MmapMemory::new(PAGE_SIZE, guest_base, false, false);
+		let path_offset = PAGE_SIZE - 8;
+		let path_addr = guest_base + path_offset as u64;
+		unsafe {
+			mem.as_slice_mut()[path_offset..].fill(b'A');
+		}
+		let path = unsafe { decode_guest_path(&mem, path_addr) };
+		assert_eq!(path, None);
+	}
+
+	#[test]
+	fn decode_guest_path_accepts_nul_at_last_guest_byte() {
+		let guest_base = GuestPhysAddr::new(0x1000);
+		let mem = MmapMemory::new(PAGE_SIZE, guest_base, false, false);
+		let path_offset = PAGE_SIZE - 4;
+		let path_addr = guest_base + path_offset as u64;
+		unsafe {
+			mem.as_slice_mut()[path_offset..path_offset + 4].copy_from_slice(b"ab\0\0");
+		}
+		let path = unsafe { decode_guest_path(&mem, path_addr) };
+		assert_eq!(path, Some("ab"));
+	}
+
+	#[test]
+	fn decode_guest_path_rejects_address_past_guest_memory() {
+		let guest_base = GuestPhysAddr::new(0x1000);
+		let mem = MmapMemory::new(PAGE_SIZE, guest_base, false, false);
+		let past_end = guest_base + mem.size() as u64;
+		let path = unsafe { decode_guest_path(&mem, past_end) };
+		assert_eq!(path, None);
+	}
+
+	#[test]
+	fn decode_guest_path_rejects_invalid_utf8() {
+		let (mem, path_addr) = guest_mem_with(b"\xFF\xFE\0");
+		let path = unsafe { decode_guest_path(&mem, path_addr) };
+		assert_eq!(path, None);
+	}
+}
+
