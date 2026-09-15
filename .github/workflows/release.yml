@@ -26,9 +26,9 @@ jobs:
       - name: Create archive
         run: |
           for target in $TARGETS; do
-            cargo build --release --locked --target $target
+            cargo build --profile dist --locked --target $target
 
             file=uhyve-$target.tar.gz
-            tar czf $file -C target/$target/release uhyve -C $GITHUB_WORKSPACE README.md LICENSE-APACHE LICENSE-MIT
+            tar czf $file -C target/$target/dist uhyve -C $GITHUB_WORKSPACE README.md LICENSE-APACHE LICENSE-MIT
             gh release upload ${{ github.ref }} $file
           done
