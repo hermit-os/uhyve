@@ -1,4 +1,4 @@
-use core::cmp;
+use core::{cmp, mem::MaybeUninit};
 use std::{io, os::fd::IntoRawFd};
 
 use uhyve_interface::{
@@ -76,42 +76,12 @@ pub(super) fn read(
 ) {
 	sysread.ret = if let Some(fdata) = file_map.fdmap.get_mut(GuestFd(sysread.fd.into_raw_fd())) {
 		if let Ok(host_address) = mem.host_address(sysread.buf) {
-			match fdata {
-				FdData::Raw(rfd) => {
-					let bytes_read = unsafe {
-						libc::read(
-							*rfd,
-							host_address as *mut libc::c_void,
-							sysread.len as usize,
-						)
-					};
-					if bytes_read < 0 {
-						-translate_last_errno().unwrap_or(1) as i64
-					} else {
-						bytes_read as i64
-					}
-				}
-				FdData::Virtual { data, offset } => {
-					let remaining = {
-						let pos = cmp::min(*offset, data.len() as u64);
-						&data[pos as usize..]
-					};
-					let amt = cmp::min(remaining.len() as u64, sysread.len) as usize;
-					assert!(amt <= isize::MAX as usize);
-
-					// SAFETY: the input slices can't overlap, as `host_address` is owned by the guest
-					// and `data` is owned by the host.
-					unsafe {
-						core::ptr::copy_nonoverlapping(
-							remaining.as_ptr(),
-							host_address as *mut u8,
-							amt,
-						)
-					};
-					*offset += amt as u64;
-					amt as i64
-				}
-				FdData::MappedDirectory { .. } => -EBADF as i64,
+			if let Ok(len) = sysread.len.try_into() {
+				read_internal(fdata, unsafe {
+					core::slice::from_raw_parts_mut(host_address as *mut MaybeUninit<u8>, len)
+				})
+			} else {
+				-EINVAL as i64
 			}
 		} else {
 			warn!("Unable to get host address for read buffer");
@@ -120,6 +90,41 @@ pub(super) fn read(
 	} else {
 		-EBADF as i64
 	};
+}
+
+fn read_internal(fdata: &mut FdData, out_bytes: &mut [MaybeUninit<u8>]) -> i64 {
+	match fdata {
+		FdData::Raw(rfd) => {
+			let bytes_read = unsafe {
+				libc::read(
+					*rfd,
+					out_bytes.as_mut_ptr().cast::<libc::c_void>(),
+					out_bytes.len(),
+				)
+			};
+			if bytes_read < 0 {
+				-translate_last_errno().unwrap_or(1) as i64
+			} else {
+				bytes_read as i64
+			}
+		}
+		FdData::Virtual { data, offset } => {
+			let remaining = {
+				let pos = cmp::min(*offset, data.len() as u64);
+				&data[pos as usize..]
+			};
+			let amt = out_bytes
+				.iter_mut()
+				.zip(remaining.iter())
+				.map(|(o, i)| {
+					o.write(*i);
+				})
+				.count();
+			*offset += amt as u64;
+			amt as i64
+		}
+		FdData::MappedDirectory { .. } => -EBADF as i64,
+	}
 }
 
 /// Handles a v1 write hypercall (for which a guest-provided guest virtual address must be
@@ -287,4 +292,25 @@ pub(super) fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 			-EBADF as i64
 		}
 	};
+}
+
+#[cfg(test)]
+mod tests {
+	use std::sync::Arc;
+
+	use super::{FdData, MaybeUninit, read_internal};
+
+	#[test]
+	fn test_read_internal_on_virtual00() {
+		let data: Arc<[u8]> = Arc::from(b"Hello!".to_vec().into_boxed_slice());
+		let len = data.len() as u64;
+		let mut fdata = FdData::Virtual { data, offset: 0 };
+		let mut out = [MaybeUninit::new(0u8); 20];
+
+		assert_eq!(read_internal(&mut fdata, &mut out), len as i64);
+		let FdData::Virtual { offset, .. } = &fdata else {
+			unreachable!();
+		};
+		assert_eq!(*offset, len);
+	}
 }
