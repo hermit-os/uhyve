@@ -11,28 +11,24 @@ env:
 jobs:
   release:
     name: Create new release
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            filename_suffix: "${{ github.ref_name }}-linux-amd64"
+    runs-on: ubuntu-latest
+    env:
+      TARGETS: x86_64-unknown-linux-gnu x86_64-unknown-linux-musl
     steps:
       - uses: actions/checkout@v7
       # Adapted from: https://github.com/mkroening/edu-sync/blob/main/.github/workflows/release.yml
       - run: gh release create ${{ github.ref }} --draft --title "Uhyve ${{ github.ref_name }}"
-        if: startsWith(matrix.os, 'ubuntu')
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release --locked
+        with:
+          targets: ${{ env.TARGETS }}
+      - name: Install musl-tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Create archive
         run: |
-          DIST=uhyve-${{ matrix.filename_suffix }}
-          mkdir $DIST
+          for target in $TARGETS; do
+            cargo build --release --locked --target $target
 
-          mv target/release/uhyve $DIST
-          cp README.md $DIST
-          cp LICENSE-* $DIST
-
-          tar czf $DIST.tar.gz $DIST
-          echo "FILE=$DIST.tar.gz" >> $GITHUB_ENV
-      - run: gh release upload ${{ github.ref }} $FILE
+            file=uhyve-$target.tar.gz
+            tar czf $file -C target/$target/release uhyve -C $GITHUB_WORKSPACE README.md LICENSE-APACHE LICENSE-MIT
+            gh release upload ${{ github.ref }} $file
+          done
