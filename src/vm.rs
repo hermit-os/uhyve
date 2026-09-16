@@ -22,14 +22,14 @@ use hermit_entry::{
 	elf::{KernelObject, LoadedKernel, ParseKernelError},
 };
 use log::error;
-use nix::sys::pthread::{Pthread, pthread_self};
+use nix::sys::pthread::pthread_self;
 use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
 
 use crate::{
 	HypervisorError, PAGE_SIZE,
 	fdt::Fdt,
-	gdb::GdbVcpuManager,
+	gdb::{GdbVcpuManager, PthreadWrapper},
 	isolation::filemap::{UhyveFileMap, UhyveMapLeaf},
 	mem::MmapMemory,
 	mem_layout::{BootInfoSection, FdtSection, KernelSection, MemoryLayout},
@@ -565,7 +565,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 
 		let num_vcpus = self.vcpus.len();
 
-		let pthreads: Mutex<Vec<Pthread>> = Mutex::new(Vec::with_capacity(num_vcpus));
+		let pthreads: Mutex<Vec<PthreadWrapper>> = Mutex::new(Vec::with_capacity(num_vcpus));
 		let pthreads_published = Barrier::new(num_vcpus + 1);
 
 		let cpu_results = thread::scope(|s| {
@@ -584,7 +584,10 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 
 					s.spawn(move || {
 						{
-							pthreads.lock().unwrap().push(pthread_self());
+							pthreads
+								.lock()
+								.unwrap()
+								.push(PthreadWrapper(pthread_self()));
 						}
 						trace!("Create thread for CPU {cpu_id}");
 						match local_cpu_affinity {
@@ -626,7 +629,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 			main_parker.park();
 
 			trace!("Killing all threads");
-			for &tid in pthreads.lock().unwrap().iter() {
+			for &PthreadWrapper(tid) in pthreads.lock().unwrap().iter() {
 				// `pthread_kill` may return ESRCH if the thread already finished;
 				// scoped threads aren't joined until the scope ends, so the id is
 				// still valid, but the kernel may no longer know about it.

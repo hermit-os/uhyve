@@ -293,7 +293,7 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 						}
 					}
 				});
-				let pthread = join_handle.as_pthread_t();
+				let pthread = join_handle.as_pthread_t() as Pthread;
 				VcpuWrapper {
 					shared: shared2,
 					pthread: PthreadWrapper(pthread),
