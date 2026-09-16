@@ -1707,7 +1707,7 @@ dependencies = [
 
 [[package]]
 name = "uhyve"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "align-address 0.4.0",
  "async-channel",
