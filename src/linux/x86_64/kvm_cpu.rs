@@ -36,7 +36,7 @@ const EFER_NXE: u64 = 1 << 11; /* PTE No-Execute bit enable */
 /// Tells KVM to unblock all signals during `KVM_RUN` for the given vCPU.
 fn unblock_all_signals_for_kvm(vcpu: &VcpuFd) -> nix::Result<()> {
 	// `_IOW(KVMIO=0xAE, 0x8b, kvm_signal_mask)`.
-	const KVM_SET_SIGNAL_MASK: libc::c_ulong = 0x4004_ae8b;
+	const KVM_SET_SIGNAL_MASK: libc::Ioctl = 0x4004_ae8b_u32 as libc::Ioctl;
 
 	// `kvm_bindings::kvm_signal_mask` has a `__IncompleteArrayField` for `sigset`
 	// (FAM); the trailing bytes have to be allocated by the caller. We embed an
