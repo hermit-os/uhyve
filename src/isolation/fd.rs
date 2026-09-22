@@ -145,7 +145,6 @@ impl UhyveFileDescriptorLayer {
 		self.fds.get_mut(&fd.get())
 	}
 
-	#[expect(unused)]
 	pub fn get(&self, fd: GuestFd) -> Option<&FdData> {
 		self.fds.get(&fd.get())
 	}

@@ -14,16 +14,14 @@ use common::{
 };
 use rand::{RngExt, distr::Alphanumeric};
 use tempfile::TempDir;
-//use uhyve_interface::{v1, v2};
+use uhyve_interface::{v1, v2, v3};
 use uhyvelib::{
 	UhyveVm,
 	params::{Output, Params},
-	/*
 	stats::{
-		HypercallAddresses::{V1, V2},
+		HypercallAddresses::{V1, V2, V3},
 		VmExit,
 	},
-	*/
 };
 
 /// Verifies successful file creation on the host OS and its contents.
@@ -456,7 +454,7 @@ fn hypercall_mkdir_test() {
 
 	let stats = res.stats.as_ref().unwrap();
 	assert_eq!(
-		stats.count_of(VmExit::Hypercall(V2(v2::HypercallAddress::Mkdir))),
+		stats.count_of(VmExit::Hypercall(V3(v3::HypercallAddress::Mkdir))),
 		1
 	);
 	assert_eq!(
@@ -495,7 +493,7 @@ fn hypercall_mkdir_unmapped_test() {
 
 	let stats = res.stats.as_ref().unwrap();
 	assert_eq!(
-		stats.count_of(VmExit::Hypercall(V2(v2::HypercallAddress::Mkdir))),
+		stats.count_of(VmExit::Hypercall(V3(v3::HypercallAddress::Mkdir))),
 		1
 	);
 	assert_eq!(

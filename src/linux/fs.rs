@@ -1,5 +1,3 @@
-#![expect(unused)]
-
 use std::os::fd::RawFd;
 
 use uhyve_interface::v3::parameters::{FileAttr, Timespec};

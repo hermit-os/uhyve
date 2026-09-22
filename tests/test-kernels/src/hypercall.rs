@@ -2,7 +2,7 @@
 
 use core::ptr;
 
-use uhyve_interface::{GuestVirtAddr, v2::Hypercall};
+use uhyve_interface::{GuestVirtAddr, v3::Hypercall};
 
 #[inline]
 fn data_addr<T>(data: &T) -> u64 {
@@ -36,7 +36,7 @@ mod x86_64_imp {
 
 	use uhyve_interface::{
 		GuestPhysAddr, GuestVirtAddr,
-		v2::{Hypercall, HypercallAddress, parameters::SerialWriteBufferParams},
+		v3::{Hypercall, HypercallAddress, parameters::SerialWriteBufferParams},
 	};
 	use x86_64::{
 		VirtAddr,

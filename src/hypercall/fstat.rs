@@ -3,10 +3,10 @@ use std::{
 	os::{fd::RawFd, unix::ffi::OsStrExt},
 };
 
-use uhyve_interface::{GuestPhysAddr, v2::parameters::*};
+use uhyve_interface::{GuestPhysAddr, v3::parameters::*};
 
 use crate::{
-	hypercall::{by_path::decode_guest_path, translate_last_errno},
+	hypercall::{by_path::decode_guest_path, translate_last_errno_nonzero},
 	isolation::{
 		fd::{FdData, GuestFd},
 		filemap::{NodeStatRef, UhyveFileMap},
@@ -34,8 +34,9 @@ fn mapped_directory_attr() -> FileAttr {
 	}
 }
 
-fn host_stat_path(path: &std::path::Path, kind: StatKind) -> Result<FileAttr, i32> {
-	let path = CString::new(path.as_os_str().as_bytes()).map_err(|_| EINVAL)?;
+fn host_stat_path(path: &std::path::Path, kind: StatKind) -> Result<FileAttr, NonZero<u32>> {
+	let path = CString::new(path.as_os_str().as_bytes())
+		.map_err(|_| NonZero::new(EINVAL as u32).unwrap())?;
 	let path = path.as_c_str().as_ptr();
 	let mut st = unsafe { core::mem::zeroed() };
 	let ret = unsafe {
@@ -45,21 +46,25 @@ fn host_stat_path(path: &std::path::Path, kind: StatKind) -> Result<FileAttr, i3
 		}
 	};
 	if ret < 0 {
-		return Err(translate_last_errno().unwrap_or(EIO));
+		return Err(
+			translate_last_errno_nonzero().unwrap_or_else(|| NonZero::new(EIO as u32).unwrap())
+		);
 	}
 	Ok(crate::os::fs::host_stat_to_file_attr(st))
 }
 
-fn host_fstat(fd: RawFd) -> Result<FileAttr, i32> {
+fn host_fstat(fd: RawFd) -> Result<FileAttr, NonZero<u32>> {
 	let mut st = unsafe { core::mem::zeroed() };
 	let ret = unsafe { libc::fstat(fd, &mut st) };
 	if ret < 0 {
-		return Err(translate_last_errno().unwrap_or(EIO));
+		return Err(
+			translate_last_errno_nonzero().unwrap_or_else(|| NonZero::new(EIO as u32).unwrap())
+		);
 	}
 	Ok(crate::os::fs::host_stat_to_file_attr(st))
 }
 
-fn fstat_attr_for_fd_data(fdata: &FdData) -> Result<FileAttr, i32> {
+fn fstat_attr_for_fd_data(fdata: &FdData) -> Result<FileAttr, NonZero<u32>> {
 	match fdata {
 		FdData::Raw(fd) => host_fstat(*fd),
 		FdData::Virtual { data, .. } => Ok(virtual_file_attr(data)),
@@ -75,7 +80,7 @@ fn write_stat_attr(mem: &MmapMemory, attr_addr: GuestPhysAddr, attr: FileAttr) -
 		}
 		Err(_) => {
 			warn!("Unable to get host address for stat buffer");
-			StatResult::Error(EFAULT)
+			StatResult::Errno(NonZero::new(EFAULT as u32).unwrap())
 		}
 	}
 }
@@ -85,14 +90,14 @@ pub(crate) fn stat(mem: &MmapMemory, sysstat: &mut StatParams, file_map: &UhyveF
 	sysstat.ret = unsafe { decode_guest_path(mem, sysstat.name) }
 		.ok_or_else(|| {
 			error!("The kernel requested stat() on a non-UTF8 path: Rejecting...");
-			EINVAL
+			NonZero::new(EINVAL as u32).unwrap()
 		})
 		.and_then(|guest_path| {
 			file_map
 				.get_host_stat_node(guest_path, matches!(sysstat.kind, StatKind::Stat))
 				.ok_or_else(|| {
 					debug!("stat {guest_path:?}: path not found in file map");
-					ENOENT
+					NonZero::new(ENOENT as u32).unwrap()
 				})
 		})
 		.and_then(|node| match node {
@@ -100,9 +105,11 @@ pub(crate) fn stat(mem: &MmapMemory, sysstat: &mut StatParams, file_map: &UhyveF
 			NodeStatRef::VirtualFile(v) => Ok(virtual_file_attr(v)),
 			NodeStatRef::OnHost(host_path) => host_stat_path(&host_path, sysstat.kind),
 		})
-		.map_or_else(StatResult::Error, |attr| {
+		.map_or_else(StatResult::Errno, |attr| {
 			write_stat_attr(mem, sysstat.attr, attr)
-		});
+		})
+		.try_as_num()
+		.expect("Got out-of-range errno value");
 }
 
 /// Handles an fstat hypercall.
@@ -110,7 +117,9 @@ pub(crate) fn fstat(mem: &MmapMemory, sysfstat: &mut FstatParams, file_map: &Uhy
 	let gfd = GuestFd(sysfstat.fd);
 	// Stdio fds are not guest-managed; fstat would leak host metadata (st_dev, st_rdev, …).
 	if sysfstat.fd < 0 || gfd.is_standard() {
-		sysfstat.ret = StatResult::Error(EBADF);
+		sysfstat.ret = StatResult::Errno(NonZero::new(EBADF as u32).unwrap())
+			.try_as_num()
+			.unwrap();
 		return;
 	}
 
@@ -119,10 +128,12 @@ pub(crate) fn fstat(mem: &MmapMemory, sysfstat: &mut FstatParams, file_map: &Uhy
 		.get(gfd)
 		.ok_or_else(|| {
 			debug!("fstat on invalid fd {gfd}");
-			EBADF
+			NonZero::new(EBADF as u32).unwrap()
 		})
 		.and_then(fstat_attr_for_fd_data)
-		.map_or_else(StatResult::Error, |attr| {
+		.map_or_else(StatResult::Errno, |attr| {
 			write_stat_attr(mem, sysfstat.attr, attr)
-		});
+		})
+		.try_as_num()
+		.expect("Got out-of-range errno value");
 }
