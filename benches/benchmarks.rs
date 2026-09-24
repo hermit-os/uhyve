@@ -6,7 +6,7 @@ pub mod benches;
 
 use benches::{
 	complete_binary::run_complete_binaries_group, network::network_benchmark_group,
-	vm::load_kernel_benchmark_group,
+	snapshot::snapshot_parallel_vm_group, vm::load_kernel_benchmark_group,
 };
 
 #[path = "../tests/common.rs"]
@@ -17,5 +17,6 @@ pub use common::build_hermit_bin;
 criterion_main!(
 	load_kernel_benchmark_group,
 	run_complete_binaries_group,
-	network_benchmark_group
+	network_benchmark_group,
+	snapshot_parallel_vm_group
 );

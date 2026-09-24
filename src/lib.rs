@@ -45,11 +45,14 @@ pub mod params;
 mod parking;
 mod pci;
 mod serial;
+/// Snapshot & Restore functionality
+pub mod snapshot;
 pub mod stats;
 mod vcpu;
 mod virtio;
 pub mod vm;
 pub(crate) use arch::*;
+pub use snapshot::Snapshot;
 pub use stats::VmStats;
 pub use vm::{DefaultBackend, UhyveVm, VmResult};
 
@@ -92,6 +95,15 @@ pub enum HypervisorError {
 
 	#[error("Kernel doesn't support the necessary features: {0}")]
 	FeatureMismatch(&'static str),
+
+	#[error("Failed to deserialize snapshot: {0}")]
+	SnapshotDeserialize(bitcode::Error),
+
+	#[error("Failed to serialize snapshot: {0}")]
+	SnapshotSerialize(bitcode::Error),
+
+	#[error("Invalid Restore Options: {0}")]
+	InvalidRestoreOptions(String),
 }
 
 impl HypervisorError {

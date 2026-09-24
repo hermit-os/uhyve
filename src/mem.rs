@@ -1,6 +1,13 @@
-use std::ops::Range;
+#[cfg(unix)]
+use std::{fs::File, sync::Arc};
+use std::{
+	io::{self, Write},
+	ops::Range,
+};
 #[cfg(target_os = "linux")]
 use std::{os::raw::c_void, ptr::NonNull};
+#[cfg(not(unix))]
+use std::{ptr, thread};
 
 #[cfg(target_os = "linux")]
 use nix::sys::mman::{MmapAdvise, madvise};
@@ -8,7 +15,7 @@ use thiserror::Error;
 use uhyve_interface::GuestPhysAddr;
 use vm_memory::{
 	Address, GuestAddress, GuestMemoryBackend, GuestMemoryMmap, GuestMemoryRegion, GuestRegionMmap,
-	MemoryRegionAddress, mmap::MmapRegionBuilder,
+	MemoryRegionAddress, guest_memory::FileOffset, mmap::MmapRegionBuilder,
 };
 
 use crate::mem_layout::Section;
@@ -17,6 +24,78 @@ use crate::mem_layout::Section;
 pub enum MemoryError {
 	#[error("Memory bounds exceeded")]
 	BoundsViolation,
+}
+#[cfg(target_os = "linux")]
+fn linux_guest_mmap_advise(ptr: *mut u8, len: usize, mergeable: bool, huge_pages: bool) {
+	let ptr = NonNull::new(ptr as *mut c_void).unwrap();
+	if mergeable {
+		debug!("Enable kernel feature to merge same pages");
+		unsafe {
+			madvise(ptr, len, MmapAdvise::MADV_MERGEABLE).unwrap();
+		}
+	}
+	if huge_pages {
+		debug!("Uhyve uses huge pages");
+		unsafe {
+			madvise(ptr, len, MmapAdvise::MADV_HUGEPAGE).unwrap();
+		}
+	}
+}
+
+#[cfg(not(target_os = "linux"))]
+fn linux_guest_mmap_advise(_ptr: *mut u8, _len: usize, mergeable: bool, huge_pages: bool) {
+	if mergeable {
+		error!("OS does not support same page merging");
+	}
+	if huge_pages {
+		error!("OS does not support huge pages");
+	}
+}
+
+/// Guest RAM image prepared outside the hot restore path: writable backing fd filled once,
+/// then [`MmapMemory::from_prepared_ram_private`] maps it `MAP_PRIVATE` for lazy, CoW-backed pages.
+#[cfg(unix)]
+#[derive(Clone, Debug)]
+pub(crate) struct GuestRamFile {
+	pub(crate) file: Arc<File>,
+	pub(crate) len: usize,
+}
+
+#[cfg(unix)]
+impl GuestRamFile {
+	pub(crate) fn prepare_from_ram(ram: &[u8]) -> io::Result<Self> {
+		let mut file = guest_ram_backing_file()?;
+		file.write_all(ram)?;
+		file.sync_data()?;
+		Ok(Self {
+			file: Arc::new(file),
+			len: ram.len(),
+		})
+	}
+}
+
+#[cfg(all(unix, target_os = "linux"))]
+fn guest_ram_backing_file() -> io::Result<File> {
+	use std::os::fd::FromRawFd;
+
+	let fd = unsafe {
+		libc::memfd_create(
+			c"uhyve-guest-ram".as_ptr().cast::<libc::c_char>(),
+			libc::MFD_CLOEXEC,
+		)
+	};
+	if fd >= 0 {
+		return Ok(unsafe { File::from_raw_fd(fd) });
+	}
+	Err(io::Error::last_os_error())
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn guest_ram_backing_file() -> io::Result<File> {
+	Err(io::Error::new(
+		io::ErrorKind::Unsupported,
+		"guest RAM snapshot backing uses Linux memfd_create only (RAM-copy fallback not implemented)",
+	))
 }
 
 /// A general purpose VM memory section that can exploit some Linux Kernel features.
@@ -38,44 +117,7 @@ impl MmapMemory {
 			.build()
 			.unwrap();
 
-		if mergeable {
-			#[cfg(target_os = "linux")]
-			{
-				debug!("Enable kernel feature to merge same pages");
-
-				unsafe {
-					madvise(
-						NonNull::new(mm_region.as_ptr() as *mut c_void).unwrap(),
-						memory_size,
-						MmapAdvise::MADV_MERGEABLE,
-					)
-					.unwrap();
-				}
-			}
-			#[cfg(not(target_os = "linux"))]
-			{
-				error!("OS does not support same page merging");
-			}
-		}
-
-		if huge_pages {
-			#[cfg(target_os = "linux")]
-			{
-				debug!("Uhyve uses huge pages");
-				unsafe {
-					madvise(
-						NonNull::new(mm_region.as_ptr() as *mut c_void).unwrap(),
-						memory_size,
-						MmapAdvise::MADV_HUGEPAGE,
-					)
-					.unwrap();
-				}
-			}
-			#[cfg(not(target_os = "linux"))]
-			{
-				error!("OS does not support huge pages");
-			}
-		}
+		linux_guest_mmap_advise(mm_region.as_ptr(), memory_size, mergeable, huge_pages);
 
 		Self {
 			mem: GuestMemoryMmap::from_regions(vec![
@@ -84,6 +126,36 @@ impl MmapMemory {
 			])
 			.unwrap(),
 		}
+	}
+
+	/// Map [`PreparedGuestRam`] with `MAP_PRIVATE` (CoW vs backing fd). Does not copy guest RAM;
+	/// pages populate on fault when the guest touches them.
+	#[cfg(unix)]
+	pub(crate) fn from_ram_file(
+		prepared: &GuestRamFile,
+		guest_address: GuestPhysAddr,
+		huge_pages: bool,
+		mergeable: bool,
+	) -> io::Result<Self> {
+		let mmap_region = MmapRegionBuilder::new_with_bitmap(prepared.len, ())
+			.with_file_offset(FileOffset::from_arc(Arc::clone(&prepared.file), 0))
+			.with_mmap_prot(libc::PROT_READ | libc::PROT_WRITE)
+			.with_mmap_flags(libc::MAP_NORESERVE | libc::MAP_PRIVATE)
+			.build()
+			.map_err(io::Error::other)?;
+		let guest_base = GuestAddress(guest_address.as_u64());
+		let region = GuestRegionMmap::<()>::new(mmap_region, guest_base).ok_or_else(|| {
+			io::Error::new(
+				io::ErrorKind::InvalidInput,
+				"guest address and RAM size overflow guest physical space",
+			)
+		})?;
+
+		linux_guest_mmap_advise(region.as_ptr(), prepared.len, mergeable, huge_pages);
+
+		let mem = GuestMemoryMmap::from_regions(vec![region])
+			.map_err(|e| io::Error::other(e.to_string()))?;
+		Ok(Self { mem })
 	}
 
 	/// Helper function to access the only Mmap region in our struct
@@ -262,6 +334,50 @@ impl MmapMemory {
 		assert_eq!(section.length % size_of::<T>(), 0);
 		unsafe { self.slice_at_mut(section.start(), section.length / size_of::<T>()) }
 	}
+}
+
+#[cfg(not(unix))]
+/// Copies deserialized snapshot RAM into a fresh mmap.
+///
+/// Large regions use parallelised `memcpy`s.
+pub(crate) fn parallel_copy(dst: &mut [u8], src: &[u8]) {
+	assert_eq!(
+		dst.len(),
+		src.len(),
+		"guest RAM and snapshot payload length mismatch"
+	);
+	let len = dst.len();
+	const MIN_CHUNK: usize = 2 * 1024 * 1024;
+	const PARALLEL_THRESHOLD: usize = 2 * MIN_CHUNK;
+
+	let parallelism = thread::available_parallelism()
+		.map(|n| n.get())
+		.unwrap_or(1)
+		.max(1);
+
+	if parallelism == 1 || len < PARALLEL_THRESHOLD {
+		dst.copy_from_slice(src);
+		return;
+	}
+
+	let ideal_chunk = len.div_ceil(parallelism);
+	let chunk = ideal_chunk.max(MIN_CHUNK);
+
+	thread::scope(|scope| {
+		let dst_base = dst.as_mut_ptr() as usize;
+		let src_base = src.as_ptr() as usize;
+		let mut off = 0usize;
+		while off < len {
+			let len_this = chunk.min(len - off);
+			let chunk_off = off;
+			off += len_this;
+			scope.spawn(move || unsafe {
+				let dst = (dst_base + chunk_off) as *mut u8;
+				let src = (src_base + chunk_off) as *const u8;
+				ptr::copy_nonoverlapping(src, dst, len_this);
+			});
+		}
+	});
 }
 
 #[cfg(test)]

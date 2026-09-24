@@ -5,6 +5,9 @@
 //! - The guest writes (or reads) to the respective [`HypercallAddress`](v2::HypercallAddress). The 64-bit value written to that location is the guest's physical memory address of the hypercall's parameter.
 //! - The hypervisor handles the hypercall. Depending on the Hypercall, the hypervisor might change the parameters struct in the guest's memory.
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 pub mod parameters;
 use parameters::*;
 
@@ -15,6 +18,7 @@ use parameters::*;
 #[non_exhaustive]
 #[repr(u64)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, num_enum::TryFromPrimitive, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum HypercallAddress {
 	Exit = 0x1010,
 	SerialWriteByte = 0x1020,
@@ -33,6 +37,7 @@ pub enum HypercallAddress {
 	Mkdir = 0x1190,
 	SharedMemOpen = 0x1200,
 	SharedMemClose = 0x1210,
+	Snapshot = 0x1400,
 }
 
 into_hypercall_addresses! {
@@ -53,6 +58,7 @@ into_hypercall_addresses! {
 			SerialReadByte,
 			SerialWriteBuffer,
 			SerialWriteByte,
+			Snapshot
 		}
 	}
 }
@@ -85,6 +91,10 @@ pub enum Hypercall<'a> {
 	SerialReadByte,
 	/// Read a buffer from the terminal
 	SerialReadBuffer(&'a SerialReadBufferParams),
+	/// Take a snapshot of the VM.
+	///
+	/// This is only allowed, once the Kernel has finished booting, as the hypervisor might assume some devices being fully initialized.
+	Snapshot(&'a mut SnapshotParams),
 }
 impl<'a> Hypercall<'a> {
 	/// Get a hypercall's port address.
