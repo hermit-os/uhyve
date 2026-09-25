@@ -275,7 +275,7 @@ mod tests {
 		let phys_mem_start_addresses = vec![
 			0x1000,                // "normal" address offset
 			0x2221,                // odd address
-			0x13000,               // something we'd actually use (minimal size for the physical memory)
+			0x13000, // something we'd actually use (minimal size for the physical memory)
 			0x000F_FFFF_FFFF_0000, // "physical addresses: no bits in the range 52 to 64 set"
 		];
 

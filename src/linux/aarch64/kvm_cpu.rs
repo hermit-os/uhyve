@@ -283,10 +283,10 @@ impl KvmCpu {
 		/*
 		* Prepare system control register (SCTRL)
 		* Todo: - Verify if all of these bits actually should be explicitly set
-			   - Link origin of this documentation and check to which instruction set versions
-				 it applies (if applicable)
-			   - Fill in the missing Documentation for some of the bits and verify if we care about them
-				 or if loading and not setting them would be the appropriate action.
+			  - Link origin of this documentation and check to which instruction set versions
+				it applies (if applicable)
+			  - Fill in the missing Documentation for some of the bits and verify if we care about them
+				or if loading and not setting them would be the appropriate action.
 		*/
 		#[expect(clippy::identity_op)]
 		let sctrl_el1: u64 = 0
@@ -344,7 +344,10 @@ impl KvmCpu {
 				s.increment_val((&hypercall).into())
 			}
 
-			hypercall::handle_hypercall_v2(&self.peripherals, hypercall).map(Ok)
+			match hypercall::handle_hypercall_v2(&self.peripherals, hypercall) {
+				hypercall::HypercallAction::Stop(stop) => Some(Ok(stop)),
+				hypercall::HypercallAction::None => None,
+			}
 		} else if let Some(hypercall) = unsafe {
 			hypercall::address_to_hypercall_v1(
 				&self.peripherals.mem,
