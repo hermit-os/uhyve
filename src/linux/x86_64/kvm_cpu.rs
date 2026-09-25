@@ -551,8 +551,8 @@ impl VirtualCPU for KvmCpu {
 								// Legacy PCI addressing method
 								PCI_CONFIG_DATA_PORT => {
 									if let Some(pci_addr) = self.pci_addr
-										&& pci_addr & 0x1ff800 == 0 && let Some(mut virtio_device) =
-										virtio_device()
+										&& pci_addr & 0x1ff800 == 0
+										&& let Some(mut virtio_device) = virtio_device()
 									{
 										virtio_device.virtio.handle_write(
 											PciConfigurationAddress(pci_addr & 0x3ff),

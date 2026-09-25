@@ -15,9 +15,9 @@ pub(super) fn copy_argv(
 	mem: &MmapMemory,
 ) {
 	// copy kernel path as first argument
-	let argvp = mem
-		.host_address(syscmdval.argv)
-		.expect("Systemcall parameters for Cmdval are invalid") as *const GuestPhysAddr;
+	let argvp =
+		mem.host_address(syscmdval.argv)
+			.expect("Systemcall parameters for Cmdval are invalid") as *const GuestPhysAddr;
 	let arg_addrs = unsafe { std::slice::from_raw_parts(argvp, argv.len() + 1) };
 
 	{
@@ -46,9 +46,9 @@ pub(super) fn copy_argv(
 
 /// Copies the environment variables into the VM's memory to the destinations specified in `syscmdval`.
 pub(super) fn copy_env(env: &EnvVars, syscmdval: &v1::parameters::CmdvalParams, mem: &MmapMemory) {
-	let envp = mem
-		.host_address(syscmdval.envp)
-		.expect("Systemcall parameters for Cmdval are invalid") as *const GuestPhysAddr;
+	let envp =
+		mem.host_address(syscmdval.envp)
+			.expect("Systemcall parameters for Cmdval are invalid") as *const GuestPhysAddr;
 
 	let env: Vec<(String, String)> = match env {
 		EnvVars::Host => std::env::vars().collect(),

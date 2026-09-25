@@ -271,6 +271,7 @@ mod tests {
 
 	#[test]
 	fn test_mmap_memory_readwrite() {
+		#[rustfmt::skip]
 		let phys_mem_start_addresses = vec![
 			0x1000,                // "normal" address offset
 			0x2221,                // odd address
