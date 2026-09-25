@@ -1,8 +1,8 @@
-//! # Uhyve Hypervisor Interface V2
+//! # Uhyve Hypervisor Interface V3
 //!
 //! The Uhyve hypercall interface works as follows:
 //!
-//! - The guest writes (or reads) to the respective [`HypercallAddress`](v2::HypercallAddress). The 64-bit value written to that location is the guest's physical memory address of the hypercall's parameter.
+//! - The guest writes (or reads) to the respective [`HypercallAddress`]. The 64-bit value written to that location is the guest's physical memory address of the hypercall's parameter.
 //! - The hypervisor handles the hypercall. Depending on the Hypercall, the hypervisor might change the parameters struct in the guest's memory.
 
 pub mod parameters;
@@ -19,14 +19,16 @@ pub enum HypercallAddress {
 	Exit = 0x1010,
 	SerialWriteByte = 0x1020,
 	SerialWriteBuffer = 0x1030,
-	SerialReadByte = 0x1040,
-	SerialReadBuffer = 0x1050,
 	FileWrite = 0x1100,
 	FileOpen = 0x1110,
 	FileClose = 0x1120,
 	FileRead = 0x1130,
 	FileLseek = 0x1140,
 	FileUnlink = 0x1150,
+	Getdents = 0x1160,
+	FileStat = 0x1170,
+	FileFstat = 0x1180,
+	Mkdir = 0x1190,
 	SharedMemOpen = 0x1200,
 	SharedMemClose = 0x1210,
 }
@@ -41,8 +43,10 @@ into_hypercall_addresses! {
 			FileRead,
 			FileUnlink,
 			FileWrite,
-			SerialReadBuffer,
-			SerialReadByte,
+			Getdents,
+			Mkdir,
+			FileStat,
+			FileFstat,
 			SerialWriteBuffer,
 			SerialWriteByte,
 		}
@@ -61,14 +65,18 @@ pub enum Hypercall<'a> {
 	FileRead(&'a mut ReadParams),
 	FileWrite(&'a mut WriteParams),
 	FileUnlink(&'a mut UnlinkParams),
+	/// Get directory entries from a directory. Similar to linux getdents64.
+	Getdents(&'a mut GetdentParams),
+	/// Read file metadata. Similar to `stat(2)` / `lstat(2)`.
+	FileStat(&'a mut StatParams),
+	/// Read file metadata for an open descriptor. Similar to `fstat(2)`.
+	FileFstat(&'a mut FstatParams),
+	/// Create a new directory.
+	Mkdir(&'a mut MkdirParams),
 	/// Write a char to the terminal.
 	SerialWriteByte(u8),
 	/// Write a buffer to the terminal
 	SerialWriteBuffer(&'a SerialWriteBufferParams),
-	/// Read a single byte from the terminal
-	SerialReadByte,
-	/// Read a buffer from the terminal
-	SerialReadBuffer(&'a SerialReadBufferParams),
 }
 impl<'a> Hypercall<'a> {
 	/// Get a hypercall's port address.
