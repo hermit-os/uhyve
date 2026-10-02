@@ -75,17 +75,16 @@ pub(super) fn read(
 	file_map: &mut UhyveFileMap,
 ) {
 	sysread.ret = if let Some(fdata) = file_map.fdmap.get_mut(GuestFd(sysread.fd.into_raw_fd())) {
-		if let Ok(host_address) = mem.host_address(sysread.buf) {
-			if let Ok(len) = sysread.len.try_into() {
-				read_internal(fdata, unsafe {
-					core::slice::from_raw_parts_mut(host_address as *mut MaybeUninit<u8>, len)
-				})
-			} else {
-				-EINVAL as i64
-			}
-		} else {
-			warn!("Unable to get host address for read buffer");
-			-EFAULT as i64
+		match sysread.len.try_into() {
+			// Bound the destination to guest memory, as write/getdents/serialwrite do.
+			Ok(len) => match unsafe { mem.slice_at_mut::<MaybeUninit<u8>>(sysread.buf, len) } {
+				Ok(buf) => read_internal(fdata, buf),
+				Err(_) => {
+					warn!("read buffer is not within guest memory");
+					-EFAULT as i64
+				}
+			},
+			Err(_) => -EINVAL as i64,
 		}
 	} else {
 		-EBADF as i64
@@ -298,7 +297,7 @@ pub(super) fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 mod tests {
 	use std::sync::Arc;
 
-	use super::{FdData, MaybeUninit, read_internal};
+	use super::*;
 
 	#[test]
 	fn test_read_internal_on_virtual00() {
@@ -312,5 +311,65 @@ mod tests {
 			unreachable!();
 		};
 		assert_eq!(*offset, len);
+	}
+
+	const SIZE: usize = 0x10000;
+	const BASE: u64 = 0x10_0000;
+
+	fn setup(fill: usize) -> (MmapMemory, UhyveFileMap, i32) {
+		let mem = MmapMemory::new(SIZE, GuestPhysAddr::new(BASE), false, false);
+		let mut fm = UhyveFileMap::new(
+			&[],
+			None,
+			#[cfg(target_os = "linux")]
+			Default::default(),
+		);
+		let data: Arc<[u8]> = Arc::from(vec![0x41u8; fill].into_boxed_slice());
+		let fd = fm
+			.fdmap
+			.insert(FdData::Virtual { data, offset: 0 })
+			.unwrap();
+		(mem, fm, fd.0)
+	}
+
+	fn do_read(mem: &MmapMemory, fm: &mut UhyveFileMap, fd: i32, buf: u64, len: u64) -> i64 {
+		let mut p = ReadParams {
+			fd,
+			buf: GuestPhysAddr::new(buf),
+			len,
+			ret: 0,
+		};
+		read(mem, &mut p, fm);
+		p.ret
+	}
+
+	#[test]
+	fn in_bounds_read_succeeds() {
+		let (mem, mut fm, fd) = setup(6);
+		assert_eq!(do_read(&mem, &mut fm, fd, BASE, 6), 6);
+	}
+
+	#[test]
+	fn buffer_crossing_end_is_rejected() {
+		let (mem, mut fm, fd) = setup(16);
+		assert_eq!(
+			do_read(&mem, &mut fm, fd, BASE + SIZE as u64 - 4, 16),
+			-EFAULT as i64
+		);
+	}
+
+	#[test]
+	fn buffer_past_memory_is_rejected() {
+		let (mem, mut fm, fd) = setup(4);
+		assert_eq!(
+			do_read(&mem, &mut fm, fd, BASE + 2 * SIZE as u64, 4),
+			-EFAULT as i64
+		);
+	}
+
+	#[test]
+	fn oversized_len_is_rejected() {
+		let (mem, mut fm, fd) = setup(1 << 20);
+		assert_eq!(do_read(&mem, &mut fm, fd, BASE, 1 << 20), -EFAULT as i64);
 	}
 }
