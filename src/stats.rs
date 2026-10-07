@@ -9,6 +9,7 @@ use std::{
 use uhyve_interface::{
 	v1::{self, HypercallAddress as AddressV1},
 	v2::{self, HypercallAddress as AddressV2},
+	v3::{self, HypercallAddress as AddressV3},
 };
 
 /// Possible hypercalls that can cause an exit.
@@ -17,6 +18,7 @@ use uhyve_interface::{
 pub enum HypercallAddresses {
 	V1(AddressV1),
 	V2(AddressV2),
+	V3(AddressV3),
 }
 
 /// Possible causes a VM exit (guest -> host transition)
@@ -53,6 +55,18 @@ impl From<AddressV2> for VmExit {
 impl<'a> From<&v2::Hypercall<'a>> for VmExit {
 	fn from(item: &v2::Hypercall<'a>) -> Self {
 		AddressV2::from(item).into()
+	}
+}
+
+impl From<AddressV3> for VmExit {
+	fn from(item: AddressV3) -> Self {
+		VmExit::Hypercall(HypercallAddresses::V3(item))
+	}
+}
+
+impl<'a> From<&v3::Hypercall<'a>> for VmExit {
+	fn from(item: &v3::Hypercall<'a>) -> Self {
+		AddressV3::from(item).into()
 	}
 }
 

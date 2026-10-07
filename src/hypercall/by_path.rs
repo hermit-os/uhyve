@@ -8,12 +8,12 @@ use std::{
 };
 
 use uhyve_interface::{
-	GuestPhysAddr,
-	v2::parameters::{FileType, *},
+	GuestPhysAddr, v1,
+	v3::parameters::{FileType, *},
 };
 
 use crate::{
-	hypercall::translate_last_errno,
+	hypercall::{translate_last_errno, translate_last_errno_nonzero},
 	isolation::{
 		fd::{FdData, UhyveFileDescriptorLayer},
 		filemap::{Directory, Node, NodeStatRef, UhyveFileMap, UhyveMapLeaf},
@@ -60,7 +60,11 @@ fn collect_dir_entries(dir: &Directory) -> BTreeMap<Box<str>, FileType> {
 /// Note for when using Landlock: Unlinking files results in them being veiled. If a
 /// file (that existed during initialization) called `log.txt` is unlinked, attempting to
 /// open `log.txt` again will result in an error.
-pub(super) fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut UhyveFileMap) {
+pub(super) fn unlink_v1(
+	mem: &MmapMemory,
+	sysunlink: &mut v1::parameters::UnlinkParams,
+	file_map: &mut UhyveFileMap,
+) {
 	let guest_path = if let Some(guest_path) = unsafe { decode_guest_path(mem, sysunlink.name) } {
 		guest_path
 	} else {
@@ -92,8 +96,21 @@ pub(super) fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &
 	};
 }
 
+pub(super) fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut UhyveFileMap) {
+	let mut sysunlink_v1 = v1::parameters::UnlinkParams {
+		name: sysunlink.name,
+		ret: sysunlink.ret.num,
+	};
+	unlink_v1(mem, &mut sysunlink_v1, file_map);
+	sysunlink.ret = TaggedNumber::new(sysunlink_v1.ret);
+}
+
 /// Handles an open syscall by opening a file on the host.
-pub(super) fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
+pub(super) fn open_v1(
+	mem: &MmapMemory,
+	sysopen: &mut v1::parameters::OpenParams,
+	file_map: &mut UhyveFileMap,
+) {
 	let guest_path = if let Some(guest_path) = unsafe { decode_guest_path(mem, sysopen.name) } {
 		guest_path
 	} else {
@@ -197,11 +214,24 @@ pub(super) fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut Uh
 	}
 }
 
+pub(super) fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
+	let mut sysopen_v1 = v1::parameters::OpenParams {
+		name: sysopen.name,
+		flags: sysopen.flags,
+		mode: sysopen.mode,
+		ret: sysopen.ret.num,
+	};
+	open_v1(mem, &mut sysopen_v1, file_map);
+	sysopen.ret = TaggedNumber::new(sysopen_v1.ret);
+}
+
 /// Attempts `mkdir(host_path)` on the host, mapping the outcome to a [`MkdirResult`].
 fn host_mkdir(host_path_c: &CString) -> MkdirResult {
 	// SAFETY: `host_path_c` is a valid, null-terminated C string.
 	if unsafe { libc::mkdir(host_path_c.as_ptr(), 0o777) } < 0 {
-		MkdirResult::Error(translate_last_errno().unwrap_or(EIO))
+		MkdirResult::Errno(
+			translate_last_errno_nonzero().unwrap_or_else(|| NonZero::new(EIO as u32).unwrap()),
+		)
 	} else {
 		MkdirResult::Success
 	}
@@ -215,7 +245,9 @@ fn host_mkdir(host_path_c: &CString) -> MkdirResult {
 pub(super) fn mkdir(mem: &MmapMemory, sysmkdir: &mut MkdirParams, file_map: &mut UhyveFileMap) {
 	let Some(guest_path) = (unsafe { decode_guest_path(mem, sysmkdir.path) }) else {
 		error!("The kernel requested to mkdir() a non-UTF8 path: Rejecting...");
-		sysmkdir.ret = MkdirResult::Error(EINVAL);
+		sysmkdir.ret = MkdirResult::Errno(NonZero::new(EINVAL as u32).unwrap())
+			.try_as_num()
+			.unwrap();
 		return;
 	};
 
@@ -227,14 +259,16 @@ pub(super) fn mkdir(mem: &MmapMemory, sysmkdir: &mut MkdirParams, file_map: &mut
 		}
 		Some(UhyveMapLeaf::Virtual(_)) => {
 			debug!("mkdir {guest_path:?}: target is a read-only virtual file, rejecting...");
-			MkdirResult::Error(EROFS)
+			MkdirResult::Errno(NonZero::new(EROFS as u32).unwrap())
 		}
 		None => {
 			debug!("mkdir {guest_path:?}: not mapped, creating a temporary directory...");
 			match file_map.create_temporary_directory(guest_path) {
 				Some(host_path_c) => host_mkdir(&host_path_c),
-				None => MkdirResult::Error(EINVAL),
+				None => MkdirResult::Errno(NonZero::new(EINVAL as u32).unwrap()),
 			}
 		}
-	};
+	}
+	.try_as_num()
+	.unwrap();
 }

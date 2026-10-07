@@ -1,6 +1,6 @@
 #[cfg(target_os = "hermit")]
 use hermit as _;
-use uhyve_interface::v2::Hypercall;
+use uhyve_interface::v3::Hypercall;
 use uhyve_test_kernels::hypercall::{serial_buf_hypercall, uhyve_hypercall};
 
 fn main() {
