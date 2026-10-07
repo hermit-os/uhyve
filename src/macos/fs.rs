@@ -5,9 +5,10 @@ use core::{
 use std::{io, os::fd::RawFd};
 
 use align_address::Align;
-use uhyve_interface::v2::parameters::{Dirent64, FileAttr, FileType, Timespec};
+use uhyve_interface::v3::parameters::{Dirent64, FileAttr, FileType, Timespec};
 
 /// MacOS file attributes have slightly different types than Linux, so we need a separate conversion function.
+#[allow(unused)]
 pub(crate) fn host_stat_to_file_attr(st: libc::stat) -> FileAttr {
 	FileAttr {
 		st_dev: st.st_dev as u64,
@@ -55,6 +56,7 @@ unsafe extern "C" {
 }
 
 /// Reads host directory entries and writes Linux `dirent64` records into `buf`.
+#[allow(unused)]
 pub(crate) unsafe fn raw_getdents(host_fd: RawFd, buf: &mut [u8]) -> isize {
 	let mut guest_off = 0usize;
 	let mut host_buf = [0u8; 2048];

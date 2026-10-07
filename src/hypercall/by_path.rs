@@ -7,10 +7,7 @@ use std::{
 	sync::Arc,
 };
 
-use uhyve_interface::{
-	GuestPhysAddr,
-	v2::parameters::{FileType, *},
-};
+use uhyve_interface::{GuestPhysAddr, v2::parameters::*, v3::parameters::FileType};
 
 use crate::{
 	hypercall::translate_last_errno,
@@ -197,6 +194,7 @@ pub(super) fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut Uh
 	}
 }
 
+/*
 /// Attempts `mkdir(host_path)` on the host, mapping the outcome to a [`MkdirResult`].
 fn host_mkdir(host_path_c: &CString) -> MkdirResult {
 	// SAFETY: `host_path_c` is a valid, null-terminated C string.
@@ -238,3 +236,4 @@ pub(super) fn mkdir(mem: &MmapMemory, sysmkdir: &mut MkdirParams, file_map: &mut
 		}
 	};
 }
+*/

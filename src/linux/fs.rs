@@ -1,6 +1,8 @@
+#![expect(unused)]
+
 use std::os::fd::RawFd;
 
-use uhyve_interface::v2::parameters::{FileAttr, Timespec};
+use uhyve_interface::v3::parameters::{FileAttr, Timespec};
 
 pub(crate) fn host_stat_to_file_attr(st: libc::stat) -> FileAttr {
 	FileAttr {

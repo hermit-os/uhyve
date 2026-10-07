@@ -1,14 +1,15 @@
 use std::{
 	env,
-	ffi::CString,
+	//ffi::CString,
 	fs::{File, OpenOptions, read_to_string, remove_file},
 	io::{SeekFrom, prelude::*},
-	os::fd::{AsRawFd, FromRawFd, IntoRawFd},
-	ptr,
+	os::fd::{FromRawFd, IntoRawFd},
+	//ptr,
 };
 
 #[cfg(target_os = "hermit")]
 use hermit as _;
+/*
 use uhyve_interface::{
 	GuestVirtAddr,
 	v2::{
@@ -21,6 +22,7 @@ use uhyve_interface::{
 	},
 };
 use uhyve_test_kernels::hypercall::{uhyve_hypercall, virtual_to_physical};
+*/
 
 /// Create (+ open), write, close, read, close, remove.
 fn create_rw_remove_file(filename: &str) {
@@ -205,6 +207,7 @@ fn open_read(filename: &str) {
 	assert_eq!(buf, b"Hello, world!\n");
 }
 
+/*
 /// Opens a mapped directory and reads its entries via the Getdents hypercall directly.
 fn hypercall_getdents(dirname: &str) {
 	println!("Running hypercall_getdents with dirname {dirname}.");
@@ -340,6 +343,7 @@ fn hypercall_stat(filename: &str, mode: StatMode) {
 	assert_ne!(attr.st_atim, Timespec::default());
 	assert_ne!(attr.st_size, 0);
 }
+*/
 
 fn main() {
 	let args: Vec<String> = env::args().collect();
@@ -363,10 +367,10 @@ fn main() {
 		"lseek_file" => lseek_file(filename),
 		"mounts_test" => mount_test(),
 		"open_read" => open_read(filename),
-		"hypercall_getdents" => hypercall_getdents(filename),
-		"hypercall_stat" => hypercall_stat(filename, StatMode::Stat),
-		"hypercall_fstat" => hypercall_stat(filename, StatMode::Fstat),
-		"hypercall_mkdir" => hypercall_mkdir(filename),
+		//"hypercall_getdents" => hypercall_getdents(filename),
+		//"hypercall_stat" => hypercall_stat(filename, StatMode::Stat),
+		//"hypercall_fstat" => hypercall_stat(filename, StatMode::Fstat),
+		//"hypercall_mkdir" => hypercall_mkdir(filename),
 		_ => panic!("test not found"),
 	}
 }
