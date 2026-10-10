@@ -232,12 +232,12 @@ pub struct KvmCpu {
 
 impl KvmCpu {
 	fn init(&mut self) -> HypervisorResult<()> {
+		self.setup_cpuid()?;
 		self.setup_long_mode(
 			self.kernel_info.entry_point,
 			self.kernel_info.layout,
 			self.id,
 		)?;
-		self.setup_cpuid()?;
 
 		// be sure that the multiprocessor is runable
 		let mp_state = kvm_mp_state {
