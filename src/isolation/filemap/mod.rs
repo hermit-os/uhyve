@@ -197,6 +197,7 @@ impl UhyveFileMap {
 	/// so that the caller can create it on the host.
 	///
 	/// * `guest_path` - The requested guest path.
+	#[expect(unused)]
 	pub fn create_temporary_directory(&mut self, guest_path: &str) -> Option<CString> {
 		let host_path = self.tempdir.path().join(Uuid::new_v4().to_string());
 		trace!("create_temporary_directory (host_path): {host_path:#?}");

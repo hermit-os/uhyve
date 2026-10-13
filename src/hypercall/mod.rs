@@ -14,13 +14,13 @@ use crate::{
 mod by_fd;
 mod by_path;
 mod cmdval_copy;
-mod fstat;
-mod getdents;
+//mod fstat;
+//mod getdents;
 
 use by_fd::{close, lseek, lseek_v1, read, read_v1, write, write_v1};
-use by_path::{mkdir, open, unlink};
-use fstat::{fstat, stat};
-use getdents::getdents;
+use by_path::{open, unlink};
+//use fstat::{fstat, stat};
+//use getdents::getdents;
 
 /// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
 /// parameter that was sent to that address by the guest.
@@ -95,10 +95,6 @@ pub unsafe fn address_to_hypercall_v2(
 		HypercallAddress::SerialReadBuffer => Hypercall::SerialReadBuffer(get_data!()),
 		HypercallAddress::SerialWriteBuffer => Hypercall::SerialWriteBuffer(get_data!()),
 		HypercallAddress::SerialWriteByte => Hypercall::SerialWriteByte(data.as_u64() as u8),
-		HypercallAddress::Getdents => Hypercall::Getdents(get_data!()),
-		HypercallAddress::FileStat => Hypercall::FileStat(get_data!()),
-		HypercallAddress::FileFstat => Hypercall::FileFstat(get_data!()),
-		HypercallAddress::Mkdir => Hypercall::Mkdir(get_data!()),
 		_ => return None,
 	})
 }
@@ -136,12 +132,6 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 		v2::Hypercall::FileUnlink(sysunlink) => {
 			unlink(&peripherals.mem, sysunlink, &mut file_mapping())
 		}
-		v2::Hypercall::Getdents(sysgetdents) => {
-			getdents(&peripherals.mem, sysgetdents, &mut file_mapping())
-		}
-		v2::Hypercall::FileStat(sysstat) => stat(&peripherals.mem, sysstat, &file_mapping()),
-		v2::Hypercall::FileFstat(sysfstat) => fstat(&peripherals.mem, sysfstat, &file_mapping()),
-		v2::Hypercall::Mkdir(sysmkdir) => mkdir(&peripherals.mem, sysmkdir, &mut file_mapping()),
 		v2::Hypercall::SerialWriteByte(buf) => peripherals
 			.serial
 			.output(&[buf])

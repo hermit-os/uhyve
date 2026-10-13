@@ -14,14 +14,16 @@ use common::{
 };
 use rand::{RngExt, distr::Alphanumeric};
 use tempfile::TempDir;
-use uhyve_interface::{v1, v2};
+//use uhyve_interface::{v1, v2};
 use uhyvelib::{
 	UhyveVm,
 	params::{Output, Params},
+	/*
 	stats::{
 		HypercallAddresses::{V1, V2},
 		VmExit,
 	},
+	*/
 };
 
 /// Verifies successful file creation on the host OS and its contents.
@@ -432,6 +434,7 @@ fn fd_write_to_fd() {
 	);
 }
 
+/*
 /// Tests the Mkdir hypercall: the guest creates a directory inside a mapped host
 /// directory and populates it with files. The host then verifies the result.
 #[test]
@@ -500,6 +503,7 @@ fn hypercall_mkdir_unmapped_test() {
 		3
 	);
 }
+*/
 
 #[test]
 fn mounts_test() {
@@ -555,6 +559,7 @@ fn lseek_test() {
 	check_result_and_print_output(&res, 0);
 }
 
+/*
 /// Tests the Getdents hypercall: opens a mapped directory and reads its entries.
 #[test]
 fn getdents_test() {
@@ -615,3 +620,4 @@ fn hypercall_fstat_test() {
 	let res = run_vm_in_thread(bin_path, params);
 	check_result_and_print_output(&res, 0);
 }
+*/
