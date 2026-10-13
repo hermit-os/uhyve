@@ -2,6 +2,7 @@ use std::{ffi::CString, os::unix::ffi::OsStrExt, path::PathBuf, sync::Arc};
 
 #[cfg(target_os = "linux")]
 use libc::{O_DIRECT, O_SYNC};
+use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -17,7 +18,7 @@ pub(crate) use tree::{Directory, Leaf as UhyveMapLeaf, Node, NodeStatRef};
 /// Defines cache-related behaviors that will be forced upon `open`,
 /// primarily useful for e.g. I/O benchmarking.
 #[cfg(target_os = "linux")]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct UhyveIoMode {
 	/// Append the O_DIRECT flag to bypass the host's page cache.
 	direct: bool,

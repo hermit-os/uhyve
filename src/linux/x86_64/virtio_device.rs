@@ -59,7 +59,6 @@ impl VirtQueueInterrupter for EventFdInterrupter {
 pub struct KvmVirtioNetDevice {
 	pub virtio: VirtioNetPciDevice,
 }
-impl NetworkBackend for KvmVirtioNetDevice {}
 impl KvmVirtioNetDevice {
 	pub const fn new(virtio: VirtioNetPciDevice) -> Self {
 		Self { virtio }
@@ -70,6 +69,11 @@ impl KvmVirtioNetDevice {
 		self.virtio.header_caps.pci_config_hdr.status =
 			DeviceStatus::DEVICE_NEEDS_RESET | DeviceStatus::PCI_CAPABILITIES_LIST_ENABLE;
 
+		self.setup_common(vm);
+	}
+
+	/// irq routing + irqfd + MMIO queue notifies + spawn TAP threads
+	pub fn setup_common(&mut self, vm: &VmFd) {
 		let irqfd = initialize_interrupt(vm);
 		// Inform the kernel on which PIC pin the PCI interrupt will appear.
 		self.virtio.header_caps.pci_config_hdr.interrupt_line = UHYVE_IRQ_NET_PIC_PIN as u8;
@@ -90,6 +94,31 @@ impl KvmVirtioNetDevice {
 			EventFdNotifier(notify_evtfd_rx),
 			EventFdInterrupter(irqfd),
 		);
+	}
+
+	pub fn setup_after_snapshot(&mut self, vm: &VmFd) -> crate::HypervisorResult<()> {
+		self.virtio
+			.header_caps
+			.pci_config_hdr
+			.status
+			.insert(DeviceStatus::PCI_CAPABILITIES_LIST_ENABLE);
+
+		self.setup_common(vm);
+		// The network threads would normally be blocked until the PCI handshake is complete. This would lead to a deadlock in the restoration case.
+		// TODO: make depending on PIC status instead of hardcoded
+		self.virtio.release_network_threads()
+	}
+}
+impl NetworkBackend for KvmVirtioNetDevice {
+	fn lock_for_snapshot(&mut self) -> crate::virtio::net::VirtioNetSnapshotLock<'_> {
+		self.virtio.pause_for_snapshot()
+	}
+
+	fn setup_from_snapshot(
+		&mut self,
+		snapshot: &crate::virtio::net::VirtioNetPciDeviceSnapshot,
+	) -> crate::HypervisorResult<()> {
+		self.virtio.restore_from_snapshot(snapshot)
 	}
 }
 
