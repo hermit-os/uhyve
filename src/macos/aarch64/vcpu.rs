@@ -75,9 +75,12 @@ impl VirtualizationBackendInternal for XhyveVm {
 			peripherals.mem.guest_addr().as_u64(),
 			MemPerm::ExecReadWrite,
 		)?;
-		// protect the first page for hypercall
-		// Apple uses on aarch64 default page size of 16K
-		protect_mem(peripherals.mem.guest_addr().as_u64(), 0x4000, MemPerm::None)?;
+		// protect the first pages for hypercalls
+		protect_mem(
+			peripherals.mem.guest_addr().as_u64(),
+			Aarch64MemoryLayout::HYPERCALL_SIZE as usize,
+			MemPerm::None,
+		)?;
 
 		trace!("Create GIC...");
 		let gic = Gic::new(GICD_BASE_ADDRESS, GICR_BASE_ADDRESS, MSI_BASE_ADDRESS)?;
@@ -301,6 +304,7 @@ impl VirtualCPU for XhyveCpu {
 										HypercallAction::Stop(stop) => return Ok(stop),
 										HypercallAction::None => {}
 									}
+									vcpu.write_register(Register::PC, pc + 4)?;
 								}
 								GuestHypercall::V1(hypercall) => {
 									if let v1::Hypercall::SerialWriteByte(_) = &hypercall {
