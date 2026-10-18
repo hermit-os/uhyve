@@ -193,7 +193,7 @@ pub(crate) fn init_guest_mem(mem: &mut MmapMemory, layout: &Aarch64MemoryLayout,
 		layout.pagetables().0.length as u64 / SIZE_4KIB,
 	);
 
-	// Hypercalls are MMIO reads/writes in the lowest 4KiB of address space.
+	// Hypercalls are MMIO reads/writes in the lowest pages of address space.
 	// Thus, we need to provide pagetable entries for this region.
 	let pgd0_addr = boot_frame_allocator.allocate().unwrap().as_u64();
 	pgt_slice[0] = pgd0_addr | PT_PT;
@@ -211,7 +211,13 @@ pub(crate) fn init_guest_mem(mem: &mut MmapMemory, layout: &Aarch64MemoryLayout,
 	let pmd0_slice = unsafe { mem.get_ref_mut::<[u64; 512]>(pmd0_addr.into()).unwrap() };
 	pmd0_slice.fill(0);
 	// Hypercall/IO mapping
-	pmd0_slice[0] = layout.guest_address() | PT_MEM_CD;
+	for (i, entry) in pmd0_slice
+		.iter_mut()
+		.take((Aarch64MemoryLayout::HYPERCALL_SIZE / SIZE_4KIB) as usize)
+		.enumerate()
+	{
+		*entry = (layout.guest_address() + i as u64 * SIZE_4KIB) | PT_MEM_CD;
+	}
 
 	for frame_addr in (layout.guest_address().align_down(SIZE_4KIB).as_u64()
 		..(layout.guest_address() + length)
@@ -304,7 +310,9 @@ pub(crate) struct Aarch64MemoryLayout {
 	kernel_len: usize,
 }
 impl Aarch64MemoryLayout {
-	const FDT_OFFSET: u64 = 0x1000;
+	/// For instance, Apple Silicon uses only a page size of 16 KiB on aarch64
+	pub(crate) const HYPERCALL_SIZE: u64 = 0x4000;
+	const FDT_OFFSET: u64 = Self::HYPERCALL_SIZE;
 	const FDT_SIZE: usize = 4 * PAGE_SIZE;
 	const BOOT_INFO_OFFSET: u64 = Self::FDT_OFFSET + Self::FDT_SIZE as u64;
 
