@@ -1,3 +1,6 @@
+#[cfg_attr(target_os = "macos", expect(dead_code))]
+pub(crate) mod breakpoints;
+
 use std::{fmt::Display, mem::size_of};
 
 use align_address::Align;
@@ -23,9 +26,15 @@ pub(crate) const V2_ADDR_RANGE: (u64, u64) = (0x0001_0000_0000u64, 0x0010_0000_0
 const SIZE_4KIB: u64 = 0x1000;
 pub(crate) const GUEST_PAGE_SIZE: u64 = SIZE_4KIB;
 
+/// Pages of the identity mapped MMIO window through which hypercalls are issued.
+///
+/// Large enough to cover every [`v1`](uhyve_interface::v1::HypercallAddress) and
+/// [`v2`](uhyve_interface::v2::HypercallAddress) hypercall address.
+pub(crate) const HYPERCALL_WINDOW_PAGES: usize = 2;
+
 // PageTableEntry Flags
 /// Present + 4KiB + device memory + inner_sharable + accessed
-pub const _PT_DEVICE: u64 = 0b11100000111;
+pub const PT_DEVICE: u64 = 0b11100000111;
 /// Present + 4KiB + normal + inner_sharable + accessed
 pub const PT_PT: u64 = 0b11100010011;
 /// Present + 4KiB + normal + inner_sharable + accessed
@@ -193,7 +202,7 @@ pub(crate) fn init_guest_mem(mem: &mut MmapMemory, layout: &Aarch64MemoryLayout,
 		layout.pagetables().0.length as u64 / SIZE_4KIB,
 	);
 
-	// Hypercalls are MMIO reads/writes in the lowest 4KiB of address space.
+	// Hypercalls are MMIO reads/writes in the lowest pages of the address space.
 	// Thus, we need to provide pagetable entries for this region.
 	let pgd0_addr = boot_frame_allocator.allocate().unwrap().as_u64();
 	pgt_slice[0] = pgd0_addr | PT_PT;
@@ -210,8 +219,18 @@ pub(crate) fn init_guest_mem(mem: &mut MmapMemory, layout: &Aarch64MemoryLayout,
 
 	let pmd0_slice = unsafe { mem.get_ref_mut::<[u64; 512]>(pmd0_addr.into()).unwrap() };
 	pmd0_slice.fill(0);
-	// Hypercall/IO mapping
-	pmd0_slice[0] = layout.guest_address() | PT_MEM_CD;
+	// Hypercall/IO mapping.
+	//
+	// This is identity mapped rather than pointing into guest RAM: the v2
+	// hypercall addresses reach into the second page, which would otherwise
+	// collide with the FDT. Identity mapping keeps the whole window below
+	// `RAM_START`, where nothing ever backs it, so every access traps out.
+	//
+	// Device memory, so the abort carries a valid instruction syndrome. Normal
+	// memory permits a syndrome-less abort, which a hypervisor cannot decode.
+	for (page, entry) in pmd0_slice[..HYPERCALL_WINDOW_PAGES].iter_mut().enumerate() {
+		*entry = (page as u64 * SIZE_4KIB) | PT_DEVICE;
+	}
 
 	for frame_addr in (layout.guest_address().align_down(SIZE_4KIB).as_u64()
 		..(layout.guest_address() + length)
