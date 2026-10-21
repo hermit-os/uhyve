@@ -501,7 +501,23 @@ impl VirtualCPU for KvmCpu {
 						// needed for getting the hypercall data adddress impossible.
 						let addr = addr.to_owned();
 
-						if let Some(hypercall) = unsafe {
+						if self.peripherals.uhyve_interface_version >= 3
+							&& let Some(hypercall) = unsafe {
+								hypercall::address_to_hypercall_v3(
+									&self.peripherals.mem,
+									port as u64,
+									self.get_hypercall_data_addr_v2(),
+								)
+							} {
+							if let Some(s) = self.stats.as_mut() {
+								s.increment_val((&hypercall).into())
+							}
+
+							match hypercall::handle_hypercall_v3(&self.peripherals, hypercall) {
+								HypercallAction::Stop(stop) => return Ok(stop),
+								HypercallAction::None => {}
+							}
+						} else if let Some(hypercall) = unsafe {
 							hypercall::address_to_hypercall_v2(
 								&self.peripherals.mem,
 								port as u64,
