@@ -19,4 +19,5 @@ x86_64 = { version = "0.15", default-features = false, features = [
 ] }
 
 [dependencies]
+rand = { version = "0.9", default-features = false, features = ["small_rng"] }
 uhyve-interface = { path = "../../uhyve-interface" }
