@@ -126,8 +126,8 @@ impl KvmVm {
 			}
 		}
 
-		if let Some(virtiodevice) = &peripherals.virtio_device {
-			virtiodevice.lock().unwrap().setup(&vm);
+		if let Some(mut virtiodevice) = peripherals.virtio_device() {
+			virtiodevice.setup(&vm);
 		}
 
 		Ok(Self {
@@ -467,7 +467,7 @@ impl KvmCpu {
 				PCI_CONFIG_DATA_PORT => {
 					if let Some(pci_addr) = self.pci_addr
 						&& pci_addr & 0x1ff800 == 0
-						&& let Some(mut virtio_device) = self.virtio_device()
+						&& let Some(mut virtio_device) = self.peripherals.virtio_device()
 					{
 						virtio_device
 							.virtio
@@ -508,10 +508,8 @@ pub(crate) fn handle_port_io_read(
 			if let Some(pci_addr) = pci_addr
 				&& pci_addr & 0x1ff800 == 0
 			{
-				if let Some(vd) = peripherals.virtio_device.as_ref() {
-					vd.lock()
-						.unwrap()
-						.virtio
+				if let Some(mut vd) = peripherals.virtio_device() {
+					vd.virtio
 						.handle_read(PciConfigurationAddress(pci_addr & 0x3ff), addr);
 				} else {
 					// The access here is fine, because the guest might just be scanning for devices
