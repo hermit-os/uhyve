@@ -3,15 +3,12 @@ use std::{
 	os::fd::{AsRawFd, BorrowedFd},
 };
 
-use kvm_bindings::{
-	KVM_IRQ_ROUTING_IRQCHIP, KVM_IRQCHIP_IOAPIC, KvmIrqRouting, kvm_irq_routing_entry, kvm_irqchip,
-};
 use kvm_ioctls::{IoEventAddress, NoDatamatch, VmFd};
-use libc::EFD_NONBLOCK;
 use uhyve_interface::GuestPhysAddr;
 use vmm_sys_util::eventfd::EventFd;
 
 use crate::{
+	arch::kvm as arch,
 	net::NetworkBackend,
 	pci::PciConfigurationAddress,
 	virtio::{
@@ -20,8 +17,6 @@ use crate::{
 		pci::HeaderConf,
 	},
 };
-
-pub(crate) const UHYVE_IRQ_NET_PIC_PIN: u32 = 11; // Network is connected to PIC pin 11
 
 /// Thin Wrapper around `EventFd` to implement `VirtQueueNotificationWaiter`
 struct EventFdNotifier(EventFd);
@@ -70,9 +65,9 @@ impl KvmVirtioNetDevice {
 		self.virtio.header_caps.pci_config_hdr.status =
 			DeviceStatus::DEVICE_NEEDS_RESET | DeviceStatus::PCI_CAPABILITIES_LIST_ENABLE;
 
-		let irqfd = initialize_interrupt(vm);
-		// Inform the kernel on which PIC pin the PCI interrupt will appear.
-		self.virtio.header_caps.pci_config_hdr.interrupt_line = UHYVE_IRQ_NET_PIC_PIN as u8;
+		let (irqfd, interrupt_line) = arch::setup_virtio_interrupt(vm);
+		// Inform the kernel on which line the PCI interrupt will appear.
+		self.virtio.header_caps.pci_config_hdr.interrupt_line = interrupt_line;
 
 		let notify_evtfd_rx = initialize_mmio_notify(
 			PciConfigurationAddress::new(HeaderConf::NOTIFY_0 as u32).guest_address(),
@@ -91,33 +86,6 @@ impl KvmVirtioNetDevice {
 			EventFdInterrupter(irqfd),
 		);
 	}
-}
-
-fn initialize_interrupt(vm: &VmFd) -> EventFd {
-	let mut irqchip = kvm_irqchip {
-		chip_id: KVM_IRQCHIP_IOAPIC,
-		..Default::default()
-	};
-	vm.get_irqchip(&mut irqchip).unwrap();
-
-	let gsi: u32 = 123; // Number doesn't matter, just needs to be the same for kvm route and irqfd
-
-	let mut kvm_route = kvm_irq_routing_entry {
-		gsi,
-		type_: KVM_IRQ_ROUTING_IRQCHIP,
-		..Default::default()
-	};
-	kvm_route.u.irqchip.irqchip = irqchip.chip_id;
-	kvm_route.u.irqchip.pin = UHYVE_IRQ_NET_PIC_PIN;
-
-	let mut irq_routing = KvmIrqRouting::new(0).unwrap();
-	irq_routing.push(kvm_route).unwrap();
-	vm.set_gsi_routing(&irq_routing).unwrap();
-
-	let eventfd = EventFd::new(EFD_NONBLOCK).unwrap();
-
-	vm.register_irqfd(&eventfd, gsi).unwrap();
-	eventfd
 }
 
 fn initialize_mmio_notify(addr: GuestPhysAddr, vm: &VmFd) -> EventFd {

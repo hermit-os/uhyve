@@ -2,7 +2,9 @@ use std::{num::NonZero, ops::Add};
 
 use kvm_bindings::{kvm_regs, *};
 use kvm_ioctls::{VcpuFd, VmFd};
+use libc::EFD_NONBLOCK;
 use uhyve_interface::{GuestPhysAddr, v1, v2};
+use vmm_sys_util::eventfd::EventFd;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
 use crate::{
@@ -28,6 +30,7 @@ const MSR_IA32_APICBASE: u32 = 0x0000001b;
 const MSR_IA32_MISC_ENABLE: u32 = 0x000001a0;
 const PCI_CONFIG_DATA_PORT: u16 = 0xCFC;
 const PCI_CONFIG_ADDRESS_PORT: u16 = 0xCF8;
+const UHYVE_IRQ_NET_PIC_PIN: u32 = 11; // Network is connected to PIC pin 11
 
 const EFER_LME: u64 = 1 << 8; /* Long mode enable */
 const EFER_LMA: u64 = 1 << 10; /* Long mode active (read-only) */
@@ -144,6 +147,36 @@ pub fn init_vcpu(
 	setup_msrs(vcpu)?;
 
 	Ok(())
+}
+
+/// Routes the virtio network device's interrupt to the guest.
+///
+/// Returns the eventfd raising the interrupt and the interrupt line for the device's PCI header.
+pub fn setup_virtio_interrupt(vm: &VmFd) -> (EventFd, u8) {
+	let mut irqchip = kvm_irqchip {
+		chip_id: KVM_IRQCHIP_IOAPIC,
+		..Default::default()
+	};
+	vm.get_irqchip(&mut irqchip).unwrap();
+
+	let gsi: u32 = 123; // Number doesn't matter, just needs to be the same for kvm route and irqfd
+
+	let mut kvm_route = kvm_irq_routing_entry {
+		gsi,
+		type_: KVM_IRQ_ROUTING_IRQCHIP,
+		..Default::default()
+	};
+	kvm_route.u.irqchip.irqchip = irqchip.chip_id;
+	kvm_route.u.irqchip.pin = UHYVE_IRQ_NET_PIC_PIN;
+
+	let mut irq_routing = KvmIrqRouting::new(0).unwrap();
+	irq_routing.push(kvm_route).unwrap();
+	vm.set_gsi_routing(&irq_routing).unwrap();
+
+	let eventfd = EventFd::new(EFD_NONBLOCK).unwrap();
+
+	vm.register_irqfd(&eventfd, gsi).unwrap();
+	(eventfd, UHYVE_IRQ_NET_PIC_PIN as u8)
 }
 
 /// Returns `true` if an MMIO read of `addr` was handled by the architecture.
