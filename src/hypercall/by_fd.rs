@@ -1,13 +1,10 @@
 use core::{cmp, mem::MaybeUninit};
 use std::{io, os::fd::IntoRawFd};
 
-use uhyve_interface::{
-	GuestPhysAddr, v1,
-	v2::{self, parameters::*},
-};
+use uhyve_interface::{GuestPhysAddr, v1, v2, v3::parameters::*};
 
 use crate::{
-	hypercall::translate_last_errno,
+	hypercall::{translate_last_errno, translate_last_errno_nonzero},
 	isolation::{
 		fd::{FdData, GuestFd},
 		filemap::UhyveFileMap,
@@ -19,7 +16,7 @@ use crate::{
 };
 
 /// Handles an close syscall by closing the file on the host.
-pub(super) fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
+pub(super) fn close_v1(sysclose: &mut v1::parameters::CloseParams, file_map: &mut UhyveFileMap) {
 	let gfd = GuestFd(sysclose.fd);
 	debug!(
 		"Guest tries to close fd {gfd} from fdmap {:?}",
@@ -43,6 +40,33 @@ pub(super) fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
 	};
 }
 
+/// Handles an close syscall by closing the file on the host.
+pub(super) fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
+	let gfd = GuestFd(sysclose.fd);
+	debug!(
+		"Guest tries to close fd {gfd} from fdmap {:?}",
+		file_map.fdmap
+	);
+	sysclose.ret = if gfd.is_standard() {
+		// ignore stdio closures
+		warn!("Guest tried to close stdio fd: {gfd}");
+		TristateResult::Success
+	} else if let Some(fddata) = file_map.fdmap.remove(gfd) {
+		if let FdData::Raw(fd) = fddata
+			&& unsafe { libc::close(fd) } < 0
+		{
+			TristateResult::Errno(NonZero::new(translate_last_errno().unwrap_or(1) as u32).unwrap())
+		} else {
+			TristateResult::Success
+		}
+	} else {
+		warn!("Guest tried to close unknown fd: {gfd}");
+		TristateResult::Errno(NonZero::new(EBADF as u32).unwrap())
+	}
+	.try_as_num()
+	.unwrap();
+}
+
 /// Handles a v1 read hypercall (for which a guest-provided guest virtual address must be
 /// converted to a guest physical address by the host).
 pub(super) fn read_v1(
@@ -58,7 +82,7 @@ pub(super) fn read_v1(
 			len: sysread.len as u64,
 			ret: 0i64,
 		};
-		read(mem, &mut tmp, file_map);
+		read_v2(mem, &mut tmp, file_map);
 		tmp.ret
 			.try_into()
 			.unwrap_or_else(|ret| panic!("Unable to fit return value {} in read_v1.", ret))
@@ -69,7 +93,7 @@ pub(super) fn read_v1(
 }
 
 /// Handles a read syscall on the host.
-pub(super) fn read(
+pub(super) fn read_v2(
 	mem: &MmapMemory,
 	sysread: &mut v2::parameters::ReadParams,
 	file_map: &mut UhyveFileMap,
@@ -78,7 +102,7 @@ pub(super) fn read(
 		match sysread.len.try_into() {
 			// Bound the destination to guest memory, as write/getdents/serialwrite do.
 			Ok(len) => match unsafe { mem.slice_at_mut::<MaybeUninit<u8>>(sysread.buf, len) } {
-				Ok(buf) => read_internal(fdata, buf),
+				Ok(buf) => read_internal(fdata, buf).try_as_num().unwrap().num,
 				Err(_) => {
 					warn!("read buffer is not within guest memory");
 					-EFAULT as i64
@@ -91,7 +115,28 @@ pub(super) fn read(
 	};
 }
 
-fn read_internal(fdata: &mut FdData, out_bytes: &mut [MaybeUninit<u8>]) -> i64 {
+/// Handles a read syscall on the host.
+pub(super) fn read(mem: &MmapMemory, sysread: &mut ReadParams, file_map: &mut UhyveFileMap) {
+	sysread.ret = if let Some(fdata) = file_map.fdmap.get_mut(GuestFd(sysread.fd.into_raw_fd())) {
+		match sysread.len.try_into() {
+			// Bound the destination to guest memory, as write/getdents/serialwrite do.
+			Ok(len) => match unsafe { mem.slice_at_mut::<MaybeUninit<u8>>(sysread.buf, len) } {
+				Ok(buf) => read_internal(fdata, buf),
+				Err(_) => {
+					warn!("read buffer is not within guest memory");
+					IoResult64::Errno(NonZero::new(EFAULT as u32).unwrap())
+				}
+			},
+			Err(_) => IoResult64::Errno(NonZero::new(EINVAL as u32).unwrap()),
+		}
+	} else {
+		IoResult64::Errno(NonZero::new(EBADF as u32).unwrap())
+	}
+	.try_as_num()
+	.unwrap();
+}
+
+fn read_internal(fdata: &mut FdData, out_bytes: &mut [MaybeUninit<u8>]) -> IoResult64 {
 	match fdata {
 		FdData::Raw(rfd) => {
 			let bytes_read = unsafe {
@@ -102,9 +147,11 @@ fn read_internal(fdata: &mut FdData, out_bytes: &mut [MaybeUninit<u8>]) -> i64 {
 				)
 			};
 			if bytes_read < 0 {
-				-translate_last_errno().unwrap_or(1) as i64
+				IoResult64::Errno(
+					translate_last_errno_nonzero().unwrap_or(NonZero::new(1).unwrap()),
+				)
 			} else {
-				bytes_read as i64
+				IoResult64::Ok(bytes_read as u64)
 			}
 		}
 		FdData::Virtual { data, offset } => {
@@ -118,11 +165,11 @@ fn read_internal(fdata: &mut FdData, out_bytes: &mut [MaybeUninit<u8>]) -> i64 {
 				.map(|(o, i)| {
 					o.write(*i);
 				})
-				.count();
-			*offset += amt as u64;
-			amt as i64
+				.count() as u64;
+			*offset += amt;
+			IoResult64::Ok(amt)
 		}
-		FdData::MappedDirectory { .. } => -EBADF as i64,
+		FdData::MappedDirectory { .. } => IoResult64::Errno(NonZero::new(EBADF as u32).unwrap()),
 	}
 }
 
@@ -146,11 +193,11 @@ pub(super) fn write_v1<N: NetworkBackend>(
 		len: syswrite.len as u64,
 		ret: 0i64,
 	};
-	write(peripherals, &mut tmp, file_map)
+	write_v2(peripherals, &mut tmp, file_map)
 }
 
 /// Handles an write syscall on the host.
-pub(super) fn write<N: NetworkBackend>(
+pub(super) fn write_v2<N: NetworkBackend>(
 	peripherals: &VmPeripherals<N>,
 	syswrite: &mut v2::parameters::WriteParams,
 	file_map: &mut UhyveFileMap,
@@ -161,6 +208,7 @@ pub(super) fn write<N: NetworkBackend>(
 			.mem
 			.slice_at(guest_phys_addr, syswrite.len.try_into().unwrap())
 			.map_err(|e| {
+				syswrite.ret = -EFAULT as i64;
 				io::Error::new(
 					io::ErrorKind::InvalidInput,
 					format!("invalid syswrite buffer: {e:?}"),
@@ -225,14 +273,29 @@ pub(super) fn write<N: NetworkBackend>(
 	}
 }
 
+pub(super) fn write<N: NetworkBackend>(
+	peripherals: &VmPeripherals<N>,
+	syswrite: &mut WriteParams,
+	file_map: &mut UhyveFileMap,
+) {
+	let mut tmp = v2::parameters::WriteParams {
+		fd: syswrite.fd,
+		buf: syswrite.buf,
+		len: syswrite.len,
+		ret: syswrite.ret.num,
+	};
+	let _ = write_v2(peripherals, &mut tmp, file_map);
+	syswrite.ret.num = tmp.ret;
+}
+
 /// Handles a v1 lseek syscall on the host, which has a different struct format.
 pub(super) fn lseek_v1(syslseek: &mut v1::parameters::LseekParams, file_map: &mut UhyveFileMap) {
-	let mut tmp = LseekParams {
+	let mut tmp = v2::parameters::LseekParams {
 		offset: syslseek.offset as i64,
 		whence: syslseek.whence as u32,
 		fd: syslseek.fd,
 	};
-	lseek(&mut tmp, file_map);
+	lseek_v2(&mut tmp, file_map);
 	if tmp.offset < 0 {
 		tmp.offset = -1;
 	}
@@ -243,7 +306,7 @@ pub(super) fn lseek_v1(syslseek: &mut v1::parameters::LseekParams, file_map: &mu
 }
 
 /// Handles an lseek syscall on the host.
-pub(super) fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
+pub(super) fn lseek_v2(syslseek: &mut v2::parameters::LseekParams, file_map: &mut UhyveFileMap) {
 	syslseek.offset = match file_map.fdmap.get_mut(GuestFd(syslseek.fd.into_raw_fd())) {
 		Some(FdData::Raw(r)) => {
 			let ret = unsafe { libc::lseek(*r, syslseek.offset, syslseek.whence as i32) };
@@ -293,6 +356,16 @@ pub(super) fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
 	};
 }
 
+pub(super) fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
+	let mut syslseek_v2 = v2::parameters::LseekParams {
+		offset: syslseek.offset.num,
+		whence: syslseek.whence,
+		fd: syslseek.fd,
+	};
+	lseek_v2(&mut syslseek_v2, file_map);
+	syslseek.offset = TaggedNumber::new(syslseek_v2.offset);
+}
+
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
@@ -306,7 +379,7 @@ mod tests {
 		let mut fdata = FdData::Virtual { data, offset: 0 };
 		let mut out = [MaybeUninit::new(0u8); 20];
 
-		assert_eq!(read_internal(&mut fdata, &mut out), len as i64);
+		assert_eq!(read_internal(&mut fdata, &mut out), IoResult64::Ok(len));
 		let FdData::Virtual { offset, .. } = &fdata else {
 			unreachable!();
 		};
@@ -337,10 +410,10 @@ mod tests {
 			fd,
 			buf: GuestPhysAddr::new(buf),
 			len,
-			ret: 0,
+			ret: Default::default(),
 		};
 		read(mem, &mut p, fm);
-		p.ret
+		p.ret.num
 	}
 
 	#[test]

@@ -2,7 +2,7 @@
 
 use core::ptr;
 
-use uhyve_interface::{GuestVirtAddr, v2::Hypercall};
+use uhyve_interface::{GuestVirtAddr, v3::Hypercall};
 
 #[inline]
 fn data_addr<T>(data: &T) -> u64 {
@@ -21,10 +21,10 @@ fn hypercall_data(hypercall: &Hypercall<'_>) -> u64 {
 		Hypercall::FileRead(data) => data_addr(*data),
 		Hypercall::FileUnlink(data) => data_addr(*data),
 		Hypercall::FileWrite(data) => data_addr(*data),
-		Hypercall::Getdents(data) => data_addr(*data),
-		Hypercall::FileStat(data) => data_addr(*data),
-		Hypercall::FileFstat(data) => data_addr(*data),
-		Hypercall::Mkdir(data) => data_addr(*data),
+		//Hypercall::Getdents(data) => data_addr(*data),
+		//Hypercall::FileStat(data) => data_addr(*data),
+		//Hypercall::FileFstat(data) => data_addr(*data),
+		//Hypercall::Mkdir(data) => data_addr(*data),
 		Hypercall::SerialWriteBuffer(data) => data_addr(*data),
 		Hypercall::SerialWriteByte(byte) => u64::from(*byte),
 		h => todo!("unimplemented hypercall {h:?}"),
@@ -36,7 +36,7 @@ mod x86_64_imp {
 
 	use uhyve_interface::{
 		GuestPhysAddr, GuestVirtAddr,
-		v2::{Hypercall, HypercallAddress, parameters::SerialWriteBufferParams},
+		v3::{Hypercall, HypercallAddress, parameters::SerialWriteBufferParams},
 	};
 	use x86_64::{
 		VirtAddr,

@@ -113,6 +113,7 @@ pub(crate) struct VmPeripherals<VirtioNetImpl: NetworkBackend> {
 	pub mem: Arc<MmapMemory>,
 	pub(crate) serial: UhyveSerial,
 	pub virtio_device: Option<Mutex<VirtioNetImpl>>,
+	pub uhyve_interface_version: u32,
 }
 
 // This uses the "private sealed supertrait pattern".
@@ -427,6 +428,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 			kernel_info.params.network.as_ref(),
 			file_mapping,
 			serial,
+			uhyve_interface_version.0,
 		);
 
 		let virt_backend = VirtBackend::new(peripherals.clone(), &kernel_info.params)?;
@@ -479,6 +481,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 		network: Option<&NetworkMode>,
 		file_mapping: UhyveFileMap,
 		serial: UhyveSerial,
+		uhyve_interface_version: u32,
 	) -> Arc<VmPeripherals<VirtBackend::VirtioNetImpl>> {
 		let virtio_device = network
 			.map(|mode| Mutex::new(VirtBackend::virtio_net_device(mode.clone(), mem.clone())));
@@ -489,6 +492,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 			// TODO: file_mapping not in kernel_info
 			file_mapping: Mutex::new(file_mapping),
 			serial,
+			uhyve_interface_version,
 		})
 	}
 

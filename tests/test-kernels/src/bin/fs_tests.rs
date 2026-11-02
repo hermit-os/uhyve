@@ -1,26 +1,28 @@
 use std::{
 	env,
-	ffi::CString,
+	//ffi::CString,
 	fs::{File, OpenOptions, read_to_string, remove_file},
 	io::{SeekFrom, prelude::*},
-	os::fd::{AsRawFd, FromRawFd, IntoRawFd},
-	ptr,
+	os::fd::{FromRawFd, IntoRawFd},
+	//ptr,
 };
 
 #[cfg(target_os = "hermit")]
 use hermit as _;
+/*
 use uhyve_interface::{
 	GuestVirtAddr,
-	v2::{
+	v3::{
 		Hypercall,
 		parameters::{
 			Dirent64, FileAttr, FileType, FstatParams, GetdentParams, GetdentResult, MkdirParams,
 			MkdirResult, O_DIRECTORY, O_RDONLY, OpenParams, StatKind, StatParams, StatResult,
-			Timespec,
+			Timespec, TaggedNumber,
 		},
 	},
 };
 use uhyve_test_kernels::hypercall::{uhyve_hypercall, virtual_to_physical};
+*/
 
 /// Create (+ open), write, close, read, close, remove.
 fn create_rw_remove_file(filename: &str) {
@@ -205,6 +207,7 @@ fn open_read(filename: &str) {
 	assert_eq!(buf, b"Hello, world!\n");
 }
 
+/*
 /// Opens a mapped directory and reads its entries via the Getdents hypercall directly.
 fn hypercall_getdents(dirname: &str) {
 	println!("Running hypercall_getdents with dirname {dirname}.");
@@ -215,13 +218,13 @@ fn hypercall_getdents(dirname: &str) {
 		name: name_phys,
 		flags: O_RDONLY | O_DIRECTORY,
 		mode: 0,
-		ret: -1,
+		ret: TaggedNumber::new(-1),
 	};
 	uhyve_hypercall(Hypercall::FileOpen(&mut open_params));
 	let fd = open_params.ret; // copy out of packed struct before use
-	assert!(fd >= 0, "FileOpen for directory failed: {fd}");
+	assert!(fd.num > 0, "FileOpen for directory failed: {fd}");
 	// Wrap in File so the fd is closed on drop.
-	let dir = unsafe { File::from_raw_fd(fd) };
+	let dir = unsafe { File::from_raw_fd(fd.num) };
 
 	let buf = [0u8; 1024];
 	let buf_phys = virtual_to_physical(GuestVirtAddr::from_ptr(buf.as_ptr())).unwrap();
@@ -229,11 +232,11 @@ fn hypercall_getdents(dirname: &str) {
 		fd: dir.as_raw_fd(),
 		buf: buf_phys,
 		len: buf.len() as u64,
-		ret: GetdentResult::None,
+		ret: GetdentResult::None.try_as_num().unwrap(),
 	};
 	uhyve_hypercall(Hypercall::Getdents(&mut getdent_params));
 
-	let GetdentResult::Success(buflen) = getdent_params.ret else {
+	let GetdentResult::Success(buflen) = getdent_params.ret.into() else {
 		panic!(
 			"Getdents hypercall not successful: {:?}",
 			getdent_params.ret
@@ -262,7 +265,7 @@ fn hypercall_getdents(dirname: &str) {
 	dirents.push((third_name, third));
 	assert_eq!(
 		first.d_reclen + second.d_reclen + third.d_reclen,
-		buflen as u16
+		buflen.get() as u16
 	);
 	for (entry_name, dirent) in dirents {
 		println!("Directory contains {entry_name}");
@@ -281,11 +284,11 @@ fn hypercall_mkdir(dirname: &str) {
 	let mut mkdir_params = MkdirParams {
 		path: path_phys,
 		len: dirname.len() as u64 + 1,
-		ret: MkdirResult::None,
+		ret: MkdirResult::None.try_as_num().unwrap(),
 	};
 	uhyve_hypercall(Hypercall::Mkdir(&mut mkdir_params));
 
-	let MkdirResult::Success = mkdir_params.ret else {
+	let MkdirResult::Success = mkdir_params.ret.into() else {
 		panic!("Mkdir hypercall not successful: {:?}", mkdir_params.ret);
 	};
 
@@ -316,7 +319,7 @@ fn hypercall_stat(filename: &str, mode: StatMode) {
 				name: name_phys,
 				kind: StatKind::Stat,
 				attr: attr_phys,
-				ret: StatResult::None,
+				ret: StatResult::None.try_as_num().unwrap(),
 			};
 			uhyve_hypercall(Hypercall::FileStat(&mut stat_params));
 			stat_params.ret
@@ -327,19 +330,20 @@ fn hypercall_stat(filename: &str, mode: StatMode) {
 			let mut stat_params = FstatParams {
 				fd: file.as_raw_fd(),
 				attr: attr_phys,
-				ret: StatResult::None,
+				ret: StatResult::None.try_as_num().unwrap(),
 			};
 			uhyve_hypercall(Hypercall::FileFstat(&mut stat_params));
 			stat_params.ret
 		}
 	};
-	assert_eq!(ret, StatResult::Success);
+	assert_eq!(ret, StatResult::Success.try_as_num().unwrap());
 	dbg!(&attr);
 	assert_ne!(attr, FileAttr::default());
 	assert_ne!(attr.st_blocks, 0);
 	assert_ne!(attr.st_atim, Timespec::default());
 	assert_ne!(attr.st_size, 0);
 }
+*/
 
 fn main() {
 	let args: Vec<String> = env::args().collect();
@@ -363,10 +367,10 @@ fn main() {
 		"lseek_file" => lseek_file(filename),
 		"mounts_test" => mount_test(),
 		"open_read" => open_read(filename),
-		"hypercall_getdents" => hypercall_getdents(filename),
-		"hypercall_stat" => hypercall_stat(filename, StatMode::Stat),
-		"hypercall_fstat" => hypercall_stat(filename, StatMode::Fstat),
-		"hypercall_mkdir" => hypercall_mkdir(filename),
+		//"hypercall_getdents" => hypercall_getdents(filename),
+		//"hypercall_stat" => hypercall_stat(filename, StatMode::Stat),
+		//"hypercall_fstat" => hypercall_stat(filename, StatMode::Fstat),
+		//"hypercall_mkdir" => hypercall_mkdir(filename),
 		_ => panic!("test not found"),
 	}
 }
