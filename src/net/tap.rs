@@ -67,11 +67,11 @@ fn open_tun() -> io::Result<File> {
 
 #[cfg(target_os = "linux")]
 fn ifreq_for(name: &str) -> ifreq {
-	let mut ifr_name = [0i8; 16];
+	let mut ifr_name = [0 as libc::c_char; 16];
 	name.as_bytes()
 		.iter()
 		.take(15)
-		.map(|b| *b as i8)
+		.map(|b| *b as libc::c_char)
 		.enumerate()
 		.for_each(|(i, b)| ifr_name[i] = b);
 
