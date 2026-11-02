@@ -1,6 +1,6 @@
 use std::{num::NonZero, ops::Add};
 
-use kvm_bindings::*;
+use kvm_bindings::{kvm_regs, *};
 use kvm_ioctls::{VcpuFd, VmFd};
 use uhyve_interface::{GuestPhysAddr, v1, v2};
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
@@ -12,15 +12,14 @@ use crate::{
 	hypercall,
 	mem::MmapMemory,
 	mem_layout::MemoryLayout,
-	os::{
-		gdb::breakpoints::AllBreakpoints,
-		kvm::{KVM, KvmVm},
-	},
+	os::kvm::{KVM, KvmVm, breakpoints::AllBreakpoints},
 	params::Params,
 	pci::{PciConfigurationAddress, PciDevice},
 	stats::VmExit,
 	vm::{KernelInfo, VirtualizationBackendInternal, VmPeripherals},
 };
+
+pub(crate) mod regs;
 
 const CPUID_EXT_HYPERVISOR: u32 = 1 << 31;
 const CPUID_TSC_DEADLINE: u32 = 1 << 24;

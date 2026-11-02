@@ -1,9 +1,8 @@
 pub(crate) mod fs;
-pub(crate) mod gdb;
 pub(crate) mod kvm;
 
 pub(crate) type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
-pub(crate) type Breakpoints = gdb::breakpoints::AllBreakpoints;
+pub(crate) type Breakpoints = kvm::breakpoints::AllBreakpoints;
 
 use gdbstub::{common::Tid, stub::MultiThreadStopReason};
 use libc::{SIGRTMAX, SIGRTMIN};

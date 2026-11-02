@@ -16,7 +16,7 @@ use crate::{
 	gdb::resume::ResumeMode,
 	hypercall::{self, HypercallAction},
 	mem::MmapMemory,
-	os::{KickSignal, gdb::breakpoints::AllBreakpoints},
+	os::KickSignal,
 	params::{NetworkMode, Params},
 	pci::{IOBASE_U64, IOEND_U64, PciConfigurationAddress, PciDevice},
 	stats::{CpuStats, VmExit},
@@ -24,6 +24,9 @@ use crate::{
 	virtio::net::VirtioNetPciDevice,
 	vm::{KernelInfo, VirtualizationBackend, VirtualizationBackendInternal, VmPeripherals},
 };
+
+pub(crate) mod breakpoints;
+use breakpoints::AllBreakpoints;
 
 mod virtio_device;
 use virtio_device::KvmVirtioNetDevice;
