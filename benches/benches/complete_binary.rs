@@ -62,7 +62,7 @@ pub fn run_hello_world(c: &mut Criterion) {
 		return;
 	}
 
-	let loader_path = [env!("CARGO_MANIFEST_DIR"), "hermit-loader-x86_64"]
+	let loader_path = [env!("CARGO_MANIFEST_DIR"), "hermit-loader-x86_64-multiboot"]
 		.iter()
 		.collect::<PathBuf>();
 	assert!(
@@ -135,7 +135,7 @@ pub fn run_rusty_demo(c: &mut Criterion) {
 		return;
 	}
 
-	let loader_path = [env!("CARGO_MANIFEST_DIR"), "hermit-loader-x86_64"]
+	let loader_path = [env!("CARGO_MANIFEST_DIR"), "hermit-loader-x86_64-multiboot"]
 		.iter()
 		.collect::<PathBuf>();
 	assert!(
