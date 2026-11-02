@@ -2,7 +2,7 @@ use std::{
 	io,
 	num::NonZero,
 	os::fd::AsRawFd,
-	sync::{Arc, LazyLock, MutexGuard},
+	sync::{Arc, LazyLock},
 };
 
 use kvm_bindings::*;
@@ -134,13 +134,6 @@ impl KvmCpu {
 	pub(crate) fn get_vcpu(&self) -> &VcpuFd {
 		&self.vcpu
 	}
-
-	pub(crate) fn virtio_device(&mut self) -> Option<MutexGuard<'_, KvmVirtioNetDevice>> {
-		self.peripherals
-			.virtio_device
-			.as_ref()
-			.map(|vd| vd.lock().unwrap())
-	}
 }
 impl VirtualCPU for KvmCpu {
 	fn thread_local_init(&mut self) -> HypervisorResult<()> {
@@ -152,12 +145,6 @@ impl VirtualCPU for KvmCpu {
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
-			let virtio_device = || {
-				self.peripherals
-					.virtio_device
-					.as_ref()
-					.map(|vd| vd.lock().unwrap())
-			};
 			self.vcpu.set_sync_valid_reg(kvm_ioctls::SyncReg::Register);
 			match self.vcpu.run() {
 				Ok(vcpu_stop_reason) => match vcpu_stop_reason {
@@ -201,7 +188,9 @@ impl VirtualCPU for KvmCpu {
 						}
 						match addr {
 							_ if Self::handle_mmio_read(addr) => {} // arch specific MMIO reads
-							IOBASE_U64..IOEND_U64 => virtio_device()
+							IOBASE_U64..IOEND_U64 => self
+								.peripherals
+								.virtio_device()
 								.unwrap()
 								.virtio
 								.handle_read(PciConfigurationAddress(addr as u32), data),
@@ -220,7 +209,9 @@ impl VirtualCPU for KvmCpu {
 							s.increment_val(VmExit::MMIOWrite)
 						}
 						match addr {
-							IOBASE_U64..IOEND_U64 => virtio_device()
+							IOBASE_U64..IOEND_U64 => self
+								.peripherals
+								.virtio_device()
 								.unwrap()
 								.virtio
 								.handle_write(PciConfigurationAddress(addr as u32), data),

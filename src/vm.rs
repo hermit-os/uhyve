@@ -7,7 +7,7 @@ use std::{
 	mem::{drop, take},
 	num::NonZero,
 	path::PathBuf,
-	sync::{Arc, Barrier, Mutex},
+	sync::{Arc, Barrier, Mutex, MutexGuard},
 	thread,
 	time::SystemTime,
 };
@@ -113,6 +113,12 @@ pub(crate) struct VmPeripherals<VirtioNetImpl: NetworkBackend> {
 	pub mem: Arc<MmapMemory>,
 	pub(crate) serial: UhyveSerial,
 	pub virtio_device: Option<Mutex<VirtioNetImpl>>,
+}
+impl<V: NetworkBackend> VmPeripherals<V> {
+	/// Helper to reduce verbosity when locking the device.
+	pub(crate) fn virtio_device(&self) -> Option<MutexGuard<'_, V>> {
+		self.virtio_device.as_ref().map(|vd| vd.lock().unwrap())
+	}
 }
 
 // This uses the "private sealed supertrait pattern".
