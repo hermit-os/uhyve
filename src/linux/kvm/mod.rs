@@ -10,12 +10,13 @@ use kvm_ioctls::{Kvm, VcpuExit, VcpuFd, VmFd};
 use uhyve_interface::GuestPhysAddr;
 
 #[cfg(target_arch = "x86_64")]
-use crate::arch::x86_64::kvm as arch;
+use crate::arch::x86_64::kvm::{self as arch, PortWrite};
 use crate::{
-	HypervisorError, HypervisorResult,
+	HypervisorResult,
 	gdb::resume::ResumeMode,
+	hypercall::{self, HypercallAction},
 	mem::MmapMemory,
-	os::KickSignal,
+	os::{KickSignal, gdb::breakpoints::AllBreakpoints},
 	params::{NetworkMode, Params},
 	pci::{IOBASE_U64, IOEND_U64, PciConfigurationAddress, PciDevice},
 	stats::{CpuStats, VmExit},
@@ -63,20 +64,19 @@ fn unblock_all_signals_for_kvm(vcpu: &VcpuFd) -> nix::Result<()> {
 
 #[derive(Debug)]
 pub struct KvmVm {
-	pub(crate) vm_fd: VmFd,
-	pub(crate) peripherals:
-		Arc<VmPeripherals<<Self as VirtualizationBackendInternal>::VirtioNetImpl>>,
+	vm_fd: VmFd,
+	peripherals: Arc<VmPeripherals<<Self as VirtualizationBackendInternal>::VirtioNetImpl>>,
 }
 impl VirtualizationBackend for KvmVm {}
 
 pub struct KvmCpu {
-	pub id: usize,
-	pub vcpu: VcpuFd,
+	id: usize,
+	vcpu: VcpuFd,
 	// TODO: Remove once the getenv/getargs hypercalls are removed
-	pub kernel_info: Arc<KernelInfo<<KvmVm as VirtualizationBackendInternal>::MemLayout>>,
-	pub peripherals: Arc<VmPeripherals<<KvmVm as VirtualizationBackendInternal>::VirtioNetImpl>>,
-	pub pci_ports: arch::PciConfigPorts,
-	pub stats: Option<CpuStats>,
+	kernel_info: Arc<KernelInfo<<KvmVm as VirtualizationBackendInternal>::MemLayout>>,
+	peripherals: Arc<VmPeripherals<<KvmVm as VirtualizationBackendInternal>::VirtioNetImpl>>,
+	pci_ports: arch::PciConfigPorts,
+	stats: Option<CpuStats>,
 }
 
 impl VirtualizationBackendInternal for KvmVm {
@@ -92,7 +92,7 @@ impl VirtualizationBackendInternal for KvmVm {
 		enable_stats: bool,
 	) -> HypervisorResult<KvmCpu> {
 		let vcpu = self.vm_fd.create_vcpu(id as u64)?;
-		let mut kvcpu = KvmCpu {
+		let kvcpu = KvmCpu {
 			id,
 			vcpu,
 			peripherals: self.peripherals.clone(),
@@ -104,7 +104,7 @@ impl VirtualizationBackendInternal for KvmVm {
 				None
 			},
 		};
-		kvcpu.init()?;
+		arch::init_vcpu(&kvcpu.vcpu, &kvcpu.kernel_info, id)?;
 
 		Ok(kvcpu)
 	}
@@ -113,7 +113,25 @@ impl VirtualizationBackendInternal for KvmVm {
 		peripherals: Arc<VmPeripherals<Self::VirtioNetImpl>>,
 		params: &Params,
 	) -> HypervisorResult<Self> {
-		Self::new_internal(peripherals, params)
+		let vm_fd = KVM.create_vm().unwrap();
+
+		let mem = &peripherals.mem;
+		let kvm_mem = kvm_userspace_memory_region {
+			slot: 0,
+			flags: 0, // Can be KVM_MEM_LOG_DIRTY_PAGES and KVM_MEM_READONLY
+			memory_size: mem.size() as u64,
+			guest_phys_addr: mem.guest_addr().as_u64(),
+			userspace_addr: mem.host_start() as u64,
+		};
+		unsafe { vm_fd.set_user_memory_region(kvm_mem) }?;
+
+		arch::setup_vm(&vm_fd, mem, params)?;
+
+		if let Some(mut virtiodevice) = peripherals.virtio_device() {
+			virtiodevice.setup(&vm_fd);
+		}
+
+		Ok(Self { vm_fd, peripherals })
 	}
 
 	fn init_guest_mem(
@@ -122,7 +140,7 @@ impl VirtualizationBackendInternal for KvmVm {
 		memory_size: u64,
 		legacy_mapping: bool,
 	) {
-		Self::init_guest_mem_internal(mem, layout, memory_size, legacy_mapping);
+		arch::init_guest_mem(mem, layout, memory_size, legacy_mapping);
 	}
 
 	fn virtio_net_device(mode: NetworkMode, memory: Arc<MmapMemory>) -> Self::VirtioNetImpl {
@@ -171,12 +189,40 @@ impl VirtualCPU for KvmCpu {
 						self.pci_ports.read(&self.peripherals, port, addr);
 					}
 					#[cfg(target_arch = "x86_64")]
-					VcpuExit::IoOut(port, addr) => {
+					VcpuExit::IoOut(port, data) => {
 						// The use of a mut ref would later render the non-mut ref
 						// needed for getting the hypercall data adddress impossible.
-						let addr = addr.to_owned();
-						if let Some(value) = self.handle_port_io_write(port, &addr) {
-							return value;
+						let data = data.to_owned();
+
+						let port_write = arch::classify_port_write(
+							&self.peripherals.mem,
+							&self.vcpu,
+							port,
+							&data.to_owned(),
+						);
+						if let Some(s) = self.stats.as_mut() {
+							s.increment_val((&port_write).into())
+						}
+						match port_write {
+							PortWrite::HypercallV2(hypercall) => {
+								match hypercall::handle_hypercall_v2(&self.peripherals, hypercall) {
+									HypercallAction::Stop(stop) => return Ok(stop),
+									HypercallAction::None => {}
+								}
+							}
+							PortWrite::HypercallV1(hypercall) => {
+								if let Some(stop) = hypercall::handle_hypercall_v1(
+									&self.peripherals,
+									&self.kernel_info,
+									|| Ok(self.get_root_pagetable()),
+									hypercall,
+								) {
+									return stop;
+								}
+							}
+							PortWrite::PortIOAccess => {
+								self.pci_ports.write(&self.peripherals, port, &data);
+							}
 						}
 					}
 					VcpuExit::MmioRead(addr, data) => {
@@ -184,7 +230,7 @@ impl VirtualCPU for KvmCpu {
 							s.increment_val(VmExit::MMIORead)
 						}
 						match addr {
-							_ if Self::handle_mmio_read(addr) => {} // arch specific MMIO reads
+							_ if arch::handle_mmio_read(addr) => {}
 							IOBASE_U64..IOEND_U64 => self
 								.peripherals
 								.virtio_device()
@@ -283,36 +329,22 @@ impl VirtualCPU for KvmCpu {
 
 	fn apply_current_guest_debug(
 		&mut self,
-		breakpoints: &crate::os::gdb::breakpoints::AllBreakpoints,
+		breakpoints: &AllBreakpoints,
 		resume_mode: ResumeMode,
 	) -> HypervisorResult<()> {
-		let debugreg = breakpoints.hard.registers();
-		let mut control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_SW_BP | KVM_GUESTDBG_USE_HW_BP;
-		// SAFETY: we trust the value of `self.resume.mode`.
-		if resume_mode == ResumeMode::Step {
-			control |= KVM_GUESTDBG_SINGLESTEP;
-		}
-		let debug_struct = kvm_guest_debug {
-			control,
-			pad: 0,
-			arch: kvm_guest_debug_arch { debugreg },
-		};
-
-		self.vcpu
-			.set_guest_debug(&debug_struct)
-			.map_err(HypervisorError::from)
+		arch::set_guest_debug(&self.vcpu, breakpoints, resume_mode)
 	}
 
 	fn print_registers(&self) {
-		self.print_registers_internal();
+		arch::print_registers(&self.vcpu, self.id);
 	}
 
 	fn get_cpu_frequency(&self) -> Option<NonZero<u32>> {
-		self.get_cpu_frequency_internal()
+		arch::get_cpu_frequency(&self.vcpu)
 	}
 
 	fn get_root_pagetable(&self) -> GuestPhysAddr {
-		self.get_root_pagetable_internal()
+		arch::get_root_pagetable(&self.vcpu)
 	}
 
 	fn get_vcpu_id(&self) -> usize {
