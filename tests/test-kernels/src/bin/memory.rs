@@ -1,13 +1,15 @@
 use std::{
 	env,
 	hint::black_box,
+	mem,
 	sync::{Arc, Barrier},
 	thread,
+	time::Instant,
 };
 
 #[cfg(target_os = "hermit")]
 use hermit as _;
-use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
+use rand::{Rng, SeedableRng, rngs::SmallRng, seq::SliceRandom};
 
 const MIB: usize = 1024 * 1024;
 const THREAD_STACK_SIZE: usize = 256 * 1024;
@@ -338,6 +340,128 @@ fn oom(ram: usize) {
 	}
 }
 
+/// Mean of [`random_size`].
+const AVG_SIZE: usize = 8 * 1024;
+/// Allocator operations per thread in the random benchmarks.
+const OPS: usize = 100_000;
+
+/// Log-uniformly distributed size between 16 B and 64 KiB.
+fn random_size(rng: &mut SmallRng) -> usize {
+	let shift = rng.random_range(4..16);
+	rng.random_range(1 << shift..2 << shift)
+}
+
+/// Allocates `size` bytes without initializing them.
+fn alloc_uninit(size: usize) -> Vec<u8> {
+	black_box(Vec::with_capacity(size))
+}
+
+/// Allocates `size` bytes without initializing them. Returns `None` if the allocation fails.
+fn try_alloc_uninit(size: usize) -> Option<Vec<u8>> {
+	let mut v = Vec::new();
+	v.try_reserve_exact(size).ok()?;
+	Some(black_box(v))
+}
+
+/// Runs `f(rng, barrier)` on `threads` threads. `f` must wait at `barrier` twice before
+/// ("ready" and "go") and once after its timed section. Prints the time from just before "go"
+/// to after the last wait.
+fn run_timed_threads<F>(threads: usize, f: F)
+where
+	F: Fn(&mut SmallRng, &Barrier) + Send + Sync + 'static,
+{
+	let f = Arc::new(f);
+	let barrier = Arc::new(Barrier::new(threads + 1));
+	let handles: Vec<_> = (0..threads)
+		.map(|t| {
+			let f = f.clone();
+			let barrier = barrier.clone();
+			thread::spawn(move || {
+				let mut rng = SmallRng::seed_from_u64(0x1234 + t as u64);
+				f(&mut rng, &barrier)
+			})
+		})
+		.collect();
+	barrier.wait();
+	// Threads are now ready
+	let start = Instant::now();
+	barrier.wait();
+	// Threads are now running
+	barrier.wait();
+	let elapsed = start.elapsed();
+	for h in handles {
+		h.join().unwrap();
+	}
+	println!("Elapsed: {} ns", elapsed.as_nanos());
+}
+
+/// Each thread keeps slots with half the RAM in total allocated and replaces random slots
+/// with new allocations of random size.
+fn random_alloc_bench(ram: usize, threads: usize) {
+	let slots = ram / 2 / threads / AVG_SIZE;
+	run_timed_threads(threads, move |rng, barrier| {
+		let mut live: Vec<_> = (0..slots).map(|_| alloc_uninit(random_size(rng))).collect();
+		barrier.wait();
+		barrier.wait();
+		for _ in 0..OPS {
+			let i = rng.random_range(0..slots);
+			drop(mem::take(&mut live[i]));
+			live[i] = alloc_uninit(random_size(rng));
+		}
+		barrier.wait();
+	});
+}
+
+/// Each thread starts with a quarter of the RAM in total allocated, then randomly either
+/// allocates a chunk of random size or frees a random chunk. The allocated memory is bounded
+/// by half the RAM in total.
+/// If an allocation fails, the state of the failing thread is printed before panicking.
+fn random_walk_bench(ram: usize, threads: usize) {
+	let max_bytes = ram / 2 / threads;
+	run_timed_threads(threads, move |rng, barrier| {
+		let mut live = Vec::with_capacity(2 * max_bytes / AVG_SIZE);
+		let mut bytes = 0;
+		while bytes < max_bytes / 2 {
+			let s = random_size(rng);
+			let chunk = try_alloc_uninit(s).unwrap();
+			live.push((chunk, s));
+			bytes += s;
+		}
+		barrier.wait();
+		barrier.wait();
+		for _ in 0..OPS {
+			let s = random_size(rng);
+			let push = live.is_empty() || (bytes + s <= max_bytes && rng.random_bool(0.5));
+			if push {
+				let chunk = try_alloc_uninit(s).unwrap();
+				live.push((chunk, s));
+				bytes += s;
+			} else {
+				let i = rng.random_range(0..live.len());
+				let (chunk, s) = live.swap_remove(i);
+				drop(chunk);
+				bytes -= s;
+			}
+		}
+		barrier.wait();
+	});
+}
+
+/// Allocates 512 MiB in page sized chunks.
+fn page_alloc_bench() {
+	const PAGE: usize = 4096;
+	const TOTAL: usize = 512 * MIB;
+	run_timed_threads(1, |_, barrier| {
+		let mut live = Vec::with_capacity(TOTAL / PAGE);
+		barrier.wait();
+		barrier.wait();
+		for _ in 0..TOTAL / PAGE {
+			live.push(alloc_uninit(PAGE));
+		}
+		barrier.wait();
+	});
+}
+
 /// Expects the arguments `testname=<scenario> ram_mib=<VM memory size> threads=<n>`.
 fn main() {
 	let args: Vec<String> = env::args().collect();
@@ -359,6 +483,9 @@ fn main() {
 		"mixed_sizes" => mixed_sizes(ram),
 		"random_free" => random_free(ram),
 		"oom" => oom(ram),
+		"random_alloc_bench" => random_alloc_bench(ram, threads),
+		"random_walk_bench" => random_walk_bench(ram, threads),
+		"page_alloc_bench" => page_alloc_bench(),
 		_ => panic!("scenario {scenario} not found"),
 	}
 	println!("memory: {scenario} done");
