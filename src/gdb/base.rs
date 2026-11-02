@@ -16,7 +16,7 @@ use uhyve_interface::GuestVirtAddr;
 
 use crate::{HypervisorError, gdb::GdbVcpuManager, mem_layout::MemoryLayout, vm::DefaultBackend};
 #[cfg(not(target_os = "macos"))]
-use crate::{os::gdb::regs, vcpu::VirtualCPU, virt_to_phys};
+use crate::{arch::kvm::regs, vcpu::VirtualCPU, virt_to_phys};
 
 impl Target for GdbVcpuManager<DefaultBackend> {
 	type Error = HypervisorError;
