@@ -1,9 +1,11 @@
 pub(crate) mod breakpoints;
+pub(crate) mod kvm;
 pub(crate) mod paging;
 
 use std::fmt::Display;
 
 use hermit_entry::{UhyveIfVersion, elf::KernelObject};
+use kvm::KVM_32BIT_GAP_START;
 pub(crate) use paging::BOOT_GDT_MAX;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 use x86_64::structures::paging::{
@@ -17,7 +19,6 @@ use crate::{
 		BootInfoSection, FdtSection, KernelSection, MemoryLayout, PagetableSection, Section,
 		StackSection, generate_guest_start_address,
 	},
-	os::x86_64::kvm_cpu::KVM_32BIT_GAP_START,
 	paging::PagetableError,
 	params::Params,
 };

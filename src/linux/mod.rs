@@ -1,22 +1,15 @@
-#[cfg(target_arch = "x86_64")]
-pub mod x86_64;
-
 pub(crate) mod fs;
 pub(crate) mod gdb;
+pub(crate) mod kvm;
 
 pub(crate) type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
 pub(crate) type Breakpoints = gdb::breakpoints::AllBreakpoints;
 
-use std::sync::LazyLock;
-
 use gdbstub::{common::Tid, stub::MultiThreadStopReason};
-use kvm_ioctls::Kvm;
 use libc::{SIGRTMAX, SIGRTMIN};
 use nix::sys::pthread::Pthread;
 
-use crate::{os::x86_64::kvm_cpu::KvmVm, vm::KickSignal};
-
-static KVM: LazyLock<Kvm> = LazyLock::new(|| Kvm::new().unwrap());
+use crate::vm::KickSignal;
 
 // TODO: nix::signal::Signal doesn't support real-time signals yet.
 // Start using the Signal type once this no longer is the case.
