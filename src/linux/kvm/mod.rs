@@ -14,7 +14,7 @@ use crate::arch::x86_64::kvm::{self as arch, PortWrite};
 use crate::{
 	HypervisorResult,
 	gdb::resume::ResumeMode,
-	hypercall::{self, HypercallAction},
+	hypercall::{self, GuestHypercall, HypercallAction},
 	mem::MmapMemory,
 	os::KickSignal,
 	params::{NetworkMode, Params},
@@ -155,6 +155,27 @@ impl KvmCpu {
 	pub(crate) fn get_vcpu(&self) -> &VcpuFd {
 		&self.vcpu
 	}
+
+	/// Returns `Some` if the vCPU should stop.
+	fn handle_hypercall(
+		&self,
+		hypercall: GuestHypercall<'_>,
+	) -> Option<HypervisorResult<VcpuStopReason>> {
+		match hypercall {
+			GuestHypercall::V2(hypercall) => {
+				match hypercall::handle_hypercall_v2(&self.peripherals, hypercall) {
+					HypercallAction::Stop(stop) => Some(Ok(stop)),
+					HypercallAction::None => None,
+				}
+			}
+			GuestHypercall::V1(hypercall) => hypercall::handle_hypercall_v1(
+				&self.peripherals,
+				&self.kernel_info,
+				|| Ok(self.get_root_pagetable()),
+				hypercall,
+			),
+		}
+	}
 }
 impl VirtualCPU for KvmCpu {
 	fn thread_local_init(&mut self) -> HypervisorResult<()> {
@@ -207,19 +228,8 @@ impl VirtualCPU for KvmCpu {
 							s.increment_val((&port_write).into())
 						}
 						match port_write {
-							PortWrite::HypercallV2(hypercall) => {
-								match hypercall::handle_hypercall_v2(&self.peripherals, hypercall) {
-									HypercallAction::Stop(stop) => return Ok(stop),
-									HypercallAction::None => {}
-								}
-							}
-							PortWrite::HypercallV1(hypercall) => {
-								if let Some(stop) = hypercall::handle_hypercall_v1(
-									&self.peripherals,
-									&self.kernel_info,
-									|| Ok(self.get_root_pagetable()),
-									hypercall,
-								) {
+							PortWrite::Hypercall(hypercall) => {
+								if let Some(stop) = self.handle_hypercall(hypercall) {
 									return stop;
 								}
 							}

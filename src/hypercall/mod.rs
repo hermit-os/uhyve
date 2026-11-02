@@ -7,6 +7,7 @@ use crate::{
 	mem::MmapMemory,
 	mem_layout::MemoryLayout,
 	net::NetworkBackend,
+	stats::VmExit,
 	vcpu::VcpuStopReason,
 	vm::{KernelInfo, VmPeripherals},
 };
@@ -21,6 +22,41 @@ use by_fd::{close, lseek, lseek_v1, read, read_v1, write, write_v1};
 use by_path::{mkdir, open, unlink};
 use fstat::{fstat, stat};
 use getdents::getdents;
+
+/// A hypercall issued by the guest.
+pub(crate) enum GuestHypercall<'a> {
+	V1(v1::Hypercall<'a>),
+	V2(v2::Hypercall<'a>),
+}
+
+impl<'a> GuestHypercall<'a> {
+	/// Decodes a guest MMIO access to `addr` as hypercall with its data struct at `data_addr`.
+	///
+	/// # Safety
+	///
+	/// See [`hypercall::address_to_hypercall_v2`].
+	#[cfg_attr(target_arch = "x86_64", expect(dead_code))]
+	pub(crate) unsafe fn from_mmio(
+		mem: &'a MmapMemory,
+		addr: u64,
+		data_addr: GuestPhysAddr,
+	) -> Option<Self> {
+		if let Some(hypercall) = unsafe { address_to_hypercall_v2(mem, addr, data_addr) } {
+			return Some(Self::V2(hypercall));
+		}
+		let addr = u16::try_from(addr).ok()?;
+		unsafe { address_to_hypercall_v1(mem, addr, data_addr) }.map(Self::V1)
+	}
+}
+
+impl From<&GuestHypercall<'_>> for VmExit {
+	fn from(hypercall: &GuestHypercall<'_>) -> Self {
+		match hypercall {
+			GuestHypercall::V1(hypercall) => hypercall.into(),
+			GuestHypercall::V2(hypercall) => hypercall.into(),
+		}
+	}
+}
 
 /// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
 /// parameter that was sent to that address by the guest.

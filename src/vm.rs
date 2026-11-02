@@ -7,7 +7,7 @@ use std::{
 	mem::{drop, take},
 	num::NonZero,
 	path::PathBuf,
-	sync::{Arc, Barrier, Mutex, MutexGuard},
+	sync::{Arc, Barrier, Mutex},
 	thread,
 	time::SystemTime,
 };
@@ -116,7 +116,8 @@ pub(crate) struct VmPeripherals<VirtioNetImpl: NetworkBackend> {
 }
 impl<V: NetworkBackend> VmPeripherals<V> {
 	/// Helper to reduce verbosity when locking the device.
-	pub(crate) fn virtio_device(&self) -> Option<MutexGuard<'_, V>> {
+	#[cfg(target_os = "linux")]
+	pub(crate) fn virtio_device(&self) -> Option<std::sync::MutexGuard<'_, V>> {
 		self.virtio_device.as_ref().map(|vd| vd.lock().unwrap())
 	}
 }

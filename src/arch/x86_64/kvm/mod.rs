@@ -3,7 +3,7 @@ use std::{num::NonZero, ops::Add};
 use kvm_bindings::{kvm_regs, *};
 use kvm_ioctls::{VcpuFd, VmFd};
 use libc::EFD_NONBLOCK;
-use uhyve_interface::{GuestPhysAddr, v1, v2};
+use uhyve_interface::GuestPhysAddr;
 use vmm_sys_util::eventfd::EventFd;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
@@ -11,7 +11,7 @@ use crate::{
 	HypervisorError, HypervisorResult,
 	arch::{BOOT_GDT_MAX, X86_64MemoryLayout, paging::initialize_pagetables},
 	gdb::resume::ResumeMode,
-	hypercall,
+	hypercall::{self, GuestHypercall},
 	mem::MmapMemory,
 	mem_layout::MemoryLayout,
 	os::kvm::{KVM, KvmVm, breakpoints::AllBreakpoints},
@@ -438,22 +438,20 @@ fn show_segment(name: &str, seg: &kvm_segment) {
 /// by the Hermit unikernel when initiating a hypercall.
 ///
 /// This is only intended to be used after a hypercall has taken place.
-fn get_hypercall_data_addr_v2(vcpu: &VcpuFd) -> GuestPhysAddr {
+pub fn hypercall_data_addr(vcpu: &VcpuFd) -> GuestPhysAddr {
 	GuestPhysAddr::new(vcpu.sync_regs().regs.rdi)
 }
 
 /// A guest write to an I/O port.
-pub enum PortWrite<'a> {
-	HypercallV1(v1::Hypercall<'a>),
-	HypercallV2(v2::Hypercall<'a>),
+pub(crate) enum PortWrite<'a> {
+	Hypercall(GuestHypercall<'a>),
 	PortIOAccess,
 }
 
 impl From<&PortWrite<'_>> for VmExit {
 	fn from(write: &PortWrite<'_>) -> Self {
 		match write {
-			PortWrite::HypercallV1(hypercall) => hypercall.into(),
-			PortWrite::HypercallV2(hypercall) => hypercall.into(),
+			PortWrite::Hypercall(hypercall) => hypercall.into(),
 			PortWrite::PortIOAccess => VmExit::PCIWrite,
 		}
 	}
@@ -466,10 +464,10 @@ pub fn classify_port_write<'a>(
 	port: u16,
 	data: &[u8],
 ) -> PortWrite<'a> {
-	if let Some(hypercall) = unsafe {
-		hypercall::address_to_hypercall_v2(mem, port.into(), get_hypercall_data_addr_v2(vcpu))
-	} {
-		PortWrite::HypercallV2(hypercall)
+	if let Some(hypercall) =
+		unsafe { hypercall::address_to_hypercall_v2(mem, port.into(), hypercall_data_addr(vcpu)) }
+	{
+		PortWrite::Hypercall(GuestHypercall::V2(hypercall))
 	} else if let Some(hypercall) = unsafe {
 		// v1 images used to read the address from the 32-bit value written
 		// into the virtual device register to perform an IoOut. Although
@@ -480,7 +478,7 @@ pub fn classify_port_write<'a>(
 		let data_addr = GuestPhysAddr::new((*(data.as_ptr() as *const u32)) as u64);
 		hypercall::address_to_hypercall_v1(mem, port, data_addr)
 	} {
-		PortWrite::HypercallV1(hypercall)
+		PortWrite::Hypercall(GuestHypercall::V1(hypercall))
 	} else {
 		PortWrite::PortIOAccess
 	}

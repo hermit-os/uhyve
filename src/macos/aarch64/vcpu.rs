@@ -14,7 +14,7 @@ use crate::{
 		MT_DEVICE_nGnRE, MT_DEVICE_nGnRnE, MT_NORMAL, MT_NORMAL_NC, PSR, TCR_FLAGS, TCR_TG1_4K,
 		VA_BITS, init_guest_mem, mair, tcr_size,
 	},
-	hypercall::{self, HypercallAction},
+	hypercall::{self, GuestHypercall, HypercallAction},
 	mem::MmapMemory,
 	mem_layout::MemoryLayout,
 	os::aarch64::virtio_device::XHyveVirtioNetDevice,
@@ -237,58 +237,55 @@ impl VirtualCPU for XhyveCpu {
 							let pc = vcpu.read_register(Register::PC)?;
 
 							let data_addr = GuestPhysAddr::new(vcpu.read_register(Register::X8)?);
-							if let Some(hypercall) = unsafe {
-								hypercall::address_to_hypercall_v2(
+							// SAFETY: The guest is halted while its exception is handled.
+							let Some(hypercall) = (unsafe {
+								GuestHypercall::from_mmio(
 									&self.peripherals.mem,
 									addr - self.kernel_info.layout.guest_address().as_u64(),
 									data_addr,
 								)
-							} {
-								if let Some(s) = self.stats.as_mut() {
-									s.increment_val((&hypercall).into())
-								}
-
-								match hypercall::handle_hypercall_v2(&self.peripherals, hypercall) {
-									HypercallAction::Stop(stop) => return Ok(stop),
-									HypercallAction::None => {}
-								}
-							} else if let Some(hypercall) = unsafe {
-								hypercall::address_to_hypercall_v1(
-									&self.peripherals.mem,
-									(addr - self.kernel_info.layout.guest_address().as_u64())
-										.try_into()
-										.unwrap(),
-									data_addr,
-								)
-							} {
-								if let Some(s) = self.stats.as_mut() {
-									s.increment_val((&hypercall).into())
-								}
-
-								if let v1::Hypercall::SerialWriteByte(_) = &hypercall {
-									let x8 = (vcpu.read_register(Register::X8)? & 0xFF) as u8;
-									self.peripherals
-										.serial
-										.output(&[x8])
-										.unwrap_or_else(|e| error!("{e:?}"));
-								} else if let Some(stop) = hypercall::handle_hypercall_v1(
-									&self.peripherals,
-									&self.kernel_info,
-									|| {
-										vcpu.read_system_register(SystemRegister::TTBR0_EL1)
-											.map(GuestPhysAddr::new)
-											.map_err(HypervisorError::BackendError)
-									},
-									hypercall,
-								) {
-									return stop;
-								}
-								// increase the pc to the instruction after the exception to continue execution
-								vcpu.write_register(Register::PC, pc + 4)?;
-							} else {
+							}) else {
 								error!("Unable to handle exception {exception:?}");
 								self.print_registers();
 								return Err(xhypervisor::Error::Error.into());
+							};
+
+							if let Some(s) = self.stats.as_mut() {
+								s.increment_val((&hypercall).into())
+							}
+
+							match hypercall {
+								GuestHypercall::V2(hypercall) => {
+									match hypercall::handle_hypercall_v2(
+										&self.peripherals,
+										hypercall,
+									) {
+										HypercallAction::Stop(stop) => return Ok(stop),
+										HypercallAction::None => {}
+									}
+								}
+								GuestHypercall::V1(hypercall) => {
+									if let v1::Hypercall::SerialWriteByte(_) = &hypercall {
+										let x8 = (vcpu.read_register(Register::X8)? & 0xFF) as u8;
+										self.peripherals
+											.serial
+											.output(&[x8])
+											.unwrap_or_else(|e| error!("{e:?}"));
+									} else if let Some(stop) = hypercall::handle_hypercall_v1(
+										&self.peripherals,
+										&self.kernel_info,
+										|| {
+											vcpu.read_system_register(SystemRegister::TTBR0_EL1)
+												.map(GuestPhysAddr::new)
+												.map_err(HypervisorError::BackendError)
+										},
+										hypercall,
+									) {
+										return stop;
+									}
+									// increase the pc to the instruction after the exception to continue execution
+									vcpu.write_register(Register::PC, pc + 4)?;
+								}
 							}
 						} else {
 							error!("Unsupported exception class: 0x{ec:x}");
