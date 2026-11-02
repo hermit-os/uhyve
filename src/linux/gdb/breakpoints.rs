@@ -12,7 +12,7 @@ use crate::{
 		x86_64::breakpoints::{HwBreakpoint, HwBreakpoints},
 	},
 	gdb::GdbVcpuManager,
-	os::KvmVm,
+	os::kvm::KvmVm,
 	vcpu::VirtualCPU,
 };
 

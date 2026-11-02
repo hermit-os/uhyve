@@ -61,7 +61,7 @@ pub enum LoadKernelError {
 type LoadKernelResult<T> = Result<T, LoadKernelError>;
 
 #[cfg(target_os = "linux")]
-pub type DefaultBackend = crate::os::x86_64::kvm_cpu::KvmVm;
+pub type DefaultBackend = crate::os::kvm::KvmVm;
 #[cfg(target_os = "macos")]
 pub type DefaultBackend = crate::os::XhyveVm;
 
