@@ -75,7 +75,7 @@ pub struct KvmCpu {
 	// TODO: Remove once the getenv/getargs hypercalls are removed
 	pub kernel_info: Arc<KernelInfo<<KvmVm as VirtualizationBackendInternal>::MemLayout>>,
 	pub peripherals: Arc<VmPeripherals<<KvmVm as VirtualizationBackendInternal>::VirtioNetImpl>>,
-	pub pci_addr: Option<u32>,
+	pub pci_ports: arch::PciConfigPorts,
 	pub stats: Option<CpuStats>,
 }
 
@@ -97,7 +97,7 @@ impl VirtualizationBackendInternal for KvmVm {
 			vcpu,
 			peripherals: self.peripherals.clone(),
 			kernel_info,
-			pci_addr: None,
+			pci_ports: Default::default(),
 			stats: if enable_stats {
 				Some(CpuStats::new(id))
 			} else {
@@ -165,13 +165,10 @@ impl VirtualCPU for KvmCpu {
 					}
 					#[cfg(target_arch = "x86_64")]
 					VcpuExit::IoIn(port, addr) => {
-						arch::handle_port_io_read(
-							&self.peripherals,
-							self.pci_addr,
-							self.stats.as_mut(),
-							port,
-							addr,
-						);
+						if let Some(s) = self.stats.as_mut() {
+							s.increment_val(VmExit::PCIRead)
+						}
+						self.pci_ports.read(&self.peripherals, port, addr);
 					}
 					#[cfg(target_arch = "x86_64")]
 					VcpuExit::IoOut(port, addr) => {

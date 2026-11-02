@@ -13,7 +13,7 @@ use crate::{
 	os::kvm::{KVM, KvmCpu, KvmVm},
 	params::Params,
 	pci::{PciConfigurationAddress, PciDevice},
-	stats::{CpuStats, VmExit},
+	stats::VmExit,
 	vcpu::{VcpuStopReason, VirtualCPU},
 	vm::{VirtualizationBackendInternal, VmPeripherals},
 };
@@ -462,67 +462,74 @@ impl KvmCpu {
 			if let Some(s) = self.stats.as_mut() {
 				s.increment_val(VmExit::PCIWrite)
 			}
-			match port {
-				// Legacy PCI addressing method
-				PCI_CONFIG_DATA_PORT => {
-					if let Some(pci_addr) = self.pci_addr
-						&& pci_addr & 0x1ff800 == 0
-						&& let Some(mut virtio_device) = self.peripherals.virtio_device()
-					{
-						virtio_device
-							.virtio
-							.handle_write(PciConfigurationAddress(pci_addr & 0x3ff), addr);
-					}
-				}
-				PCI_CONFIG_ADDRESS_PORT => {
-					if (addr.as_ptr() as usize).is_multiple_of(align_of::<usize>()) {
-						self.pci_addr = Some(
-							// SAFETY: `pci_addr` is validated on read, so even if this is bogus uhyve is not affected.
-							unsafe { *(addr.as_ptr() as *const u32) },
-						);
-					}
-				}
-				port => {
-					warn!("Guest wrote to unknown I/O port {port:#x}");
-				}
-			}
+			self.pci_ports.write(&self.peripherals, port, addr);
 		};
 
 		None
 	}
 }
 
-pub(crate) fn handle_port_io_read(
-	peripherals: &VmPeripherals<<KvmVm as VirtualizationBackendInternal>::VirtioNetImpl>,
-	pci_addr: Option<u32>,
-	stats: Option<&mut CpuStats>,
-	port: u16,
-	addr: &mut [u8],
-) {
-	if let Some(s) = stats {
-		s.increment_val(VmExit::PCIRead)
-	}
+/// Legacy PCI configuration access via the I/O ports `0xCF8`/`0xCFC`.
+#[derive(Debug, Default)]
+pub struct PciConfigPorts {
+	addr: Option<u32>,
+}
 
-	match port {
-		PCI_CONFIG_DATA_PORT => {
-			if let Some(pci_addr) = pci_addr
-				&& pci_addr & 0x1ff800 == 0
-			{
+impl PciConfigPorts {
+	pub fn read(
+		&self,
+		peripherals: &VmPeripherals<<KvmVm as VirtualizationBackendInternal>::VirtioNetImpl>,
+		port: u16,
+		data: &mut [u8],
+	) {
+		let pci_addr = self.addr.filter(|addr| addr & 0x1ff800 == 0);
+		match (port, pci_addr) {
+			(PCI_CONFIG_DATA_PORT, Some(pci_addr)) => {
 				if let Some(mut vd) = peripherals.virtio_device() {
 					vd.virtio
-						.handle_read(PciConfigurationAddress(pci_addr & 0x3ff), addr);
+						.handle_read(PciConfigurationAddress(pci_addr & 0x3ff), data);
 				} else {
 					// The access here is fine, because the guest might just be scanning for devices
 					trace!("Guest tries to access non-present virtio device");
 				}
-			} else {
-				// The access here is fine, because the guest might just be scanning for devices
-				addr.fill(0xff);
+			}
+			// The access here is fine, because the guest might just be scanning for devices
+			(PCI_CONFIG_DATA_PORT, None) => data.fill(0xff),
+			(PCI_CONFIG_ADDRESS_PORT, _) => {}
+			(port, _) => {
+				warn!("Guest read from unknown I/O port {port:#x}");
 			}
 		}
-		PCI_CONFIG_ADDRESS_PORT => {}
-		port => {
-			warn!("Guest read from unknown I/O port {port:#x}");
+	}
+
+	pub fn write(
+		&mut self,
+		peripherals: &VmPeripherals<<KvmVm as VirtualizationBackendInternal>::VirtioNetImpl>,
+		port: u16,
+		data: &[u8],
+	) {
+		match port {
+			PCI_CONFIG_DATA_PORT => {
+				if let Some(pci_addr) = self.addr
+					&& pci_addr & 0x1ff800 == 0
+					&& let Some(mut virtio_device) = peripherals.virtio_device()
+				{
+					virtio_device
+						.virtio
+						.handle_write(PciConfigurationAddress(pci_addr & 0x3ff), data);
+				}
+			}
+			PCI_CONFIG_ADDRESS_PORT => {
+				if (data.as_ptr() as usize).is_multiple_of(align_of::<usize>()) {
+					self.addr = Some(
+						// SAFETY: `addr` is validated on read, so even if this is bogus uhyve is not affected.
+						unsafe { *(data.as_ptr() as *const u32) },
+					);
+				}
+			}
+			port => {
+				warn!("Guest wrote to unknown I/O port {port:#x}");
+			}
 		}
 	}
 }
