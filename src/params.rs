@@ -313,13 +313,14 @@ impl TryFrom<String> for NetworkMode {
 		netmode_try_from(netmode)
 	}
 }
-impl TryFrom<&str> for NetworkMode {
-	type Error = &'static str;
+impl FromStr for NetworkMode {
+	type Err = &'static str;
 
-	fn try_from(netmode: &str) -> Result<Self, Self::Error> {
+	fn from_str(netmode: &str) -> Result<Self, Self::Err> {
 		netmode_try_from(netmode)
 	}
 }
+
 fn netmode_try_from<S: AsRef<str>>(netmode: S) -> Result<NetworkMode, &'static str> {
 	if netmode.as_ref() == "tap" {
 		return Ok(NetworkMode::Tap {

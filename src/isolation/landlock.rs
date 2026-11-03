@@ -131,7 +131,6 @@ impl UhyveLandlockWrapper {
 			.create()?
 			.add_rules(
 				self.rw_paths
-					.as_slice()
 					.iter()
 					.map::<Result<_, RestrictError>, _>(|p| {
 						debug!("Adding read-write path ruleset for {:#?}", *p);
@@ -141,7 +140,6 @@ impl UhyveLandlockWrapper {
 			.set_compatibility(self.compat_level)
 			.add_rules(
 				self.ro_paths
-					.as_slice()
 					.iter()
 					.map::<Result<_, RestrictError>, _>(|p| {
 						debug!("Adding read-only path ruleset for {:#?}", *p);
@@ -149,15 +147,10 @@ impl UhyveLandlockWrapper {
 					}),
 			)?
 			.set_compatibility(self.compat_level)
-			.add_rules(
-				self.ro_dirs
-					.as_slice()
-					.iter()
-					.map::<Result<_, RestrictError>, _>(|p| {
-						debug!("Adding read-only directory ruleset for {:#?}", *p);
-						Ok(PathBeneath::new(PathFd::new(p)?, access_dir_with_rm))
-					}),
-			)?
+			.add_rules(self.ro_dirs.iter().map::<Result<_, RestrictError>, _>(|p| {
+				debug!("Adding read-only directory ruleset for {:#?}", *p);
+				Ok(PathBeneath::new(PathFd::new(p)?, access_dir_with_rm))
+			}))?
 			.set_compatibility(self.compat_level)
 			.no_new_privs(true)
 			.restrict_self()?;
