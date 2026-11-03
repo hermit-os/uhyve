@@ -13,3 +13,20 @@
 'feature/uhyve-interface':
   - changed-files:
     - any-glob-to-any-file: ['uhyve-interface/**']
+
+'arch/aarch64':
+  - changed-files:
+    - any-glob-to-any-file: ['src/arch/aarch64/**']
+'arch/x86-64':
+  - changed-files:
+    - any-glob-to-any-file: ['src/arch/x86-64/**']
+'arch/risc-v':
+  - changed-files:
+    - any-glob-to-any-file: ['src/arch/riscv/**']
+
+'platform/linux':
+  - changed-files:
+    - any-glob-to-any-file: ['src/linux/**']
+'platform/macOS':
+  - changed-files:
+    - any-glob-to-any-file: ['src/macos/**']
