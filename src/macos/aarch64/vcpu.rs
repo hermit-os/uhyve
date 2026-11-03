@@ -6,7 +6,7 @@ use uhyve_interface::{GuestPhysAddr, v1};
 use xhypervisor::{
 	self, Gic, MemPerm, Register, SystemRegister, VirtualCpuExitReason, create_vm,
 	ffi::{HV_SUCCESS, hv_vcpu_t, hv_vcpus_exit},
-	map_mem, protect_mem,
+	map_mem,
 };
 
 use crate::{
@@ -74,12 +74,6 @@ impl VirtualizationBackendInternal for XhyveVm {
 			unsafe { peripherals.mem.as_slice_mut() },
 			peripherals.mem.guest_addr().as_u64(),
 			MemPerm::ExecReadWrite,
-		)?;
-		// protect the first pages for hypercalls
-		protect_mem(
-			peripherals.mem.guest_addr().as_u64(),
-			Aarch64MemoryLayout::HYPERCALL_SIZE as usize,
-			MemPerm::None,
 		)?;
 
 		trace!("Create GIC...");
@@ -280,11 +274,7 @@ impl VirtualCPU for XhyveCpu {
 							let data_addr = GuestPhysAddr::new(vcpu.read_register(Register::X8)?);
 							// SAFETY: The guest is halted while its exception is handled.
 							let Some(hypercall) = (unsafe {
-								GuestHypercall::from_mmio(
-									&self.peripherals.mem,
-									addr - self.kernel_info.layout.guest_address().as_u64(),
-									data_addr,
-								)
+								GuestHypercall::from_mmio(&self.peripherals.mem, addr, data_addr)
 							}) else {
 								error!("Unable to handle exception {exception:?}");
 								self.print_registers();

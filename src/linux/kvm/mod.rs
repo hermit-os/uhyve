@@ -11,9 +11,10 @@ use nix::sys::pthread::pthread_self;
 use uhyve_interface::GuestPhysAddr;
 
 #[cfg(target_arch = "x86_64")]
-use crate::arch::x86_64::kvm::{self as arch, PortWrite};
+use crate::arch::kvm::PortWrite;
 use crate::{
 	HypervisorResult,
+	arch::kvm as arch,
 	gdb::{PthreadWrapper, resume::ResumeMode},
 	hypercall::{self, GuestHypercall, HypercallAction},
 	mem::MmapMemory,
@@ -79,6 +80,7 @@ fn unblock_all_signals_for_kvm(vcpu: &VcpuFd) -> nix::Result<()> {
 #[derive(Debug)]
 pub struct KvmVm {
 	vm_fd: VmFd,
+	arch: arch::VmState,
 	peripherals: Arc<VmPeripherals<<Self as VirtualizationBackendInternal>::VirtioNetImpl>>,
 }
 impl VirtualizationBackend for KvmVm {}
@@ -89,6 +91,7 @@ pub struct KvmCpu {
 	// TODO: Remove once the getenv/getargs hypercalls are removed
 	kernel_info: Arc<KernelInfo<<KvmVm as VirtualizationBackendInternal>::MemLayout>>,
 	peripherals: Arc<VmPeripherals<<KvmVm as VirtualizationBackendInternal>::VirtioNetImpl>>,
+	#[cfg(target_arch = "x86_64")]
 	pci_ports: arch::PciConfigPorts,
 	stats: Option<CpuStats>,
 }
@@ -111,6 +114,7 @@ impl VirtualizationBackendInternal for KvmVm {
 			vcpu,
 			peripherals: self.peripherals.clone(),
 			kernel_info,
+			#[cfg(target_arch = "x86_64")]
 			pci_ports: Default::default(),
 			stats: if enable_stats {
 				Some(CpuStats::new(id))
@@ -118,9 +122,13 @@ impl VirtualizationBackendInternal for KvmVm {
 				None
 			},
 		};
-		arch::init_vcpu(&kvcpu.vcpu, &kvcpu.kernel_info, id)?;
+		arch::init_vcpu(&self.arch, &kvcpu.vcpu, &kvcpu.kernel_info, id)?;
 
 		Ok(kvcpu)
+	}
+
+	fn vcpus_created_hook(&self) -> HypervisorResult<()> {
+		arch::vcpus_created(&self.arch)
 	}
 
 	fn new(
@@ -139,13 +147,17 @@ impl VirtualizationBackendInternal for KvmVm {
 		};
 		unsafe { vm_fd.set_user_memory_region(kvm_mem) }?;
 
-		arch::setup_vm(&vm_fd, mem, params)?;
+		let arch = arch::setup_vm(&vm_fd, mem, params)?;
 
 		if let Some(mut virtiodevice) = peripherals.virtio_device() {
 			virtiodevice.setup(&vm_fd);
 		}
 
-		Ok(Self { vm_fd, peripherals })
+		Ok(Self {
+			vm_fd,
+			arch,
+			peripherals,
+		})
 	}
 
 	fn init_guest_mem(
@@ -187,6 +199,32 @@ impl KvmCpu {
 			),
 		}
 	}
+
+	/// Handles a guest MMIO access of `len` bytes to `addr` that hit no device, so it has to be a hypercall.
+	///
+	/// Returns `Some` if the vCPU should stop.
+	fn handle_mmio_hypercall(
+		&mut self,
+		addr: u64,
+		len: usize,
+		access: &str,
+	) -> Option<HypervisorResult<VcpuStopReason>> {
+		let data_addr = arch::hypercall_data_addr(&self.vcpu);
+		// SAFETY: The guest is halted while its MMIO exit is handled.
+		let Some(hypercall) =
+			(unsafe { GuestHypercall::from_mmio(&self.peripherals.mem, addr, data_addr) })
+		else {
+			self.print_registers();
+			panic!(
+				"undefined mmio {access} of {len} bytes to {addr:#x?} (ConfigAddress {:x?})",
+				PciConfigurationAddress::from_guest_address(addr.into())
+			);
+		};
+		if let Some(s) = self.stats.as_mut() {
+			s.increment_val((&hypercall).into())
+		}
+		self.handle_hypercall(hypercall)
+	}
 }
 impl VirtualCPU for KvmCpu {
 	type KickHandle = KvmKickHandle;
@@ -204,6 +242,7 @@ impl VirtualCPU for KvmCpu {
 
 	fn r#continue(&mut self) -> HypervisorResult<VcpuStopReason> {
 		loop {
+			#[cfg(target_arch = "x86_64")]
 			self.vcpu.set_sync_valid_reg(kvm_ioctls::SyncReg::Register);
 			match self.vcpu.run() {
 				Ok(vcpu_stop_reason) => match vcpu_stop_reason {
@@ -217,6 +256,13 @@ impl VirtualCPU for KvmCpu {
 					}
 					VcpuExit::Shutdown => {
 						debug!("{:?}", VcpuExit::Shutdown);
+						if let Some(s) = self.stats.as_mut() {
+							s.increment_val(VmExit::Shutdown)
+						}
+						return Ok(VcpuStopReason::Exit(0));
+					}
+					VcpuExit::SystemEvent(KVM_SYSTEM_EVENT_SHUTDOWN, _) => {
+						debug!("{:?}", KVM_SYSTEM_EVENT_SHUTDOWN);
 						if let Some(s) = self.stats.as_mut() {
 							s.increment_val(VmExit::Shutdown)
 						}
@@ -268,12 +314,10 @@ impl VirtualCPU for KvmCpu {
 								.virtio
 								.handle_read(PciConfigurationAddress(addr as u32), data),
 							_ => {
-								let l = data.len();
-								self.print_registers();
-								panic!(
-									"undefined mmio read of {l} bytes to {addr:#x?} (ConfigAddress {:x?})",
-									PciConfigurationAddress::from_guest_address(addr.into())
-								);
+								let len = data.len();
+								if let Some(stop) = self.handle_mmio_hypercall(addr, len, "read") {
+									return stop;
+								}
 							}
 						}
 					}
@@ -289,9 +333,10 @@ impl VirtualCPU for KvmCpu {
 								.virtio
 								.handle_write(PciConfigurationAddress(addr as u32), data),
 							_ => {
-								let l = data.len();
-								self.print_registers();
-								panic!("undefined mmio write of {l} bytes to {addr:#x?}");
+								let len = data.len();
+								if let Some(stop) = self.handle_mmio_hypercall(addr, len, "write") {
+									return stop;
+								}
 							}
 						}
 					}
