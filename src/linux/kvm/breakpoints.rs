@@ -8,8 +8,8 @@ use uhyve_interface::GuestVirtAddr;
 
 use crate::{
 	arch::{
+		breakpoints::{HwBreakpoint, HwBreakpoints, write_sw_breakpoint},
 		virt_to_phys,
-		x86_64::breakpoints::{HwBreakpoint, HwBreakpoints},
 	},
 	gdb::GdbVcpuManager,
 	os::kvm::KvmVm,
@@ -29,8 +29,6 @@ pub struct SwBreakpoint {
 }
 
 impl SwBreakpoint {
-	const OPCODE: u8 = 0xcc;
-
 	pub fn new(addr: u64, kind: usize) -> Self {
 		Self { addr, kind }
 	}
@@ -85,7 +83,7 @@ impl target::ext::breakpoints::SwBreakpoint for GdbVcpuManager<KvmVm> {
 			}
 			.unwrap();
 			entry.insert(instructions.into());
-			instructions.fill(SwBreakpoint::OPCODE);
+			write_sw_breakpoint(instructions);
 			Ok(true)
 		} else {
 			Ok(false)

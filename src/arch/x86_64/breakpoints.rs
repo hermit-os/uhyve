@@ -9,6 +9,11 @@ use x86_64::{
 	},
 };
 
+/// Overwrites `instructions` with the software breakpoint instruction `int3`.
+pub fn write_sw_breakpoint(instructions: &mut [u8]) {
+	instructions.fill(0xcc);
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HwBreakpoint {
 	addr: VirtAddr,
