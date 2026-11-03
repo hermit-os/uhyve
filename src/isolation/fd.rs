@@ -7,7 +7,7 @@ use std::{
 };
 
 use nohash::NoHashHasher;
-use uhyve_interface::v2::parameters::FileType;
+use uhyve_interface::v3::parameters::FileType;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GuestFd(pub i32);
@@ -145,6 +145,7 @@ impl UhyveFileDescriptorLayer {
 		self.fds.get_mut(&fd.get())
 	}
 
+	#[expect(unused)]
 	pub fn get(&self, fd: GuestFd) -> Option<&FdData> {
 		self.fds.get(&fd.get())
 	}
