@@ -124,7 +124,7 @@ pub fn handle_mmio_read(_addr: u64) -> bool {
 ///
 /// This is only intended to be used while handling the hypercall's MMIO exit.
 pub fn hypercall_data_addr(vcpu: &VcpuFd) -> GuestPhysAddr {
-	GuestPhysAddr::new(regs::get_u64(vcpu, regs::x(8)).unwrap())
+	GuestPhysAddr::new(regs::x(8).get(vcpu).unwrap())
 }
 
 pub(crate) fn debug_info_to_stop_reason(
@@ -174,7 +174,7 @@ pub fn set_guest_debug(
 }
 
 pub fn get_root_pagetable(vcpu: &VcpuFd) -> GuestPhysAddr {
-	GuestPhysAddr::new(regs::get_u64(vcpu, regs::TTBR0_EL1).unwrap())
+	GuestPhysAddr::new(regs::TTBR0_EL1.get(vcpu).unwrap())
 }
 
 pub fn get_cpu_frequency(_vcpu: &VcpuFd) -> Option<NonZero<u32>> {
@@ -183,7 +183,7 @@ pub fn get_cpu_frequency(_vcpu: &VcpuFd) -> Option<NonZero<u32>> {
 }
 
 pub fn print_registers(vcpu: &VcpuFd, id: usize) {
-	let get = |id| regs::get_u64(vcpu, id).unwrap();
+	let get = |reg: regs::Reg<u64>| reg.get(vcpu).unwrap();
 
 	println!();
 	println!("Dump state of CPU {id}");
@@ -219,11 +219,11 @@ fn setup_registers(
 
 	/* pstate = all interrupts masked */
 	let pstate = PSR::D_BIT | PSR::A_BIT | PSR::I_BIT | PSR::F_BIT | PSR::MODE_EL1H;
-	regs::set_u64(vcpu, regs::PSTATE, pstate.bits())?;
-	regs::set_u64(vcpu, regs::PC, entry_point.as_u64())?;
-	regs::set_u64(vcpu, regs::SP_EL1, layout.stack().0.addr.as_u64())?;
-	regs::set_u64(vcpu, regs::x(0), layout.boot_info().0.addr.as_u64())?;
-	regs::set_u64(vcpu, regs::x(1), id as u64)?;
+	regs::PSTATE.set(vcpu, pstate.bits())?;
+	regs::PC.set(vcpu, entry_point.as_u64())?;
+	regs::SP_EL1.set(vcpu, layout.stack().0.addr.as_u64())?;
+	regs::x(0).set(vcpu, layout.boot_info().0.addr.as_u64())?;
+	regs::x(1).set(vcpu, id as u64)?;
 
 	/*
 	 * Setup memory attribute type tables
@@ -243,30 +243,30 @@ fn setup_registers(
 		| mair(0x0c, MT_DEVICE_GRE)
 		| mair(0x44, MT_NORMAL_NC)
 		| mair(0xff, MT_NORMAL);
-	regs::set_u64(vcpu, regs::MAIR_EL1, mair_el1)?;
+	regs::MAIR_EL1.set(vcpu, mair_el1)?;
 
 	/*
 	 * Setup translation control register (TCR)
 	 */
-	let aa64mmfr0_el1 = regs::get_u64(vcpu, regs::ID_AA64MMFR0_EL1)?;
+	let aa64mmfr0_el1 = regs::ID_AA64MMFR0_EL1.get(vcpu)?;
 	let tcr = ((aa64mmfr0_el1 & 0xF) << 32) | (tcr_size(VA_BITS) | TCR_TG1_4K | TCR_FLAGS);
 	let tcr_el1 = (tcr & 0xFFFFFFF0FFFFFFFFu64) | ((aa64mmfr0_el1 & 0xFu64) << 32);
-	regs::set_u64(vcpu, regs::TCR_EL1, tcr_el1)?;
+	regs::TCR_EL1.set(vcpu, tcr_el1)?;
 
 	/*
 	 * Enable FP/ASIMD in Architectural Feature Access Control Register,
 	 */
-	let cpacr_el1 = regs::get_u64(vcpu, regs::CPACR_EL1)? | (3 << 20);
-	regs::set_u64(vcpu, regs::CPACR_EL1, cpacr_el1)?;
+	let cpacr_el1 = regs::CPACR_EL1.get(vcpu)? | (3 << 20);
+	regs::CPACR_EL1.set(vcpu, cpacr_el1)?;
 
 	/*
 	 * Reset debug control register
 	 */
-	regs::set_u64(vcpu, regs::MDSCR_EL1, 0)?;
+	regs::MDSCR_EL1.set(vcpu, 0)?;
 
 	// Load TTBRx
-	regs::set_u64(vcpu, regs::TTBR1_EL1, 0)?;
-	regs::set_u64(vcpu, regs::TTBR0_EL1, layout.pgt_address().as_u64())?;
+	regs::TTBR1_EL1.set(vcpu, 0)?;
+	regs::TTBR0_EL1.set(vcpu, layout.pgt_address().as_u64())?;
 
 	/*
 	* Prepare system control register (SCTRL)
@@ -307,7 +307,7 @@ fn setup_registers(
 	 | (0 << 1)			/* A	Alignment fault checking disabled */
 	 | (1 << 0)			/* M	MMU enable */
 	;
-	regs::set_u64(vcpu, regs::SCTLR_EL1, sctrl_el1)?;
+	regs::SCTLR_EL1.set(vcpu, sctrl_el1)?;
 
 	Ok(())
 }
