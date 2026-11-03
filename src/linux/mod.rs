@@ -4,7 +4,6 @@ pub(crate) mod kvm;
 pub(crate) type DebugExitInfo = kvm_bindings::kvm_debug_exit_arch;
 pub(crate) type Breakpoints = kvm::breakpoints::AllBreakpoints;
 
-use gdbstub::{common::Tid, stub::MultiThreadStopReason};
 use libc::{SIGRTMAX, SIGRTMIN};
 use nix::sys::pthread::Pthread;
 
@@ -77,22 +76,5 @@ impl KickSignal {
 				}
 			}
 		}
-	}
-}
-
-pub(crate) fn debug_info_to_stop_reason(
-	debug: DebugExitInfo,
-	tid: Tid,
-	breakpoints: &Breakpoints,
-) -> MultiThreadStopReason<u64> {
-	use kvm_bindings::{BP_VECTOR, DB_VECTOR};
-	match debug.exception {
-		DB_VECTOR => {
-			use ::x86_64::registers::debug::Dr6Flags;
-			let dr6 = Dr6Flags::from_bits_truncate(debug.dr6);
-			breakpoints.hard.stop_reason(tid, dr6)
-		}
-		BP_VECTOR => MultiThreadStopReason::SwBreak(tid),
-		vector => unreachable!("unknown KVM exception vector: {}", vector),
 	}
 }

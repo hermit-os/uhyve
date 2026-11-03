@@ -7,6 +7,7 @@ use std::fmt::Display;
 
 use hermit_entry::{UhyveIfVersion, elf::KernelObject};
 use kvm::KVM_32BIT_GAP_START;
+pub(crate) use kvm::debug_info_to_stop_reason;
 pub(crate) use paging::BOOT_GDT_MAX;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 use x86_64::structures::paging::{
