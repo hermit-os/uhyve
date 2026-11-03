@@ -28,7 +28,7 @@ use gdbstub::{
 use nix::sys::pthread::{Pthread, pthread_self};
 
 #[cfg(not(target_os = "macos"))]
-use crate::HypervisorResult;
+use crate::{HypervisorResult, debug_info_to_stop_reason};
 use crate::{
 	gdb::resume::{ResumeMarker, ResumeMode},
 	os::Breakpoints,
@@ -261,7 +261,7 @@ impl<Vm: VirtualizationBackend> UhyveVm<Vm> {
 							VcpuStopReason::Debug(_debug) => todo!(),
 							#[cfg(not(target_os = "macos"))]
 							VcpuStopReason::Debug(debug) => (
-								crate::os::debug_info_to_stop_reason(
+								debug_info_to_stop_reason(
 									debug,
 									tid.try_into().unwrap(),
 									&(*breakpoints).read().unwrap(),

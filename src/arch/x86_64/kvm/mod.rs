@@ -1,5 +1,6 @@
 use std::{num::NonZero, ops::Add};
 
+use gdbstub::{common::Tid, stub::MultiThreadStopReason};
 use kvm_bindings::{kvm_regs, *};
 use kvm_ioctls::{VcpuFd, VmFd};
 use libc::EFD_NONBLOCK;
@@ -207,6 +208,22 @@ pub fn set_guest_debug(
 
 	vcpu.set_guest_debug(&debug_struct)
 		.map_err(HypervisorError::from)
+}
+
+pub(crate) fn debug_info_to_stop_reason(
+	debug: kvm_debug_exit_arch,
+	tid: Tid,
+	breakpoints: &AllBreakpoints,
+) -> MultiThreadStopReason<u64> {
+	match debug.exception {
+		DB_VECTOR => {
+			use ::x86_64::registers::debug::Dr6Flags;
+			let dr6 = Dr6Flags::from_bits_truncate(debug.dr6);
+			breakpoints.hard.stop_reason(tid, dr6)
+		}
+		BP_VECTOR => MultiThreadStopReason::SwBreak(tid),
+		vector => unreachable!("unknown KVM exception vector: {}", vector),
+	}
 }
 
 pub fn get_root_pagetable(vcpu: &VcpuFd) -> GuestPhysAddr {
