@@ -35,7 +35,6 @@ impl<'a> GuestHypercall<'a> {
 	/// # Safety
 	///
 	/// See [`hypercall::address_to_hypercall_v2`].
-	#[cfg_attr(target_arch = "x86_64", expect(dead_code))]
 	pub(crate) unsafe fn from_mmio(
 		mem: &'a MmapMemory,
 		addr: u64,

@@ -1,8 +1,15 @@
+#[cfg_attr(target_os = "macos", expect(dead_code))]
+pub(crate) mod breakpoints;
+#[cfg(target_os = "linux")]
+pub(crate) mod kvm;
+
 use std::{fmt::Display, mem::size_of};
 
 use align_address::Align;
 use bitflags::bitflags;
 use hermit_entry::{UhyveIfVersion, elf::KernelObject};
+#[cfg(target_os = "linux")]
+pub(crate) use kvm::debug_info_to_stop_reason;
 use uhyve_interface::{GuestPhysAddr, GuestVirtAddr};
 
 use crate::{
@@ -23,9 +30,12 @@ pub(crate) const V2_ADDR_RANGE: (u64, u64) = (0x0001_0000_0000u64, 0x0010_0000_0
 const SIZE_4KIB: u64 = 0x1000;
 pub(crate) const GUEST_PAGE_SIZE: u64 = SIZE_4KIB;
 
+/// Pages of the identity mapped MMIO window through which hypercalls are issued.
+pub(crate) const HYPERCALL_WINDOW_PAGES: usize = 2;
+
 // PageTableEntry Flags
 /// Present + 4KiB + device memory + inner_sharable + accessed
-pub const _PT_DEVICE: u64 = 0b11100000111;
+pub const PT_DEVICE: u64 = 0b11100000111;
 /// Present + 4KiB + normal + inner_sharable + accessed
 pub const PT_PT: u64 = 0b11100010011;
 /// Present + 4KiB + normal + inner_sharable + accessed
@@ -120,6 +130,16 @@ impl PageTableEntry {
 			self.physical_address_and_flags.as_u64() & !(PAGE_SIZE as u64 - 1) & !(u64::MAX << 48),
 		)
 	}
+
+	/// Whether the descriptor's valid bit is set.
+	pub fn is_valid(&self) -> bool {
+		self.physical_address_and_flags.as_u64() & 1 != 0
+	}
+
+	/// Whether this is a block descriptor (only meaningful on levels 1 and 2).
+	pub fn is_block(&self) -> bool {
+		self.physical_address_and_flags.as_u64() & 0b11 == 0b01
+	}
 }
 impl From<u64> for PageTableEntry {
 	fn from(i: u64) -> Self {
@@ -163,19 +183,31 @@ pub(crate) fn virt_to_phys(
 	};
 	// TODO: Depending on the virtual address length and granule (defined in TCR register by TG and TxSZ), we could reduce the number of pagetable walks. Hermit doesn't do this at the moment.
 	for level in 0..3 {
-		let table_index = ((addr.as_u64() >> PAGE_BITS >> ((3 - level) * PAGE_MAP_BITS))
-			& PAGE_MAP_MASK) as usize;
+		let shift = PAGE_BITS + (3 - level) * PAGE_MAP_BITS;
+		let table_index = ((addr.as_u64() >> shift) & PAGE_MAP_MASK) as usize;
 		let pte = pagetable[table_index];
-		// TODO: We could stop here if we have a "Block Entry" (ARM equivalent to huge page). Currently not supported.
+		if !pte.is_valid() {
+			return Err(PagetableError::InvalidAddress);
+		}
+		if level > 0 && pte.is_block() {
+			let offset_mask = (1u64 << shift) - 1;
+			return Ok(GuestPhysAddr::new(
+				(pte.address().as_u64() & !offset_mask) | (addr.as_u64() & offset_mask),
+			));
+		}
 
 		pagetable = unsafe {
 			std::mem::transmute::<&[u8], &[PageTableEntry]>(
-				mem.slice_at(pte.address(), PAGE_SIZE).unwrap(),
+				mem.slice_at(pte.address(), PAGE_SIZE)
+					.map_err(|_| PagetableError::InvalidAddress)?,
 			)
 		};
 	}
 	let table_index = ((addr.as_u64() >> PAGE_BITS) & PAGE_MAP_MASK) as usize;
 	let pte = pagetable[table_index];
+	if !pte.is_valid() {
+		return Err(PagetableError::InvalidAddress);
+	}
 
 	Ok(pte.address() + (addr.as_u64() & !((!0u64) << PAGE_BITS)))
 }
@@ -210,13 +242,10 @@ pub(crate) fn init_guest_mem(mem: &mut MmapMemory, layout: &Aarch64MemoryLayout,
 
 	let pmd0_slice = unsafe { mem.get_ref_mut::<[u64; 512]>(pmd0_addr.into()).unwrap() };
 	pmd0_slice.fill(0);
-	// Hypercall/IO mapping
-	for (i, entry) in pmd0_slice
-		.iter_mut()
-		.take((Aarch64MemoryLayout::HYPERCALL_SIZE / SIZE_4KIB) as usize)
-		.enumerate()
-	{
-		*entry = (layout.guest_address() + i as u64 * SIZE_4KIB) | PT_MEM_CD;
+
+	// Hypercall/IO mapping: identity mapped below `RAM_START` as device memory.
+	for (page, entry) in pmd0_slice[..HYPERCALL_WINDOW_PAGES].iter_mut().enumerate() {
+		*entry = (page as u64 * SIZE_4KIB) | PT_DEVICE;
 	}
 
 	for frame_addr in (layout.guest_address().align_down(SIZE_4KIB).as_u64()

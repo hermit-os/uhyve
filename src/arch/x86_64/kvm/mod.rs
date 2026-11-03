@@ -46,8 +46,12 @@ pub(super) const KVM_32BIT_GAP_START: usize = KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT
 
 pub type MemLayout = X86_64MemoryLayout;
 
+/// Architecture specific state of a VM.
+#[derive(Debug)]
+pub struct VmState;
+
 /// Sets up the interrupt controller, capabilities, etc. The guest memory is already registered.
-pub fn setup_vm(vm: &VmFd, mem: &MmapMemory, params: &Params) -> HypervisorResult<()> {
+pub fn setup_vm(vm: &VmFd, mem: &MmapMemory, params: &Params) -> HypervisorResult<VmState> {
 	// Double-check that neither the (first) guest address nor the end of the guest memory
 	// overlap with the gap that we reserved between 3GiB and 4GiB.
 	let guest_phys_addr = mem.guest_addr();
@@ -118,6 +122,11 @@ pub fn setup_vm(vm: &VmFd, mem: &MmapMemory, params: &Params) -> HypervisorResul
 		}
 	}
 
+	Ok(VmState)
+}
+
+/// Finishes the VM setup once all vCPUs have been created.
+pub fn vcpus_created(_state: &VmState) -> HypervisorResult<()> {
 	Ok(())
 }
 
@@ -132,6 +141,7 @@ pub fn init_guest_mem(
 
 /// Sets the initial register state of the vCPU `id`.
 pub fn init_vcpu(
+	_state: &VmState,
 	vcpu: &VcpuFd,
 	kernel_info: &KernelInfo<MemLayout>,
 	id: usize,
