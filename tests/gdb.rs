@@ -45,6 +45,11 @@ fn gdb() -> io::Result<()> {
 	let command_path = temp.path().join("commands");
 	let mut command_file = File::create(&command_path)?;
 
+	#[cfg(target_arch = "x86_64")]
+	let (src_reg, dst_reg) = ("rcx", "rax");
+	#[cfg(target_arch = "aarch64")]
+	let (src_reg, dst_reg) = ("x1", "x0");
+
 	write!(
 		&mut command_file,
 		"target remote :{port}
@@ -67,9 +72,9 @@ hbreak gdb::main::break1
 continue
 
 next
-set $rcx = 5
+set ${src_reg} = 5
 next
-pipe print $rax|cat >> {output_path}
+pipe print ${dst_reg}|cat >> {output_path}
 pipe print _x|cat >> {output_path}
 
 next

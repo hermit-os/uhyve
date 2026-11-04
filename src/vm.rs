@@ -80,6 +80,11 @@ pub(crate) trait VirtualizationBackendInternal: Sized {
 		enable_stats: bool,
 	) -> HypervisorResult<Self::VCPU>;
 
+	/// Finishes the VM setup once all vCPUs have been created by [`Self::new_cpu`].
+	fn vcpus_created_hook(&self) -> HypervisorResult<()> {
+		Ok(())
+	}
+
 	fn new(
 		peripherals: Arc<VmPeripherals<Self::VirtioNetImpl>>,
 		params: &Params,
@@ -504,13 +509,15 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 		kernel_info: &Arc<KernelInfo<VirtBackend::MemLayout>>,
 		cpu_count: CpuCount,
 	) -> Vec<<VirtBackend as VirtualizationBackendInternal>::VCPU> {
-		(0..cpu_count.get() as usize)
+		let vcpus = (0..cpu_count.get() as usize)
 			.map(|cpu_id| {
 				virt_backend
 					.new_cpu(cpu_id, kernel_info.clone(), kernel_info.params.stats)
 					.unwrap()
 			})
-			.collect()
+			.collect();
+		virt_backend.vcpus_created_hook().unwrap();
+		vcpus
 	}
 
 	#[cfg(target_os = "linux")]

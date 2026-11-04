@@ -92,6 +92,25 @@ pub(super) fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &
 	};
 }
 
+/// Converts Hermit open flags (restricted to [`ALLOWED_OPEN_FLAGS`]) to the host's `libc` values.
+fn guest_to_host_open_flags(flags: i32) -> i32 {
+	let mut host_flags = 0;
+	for (guest, host) in [
+		(O_WRONLY, libc::O_WRONLY),
+		(O_RDWR, libc::O_RDWR),
+		(O_CREAT, libc::O_CREAT),
+		(O_EXCL, libc::O_EXCL),
+		(O_TRUNC, libc::O_TRUNC),
+		(O_APPEND, libc::O_APPEND),
+		(O_DIRECTORY, libc::O_DIRECTORY),
+	] {
+		if flags & guest != 0 {
+			host_flags |= host;
+		}
+	}
+	host_flags
+}
+
 /// Handles an open syscall by opening a file on the host.
 pub(super) fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
 	let guest_path = if let Some(guest_path) = unsafe { decode_guest_path(mem, sysopen.name) } {
@@ -101,7 +120,7 @@ pub(super) fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut Uh
 		sysopen.ret = -EINVAL;
 		return;
 	};
-	let mut flags = sysopen.flags & ALLOWED_OPEN_FLAGS;
+	let flags = sysopen.flags & ALLOWED_OPEN_FLAGS;
 	// See: https://lwn.net/Articles/926782/
 	// See: https://github.com/hermit-os/kernel/commit/71bc629
 	if (flags & (O_DIRECTORY | O_CREAT)) == (O_DIRECTORY | O_CREAT) {
@@ -139,7 +158,12 @@ pub(super) fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut Uh
 				// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 				// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 				let host_path_c_string = CString::new(host_path.as_os_str().as_bytes()).unwrap();
-				do_open(&mut file_map.fdmap, host_path_c_string, flags, sysopen.mode)
+				do_open(
+					&mut file_map.fdmap,
+					host_path_c_string,
+					guest_to_host_open_flags(flags),
+					sysopen.mode,
+				)
 			}
 			NodeStatRef::VirtualFile(data) => {
 				if let Some(guest_fd) = file_map.fdmap.insert(FdData::Virtual {
@@ -175,16 +199,20 @@ pub(super) fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut Uh
 			// Existing files that already exist should be in the file map, not here.
 			// If a supposed attacker can predict where we open a file and its filename,
 			// this contigency, together with O_CREAT, will cause the write to fail.
-			flags |= O_EXCL;
+			#[allow(unused_mut)]
+			let mut host_flags = guest_to_host_open_flags(flags | O_EXCL);
 			#[cfg(target_os = "linux")]
 			{
-				flags |= file_map.get_io_mode_flags();
+				host_flags |= file_map.get_io_mode_flags();
 			}
 
 			match file_map.create_temporary_file(guest_path) {
-				Some(host_path_c_string) => {
-					do_open(&mut file_map.fdmap, host_path_c_string, flags, sysopen.mode)
-				}
+				Some(host_path_c_string) => do_open(
+					&mut file_map.fdmap,
+					host_path_c_string,
+					host_flags,
+					sysopen.mode,
+				),
 				None => {
 					debug!("Returning -EINVAL for {guest_path:#?}");
 					-EINVAL
