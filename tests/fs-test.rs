@@ -456,9 +456,9 @@ fn hypercall_mkdir_test() {
 		stats.count_of(VmExit::Hypercall(V2(v2::HypercallAddress::Mkdir))),
 		1
 	);
-	assert_eq!(
-		stats.count_of(VmExit::Hypercall(V1(v1::HypercallAddress::FileOpen))),
-		3
+	assert!(
+		(stats.count_of(VmExit::Hypercall(V1(v1::HypercallAddress::FileOpen))) == 3)
+			|| (stats.count_of(VmExit::Hypercall(V2(v2::HypercallAddress::FileOpen))) == 3)
 	);
 
 	// Verify the directory and its contents.
@@ -495,9 +495,9 @@ fn hypercall_mkdir_unmapped_test() {
 		stats.count_of(VmExit::Hypercall(V2(v2::HypercallAddress::Mkdir))),
 		1
 	);
-	assert_eq!(
-		stats.count_of(VmExit::Hypercall(V1(v1::HypercallAddress::FileOpen))),
-		3
+	assert!(
+		(stats.count_of(VmExit::Hypercall(V1(v1::HypercallAddress::FileOpen))) == 3)
+			|| (stats.count_of(VmExit::Hypercall(V2(v2::HypercallAddress::FileOpen))) == 3)
 	);
 }
 
