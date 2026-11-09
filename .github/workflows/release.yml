@@ -9,24 +9,45 @@ env:
   GH_TOKEN: ${{ github.token }}
 
 jobs:
-  release:
+  create-release:
     name: Create new release
     runs-on: ubuntu-latest
-    env:
-      TARGETS: x86_64-unknown-linux-gnu x86_64-unknown-linux-musl
     steps:
       - uses: actions/checkout@v7
       # Adapted from: https://github.com/mkroening/edu-sync/blob/main/.github/workflows/release.yml
       - run: gh release create ${{ github.ref }} --draft --title "Uhyve ${{ github.ref_name }}"
+
+  upload-artifacts:
+    name: Upload artifacts (${{ matrix.os }})
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            targets: x86_64-unknown-linux-gnu x86_64-unknown-linux-musl
+          - os: ubuntu-24.04-arm
+            targets: aarch64-unknown-linux-gnu aarch64-unknown-linux-musl
+          - os: macos-latest
+            targets: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    env:
+      TARGETS: ${{ matrix.targets }}
+    steps:
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ env.TARGETS }}
       - name: Install musl-tools
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Create archive
         run: |
           for target in $TARGETS; do
             cargo build --profile dist --locked --target $target
+
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              codesign -s - --entitlements app.entitlements --force target/$target/dist/uhyve
+            fi
 
             file=uhyve-$target.tar.gz
             tar czf $file -C target/$target/dist uhyve -C $GITHUB_WORKSPACE README.md LICENSE-APACHE LICENSE-MIT
