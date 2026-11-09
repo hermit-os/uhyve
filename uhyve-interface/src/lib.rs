@@ -45,13 +45,15 @@ macro_rules! into_hypercall_addresses {
 	}
 }
 
-/// Common parameters for versions 1 and 2 of the Hypercall Interface
+/// Common parameters for all versions of the Hypercall Interface
 mod parameters;
 
 /// Version 1 of the Hypercall Interface
 pub mod v1;
 /// Version 2 of the Hypercall Interface
 pub mod v2;
+/// Version 3 of the Hypercall Interface
+pub mod v3;
 
 pub use memory_addresses::{PhysAddr as GuestPhysAddr, VirtAddr as GuestVirtAddr};
 
