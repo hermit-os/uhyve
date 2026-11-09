@@ -2,7 +2,7 @@
 //!
 //! The Uhyve hypercall interface works as follows:
 //!
-//! - The guest writes (or reads) to the respective [`HypercallAddress`](v2::HypercallAddress). The 64-bit value written to that location is the guest's physical memory address of the hypercall's parameter.
+//! - The guest writes (or reads) to the respective [`HypercallAddress`]. The 64-bit value written to that location is the guest's physical memory address of the hypercall's parameter.
 //! - The hypervisor handles the hypercall. Depending on the Hypercall, the hypervisor might change the parameters struct in the guest's memory.
 
 pub mod parameters;
