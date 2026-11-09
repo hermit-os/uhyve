@@ -197,6 +197,12 @@ impl KvmCpu {
 				|| Ok(self.get_root_pagetable()),
 				hypercall,
 			),
+			GuestHypercall::V3(hypercall) => {
+				match hypercall::handle_hypercall_v3(&self.peripherals, hypercall) {
+					HypercallAction::Stop(stop) => Some(Ok(stop)),
+					HypercallAction::None => None,
+				}
+			}
 		}
 	}
 

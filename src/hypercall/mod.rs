@@ -1,6 +1,6 @@
 use std::io;
 
-use uhyve_interface::{GuestPhysAddr, v1, v2};
+use uhyve_interface::{GuestPhysAddr, v1, v2, v3};
 
 use crate::{
 	HypervisorResult,
@@ -27,6 +27,7 @@ use getdents::getdents;
 pub(crate) enum GuestHypercall<'a> {
 	V1(v1::Hypercall<'a>),
 	V2(v2::Hypercall<'a>),
+	V3(v3::Hypercall<'a>),
 }
 
 impl<'a> GuestHypercall<'a> {
@@ -40,6 +41,9 @@ impl<'a> GuestHypercall<'a> {
 		addr: u64,
 		data_addr: GuestPhysAddr,
 	) -> Option<Self> {
+		if let Some(hypercall) = unsafe { address_to_hypercall_v3(mem, addr, data_addr) } {
+			return Some(Self::V3(hypercall));
+		}
 		if let Some(hypercall) = unsafe { address_to_hypercall_v2(mem, addr, data_addr) } {
 			return Some(Self::V2(hypercall));
 		}
@@ -53,6 +57,7 @@ impl From<&GuestHypercall<'_>> for VmExit {
 		match hypercall {
 			GuestHypercall::V1(hypercall) => hypercall.into(),
 			GuestHypercall::V2(hypercall) => hypercall.into(),
+			GuestHypercall::V3(hypercall) => hypercall.into(),
 		}
 	}
 }
@@ -138,6 +143,42 @@ pub unsafe fn address_to_hypercall_v2(
 	})
 }
 
+/// `addr` is the address of the hypercall parameter in the guest's memory space. `data` is the
+/// parameter that was sent to that address by the guest.
+///
+/// # Safety
+///
+/// - The return value is only valid, as long as the guest is halted.
+/// - This fn must not be called multiple times on the same data, to avoid creating mutable aliasing.
+pub unsafe fn address_to_hypercall_v3(
+	mem: &MmapMemory,
+	addr: u64,
+	data: GuestPhysAddr,
+) -> Option<v3::Hypercall<'_>> {
+	use v3::{Hypercall, HypercallAddress};
+	// See `address_to_hypercall_v1` for why this is a macro.
+	macro_rules! get_data {
+		() => {{ unsafe { mem.get_ref_mut(data).unwrap() } }};
+	}
+
+	Some(match HypercallAddress::try_from(addr).ok()? {
+		HypercallAddress::FileClose => Hypercall::FileClose(get_data!()),
+		HypercallAddress::FileLseek => Hypercall::FileLseek(get_data!()),
+		HypercallAddress::FileOpen => Hypercall::FileOpen(get_data!()),
+		HypercallAddress::FileRead => Hypercall::FileRead(get_data!()),
+		HypercallAddress::FileWrite => Hypercall::FileWrite(get_data!()),
+		HypercallAddress::FileUnlink => Hypercall::FileUnlink(get_data!()),
+		HypercallAddress::Exit => Hypercall::Exit(data.as_u64() as i32),
+		HypercallAddress::SerialReadBuffer => Hypercall::SerialReadBuffer(get_data!()),
+		HypercallAddress::SerialWriteBuffer => Hypercall::SerialWriteBuffer(get_data!()),
+		HypercallAddress::SerialWriteByte => Hypercall::SerialWriteByte(data.as_u64() as u8),
+		HypercallAddress::Getdents => Hypercall::Getdents(get_data!()),
+		HypercallAddress::FileStat => Hypercall::FileStat(get_data!()),
+		HypercallAddress::Mkdir => Hypercall::Mkdir(get_data!()),
+		_ => return None,
+	})
+}
+
 pub(crate) enum HypercallAction {
 	None,
 	Stop(VcpuStopReason),
@@ -203,6 +244,16 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 	}
 
 	HypercallAction::None
+}
+
+/// Given the `peripherals` of the vCPUs, handles an [`v3::Hypercall`], usually performing I/O.
+pub fn handle_hypercall_v3<N: NetworkBackend>(
+	_peripherals: &VmPeripherals<N>,
+	hypercall: v3::Hypercall<'_>,
+) -> HypercallAction {
+	#[cfg(debug_assertions)]
+	trace!("hypercall v3: {:?}", hypercall);
+	unimplemented!("hypercall {hypercall:?}");
 }
 
 /// Given the `peripherals` of the vCPUs, handles an [`v1::Hypercall`], usually performing I/O.

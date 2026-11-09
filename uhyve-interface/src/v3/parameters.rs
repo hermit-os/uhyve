@@ -7,7 +7,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 /// Re-export of all unchanged parameters and flags from v1.
 pub use crate::parameters::*;
-pub use crate::v2::parameters::{SerialReadBufferParams, SerialWriteBufferParams};
+pub use crate::v2::parameters::SerialWriteBufferParams;
 use crate::{
 	GuestPhysAddr,
 	v3::util::{AbiResult, Errno, NotRepresentable, RawResult},
@@ -100,6 +100,16 @@ pub struct ReadParams {
 	pub buf: MutSizedGuestBuffer,
 	/// File descriptor of the file.
 	pub fd: i32,
+}
+
+/// Parameters for a [`SerialReadBuffer`](crate::v3::Hypercall::SerialReadBuffer) hypercall.
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct SerialReadBufferParams {
+	/// Number of bytes read on success or errno.
+	pub ret: RawResult<Result<u64, Errno>>,
+	/// Buffer to read the serial input into.
+	pub buf: SizedGuestBuffer,
 }
 
 /// Target position of a [`FileLseek`](crate::v3::Hypercall::FileLseek) hypercall.

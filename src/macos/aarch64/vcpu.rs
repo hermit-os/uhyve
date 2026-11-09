@@ -318,6 +318,16 @@ impl VirtualCPU for XhyveCpu {
 									// increase the pc to the instruction after the exception to continue execution
 									vcpu.write_register(Register::PC, pc + 4)?;
 								}
+								GuestHypercall::V3(hypercall) => {
+									match hypercall::handle_hypercall_v3(
+										&self.peripherals,
+										hypercall,
+									) {
+										HypercallAction::Stop(stop) => return Ok(stop),
+										HypercallAction::None => {}
+									}
+									vcpu.write_register(Register::PC, pc + 4)?;
+								}
 							}
 						} else {
 							error!("Unsupported exception class: 0x{ec:x}");
