@@ -238,6 +238,9 @@ pub fn handle_hypercall_v3<N: NetworkBackend>(
 	trace!("hypercall v3: {:?}", hypercall);
 	let file_mapping = || peripherals.file_mapping.lock().unwrap();
 	match hypercall {
+		v3::Hypercall::Exit(sysexit) => {
+			return HypercallAction::Stop(VcpuStopReason::Exit(sysexit));
+		}
 		v3::Hypercall::FileClose(sysclose) => close_v3(sysclose, &mut file_mapping()),
 		v3::Hypercall::FileOpen(sysopen) => open_v3(&peripherals.mem, sysopen, &mut file_mapping()),
 		v3::Hypercall::FileUnlink(sysunlink) => {
