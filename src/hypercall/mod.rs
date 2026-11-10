@@ -219,27 +219,9 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 		v2::Hypercall::FileStat(sysstat) => stat_v2(&peripherals.mem, sysstat, &file_mapping()),
 		v2::Hypercall::FileFstat(sysfstat) => fstat_v2(&peripherals.mem, sysfstat, &file_mapping()),
 		v2::Hypercall::Mkdir(sysmkdir) => mkdir_v2(&peripherals.mem, sysmkdir, &mut file_mapping()),
-		v2::Hypercall::SerialWriteByte(buf) => peripherals
-			.serial
-			.output(&[buf])
-			.unwrap_or_else(|e| error!("{e:?}")),
+		v2::Hypercall::SerialWriteByte(buf) => serial_write_byte(peripherals, buf),
 		v2::Hypercall::SerialWriteBuffer(sysserialwrite) => {
-			// SAFETY: as this buffer is only read and not used afterwards, we don't create multiple aliasing
-			let buf = unsafe {
-				peripherals
-					.mem
-					.slice_at(sysserialwrite.buf, sysserialwrite.len as usize)
-					.unwrap_or_else(|e| {
-						panic!(
-							"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
-						)
-					})
-			};
-
-			peripherals
-				.serial
-				.output(buf)
-				.unwrap_or_else(|e| error!("{e:?}"))
+			serial_write_buffer(peripherals, sysserialwrite)
 		}
 		_ => panic!("Got unknown hypercall {hypercall:?}"),
 	}
@@ -267,6 +249,10 @@ pub fn handle_hypercall_v3<N: NetworkBackend>(
 		}
 		v3::Hypercall::FileStat(sysstat) => stat_v3(&peripherals.mem, sysstat, &file_mapping()),
 		v3::Hypercall::Mkdir(sysmkdir) => mkdir_v3(&peripherals.mem, sysmkdir, &mut file_mapping()),
+		v3::Hypercall::SerialWriteByte(byte) => serial_write_byte(peripherals, byte),
+		v3::Hypercall::SerialWriteBuffer(sysserialwrite) => {
+			serial_write_buffer(peripherals, sysserialwrite)
+		}
 		_ => unimplemented!("hypercall {hypercall:?}"),
 	}
 	HypercallAction::None
@@ -355,6 +341,41 @@ pub fn handle_hypercall_v1<N: NetworkBackend, L: MemoryLayout>(
 	}
 
 	None
+}
+
+/// Writes a single byte to the serial output
+fn serial_write_byte<N: NetworkBackend>(peripherals: &VmPeripherals<N>, byte: u8) {
+	peripherals
+		.serial
+		.output(&[byte])
+		.unwrap_or_else(|e| error!("{e:?}"))
+}
+
+/// Writes a guest provided buffer to the serial output
+///
+/// # Panics
+///
+/// If the buffer described by `sysserialwrite` is not within guest memory.
+fn serial_write_buffer<N: NetworkBackend>(
+	peripherals: &VmPeripherals<N>,
+	sysserialwrite: &v2::parameters::SerialWriteBufferParams,
+) {
+	// SAFETY: as this buffer is only read and not used afterwards, we don't create multiple aliasing
+	let buf = unsafe {
+		peripherals
+			.mem
+			.slice_at(sysserialwrite.buf, sysserialwrite.len as usize)
+			.unwrap_or_else(|e| {
+				panic!(
+					"Error {e}: Systemcall parameters for SerialWriteBuffer are invalid: {sysserialwrite:?}"
+				)
+			})
+	};
+
+	peripherals
+		.serial
+		.output(buf)
+		.unwrap_or_else(|e| error!("{e:?}"))
 }
 
 /// Translates the last error in `errno` to a value suitable to return from the hypercall.
