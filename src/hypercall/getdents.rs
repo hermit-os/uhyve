@@ -1,14 +1,18 @@
 use core::{
 	mem::{align_of, offset_of},
+	num::NonZero,
 	ptr,
 };
 use std::collections::BTreeMap;
 
 use align_address::Align;
-use uhyve_interface::v2::parameters::*;
+use uhyve_interface::{
+	GuestPhysAddr, v2,
+	v3::{parameters::*, util::RawResult},
+};
 
 use crate::{
-	hypercall::translate_last_errno,
+	hypercall::{translate_last_errno, v3_errno},
 	isolation::{
 		fd::{FdData, GuestFd},
 		filemap::UhyveFileMap,
@@ -24,57 +28,47 @@ fn dirent_reclen(name_len: usize) -> usize {
 
 /// # Safety
 ///
-/// This wraps [`mem::slice_at_mut`]. Refer to the documentation of [`mem::slice_at_mut`] for more information.
+/// This wraps [`MmapMemory::slice_at_mut`]. Refer to its documentation for more information.
 #[expect(clippy::mut_from_ref)]
-unsafe fn getdents_guest_buffer<'a>(
-	mem: &'a MmapMemory,
-	sysgetdents: &GetdentParams,
-) -> Result<&'a mut [u8], GetdentResult> {
-	unsafe { mem.slice_at_mut(sysgetdents.buf, sysgetdents.len as usize) }.map_err(|_| {
+unsafe fn getdents_guest_buffer(
+	mem: &MmapMemory,
+	buf: GuestPhysAddr,
+	len: u64,
+) -> Result<&mut [u8], i32> {
+	unsafe { mem.slice_at_mut(buf, len as usize) }.map_err(|_| {
 		warn!("Unable to get host address for getdents buffer");
-		GetdentResult::Error(EFAULT)
+		EFAULT
 	})
-}
-
-fn getdents_errno() -> GetdentResult {
-	GetdentResult::Error(translate_last_errno().unwrap_or(EIO))
 }
 
 /// Reads directory entries from a mapped (non-host) directory into the guest buffer.
 fn getdents_mapped(
 	mem: &MmapMemory,
-	sysgetdents: &mut GetdentParams,
+	buf: GuestPhysAddr,
+	len: u64,
 	entries: &BTreeMap<Box<str>, FileType>,
 	offset: &mut u64,
-) {
+) -> Result<u64, i32> {
 	let mut skip = *offset as usize;
 	let mut iter = entries.iter();
 
 	// Advance past already-read bytes.
 	let first = loop {
 		let Some(entry) = iter.next() else {
-			sysgetdents.ret = GetdentResult::EndOfDirectory;
-			return;
+			return Ok(0);
 		};
 		let reclen = dirent_reclen(entry.0.len());
 		if skip >= reclen {
 			skip -= reclen;
 		} else if skip > 0 {
-			sysgetdents.ret = GetdentResult::Error(EINVAL);
-			return;
+			return Err(EINVAL);
 		} else {
 			break entry;
 		}
 	};
 
 	// SAFETY: if the guest provides proper parameters, we don't have multiple aliasing. If not, the guest breaks, but Uhyve is fine.
-	let buf = match unsafe { getdents_guest_buffer(mem, sysgetdents) } {
-		Ok(buf) => buf,
-		Err(ret) => {
-			sysgetdents.ret = ret;
-			return;
-		}
-	};
+	let buf = unsafe { getdents_guest_buffer(mem, buf, len) }?;
 
 	let mut buf_offset = 0usize;
 	for (name, file_type) in std::iter::once(first).chain(&mut iter) {
@@ -103,55 +97,91 @@ fn getdents_mapped(
 		buf_offset = next_dirent;
 	}
 
-	sysgetdents.ret = if buf_offset == 0 {
-		GetdentResult::Error(EINVAL)
+	if buf_offset == 0 {
+		Err(EINVAL)
 	} else {
 		*offset += buf_offset as u64;
-		GetdentResult::Success(buf_offset as u64)
+		Ok(buf_offset as u64)
+	}
+}
+
+/// Reads the directory entries of the guest file descriptor `gfd` into the guest buffer at `buf`
+/// of `len` bytes, similar to `getdents64(2)`.
+///
+/// Returns the number of bytes written, `0` at the end of the directory, or the guest errno on
+/// failure.
+fn getdents(
+	mem: &MmapMemory,
+	gfd: GuestFd,
+	buf: GuestPhysAddr,
+	len: u64,
+	file_map: &mut UhyveFileMap,
+) -> Result<u64, i32> {
+	match file_map.fdmap.get_mut(gfd) {
+		Some(FdData::Raw(host_fd)) => {
+			// SAFETY: if the guest provides proper parameters, we don't have multiple aliasing. If not, the guest breaks, but Uhyve is fine.
+			let buf = unsafe { getdents_guest_buffer(mem, buf, len) }?;
+
+			let bytes_read = unsafe { raw_getdents(*host_fd, buf) };
+			if bytes_read < 0 {
+				Err(translate_last_errno().unwrap_or(EIO))
+			} else {
+				Ok(bytes_read as u64)
+			}
+		}
+		Some(FdData::MappedDirectory { entries, offset }) => {
+			getdents_mapped(mem, buf, len, entries, offset)
+		}
+		_ => {
+			warn!(
+				"getdents on invalid fd {gfd} (buf={:#x}, len={len}): {:?}",
+				buf.as_u64(),
+				file_map.fdmap,
+			);
+			Err(EBADF)
+		}
+	}
+}
+
+/// Handler for a v2 [`Getdents`](v2::Hypercall::Getdents) hypercall.
+pub(crate) fn getdents_v2(
+	mem: &MmapMemory,
+	sysgetdents: &mut v2::parameters::GetdentParams,
+	file_map: &mut UhyveFileMap,
+) {
+	use v2::parameters::GetdentResult;
+	let result = getdents(
+		mem,
+		GuestFd(sysgetdents.fd),
+		sysgetdents.buf,
+		sysgetdents.len,
+		file_map,
+	);
+	sysgetdents.ret = match result {
+		Ok(0) => GetdentResult::EndOfDirectory,
+		Ok(bytes) => GetdentResult::Success(bytes),
+		Err(errno) => GetdentResult::Error(errno),
 	};
 }
 
-/// Handles a getdents hypercall by proxying `getdents64(2)` on the mapped host directory fd.
-pub(crate) fn getdents(
+/// Handler for a [`Getdents`](uhyve_interface::v3::Hypercall::Getdents) hypercall.
+pub(crate) fn getdents_v3(
 	mem: &MmapMemory,
 	sysgetdents: &mut GetdentParams,
 	file_map: &mut UhyveFileMap,
 ) {
-	let gfd = GuestFd(sysgetdents.fd);
-
-	match file_map.fdmap.get_mut(gfd) {
-		Some(FdData::Raw(host_fd)) => {
-			// SAFETY: if the guest provides proper parameters, we don't have multiple aliasing. If not, the guest breaks, but Uhyve is fine.
-			let buf = match unsafe { getdents_guest_buffer(mem, sysgetdents) } {
-				Ok(buf) => buf,
-				Err(ret) => {
-					sysgetdents.ret = ret;
-					return;
-				}
-			};
-
-			let bytes_read = unsafe { raw_getdents(*host_fd, buf) };
-
-			sysgetdents.ret = if bytes_read < 0 {
-				getdents_errno()
-			} else if bytes_read == 0 {
-				GetdentResult::EndOfDirectory
-			} else {
-				GetdentResult::Success(bytes_read as u64)
-			};
+	let result = getdents(
+		mem,
+		GuestFd(sysgetdents.fd),
+		sysgetdents.buf.addr,
+		sysgetdents.buf.len,
+		file_map,
+	);
+	let ret = match result {
+		Ok(bytes) => {
+			NonZero::new(bytes).map_or(GetdentResult::EndOfDirectory, GetdentResult::Success)
 		}
-		Some(FdData::MappedDirectory { entries, offset }) => {
-			getdents_mapped(mem, sysgetdents, entries, offset);
-		}
-		_ => {
-			warn!(
-				"getdents on invalid fd {gfd} (param.fd={}, buf={:#x}, len={}): {:?}",
-				sysgetdents.fd,
-				sysgetdents.buf.as_u64(),
-				sysgetdents.len,
-				file_map.fdmap,
-			);
-			sysgetdents.ret = GetdentResult::Error(EBADF);
-		}
-	}
+		Err(errno) => GetdentResult::Errno(v3_errno(errno)),
+	};
+	sysgetdents.ret = RawResult::encode(ret).unwrap();
 }

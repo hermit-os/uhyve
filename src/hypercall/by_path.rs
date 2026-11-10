@@ -9,8 +9,8 @@ use std::{
 
 use uhyve_interface::{
 	GuestPhysAddr,
-	v2::parameters::{FileType, *},
-	v3::{self, util::RawResult},
+	v2::parameters::*,
+	v3::{self, parameters::FileType, util::RawResult},
 };
 
 use crate::{
