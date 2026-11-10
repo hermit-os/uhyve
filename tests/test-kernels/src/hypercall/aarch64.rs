@@ -2,7 +2,7 @@ use core::arch::asm;
 
 use uhyve_interface::{
 	GuestPhysAddr, GuestVirtAddr,
-	v2::{Hypercall, HypercallAddress},
+	v3::{Hypercall, HypercallAddress},
 };
 
 use super::hypercall_data;
