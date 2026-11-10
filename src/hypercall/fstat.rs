@@ -83,10 +83,6 @@ fn write_stat_attr(mem: &MmapMemory, attr_addr: GuestPhysAddr, attr: FileAttr) -
 /// Handles a stat/lstat hypercall.
 pub(crate) fn stat(mem: &MmapMemory, sysstat: &mut StatParams, file_map: &UhyveFileMap) {
 	sysstat.ret = unsafe { decode_guest_path(mem, sysstat.name) }
-		.ok_or_else(|| {
-			error!("The kernel requested stat() on a non-UTF8 path: Rejecting...");
-			EINVAL
-		})
 		.and_then(|guest_path| {
 			file_map
 				.get_host_stat_node(guest_path, matches!(sysstat.kind, StatKind::Stat))

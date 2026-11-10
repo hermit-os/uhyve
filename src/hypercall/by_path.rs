@@ -21,15 +21,41 @@ use crate::{
 	mem::MmapMemory,
 };
 
-/// Decodes a guest path given at address `path_addr` in `mem`.
+/// Maximum length of a guest path in bytes, including the terminating NUL (the host's `PATH_MAX`).
+const MAX_GUEST_PATH_LEN: u64 = libc::PATH_MAX as u64;
+
+/// Decodes the null-terminated UTF-8 guest path at address `path_addr` in `mem`.
+///
+/// Returns the guest errno on failure: `EFAULT` if the path is not within guest memory,
+/// `ENAMETOOLONG` if it is longer than [`MAX_GUEST_PATH_LEN`] and `EINVAL` if it is not UTF-8.
 ///
 /// # Safety
 ///
 /// The calling convention of hypercalls ensures that the given address doesn't alias with anything mutable.
 /// The return value is only valid for the duration of the hypercall.
-pub(super) unsafe fn decode_guest_path(mem: &MmapMemory, path_addr: GuestPhysAddr) -> Option<&str> {
-	let requested_path_ptr = mem.host_address(path_addr).unwrap() as *const libc::c_char;
-	unsafe { CStr::from_ptr(requested_path_ptr) }.to_str().ok()
+pub(super) unsafe fn decode_guest_path(
+	mem: &MmapMemory,
+	path_addr: GuestPhysAddr,
+) -> Result<&str, i32> {
+	let mem_range = mem.address_range_u64();
+	if !mem_range.contains(&path_addr.as_u64()) {
+		warn!("Guest path at {path_addr:?} is outside of guest memory");
+		return Err(EFAULT);
+	}
+	let len = (mem_range.end - path_addr.as_u64()).min(MAX_GUEST_PATH_LEN);
+	let bytes = unsafe { mem.slice_at::<u8>(path_addr, len as usize) }.map_err(|_| EFAULT)?;
+	let path = CStr::from_bytes_until_nul(bytes).map_err(|_| {
+		warn!("Guest path at {path_addr:?} is not null-terminated within {len} bytes");
+		if len == MAX_GUEST_PATH_LEN {
+			hermit_abi::errno::ENAMETOOLONG
+		} else {
+			EFAULT
+		}
+	})?;
+	path.to_str().map_err(|_| {
+		warn!("Guest path {path:?} is not valid UTF-8");
+		EINVAL
+	})
 }
 
 fn collect_dir_entries(dir: &Directory) -> BTreeMap<Box<str>, FileType> {
@@ -61,12 +87,12 @@ fn collect_dir_entries(dir: &Directory) -> BTreeMap<Box<str>, FileType> {
 /// file (that existed during initialization) called `log.txt` is unlinked, attempting to
 /// open `log.txt` again will result in an error.
 pub(super) fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut UhyveFileMap) {
-	let guest_path = if let Some(guest_path) = unsafe { decode_guest_path(mem, sysunlink.name) } {
-		guest_path
-	} else {
-		error!("The kernel requested to unlink() an non-UTF8 path: Rejecting...");
-		sysunlink.ret = -EINVAL;
-		return;
+	let guest_path = match unsafe { decode_guest_path(mem, sysunlink.name) } {
+		Ok(guest_path) => guest_path,
+		Err(errno) => {
+			sysunlink.ret = -errno;
+			return;
+		}
 	};
 	sysunlink.ret = match file_map.unlink(guest_path) {
 		Ok(Some(host_path)) => {
@@ -113,12 +139,12 @@ fn guest_to_host_open_flags(flags: i32) -> i32 {
 
 /// Handles an open syscall by opening a file on the host.
 pub(super) fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
-	let guest_path = if let Some(guest_path) = unsafe { decode_guest_path(mem, sysopen.name) } {
-		guest_path
-	} else {
-		error!("The kernel requested to open() an non-UTF8 path: Rejecting...");
-		sysopen.ret = -EINVAL;
-		return;
+	let guest_path = match unsafe { decode_guest_path(mem, sysopen.name) } {
+		Ok(guest_path) => guest_path,
+		Err(errno) => {
+			sysopen.ret = -errno;
+			return;
+		}
 	};
 	let flags = sysopen.flags & ALLOWED_OPEN_FLAGS;
 	// See: https://lwn.net/Articles/926782/
@@ -241,10 +267,12 @@ fn host_mkdir(host_path_c: &CString) -> MkdirResult {
 /// within mapped host directories. Unmapped paths are redirected into the sandboxed
 /// temporary directory. Virtual paths are rejected.
 pub(super) fn mkdir(mem: &MmapMemory, sysmkdir: &mut MkdirParams, file_map: &mut UhyveFileMap) {
-	let Some(guest_path) = (unsafe { decode_guest_path(mem, sysmkdir.path) }) else {
-		error!("The kernel requested to mkdir() a non-UTF8 path: Rejecting...");
-		sysmkdir.ret = MkdirResult::Error(EINVAL);
-		return;
+	let guest_path = match unsafe { decode_guest_path(mem, sysmkdir.path) } {
+		Ok(guest_path) => guest_path,
+		Err(errno) => {
+			sysmkdir.ret = MkdirResult::Error(errno);
+			return;
+		}
 	};
 
 	sysmkdir.ret = match file_map.get_host_path(guest_path, false) {
@@ -265,4 +293,57 @@ pub(super) fn mkdir(mem: &MmapMemory, sysmkdir: &mut MkdirParams, file_map: &mut
 			}
 		}
 	};
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_decode_guest_path() {
+		const SIZE: usize = 0x10000;
+		const BASE: u64 = 0x10_0000;
+
+		fn decode_at(mem: &MmapMemory, offset: u64) -> Result<&str, i32> {
+			unsafe { decode_guest_path(mem, GuestPhysAddr::new(BASE + offset)) }
+		}
+
+		let mem = MmapMemory::new(SIZE, GuestPhysAddr::new(BASE), false, false);
+		let mem_slice = unsafe { mem.as_slice_mut() };
+
+		// valid path
+		mem_slice[..10].copy_from_slice(b"/tmp/file\0");
+		assert_eq!(decode_at(&mem, 0), Ok("/tmp/file"));
+
+		// invalid UTF-8
+		mem_slice[0x100..0x103].copy_from_slice(b"\xff\xfe\0");
+		assert_eq!(decode_at(&mem, 0x100), Err(EINVAL));
+
+		// Long but valid "path"
+		let max_len = MAX_GUEST_PATH_LEN as usize;
+		let longest = "a".repeat(max_len - 1);
+		mem_slice[0x1000..0x1000 + max_len - 1].copy_from_slice(longest.as_bytes());
+		assert_eq!(decode_at(&mem, 0x1000), Ok(longest.as_str()));
+
+		// Path too long
+		mem_slice[0x3000..0x3000 + max_len].fill(b'a');
+		assert_eq!(
+			decode_at(&mem, 0x3000),
+			Err(hermit_abi::errno::ENAMETOOLONG)
+		);
+
+		// Untermintated bytes at the end of the "memory"
+		mem_slice[SIZE - 10..].fill(b'a');
+		assert_eq!(decode_at(&mem, SIZE as u64 - 10), Err(EFAULT));
+
+		// NUL in the last byte of the "memory"
+		mem_slice[SIZE - 1] = 0;
+		assert_eq!(decode_at(&mem, SIZE as u64 - 10), Ok("aaaaaaaaa"));
+
+		assert_eq!(decode_at(&mem, SIZE as u64), Err(EFAULT));
+		assert_eq!(
+			unsafe { decode_guest_path(&mem, GuestPhysAddr::new(BASE - 1)) },
+			Err(EFAULT)
+		);
+	}
 }
