@@ -18,8 +18,8 @@ mod cmdval_copy;
 mod fstat;
 mod getdents;
 
-use by_fd::{close, fsync, lseek, lseek_v1, read, read_v1, write, write_v1};
-use by_path::{mkdir, open, unlink};
+use by_fd::{close_v2, close_v3, fsync, lseek, lseek_v1, read, read_v1, write, write_v1};
+use by_path::{mkdir, open_v2, open_v3, unlink_v2, unlink_v3};
 use fstat::{fstat, stat};
 use getdents::getdents;
 
@@ -203,15 +203,15 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 		v2::Hypercall::Exit(sysexit) => {
 			return HypercallAction::Stop(VcpuStopReason::Exit(sysexit));
 		}
-		v2::Hypercall::FileClose(sysclose) => close(sysclose, &mut file_mapping()),
+		v2::Hypercall::FileClose(sysclose) => close_v2(sysclose, &mut file_mapping()),
 		v2::Hypercall::FileLseek(syslseek) => lseek(syslseek, &mut file_mapping()),
-		v2::Hypercall::FileOpen(sysopen) => open(&peripherals.mem, sysopen, &mut file_mapping()),
+		v2::Hypercall::FileOpen(sysopen) => open_v2(&peripherals.mem, sysopen, &mut file_mapping()),
 		v2::Hypercall::FileRead(sysread) => read(&peripherals.mem, sysread, &mut file_mapping()),
 		v2::Hypercall::FileWrite(syswrite) => {
 			write(peripherals, syswrite, &mut file_mapping()).unwrap();
 		}
 		v2::Hypercall::FileUnlink(sysunlink) => {
-			unlink(&peripherals.mem, sysunlink, &mut file_mapping())
+			unlink_v2(&peripherals.mem, sysunlink, &mut file_mapping())
 		}
 		v2::Hypercall::Getdents(sysgetdents) => {
 			getdents(&peripherals.mem, sysgetdents, &mut file_mapping())
@@ -256,6 +256,11 @@ pub fn handle_hypercall_v3<N: NetworkBackend>(
 	trace!("hypercall v3: {:?}", hypercall);
 	let file_mapping = || peripherals.file_mapping.lock().unwrap();
 	match hypercall {
+		v3::Hypercall::FileClose(sysclose) => close_v3(sysclose, &mut file_mapping()),
+		v3::Hypercall::FileOpen(sysopen) => open_v3(&peripherals.mem, sysopen, &mut file_mapping()),
+		v3::Hypercall::FileUnlink(sysunlink) => {
+			unlink_v3(&peripherals.mem, sysunlink, &mut file_mapping())
+		}
 		v3::Hypercall::FileFsync(sysfsync) => fsync(sysfsync, &file_mapping()),
 		_ => unimplemented!("hypercall {hypercall:?}"),
 	}
@@ -294,9 +299,9 @@ pub fn handle_hypercall_v1<N: NetworkBackend, L: MemoryLayout>(
 		v1::Hypercall::Exit(sysexit) => {
 			return Some(Ok(VcpuStopReason::Exit(sysexit.arg)));
 		}
-		v1::Hypercall::FileClose(sysclose) => close(sysclose, &mut file_mapping()),
+		v1::Hypercall::FileClose(sysclose) => close_v2(sysclose, &mut file_mapping()),
 		v1::Hypercall::FileLseek(syslseek) => lseek_v1(syslseek, &mut file_mapping()),
-		v1::Hypercall::FileOpen(sysopen) => open(&peripherals.mem, sysopen, &mut file_mapping()),
+		v1::Hypercall::FileOpen(sysopen) => open_v2(&peripherals.mem, sysopen, &mut file_mapping()),
 		v1::Hypercall::FileRead(sysread) => read_v1(
 			&peripherals.mem,
 			sysread,
@@ -317,7 +322,7 @@ pub fn handle_hypercall_v1<N: NetworkBackend, L: MemoryLayout>(
 		)
 		.unwrap(),
 		v1::Hypercall::FileUnlink(sysunlink) => {
-			unlink(&peripherals.mem, sysunlink, &mut file_mapping())
+			unlink_v2(&peripherals.mem, sysunlink, &mut file_mapping())
 		}
 		v1::Hypercall::SerialWriteByte(buf) => peripherals
 			.serial
@@ -367,4 +372,16 @@ fn translate_last_errno() -> Option<i32> {
 		io::Error::from_raw_os_error(errno)
 	);
 	None
+}
+
+/// Converts a positive Hermit errno into a [`v3::util::Errno`].
+///
+/// # Panics
+///
+/// If `errno` is not in `1..=i32::MAX`.
+fn v3_errno(errno: i32) -> v3::util::Errno {
+	u32::try_from(errno)
+		.ok()
+		.and_then(v3::util::Errno::new)
+		.unwrap_or_else(|| panic!("invalid errno {errno}"))
 }

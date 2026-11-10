@@ -4,11 +4,11 @@ use std::{io, os::fd::IntoRawFd};
 use uhyve_interface::{
 	GuestPhysAddr, v1,
 	v2::{self, parameters::*},
-	v3::{parameters::FsyncParams, util::RawResult},
+	v3::{self, parameters::FsyncParams, util::RawResult},
 };
 
 use crate::{
-	hypercall::translate_last_errno,
+	hypercall::{translate_last_errno, v3_errno},
 	isolation::{
 		fd::{FdData, GuestFd},
 		filemap::UhyveFileMap,
@@ -19,29 +19,39 @@ use crate::{
 	vm::VmPeripherals,
 };
 
-/// Handles an close syscall by closing the file on the host.
-pub(super) fn close(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
-	let gfd = GuestFd(sysclose.fd);
+/// Closes the guest file descriptor `gfd` and the underlying host file. Returns the guest errno
+/// on failure.
+fn close(gfd: GuestFd, file_map: &mut UhyveFileMap) -> Result<(), i32> {
 	debug!(
 		"Guest tries to close fd {gfd} from fdmap {:?}",
 		file_map.fdmap
 	);
-	sysclose.ret = if gfd.is_standard() {
+	if gfd.is_standard() {
 		// ignore stdio closures
 		warn!("Guest tried to close stdio fd: {gfd}");
-		0
-	} else if let Some(fddata) = file_map.fdmap.remove(gfd) {
-		if let FdData::Raw(fd) = fddata
-			&& unsafe { libc::close(fd) } < 0
-		{
-			-translate_last_errno().unwrap_or(1)
-		} else {
-			0
+		return Ok(());
+	}
+	match file_map.fdmap.remove(gfd) {
+		Some(FdData::Raw(fd)) if unsafe { libc::close(fd) } < 0 => {
+			Err(translate_last_errno().unwrap_or(1))
 		}
-	} else {
-		warn!("Guest tried to close unknown fd: {gfd}");
-		-EBADF
-	};
+		Some(_) => Ok(()),
+		None => {
+			warn!("Guest tried to close unknown fd: {gfd}");
+			Err(EBADF)
+		}
+	}
+}
+
+/// Handler for a v1/v2 [`FileClose`](v2::Hypercall::FileClose) hypercall.
+pub(super) fn close_v2(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
+	sysclose.ret = close(GuestFd(sysclose.fd), file_map).map_or_else(|errno| -errno, |()| 0);
+}
+
+/// Handler for a [`FileClose`](v3::Hypercall::FileClose) hypercall.
+pub(super) fn close_v3(sysclose: &mut v3::parameters::CloseParams, file_map: &mut UhyveFileMap) {
+	sysclose.ret =
+		RawResult::encode(close(GuestFd(sysclose.fd), file_map).map_err(v3_errno)).unwrap();
 }
 
 /// Handles a v1 read hypercall (for which a guest-provided guest virtual address must be
