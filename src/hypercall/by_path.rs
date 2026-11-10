@@ -10,12 +10,13 @@ use std::{
 use uhyve_interface::{
 	GuestPhysAddr,
 	v2::parameters::{FileType, *},
+	v3::{self, util::RawResult},
 };
 
 use crate::{
-	hypercall::translate_last_errno,
+	hypercall::{translate_last_errno, v3_errno},
 	isolation::{
-		fd::{FdData, UhyveFileDescriptorLayer},
+		fd::{FdData, GuestFd, UhyveFileDescriptorLayer},
 		filemap::{Directory, Node, NodeStatRef, UhyveFileMap, UhyveMapLeaf},
 	},
 	mem::MmapMemory,
@@ -86,36 +87,51 @@ fn collect_dir_entries(dir: &Directory) -> BTreeMap<Box<str>, FileType> {
 /// Note for when using Landlock: Unlinking files results in them being veiled. If a
 /// file (that existed during initialization) called `log.txt` is unlinked, attempting to
 /// open `log.txt` again will result in an error.
-pub(super) fn unlink(mem: &MmapMemory, sysunlink: &mut UnlinkParams, file_map: &mut UhyveFileMap) {
-	let guest_path = match unsafe { decode_guest_path(mem, sysunlink.name) } {
-		Ok(guest_path) => guest_path,
-		Err(errno) => {
-			sysunlink.ret = -errno;
-			return;
-		}
-	};
-	sysunlink.ret = match file_map.unlink(guest_path) {
+///
+/// `name` is the guest address of the null-terminated path. Returns the guest errno on failure.
+fn unlink(mem: &MmapMemory, name: GuestPhysAddr, file_map: &mut UhyveFileMap) -> Result<(), i32> {
+	let guest_path = unsafe { decode_guest_path(mem, name) }?;
+	match file_map.unlink(guest_path) {
 		Ok(Some(host_path)) => {
 			// We can safely unwrap here, as host_path.as_bytes will never contain internal \0 bytes
 			// As host_path_c_string is a valid CString, this implementation is presumed to be safe.
 			let host_path_c_string = CString::new(host_path.as_os_str().as_bytes()).unwrap();
 			if unsafe { libc::unlink(host_path_c_string.as_c_str().as_ptr()) } < 0 {
-				-translate_last_errno().unwrap_or(1)
+				Err(translate_last_errno().unwrap_or(1))
 			} else {
-				0
+				Ok(())
 			}
 		}
 		Ok(None) => {
 			// Removed virtual entry
-			0
+			Ok(())
 		}
 		Err(()) => {
 			error!(
 				"The kernel requested to unlink() an unknown path ({guest_path:?}): Rejecting..."
 			);
-			-ENOENT
+			Err(ENOENT)
 		}
-	};
+	}
+}
+
+/// Handler for a v1/v2 [`FileUnlink`](uhyve_interface::v2::Hypercall::FileUnlink) hypercall.
+pub(super) fn unlink_v2(
+	mem: &MmapMemory,
+	sysunlink: &mut UnlinkParams,
+	file_map: &mut UhyveFileMap,
+) {
+	sysunlink.ret = unlink(mem, sysunlink.name, file_map).map_or_else(|errno| -errno, |()| 0);
+}
+
+/// Handler for a [`FileUnlink`](v3::Hypercall::FileUnlink) hypercall.
+pub(super) fn unlink_v3(
+	mem: &MmapMemory,
+	sysunlink: &mut v3::parameters::UnlinkParams,
+	file_map: &mut UhyveFileMap,
+) {
+	sysunlink.ret =
+		RawResult::encode(unlink(mem, sysunlink.path, file_map).map_err(v3_errno)).unwrap();
 }
 
 /// Converts Hermit open flags (restricted to [`ALLOWED_OPEN_FLAGS`]) to the host's `libc` values.
@@ -137,47 +153,46 @@ fn guest_to_host_open_flags(flags: i32) -> i32 {
 	host_flags
 }
 
-/// Handles an open syscall by opening a file on the host.
-pub(super) fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
-	let guest_path = match unsafe { decode_guest_path(mem, sysopen.name) } {
-		Ok(guest_path) => guest_path,
-		Err(errno) => {
-			sysopen.ret = -errno;
-			return;
-		}
-	};
-	let flags = sysopen.flags & ALLOWED_OPEN_FLAGS;
+/// Opens the guest path at `name` on the host and returns the new guest file descriptor.
+///
+/// `name` is the guest address of the null-terminated path. Returns the guest errno on failure.
+fn open(
+	mem: &MmapMemory,
+	name: GuestPhysAddr,
+	flags: i32,
+	mode: u32,
+	file_map: &mut UhyveFileMap,
+) -> Result<GuestFd, i32> {
+	let guest_path = unsafe { decode_guest_path(mem, name) }?;
+	let flags = flags & ALLOWED_OPEN_FLAGS;
 	// See: https://lwn.net/Articles/926782/
 	// See: https://github.com/hermit-os/kernel/commit/71bc629
 	if (flags & (O_DIRECTORY | O_CREAT)) == (O_DIRECTORY | O_CREAT) {
 		error!("An open() call used O_DIRECTORY and O_CREAT at the same time. Aborting...");
-		sysopen.ret = -EINVAL;
-		return;
+		return Err(EINVAL);
 	}
 
 	/// Attempts to open `host_path_c_string` with `flags` and `mode`. Inserts the fd into `fdmap`
-	/// on success and returns it, else returns the (negative) return value of the underlying `open` call.
+	/// on success and returns it, else returns the errno of the underlying `open` call.
 	fn do_open(
 		fdmap: &mut UhyveFileDescriptorLayer,
 		host_path_c_string: CString,
 		flags: i32,
-		mode: i32,
-	) -> i32 {
+		mode: u32,
+	) -> Result<GuestFd, i32> {
 		let host_fd = unsafe { libc::open(host_path_c_string.as_c_str().as_ptr(), flags, mode) };
 		if host_fd < 0 {
 			let errno = translate_last_errno().unwrap_or(1);
 			if host_fd != -1 {
 				warn!("Unexpected return value {host_fd} from open(2)");
 			}
-			-errno
-		} else if let Some(guest_fd) = fdmap.insert(FdData::Raw(host_fd)) {
-			guest_fd.0
+			Err(errno)
 		} else {
-			-ENOENT
+			fdmap.insert(FdData::Raw(host_fd)).ok_or(ENOENT)
 		}
 	}
 
-	sysopen.ret = if let Some(host_node) = file_map.get_host_stat_node(guest_path, true) {
+	if let Some(host_node) = file_map.get_host_stat_node(guest_path, true) {
 		debug!("{guest_path:#?} found in file map.");
 		match host_node {
 			NodeStatRef::OnHost(host_path) => {
@@ -188,33 +203,29 @@ pub(super) fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut Uh
 					&mut file_map.fdmap,
 					host_path_c_string,
 					guest_to_host_open_flags(flags),
-					sysopen.mode,
+					mode,
 				)
 			}
-			NodeStatRef::VirtualFile(data) => {
-				if let Some(guest_fd) = file_map.fdmap.insert(FdData::Virtual {
+			NodeStatRef::VirtualFile(data) => file_map
+				.fdmap
+				.insert(FdData::Virtual {
 					// The following only clones a pointer, and increases an `Arc` refcount.
 					data: data.clone(),
 					offset: 0,
-				}) {
-					guest_fd.0
-				} else {
-					-ENOENT
-				}
-			}
+				})
+				.ok_or(ENOENT),
 			NodeStatRef::VirtualDirectory(dir) => {
 				if (flags & O_DIRECTORY) != 0 {
-					if let Some(guest_fd) = file_map.fdmap.insert(FdData::MappedDirectory {
-						entries: Arc::new(collect_dir_entries(dir)),
-						offset: 0,
-					}) {
-						guest_fd.0
-					} else {
-						-ENOENT
-					}
+					file_map
+						.fdmap
+						.insert(FdData::MappedDirectory {
+							entries: Arc::new(collect_dir_entries(dir)),
+							offset: 0,
+						})
+						.ok_or(ENOENT)
 				} else {
 					debug!("{guest_path:#?}: Tried to open directory as file...");
-					-EINVAL
+					Err(EINVAL)
 				}
 			}
 		}
@@ -233,22 +244,41 @@ pub(super) fn open(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut Uh
 			}
 
 			match file_map.create_temporary_file(guest_path) {
-				Some(host_path_c_string) => do_open(
-					&mut file_map.fdmap,
-					host_path_c_string,
-					host_flags,
-					sysopen.mode,
-				),
+				Some(host_path_c_string) => {
+					do_open(&mut file_map.fdmap, host_path_c_string, host_flags, mode)
+				}
 				None => {
 					debug!("Returning -EINVAL for {guest_path:#?}");
-					-EINVAL
+					Err(EINVAL)
 				}
 			}
 		} else {
 			debug!("Returning -ENOENT for {guest_path:#?}");
-			-ENOENT
+			Err(ENOENT)
 		}
 	}
+}
+
+/// Handler for a v1/v2 [`FileOpen`](uhyve_interface::v2::Hypercall::FileOpen) hypercall.
+pub(super) fn open_v2(mem: &MmapMemory, sysopen: &mut OpenParams, file_map: &mut UhyveFileMap) {
+	sysopen.ret = open(
+		mem,
+		sysopen.name,
+		sysopen.flags,
+		sysopen.mode.try_into().unwrap(),
+		file_map,
+	)
+	.map_or_else(|errno| -errno, |gfd| gfd.0);
+}
+
+/// Handler for a [`FileOpen`](v3::Hypercall::FileOpen) hypercall.
+pub(super) fn open_v3(
+	mem: &MmapMemory,
+	sysopen: &mut v3::parameters::OpenParams,
+	file_map: &mut UhyveFileMap,
+) {
+	let result = open(mem, sysopen.path, sysopen.flags, sysopen.mode, file_map);
+	sysopen.ret = RawResult::encode(result.map(|gfd| gfd.0).map_err(v3_errno)).unwrap();
 }
 
 /// Attempts `mkdir(host_path)` on the host, mapping the outcome to a [`MkdirResult`].
