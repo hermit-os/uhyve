@@ -1,6 +1,6 @@
 //! Uhyve hypercall re-implementation for in application use
 
-use uhyve_interface::v2::parameters::SerialWriteBufferParams;
+use uhyve_interface::v3::parameters::SerialWriteBufferParams;
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64;
@@ -12,7 +12,7 @@ use core::ptr;
 
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::{uhyve_hypercall, virtual_to_physical};
-use uhyve_interface::{GuestVirtAddr, v2::Hypercall};
+use uhyve_interface::{GuestVirtAddr, v3::Hypercall};
 
 #[inline]
 fn data_addr<T>(data: &T) -> u64 {
@@ -33,7 +33,6 @@ fn hypercall_data(hypercall: &Hypercall<'_>) -> u64 {
 		Hypercall::FileWrite(data) => data_addr(*data),
 		Hypercall::Getdents(data) => data_addr(*data),
 		Hypercall::FileStat(data) => data_addr(*data),
-		Hypercall::FileFstat(data) => data_addr(*data),
 		Hypercall::Mkdir(data) => data_addr(*data),
 		Hypercall::SerialWriteBuffer(data) => data_addr(*data),
 		Hypercall::SerialWriteByte(byte) => u64::from(*byte),

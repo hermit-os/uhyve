@@ -11,13 +11,14 @@ use std::{
 use hermit as _;
 use uhyve_interface::{
 	GuestVirtAddr,
-	v2::{
+	v3::{
 		Hypercall,
 		parameters::{
-			Dirent64, FileAttr, FileType, FstatParams, GetdentParams, GetdentResult, MkdirParams,
-			MkdirResult, O_DIRECTORY, O_RDONLY, OpenParams, StatKind, StatParams, StatResult,
+			Dirent64, FileAttr, FileType, GetdentParams, GetdentResult, MkdirParams,
+			MutSizedGuestBuffer, O_DIRECTORY, O_RDONLY, OpenParams, StatParams, StatTarget,
 			Timespec,
 		},
+		util::RawResult,
 	},
 };
 use uhyve_test_kernels::hypercall::{uhyve_hypercall, virtual_to_physical};
@@ -212,28 +213,32 @@ fn hypercall_getdents(dirname: &str) {
 	let path = CString::new(dirname).unwrap();
 	let name_phys = virtual_to_physical(GuestVirtAddr::from_ptr(path.as_ptr())).unwrap();
 	let mut open_params = OpenParams {
-		name: name_phys,
+		path: name_phys,
 		flags: O_RDONLY | O_DIRECTORY,
 		mode: 0,
-		ret: -1,
+		ret: RawResult::default(),
 	};
 	uhyve_hypercall(Hypercall::FileOpen(&mut open_params));
-	let fd = open_params.ret; // copy out of packed struct before use
-	assert!(fd >= 0, "FileOpen for directory failed: {fd}");
+	let ret = open_params.ret; // copy out of packed struct before use
+	let Ok(Ok(fd)) = ret.decode() else {
+		panic!("FileOpen for directory failed: {ret:?}");
+	};
 	// Wrap in File so the fd is closed on drop.
 	let dir = unsafe { File::from_raw_fd(fd) };
 
-	let buf = [0u8; 1024];
-	let buf_phys = virtual_to_physical(GuestVirtAddr::from_ptr(buf.as_ptr())).unwrap();
+	let mut buf = [0u8; 1024];
+	let buf_phys = virtual_to_physical(GuestVirtAddr::from_ptr(buf.as_mut_ptr())).unwrap();
 	let mut getdent_params = GetdentParams {
 		fd: dir.as_raw_fd(),
-		buf: buf_phys,
-		len: buf.len() as u64,
-		ret: GetdentResult::None,
+		buf: MutSizedGuestBuffer {
+			addr: buf_phys,
+			len: buf.len() as u64,
+		},
+		ret: RawResult::default(),
 	};
 	uhyve_hypercall(Hypercall::Getdents(&mut getdent_params));
 
-	let GetdentResult::Success(buflen) = getdent_params.ret else {
+	let Ok(GetdentResult::Success(buflen)) = getdent_params.ret.decode() else {
 		panic!(
 			"Getdents hypercall not successful: {:?}",
 			getdent_params.ret
@@ -262,7 +267,7 @@ fn hypercall_getdents(dirname: &str) {
 	dirents.push((third_name, third));
 	assert_eq!(
 		first.d_reclen + second.d_reclen + third.d_reclen,
-		buflen as u16
+		buflen.get() as u16
 	);
 	for (entry_name, dirent) in dirents {
 		println!("Directory contains {entry_name}");
@@ -280,14 +285,16 @@ fn hypercall_mkdir(dirname: &str) {
 	let path_phys = virtual_to_physical(GuestVirtAddr::from_ptr(path.as_ptr())).unwrap();
 	let mut mkdir_params = MkdirParams {
 		path: path_phys,
-		len: dirname.len() as u64 + 1,
-		ret: MkdirResult::None,
+		mode: 0o777,
+		ret: RawResult::default(),
 	};
 	uhyve_hypercall(Hypercall::Mkdir(&mut mkdir_params));
 
-	let MkdirResult::Success = mkdir_params.ret else {
-		panic!("Mkdir hypercall not successful: {:?}", mkdir_params.ret);
-	};
+	assert_eq!(
+		mkdir_params.ret.decode(),
+		Ok(Ok(())),
+		"Mkdir hypercall not successful"
+	);
 
 	// Create a few files inside the newly created directory.
 	for i in 0..3 {
@@ -307,33 +314,26 @@ fn hypercall_stat(filename: &str, mode: StatMode) {
 	let attr = FileAttr::default();
 	let attr_phys = virtual_to_physical(GuestVirtAddr::from_ptr(ptr::addr_of!(attr))).unwrap();
 
-	let ret = match mode {
+	// Both must outlive the hypercall.
+	let path = CString::new(filename).unwrap();
+	let file;
+	let target = match mode {
 		StatMode::Stat => {
-			let path = CString::new(filename).unwrap();
-			let name_phys = virtual_to_physical(GuestVirtAddr::from_ptr(path.as_ptr())).unwrap();
-
-			let mut stat_params = StatParams {
-				name: name_phys,
-				kind: StatKind::Stat,
-				attr: attr_phys,
-				ret: StatResult::None,
-			};
-			uhyve_hypercall(Hypercall::FileStat(&mut stat_params));
-			stat_params.ret
+			StatTarget::Path(virtual_to_physical(GuestVirtAddr::from_ptr(path.as_ptr())).unwrap())
 		}
 		StatMode::Fstat => {
-			let file = File::open(filename).unwrap();
-
-			let mut stat_params = FstatParams {
-				fd: file.as_raw_fd(),
-				attr: attr_phys,
-				ret: StatResult::None,
-			};
-			uhyve_hypercall(Hypercall::FileFstat(&mut stat_params));
-			stat_params.ret
+			file = File::open(filename).unwrap();
+			StatTarget::Fd(file.as_raw_fd())
 		}
 	};
-	assert_eq!(ret, StatResult::Success);
+
+	let mut stat_params = StatParams {
+		target: target.into(),
+		attr: attr_phys,
+		ret: RawResult::default(),
+	};
+	uhyve_hypercall(Hypercall::FileStat(&mut stat_params));
+	assert_eq!(stat_params.ret.decode(), Ok(Ok(())));
 	dbg!(&attr);
 	assert_ne!(attr, FileAttr::default());
 	assert_ne!(attr.st_blocks, 0);
