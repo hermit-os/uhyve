@@ -344,6 +344,15 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 		let uhyve_interface_version = object
 			.uhyve_interface_version()
 			.unwrap_or(UhyveIfVersion(1));
+		let supported_if_versions = 1..=4;
+		if !supported_if_versions.contains(&uhyve_interface_version.0) {
+			unimplemented!(
+				"Kernel uses unsupported uhyve-interface version {}. This Uhyve version only supports {} to {}",
+				uhyve_interface_version.0,
+				supported_if_versions.start(),
+				supported_if_versions.end()
+			);
+		}
 
 		let layout = VirtBackend::MemLayout::new(&params, &object);
 		debug!("{layout}");
@@ -447,6 +456,7 @@ impl<VirtBackend: VirtualizationBackend<VirtioNetImpl: NetworkBackend>> UhyveVm<
 		let serial_port = SerialPortBase::new(match uhyve_interface_version.0 {
 			1 => uhyve_interface::v1::HypercallAddress::Uart as _,
 			2 | 3 => uhyve_interface::v2::HypercallAddress::SerialWriteBuffer as _,
+			4 => uhyve_interface::v3::HypercallAddress::SerialWriteBuffer as _,
 			uhifv => {
 				unimplemented!(
 					"Kernel uses unsupported uhyve-interface version {}. Is Uhyve too old?",

@@ -1,6 +1,6 @@
 use uhyve_interface::{
 	GuestPhysAddr, GuestVirtAddr,
-	v2::{Hypercall, HypercallAddress},
+	v3::{Hypercall, HypercallAddress},
 };
 use x86_64::{
 	VirtAddr,

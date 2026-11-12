@@ -5,7 +5,7 @@ use core::{
 use std::{io, os::fd::RawFd};
 
 use align_address::Align;
-use uhyve_interface::v2::parameters::{Dirent64, FileAttr, FileType, Timespec};
+use uhyve_interface::v3::parameters::{Dirent64, FileAttr, FileType, Timespec};
 
 /// MacOS file attributes have slightly different types than Linux, so we need a separate conversion function.
 pub(crate) fn host_stat_to_file_attr(st: libc::stat) -> FileAttr {
@@ -20,9 +20,9 @@ pub(crate) fn host_stat_to_file_attr(st: libc::stat) -> FileAttr {
 		st_size: st.st_size,
 		st_blksize: st.st_blksize as i64,
 		st_blocks: st.st_blocks,
-		st_atim: Timespec::from_nsecs(st.st_atime, st.st_atime_nsec).unwrap(),
-		st_mtim: Timespec::from_nsecs(st.st_mtime, st.st_mtime_nsec).unwrap(),
-		st_ctim: Timespec::from_nsecs(st.st_ctime, st.st_ctime_nsec).unwrap(),
+		st_atim: Timespec::new(st.st_atime, st.st_atime_nsec).unwrap(),
+		st_mtim: Timespec::new(st.st_mtime, st.st_mtime_nsec).unwrap(),
+		st_ctim: Timespec::new(st.st_ctime, st.st_ctime_nsec).unwrap(),
 	}
 }
 
