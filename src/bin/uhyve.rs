@@ -6,7 +6,6 @@ use clap::{Command, CommandFactory, Parser, error::ErrorKind};
 use core_affinity::CoreId;
 use env_logger::Builder;
 use log::{LevelFilter, info};
-use merge::Merge;
 use serde::Deserialize;
 use thiserror::Error;
 #[cfg(target_os = "linux")]
@@ -57,9 +56,50 @@ mod instrument {
 	}
 }
 
+/// Implements `fn merge(&mut self, other: Self)` for a struct, which fills
+/// `self` with values from `other` according to a per-field strategy.
+///
+/// Attributes such as `#[cfg(...)]` may be placed on a field entry.
+///
+/// Strategies:
+/// - `overwrite_none`: `Option` fields take `other`'s value if `self`'s is `None`.
+/// - `append`: Collections are extended with `other`'s elements.
+/// - `nested`: Calls `merge` on the field.
+/// - `skip`: Keeps `self`'s value and discards `other`'s.
+///
+/// ```ignore
+/// struct Foo {
+///     name: Option<String>,
+///     #[cfg(target_os = "linux")]
+///     paths: Vec<PathBuf>,
+///     ignored: u32,
+/// }
+///
+/// impl_merge!(Foo {
+///     name: overwrite_none,
+///     #[cfg(target_os = "linux")]
+///     paths: append,
+///     ignored: skip,
+/// });
+/// ```
+macro_rules! impl_merge {
+	($ty:ident { $( $(#[$attr:meta])* $field:ident: $strategy:ident ),* $(,)? }) => {
+		impl $ty {
+			fn merge(&mut self, other: Self) {
+				let Self { $( $(#[$attr])* $field ),* } = other;
+				$( $(#[$attr])* impl_merge!(@$strategy self.$field, $field); )*
+			}
+		}
+	};
+	(@overwrite_none $dst:expr, $src:ident) => { $dst = $dst.take().or($src) };
+	(@append $dst:expr, $src:ident) => { $dst.extend($src) };
+	(@nested $dst:expr, $src:ident) => { $dst.merge($src) };
+	(@skip $dst:expr, $src:ident) => { let _ = $src; };
+}
+
 /// Used by clap to derive CLI parameters for Uhyve, as well as
 /// by the TOML extension to derive a _subset_ of the CLI arguments.
-#[derive(Debug, Default, Deserialize, Merge, Parser)]
+#[derive(Debug, Default, Deserialize, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 #[clap(version, author, about)]
 #[serde(default)]
@@ -83,8 +123,15 @@ impl Args {
 	}
 }
 
+impl_merge!(Args {
+	uhyve: nested,
+	memory: nested,
+	cpu: nested,
+	guest: nested,
+});
+
 /// Arguments for Uhyve runtime-related configurations.
-#[derive(Debug, Default, Deserialize, Merge, Parser)]
+#[derive(Debug, Default, Deserialize, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(default)]
 struct UhyveArgs {
@@ -93,13 +140,11 @@ struct UhyveArgs {
 	/// None discards all output, Omit for stdout
 	#[clap(short, long, value_name = "FILE")]
 	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	output: Option<String>,
 
 	/// Display statistics after the execution
 	#[clap(long, action = clap::ArgAction::SetTrue)]
 	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	stats: Option<bool>,
 
 	/// Paths that the kernel should be able to view, read or write.
@@ -109,7 +154,6 @@ struct UhyveArgs {
 	/// Example: --file-mapping host_dir:guest_dir --file-mapping file.txt:guest_file.txt
 	#[clap(long)]
 	#[serde(skip)]
-	#[merge(strategy = merge::vec::append)]
 	file_mapping: Vec<String>,
 
 	/// The path that should be used for temporary directories storing unmapped files.
@@ -121,7 +165,6 @@ struct UhyveArgs {
 	/// Defaults to /tmp/uhyve-{uid}
 	#[clap(long)]
 	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	tempdir: Option<PathBuf>,
 
 	/// Hermit image mode (external, internal)
@@ -136,7 +179,6 @@ struct UhyveArgs {
 	/// [default: external]
 	#[clap(long)]
 	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	hermit_image_mode: Option<String>,
 
 	/// File isolation (none, normal, strict)
@@ -151,7 +193,6 @@ struct UhyveArgs {
 	/// [default: normal]
 	#[clap(long)]
 	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	#[cfg(target_os = "linux")]
 	file_isolation: Option<String>,
 
@@ -177,7 +218,6 @@ struct UhyveArgs {
 	///   contexts.
 	#[clap(long)]
 	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	#[cfg(target_os = "linux")]
 	io_mode: Option<String>,
 
@@ -189,7 +229,6 @@ struct UhyveArgs {
 	#[clap(short = 's', long, env = "HERMIT_GDB_PORT", num_args(0..=1), default_missing_value("6677"))]
 	#[cfg_attr(target_os = "macos", clap(hide(true)))]
 	#[serde(default)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	gdb_port: Option<u16>,
 
 	/// TOML configuration file
@@ -197,7 +236,6 @@ struct UhyveArgs {
 	/// Reads configurations from a locally given path.
 	#[clap(long, env = "HERMIT_CONFIG")]
 	#[serde(skip)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	pub config: Option<PathBuf>,
 
 	/// Directory to store traces (using rftrace)
@@ -209,23 +247,20 @@ struct UhyveArgs {
 	/// [default: "uhyve_trace"]
 	#[clap(long, num_args(0..=1), default_missing_value("./uhyve_trace"))]
 	#[serde(skip)]
-	#[merge(skip)]
 	#[cfg(feature = "instrument")]
 	pub trace_dir: Option<PathBuf>,
 	/// Network configuration. Specify network mode and device as colon separated string.
 	///
 	/// Example: --net=tap:tap10
 	#[serde(skip)]
-	#[merge(strategy = merge::option::overwrite_none)]
 	#[clap(short, long)]
 	net: Option<String>,
 }
 
 /// Arguments for memory resources allocated to the guest (both guest and host).
-#[derive(Debug, Default, Deserialize, Merge, Parser)]
+#[derive(Debug, Default, Deserialize, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(default)]
-#[merge(strategy = merge::option::overwrite_none)]
 pub struct MemoryArgs {
 	/// Guest RAM size
 	#[clap(short = 'm', long, env = "HERMIT_MEMORY_SIZE")]
@@ -255,10 +290,9 @@ pub struct MemoryArgs {
 }
 
 /// Arguments for the CPU resources allocated to the guest.
-#[derive(Clone, Debug, Default, Deserialize, Merge, Parser)]
+#[derive(Clone, Debug, Default, Deserialize, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(default)]
-#[merge(strategy = merge::option::overwrite_none)]
 struct CpuArgs {
 	/// Number of guest CPUs
 	#[clap(short, long, env = "HERMIT_CPU_COUNT")]
@@ -430,17 +464,15 @@ impl<'de> serde::de::Deserialize<'de> for Affinity {
 }
 
 /// Arguments for the guest OS and guest runtime-related configurations.
-#[derive(Debug, Default, Deserialize, Merge, Parser)]
+#[derive(Debug, Default, Deserialize, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 struct GuestArgs {
 	/// The kernel or Hermit image to execute
 	#[serde(skip)]
-	#[merge(skip)]
 	kernel: PathBuf,
 
 	/// Arguments to forward to the kernel
 	#[serde(skip)]
-	#[merge(skip)]
 	pub kernel_args: Vec<String>,
 
 	/// Environment variables of the guest as env=value paths
@@ -450,9 +482,49 @@ struct GuestArgs {
 	/// Example: --env_vars ASDF=jlk -e TERM=uhyveterm2000
 	#[clap(short, long)]
 	#[serde(default)]
-	#[merge(strategy = merge::vec::append)]
 	pub env_vars: Vec<String>,
 }
+
+impl_merge!(UhyveArgs {
+	output: overwrite_none,
+	stats: overwrite_none,
+	file_mapping: append,
+	tempdir: overwrite_none,
+	hermit_image_mode: overwrite_none,
+	#[cfg(target_os = "linux")]
+	file_isolation: overwrite_none,
+	#[cfg(target_os = "linux")]
+	io_mode: overwrite_none,
+	gdb_port: overwrite_none,
+	config: overwrite_none,
+	#[cfg(feature = "instrument")]
+	trace_dir: skip,
+	net: overwrite_none,
+});
+
+impl_merge!(MemoryArgs {
+	memory_size: overwrite_none,
+	no_aslr: overwrite_none,
+	#[cfg(target_os = "linux")]
+	thp: overwrite_none,
+	#[cfg(target_os = "linux")]
+	ksm: overwrite_none,
+});
+
+impl_merge!(CpuArgs {
+	cpu_count: overwrite_none,
+	#[cfg(target_os = "linux")]
+	cpu_pm: overwrite_none,
+	#[cfg(target_os = "linux")]
+	pit: overwrite_none,
+	affinity: overwrite_none,
+});
+
+impl_merge!(GuestArgs {
+	kernel: skip,
+	kernel_args: skip,
+	env_vars: append,
+});
 
 impl From<Args> for Params {
 	fn from(args: Args) -> Self {

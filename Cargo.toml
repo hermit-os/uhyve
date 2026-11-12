@@ -49,7 +49,6 @@ hermit-abi = "0.5"
 hermit-entry = { version = "0.10.11", features = ["loader"] }
 libc = "0.2"
 log = "0.4"
-merge = "0.2"
 nix = { version = "0.31", features = ["mman", "pthread", "signal", "net", "ioctl", "poll"] }
 nohash = "0.2"
 rftrace = { version = "0.3", optional = true }
