@@ -1,10 +1,13 @@
 use core::{cmp, mem::MaybeUninit};
-use std::{io, os::fd::IntoRawFd};
 
 use uhyve_interface::{
 	GuestPhysAddr, v1,
-	v2::{self, parameters::*},
-	v3::{self, parameters::FsyncParams, util::RawResult},
+	v2::parameters::*,
+	v3::{
+		self,
+		parameters::{FsyncParams, LseekWhence},
+		util::RawResult,
+	},
 };
 
 use crate::{
@@ -43,7 +46,7 @@ fn close(gfd: GuestFd, file_map: &mut UhyveFileMap) -> Result<(), i32> {
 	}
 }
 
-/// Handler for a v1/v2 [`FileClose`](v2::Hypercall::FileClose) hypercall.
+/// Handler for a v1/v2 [`FileClose`](uhyve_interface::v2::Hypercall::FileClose) hypercall.
 pub(super) fn close_v2(sysclose: &mut CloseParams, file_map: &mut UhyveFileMap) {
 	sysclose.ret = close(GuestFd(sysclose.fd), file_map).map_or_else(|errno| -errno, |()| 0);
 }
@@ -54,55 +57,26 @@ pub(super) fn close_v3(sysclose: &mut v3::parameters::CloseParams, file_map: &mu
 		RawResult::encode(close(GuestFd(sysclose.fd), file_map).map_err(v3_errno)).unwrap();
 }
 
-/// Handles a v1 read hypercall (for which a guest-provided guest virtual address must be
-/// converted to a guest physical address by the host).
-pub(super) fn read_v1(
+/// Reads up to `len` bytes from the guest file descriptor `gfd` into the guest buffer at `buf`.
+/// Returns the number of bytes read or the guest errno on failure.
+fn read(
 	mem: &MmapMemory,
-	sysread: &mut v1::parameters::ReadParams,
-	root_pt: GuestPhysAddr,
+	gfd: GuestFd,
+	buf: GuestPhysAddr,
+	len: u64,
 	file_map: &mut UhyveFileMap,
-) {
-	sysread.ret = if let Ok(guest_phys_addr) = virt_to_phys(sysread.buf, mem, root_pt) {
-		let mut tmp = v2::parameters::ReadParams {
-			fd: sysread.fd,
-			buf: guest_phys_addr,
-			len: sysread.len as u64,
-			ret: 0i64,
-		};
-		read(mem, &mut tmp, file_map);
-		tmp.ret
-			.try_into()
-			.unwrap_or_else(|ret| panic!("Unable to fit return value {} in read_v1.", ret))
-	} else {
-		warn!("Unable to convert guest virtual address into guest physical address");
-		-EFAULT as isize
-	}
+) -> Result<u64, i32> {
+	let fdata = file_map.fdmap.get_mut(gfd).ok_or(EBADF)?;
+	let len = len.try_into().map_err(|_| EINVAL)?;
+	// Bound the destination to guest memory, as write/getdents/serialwrite do.
+	let buf = unsafe { mem.slice_at_mut::<MaybeUninit<u8>>(buf, len) }.map_err(|_| {
+		warn!("read buffer is not within guest memory");
+		EFAULT
+	})?;
+	read_internal(fdata, buf)
 }
 
-/// Handles a read syscall on the host.
-pub(super) fn read(
-	mem: &MmapMemory,
-	sysread: &mut v2::parameters::ReadParams,
-	file_map: &mut UhyveFileMap,
-) {
-	sysread.ret = if let Some(fdata) = file_map.fdmap.get_mut(GuestFd(sysread.fd.into_raw_fd())) {
-		match sysread.len.try_into() {
-			// Bound the destination to guest memory, as write/getdents/serialwrite do.
-			Ok(len) => match unsafe { mem.slice_at_mut::<MaybeUninit<u8>>(sysread.buf, len) } {
-				Ok(buf) => read_internal(fdata, buf),
-				Err(_) => {
-					warn!("read buffer is not within guest memory");
-					-EFAULT as i64
-				}
-			},
-			Err(_) => -EINVAL as i64,
-		}
-	} else {
-		-EBADF as i64
-	};
-}
-
-fn read_internal(fdata: &mut FdData, out_bytes: &mut [MaybeUninit<u8>]) -> i64 {
+fn read_internal(fdata: &mut FdData, out_bytes: &mut [MaybeUninit<u8>]) -> Result<u64, i32> {
 	match fdata {
 		FdData::Raw(rfd) => {
 			let bytes_read = unsafe {
@@ -113,9 +87,9 @@ fn read_internal(fdata: &mut FdData, out_bytes: &mut [MaybeUninit<u8>]) -> i64 {
 				)
 			};
 			if bytes_read < 0 {
-				-translate_last_errno().unwrap_or(1) as i64
+				Err(translate_last_errno().unwrap_or(1))
 			} else {
-				bytes_read as i64
+				Ok(bytes_read as u64)
 			}
 		}
 		FdData::Virtual { data, offset } => {
@@ -131,89 +105,105 @@ fn read_internal(fdata: &mut FdData, out_bytes: &mut [MaybeUninit<u8>]) -> i64 {
 				})
 				.count();
 			*offset += amt as u64;
-			amt as i64
+			Ok(amt as u64)
 		}
-		FdData::MappedDirectory { .. } => -EBADF as i64,
+		FdData::MappedDirectory { .. } => Err(EBADF),
 	}
 }
 
-/// Handles a v1 write hypercall (for which a guest-provided guest virtual address must be
-/// converted to a guest physical address by the host).
-pub(super) fn write_v1<N: NetworkBackend>(
-	peripherals: &VmPeripherals<N>,
-	syswrite: &v1::parameters::WriteParams,
+/// Handler for a v1 [`FileRead`](v1::Hypercall::FileRead) hypercall (for which a guest-provided
+/// guest virtual address must be converted to a guest physical address by the host).
+pub(super) fn read_v1(
+	mem: &MmapMemory,
+	sysread: &mut v1::parameters::ReadParams,
 	root_pt: GuestPhysAddr,
 	file_map: &mut UhyveFileMap,
-) -> io::Result<()> {
-	let guest_phys_addr = virt_to_phys(syswrite.buf, &peripherals.mem, root_pt).map_err(|e| {
-		io::Error::new(
-			io::ErrorKind::InvalidInput,
-			format!("invalid syswrite buffer: {e:?}"),
-		)
-	})?;
-	let mut tmp = v2::parameters::WriteParams {
-		fd: syswrite.fd,
-		buf: guest_phys_addr,
-		len: syswrite.len as u64,
-		ret: 0i64,
-	};
-	write(peripherals, &mut tmp, file_map)
+) {
+	sysread.ret = if let Ok(guest_phys_addr) = virt_to_phys(sysread.buf, mem, root_pt) {
+		match read(
+			mem,
+			GuestFd(sysread.fd),
+			guest_phys_addr,
+			sysread.len as u64,
+			file_map,
+		) {
+			Ok(count) => count
+				.try_into()
+				.unwrap_or_else(|ret| panic!("Unable to fit return value {} in read_v1.", ret)),
+			Err(errno) => -errno as isize,
+		}
+	} else {
+		warn!("Unable to convert guest virtual address into guest physical address");
+		-EFAULT as isize
+	}
 }
 
-/// Handles an write syscall on the host.
-pub(super) fn write<N: NetworkBackend>(
-	peripherals: &VmPeripherals<N>,
-	syswrite: &mut v2::parameters::WriteParams,
+/// Handler for a v2 [`FileRead`](uhyve_interface::v2::Hypercall::FileRead) hypercall.
+pub(super) fn read_v2(mem: &MmapMemory, sysread: &mut ReadParams, file_map: &mut UhyveFileMap) {
+	sysread.ret = match read(mem, GuestFd(sysread.fd), sysread.buf, sysread.len, file_map) {
+		Ok(count) => count as i64,
+		Err(errno) => -errno as i64,
+	};
+}
+
+/// Handler for a [`FileRead`](v3::Hypercall::FileRead) hypercall.
+pub(super) fn read_v3(
+	mem: &MmapMemory,
+	sysread: &mut v3::parameters::ReadParams,
 	file_map: &mut UhyveFileMap,
-) -> io::Result<()> {
+) {
+	let result = read(
+		mem,
+		GuestFd(sysread.fd),
+		sysread.buf.addr,
+		sysread.buf.len,
+		file_map,
+	);
+	sysread.ret = RawResult::encode(result.map_err(v3_errno)).unwrap();
+}
+
+/// Writes `len` bytes from the guest buffer at `buf` to the guest file descriptor `gfd`.
+/// Returns the number of bytes written or the guest errno on failure.
+fn write<N: NetworkBackend>(
+	peripherals: &VmPeripherals<N>,
+	gfd: GuestFd,
+	buf: GuestPhysAddr,
+	len: u64,
+	file_map: &mut UhyveFileMap,
+) -> Result<u64, i32> {
 	let mut bytes = unsafe {
-		let guest_phys_addr = syswrite.buf;
 		peripherals
 			.mem
-			.slice_at(guest_phys_addr, syswrite.len.try_into().unwrap())
+			.slice_at(buf, len.try_into().map_err(|_| EINVAL)?)
 			.map_err(|e| {
-				io::Error::new(
-					io::ErrorKind::InvalidInput,
-					format!("invalid syswrite buffer: {e:?}"),
-				)
+				warn!("invalid write buffer: {e:?}");
+				EFAULT
 			})?
 	};
 
-	match file_map.fdmap.get_mut(GuestFd(syswrite.fd.into_raw_fd())) {
+	match file_map.fdmap.get_mut(gfd) {
 		None => {
-			// We don't write anything if the file descriptor is not available,
-			// but this is OK, as writes are not necessarily guaranteed to write
-			// anything.
-			syswrite.ret = -EBADF as i64;
-			Err(io::Error::other("Bad file descriptor"))
+			warn!("Guest tried to write to unknown fd: {gfd}");
+			Err(EBADF)
 		}
 
 		Some(FdData::Virtual { .. }) | Some(FdData::MappedDirectory { .. }) => {
-			// virtual fds are read-only
-			syswrite.ret = -EROFS as i64;
-			Err(io::Error::new(
-				io::ErrorKind::ReadOnlyFilesystem,
-				format!(
-					"Unable to write to virtual file {}",
-					GuestFd(syswrite.fd.into_raw_fd())
-				),
-			))
+			warn!("Unable to write to virtual file {gfd}");
+			Err(EROFS)
 		}
 
 		// Handles to standard outputs differs to that of e.g. files.
 		Some(FdData::Raw(1 | 2)) => {
-			// Assumption: Everything is printed successfully on the host.
-			// We could assume that this will always succeed and leave it at zero, but:
-			// - having some "write" scenarios that treat a zero as an error
-			//   and some that don't is not very clean.
-			// - there is a debug_assert in the kernel that depends on this,
-			//   just in case.
-			syswrite.ret = bytes.len().try_into().unwrap();
-			peripherals.serial.output(bytes)
+			let len = bytes.len() as u64;
+			peripherals.serial.output(bytes).map_err(|e| {
+				warn!("Unable to write to serial output: {e}");
+				EIO
+			})?;
+			Ok(len)
 		}
 
 		Some(FdData::Raw(r)) => {
-			syswrite.ret = 0;
+			let mut written = 0;
 			while !bytes.is_empty() {
 				let step = unsafe {
 					libc::write(
@@ -222,28 +212,135 @@ pub(super) fn write<N: NetworkBackend>(
 						bytes.len(),
 					)
 				};
-				if step >= 0 {
-					syswrite.ret += step as i64;
-					bytes = &bytes[step as usize..];
-				} else {
-					syswrite.ret = -translate_last_errno().unwrap_or(1) as i64;
-					return Err(io::Error::last_os_error());
+				if step < 0 {
+					return Err(translate_last_errno().unwrap_or(1));
 				}
+				written += step as u64;
+				bytes = &bytes[step as usize..];
 			}
-
-			Ok(())
+			Ok(written)
 		}
 	}
 }
 
-/// Handles a v1 lseek syscall on the host, which has a different struct format.
+/// Handler for a v1 [`FileWrite`](v1::Hypercall::FileWrite) hypercall (for which a
+/// guest-provided guest virtual address must be converted to a guest physical address by the
+/// host). Returns the guest errno on failure.
+pub(super) fn write_v1<N: NetworkBackend>(
+	peripherals: &VmPeripherals<N>,
+	syswrite: &v1::parameters::WriteParams,
+	root_pt: GuestPhysAddr,
+	file_map: &mut UhyveFileMap,
+) -> Result<(), i32> {
+	let guest_phys_addr = virt_to_phys(syswrite.buf, &peripherals.mem, root_pt).map_err(|e| {
+		warn!("invalid syswrite buffer: {e:?}");
+		EFAULT
+	})?;
+	write(
+		peripherals,
+		GuestFd(syswrite.fd),
+		guest_phys_addr,
+		syswrite.len as u64,
+		file_map,
+	)
+	.map(|_| ())
+}
+
+/// Handler for a v2 [`FileWrite`](uhyve_interface::v2::Hypercall::FileWrite) hypercall. Returns the guest errno
+/// on failure.
+pub(super) fn write_v2<N: NetworkBackend>(
+	peripherals: &VmPeripherals<N>,
+	syswrite: &mut WriteParams,
+	file_map: &mut UhyveFileMap,
+) -> Result<(), i32> {
+	let result = write(
+		peripherals,
+		GuestFd(syswrite.fd),
+		syswrite.buf,
+		syswrite.len,
+		file_map,
+	);
+	syswrite.ret = match result {
+		Ok(count) => count as i64,
+		Err(errno) => -errno as i64,
+	};
+	result.map(|_| ())
+}
+
+/// Handler for a [`FileWrite`](v3::Hypercall::FileWrite) hypercall.
+pub(super) fn write_v3<N: NetworkBackend>(
+	peripherals: &VmPeripherals<N>,
+	syswrite: &mut v3::parameters::WriteParams,
+	file_map: &mut UhyveFileMap,
+) {
+	let result = write(
+		peripherals,
+		GuestFd(syswrite.fd),
+		syswrite.buf.addr,
+		syswrite.buf.len,
+		file_map,
+	);
+	syswrite.ret = RawResult::encode(result.map_err(v3_errno)).unwrap();
+}
+
+/// Repositions the file offset of the guest file descriptor `gfd`. Returns the resulting offset
+/// or the guest errno on failure.
+fn lseek(gfd: GuestFd, whence: LseekWhence, file_map: &mut UhyveFileMap) -> Result<u64, i32> {
+	match file_map.fdmap.get_mut(gfd) {
+		Some(FdData::Raw(r)) => {
+			let (offset, whence) = match whence {
+				LseekWhence::SeekSet { offset } => (offset as i64, libc::SEEK_SET),
+				LseekWhence::SeekCur { offset } => (offset, libc::SEEK_CUR),
+				LseekWhence::SeekEnd { offset } => (offset, libc::SEEK_END),
+				LseekWhence::SeekData { offset } => (offset as i64, libc::SEEK_DATA),
+				LseekWhence::SeekHole { offset } => (offset as i64, libc::SEEK_HOLE),
+			};
+			let ret = unsafe { libc::lseek(*r, offset, whence) };
+			if ret < 0 {
+				Err(translate_last_errno().unwrap_or(1))
+			} else {
+				Ok(ret as u64)
+			}
+		}
+		Some(FdData::Virtual { data, offset: pos }) => {
+			let new_pos = match whence {
+				LseekWhence::SeekSet { offset } => Some(offset),
+				LseekWhence::SeekCur { offset } => pos.checked_add_signed(offset),
+				LseekWhence::SeekEnd { offset } => (data.len() as u64).checked_add_signed(offset),
+				LseekWhence::SeekData { .. } | LseekWhence::SeekHole { .. } => return Err(EINVAL),
+			}
+			.filter(|new_pos| *new_pos <= i64::MAX as u64)
+			.ok_or(EOVERFLOW)?;
+			*pos = new_pos;
+			Ok(new_pos)
+		}
+		Some(FdData::MappedDirectory { offset: pos, .. }) => {
+			let new_pos = match whence {
+				LseekWhence::SeekSet { offset } => offset,
+				LseekWhence::SeekCur { offset } if offset >= 0 => {
+					pos.saturating_add(offset as u64).min(i64::MAX as u64)
+				}
+				_ => return Err(EINVAL),
+			};
+			*pos = new_pos;
+			Ok(new_pos)
+		}
+		None => {
+			warn!("lseek attempted to use an unknown file descriptor");
+			Err(EBADF)
+		}
+	}
+}
+
+/// Handler for a v1 [`FileLseek`](v1::Hypercall::FileLseek) hypercall, which has a different
+/// struct format.
 pub(super) fn lseek_v1(syslseek: &mut v1::parameters::LseekParams, file_map: &mut UhyveFileMap) {
 	let mut tmp = LseekParams {
 		offset: syslseek.offset as i64,
 		whence: syslseek.whence as u32,
 		fd: syslseek.fd,
 	};
-	lseek(&mut tmp, file_map);
+	lseek_v2(&mut tmp, file_map);
 	if tmp.offset < 0 {
 		tmp.offset = -1;
 	}
@@ -253,55 +350,30 @@ pub(super) fn lseek_v1(syslseek: &mut v1::parameters::LseekParams, file_map: &mu
 		.unwrap_or_else(|ret| panic!("Unable to fit return value {} in lseek_v1.", ret));
 }
 
-/// Handles an lseek syscall on the host.
-pub(super) fn lseek(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
-	syslseek.offset = match file_map.fdmap.get_mut(GuestFd(syslseek.fd.into_raw_fd())) {
-		Some(FdData::Raw(r)) => {
-			let ret = unsafe { libc::lseek(*r, syslseek.offset, syslseek.whence as i32) };
-			if ret < 0 {
-				-translate_last_errno().unwrap_or(1) as i64
-			} else {
-				ret
-			}
-		}
-		Some(FdData::Virtual { data, offset }) => {
-			#[forbid(unused_variables)]
-			let tmp: i64 = match syslseek.whence as i32 {
-				SEEK_SET => 0,
-				SEEK_CUR => *offset as i64,
-				SEEK_END => data.len() as i64,
-				_ => -EINVAL as i64,
-			};
-			if tmp >= 0 {
-				let tmp2 = tmp + syslseek.offset;
-				match tmp2.try_into() {
-					Ok(tmp3) => {
-						*offset = tmp3;
-						tmp2
-					}
-					_ => -EOVERFLOW as i64,
-				}
-			} else {
-				tmp
-			}
-		}
-		Some(FdData::MappedDirectory { offset, .. }) => match syslseek.whence as i32 {
-			SEEK_SET if syslseek.offset >= 0 => {
-				*offset = syslseek.offset as u64;
-				syslseek.offset
-			}
-			SEEK_CUR if syslseek.offset >= 0 => {
-				let ret = offset.saturating_add_signed(syslseek.offset);
-				*offset = ret;
-				ret as i64
-			}
-			_ => -EINVAL as i64,
-		},
-		None => {
-			warn!("lseek attempted to use an unknown file descriptor");
-			-EBADF as i64
-		}
+/// Handler for a v2 [`FileLseek`](uhyve_interface::v2::Hypercall::FileLseek) hypercall.
+pub(super) fn lseek_v2(syslseek: &mut LseekParams, file_map: &mut UhyveFileMap) {
+	let offset = syslseek.offset;
+	let whence = match syslseek.whence as i32 {
+		SEEK_SET => u64::try_from(offset)
+			.map(|offset| LseekWhence::SeekSet { offset })
+			.map_err(|_| EINVAL),
+		SEEK_CUR => Ok(LseekWhence::SeekCur { offset }),
+		SEEK_END => Ok(LseekWhence::SeekEnd { offset }),
+		_ => Err(EINVAL),
 	};
+	syslseek.offset = match whence.and_then(|whence| lseek(GuestFd(syslseek.fd), whence, file_map))
+	{
+		Ok(offset) => offset as i64,
+		Err(errno) => -errno as i64,
+	};
+}
+
+/// Handler for a [`FileLseek`](v3::Hypercall::FileLseek) hypercall.
+pub(super) fn lseek_v3(syslseek: &mut v3::parameters::LseekParams, file_map: &mut UhyveFileMap) {
+	let result = LseekWhence::try_from(syslseek.whence)
+		.map_err(|_| EINVAL)
+		.and_then(|whence| lseek(GuestFd(syslseek.fd), whence, file_map));
+	syslseek.ret = RawResult::encode(result.map_err(v3_errno)).unwrap();
 }
 
 /// Handler for a [`FileFsync`](v3::Hypercall::FileFsync) hypercall.
@@ -338,7 +410,7 @@ mod tests {
 		let mut fdata = FdData::Virtual { data, offset: 0 };
 		let mut out = [MaybeUninit::new(0u8); 20];
 
-		assert_eq!(read_internal(&mut fdata, &mut out), len as i64);
+		assert_eq!(read_internal(&mut fdata, &mut out), Ok(len));
 		let FdData::Virtual { offset, .. } = &fdata else {
 			unreachable!();
 		};
@@ -371,7 +443,7 @@ mod tests {
 			len,
 			ret: 0,
 		};
-		read(mem, &mut p, fm);
+		read_v2(mem, &mut p, fm);
 		p.ret
 	}
 

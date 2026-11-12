@@ -18,7 +18,10 @@ mod cmdval_copy;
 mod fstat;
 mod getdents;
 
-use by_fd::{close_v2, close_v3, fsync, lseek, lseek_v1, read, read_v1, write, write_v1};
+use by_fd::{
+	close_v2, close_v3, fsync, lseek_v1, lseek_v2, lseek_v3, read_v1, read_v2, read_v3, write_v1,
+	write_v2, write_v3,
+};
 use by_path::{mkdir_v2, mkdir_v3, open_v2, open_v3, unlink_v2, unlink_v3};
 use fstat::{fstat_v2, stat_v2, stat_v3};
 use getdents::{getdents_v2, getdents_v3};
@@ -204,11 +207,11 @@ pub fn handle_hypercall_v2<N: NetworkBackend>(
 			return HypercallAction::Stop(VcpuStopReason::Exit(sysexit));
 		}
 		v2::Hypercall::FileClose(sysclose) => close_v2(sysclose, &mut file_mapping()),
-		v2::Hypercall::FileLseek(syslseek) => lseek(syslseek, &mut file_mapping()),
+		v2::Hypercall::FileLseek(syslseek) => lseek_v2(syslseek, &mut file_mapping()),
 		v2::Hypercall::FileOpen(sysopen) => open_v2(&peripherals.mem, sysopen, &mut file_mapping()),
-		v2::Hypercall::FileRead(sysread) => read(&peripherals.mem, sysread, &mut file_mapping()),
+		v2::Hypercall::FileRead(sysread) => read_v2(&peripherals.mem, sysread, &mut file_mapping()),
 		v2::Hypercall::FileWrite(syswrite) => {
-			write(peripherals, syswrite, &mut file_mapping()).unwrap();
+			write_v2(peripherals, syswrite, &mut file_mapping()).unwrap();
 		}
 		v2::Hypercall::FileUnlink(sysunlink) => {
 			unlink_v2(&peripherals.mem, sysunlink, &mut file_mapping())
@@ -243,6 +246,9 @@ pub fn handle_hypercall_v3<N: NetworkBackend>(
 		}
 		v3::Hypercall::FileClose(sysclose) => close_v3(sysclose, &mut file_mapping()),
 		v3::Hypercall::FileOpen(sysopen) => open_v3(&peripherals.mem, sysopen, &mut file_mapping()),
+		v3::Hypercall::FileRead(sysread) => read_v3(&peripherals.mem, sysread, &mut file_mapping()),
+		v3::Hypercall::FileWrite(syswrite) => write_v3(peripherals, syswrite, &mut file_mapping()),
+		v3::Hypercall::FileLseek(syslseek) => lseek_v3(syslseek, &mut file_mapping()),
 		v3::Hypercall::FileUnlink(sysunlink) => {
 			unlink_v3(&peripherals.mem, sysunlink, &mut file_mapping())
 		}
