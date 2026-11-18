@@ -491,24 +491,19 @@ pub fn classify_port_write<'a>(
 	port: u16,
 	data: &[u8],
 ) -> PortWrite<'a> {
-	if let Some(hypercall) =
-		unsafe { hypercall::address_to_hypercall_v2(mem, port.into(), hypercall_data_addr(vcpu)) }
-	{
-		PortWrite::Hypercall(GuestHypercall::V2(hypercall))
-	} else if let Some(hypercall) = unsafe {
-		// v1 images used to read the address from the 32-bit value written
-		// into the virtual device register to perform an IoOut. Although
-		// this was done for speed reasons, this implementation cannot
-		// work for addresses containing more than 32 bits (which is to be
-		// deemed as conventional in 64-bit environments), thus constraining
-		// the memory size used by Uhyve.
-		let data_addr = GuestPhysAddr::new((*(data.as_ptr() as *const u32)) as u64);
-		hypercall::address_to_hypercall_v1(mem, port, data_addr)
-	} {
-		PortWrite::Hypercall(GuestHypercall::V1(hypercall))
-	} else {
-		PortWrite::PortIOAccess
-	}
+	// v1 images used to read the address from the 32-bit value written
+	// into the virtual device register to perform an IoOut. Although
+	// this was done for speed reasons, this implementation cannot
+	// work for addresses containing more than 32 bits (which is to be
+	// deemed as conventional in 64-bit environments), thus constraining
+	// the memory size used by Uhyve.
+	let v1_data_addr = GuestPhysAddr::new(unsafe { *(data.as_ptr() as *const u32) } as u64);
+	unsafe { hypercall::address_to_hypercall_v1(mem, port, v1_data_addr) }
+		.map(GuestHypercall::V1)
+		.or_else(|| unsafe {
+			GuestHypercall::from_mmio(mem, port.into(), hypercall_data_addr(vcpu))
+		})
+		.map_or(PortWrite::PortIOAccess, PortWrite::Hypercall)
 }
 
 /// Legacy PCI configuration access via the I/O ports `0xCF8`/`0xCFC`.

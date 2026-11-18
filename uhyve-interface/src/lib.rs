@@ -45,13 +45,15 @@ macro_rules! into_hypercall_addresses {
 	}
 }
 
-/// Common parameters for versions 1 and 2 of the Hypercall Interface
+/// Common parameters for all versions of the Hypercall Interface
 mod parameters;
 
 /// Version 1 of the Hypercall Interface
 pub mod v1;
 /// Version 2 of the Hypercall Interface
 pub mod v2;
+/// Version 3 of the Hypercall Interface
+pub mod v3;
 
 pub use memory_addresses::{PhysAddr as GuestPhysAddr, VirtAddr as GuestVirtAddr};
 
@@ -60,4 +62,4 @@ compile_error!("Using uhyve-interface on a non-64-bit system is not (yet?) suppo
 
 /// The version of the Uhyve interface. Note: This is not the same as the semver of the crate but
 /// should be increased on every version bump that changes the API.
-pub const UHYVE_INTERFACE_VERSION: u32 = 3;
+pub const UHYVE_INTERFACE_VERSION: u32 = 4;
