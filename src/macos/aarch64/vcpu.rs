@@ -98,6 +98,12 @@ impl VirtualizationBackendInternal for XhyveVm {
 
 impl VirtualizationBackend for XhyveVm {}
 
+impl Drop for XhyveVm {
+	fn drop(&mut self) {
+		xhypervisor::destroy_vm().unwrap();
+	}
+}
+
 /// Kicks an [`XhyveCpu`] out of `hv_vcpu_run` and interrupts blocking syscalls on its thread.
 #[derive(Clone, Copy, Debug)]
 pub struct XhyveKickHandle {
