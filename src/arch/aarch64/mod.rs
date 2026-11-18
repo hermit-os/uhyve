@@ -23,7 +23,7 @@ use crate::{
 };
 
 pub(crate) const RAM_START: GuestPhysAddr = GuestPhysAddr::new(0x1000_0000);
-pub(crate) const V1_MAX_ADDR: u64 = 0x0010_0000_0000u64;
+pub(crate) const V1_MAX_ADDR: u64 = 0x0001_0000_0000u64;
 pub(crate) const V1_ADDR_RANGE: (u64, u64) = (RAM_START.as_u64(), V1_MAX_ADDR);
 pub(crate) const V2_ADDR_RANGE: (u64, u64) = (0x0001_0000_0000u64, 0x0010_0000_0000u64);
 
